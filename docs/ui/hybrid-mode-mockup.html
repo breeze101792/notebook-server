@@ -1,0 +1,953 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hybrid mode — design mockup</title>
+<style>
+  /* ------------------------------------------------------------------
+     Mockup frame (not product chrome)
+     ------------------------------------------------------------------ */
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0;
+    padding: 32px 24px 56px;
+    background: #0d0e12;
+    color: #c7cad4;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1420px; margin: 0 auto; }
+  .intro { max-width: 860px; margin: 0 0 10px; }
+  .intro h1 { margin: 0 0 6px; font-size: 21px; line-height: 1.25; font-weight: 650; color: #f0f1f5; }
+  .intro p { margin: 0 0 8px; font-size: 13px; color: #a6abb8; }
+  .intro code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                background: #191b21; border: 1px solid #2b2e38; border-radius: 4px; padding: 1px 5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 7px 16px; margin: 14px 0 28px; font-size: 12px; color: #8e94a3; }
+  .legend b { color: #c7ccd8; font-weight: 600; }
+
+  .boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(600px, 1fr)); gap: 26px; align-items: start; }
+
+  .board {
+    border: 1px solid #2b2e38;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #101116;
+  }
+  .board[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-page: #1a1b1f;
+    --surface-panel: #22232a;
+    --surface-raised: #2a2b34;
+    --surface-well: #14151a;
+    --text-primary: #e6e6ea;
+    --text-muted: #9799a4;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, .18);
+    --text-on-accent: #14151a;
+    --border: #383a45;
+    --border-strong: #7b8194;
+    --warn: #f3b454;
+    --danger: #ff6b6b;
+    --ok: #5fd49a;
+  }
+  .board[data-theme="light"] {
+    color-scheme: light;
+    --surface-page: #ffffff;
+    --surface-panel: #f6f7f9;
+    --surface-raised: #eceef2;
+    --surface-well: #f0f2f5;
+    --text-primary: #1f2330;
+    --text-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, .12);
+    --text-on-accent: #ffffff;
+    --border: #d8dde4;
+    --border-strong: #78828f;
+    --warn: #8a5a0b;
+    --danger: #c0392b;
+    --ok: #16703f;
+  }
+  .board-head {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 9px 13px;
+    background: #15161c;
+    border-bottom: 1px solid #2b2e38;
+    font-size: 12px; color: #b9bec9;
+  }
+  .board-head .letter { font-weight: 700; color: #7c9cff; font-variant-numeric: tabular-nums; }
+  .board-head h2 { margin: 0; font-size: 12.5px; font-weight: 600; color: #e3e5eb; }
+  .board-head .theme-tag { margin-left: auto; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: #7e8492; }
+  .board-note {
+    padding: 9px 13px;
+    background: #15161c;
+    border-top: 1px solid #2b2e38;
+    font-size: 11.5px; line-height: 1.5; color: #8f95a3;
+  }
+  .board-note b { color: #c2c7d2; font-weight: 600; }
+  .canvas { background: var(--surface-page); color: var(--text-primary); font-family: var(--font-ui); }
+  .crop { overflow: hidden; }
+
+  /* ------------------------------------------------------------------
+     Shared product tokens used by the boards
+     ------------------------------------------------------------------ */
+  .board {
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  /* ------------------------------------------------------------------
+     Top bar (46 px)
+     ------------------------------------------------------------------ */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    height: 46px; padding: 0 12px;
+    background: var(--surface-panel);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-primary);
+  }
+  .topbar.editing { background: var(--accent-soft); border-bottom-color: var(--accent); }
+  .brand { font-size: 13px; font-weight: 700; letter-spacing: .3px; color: var(--text-primary); white-space: nowrap; }
+  .brand span { opacity: .75; margin-right: 5px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 30px; padding: 0 8px;
+    background: var(--surface-raised); border: 1px solid var(--border-strong); border-radius: 6px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .chip .caret { color: var(--text-muted); font-size: 10px; }
+  .grow { flex: 1 1 auto; }
+  .top-actions { display: flex; gap: 6px; align-items: center; }
+  .tbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 2px 8px;
+    font-size: 15.4px; line-height: 1; font-family: var(--font-ui);
+    background: var(--surface-raised); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    cursor: pointer;
+  }
+  .tbtn:hover { background: var(--accent-soft); border-color: var(--accent); }
+  .tbtn.on { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); }
+
+  /* ------------------------------------------------------------------
+     Tab strip (34 px)
+     ------------------------------------------------------------------ */
+  .tabs {
+    display: flex; align-items: flex-end; gap: 4px;
+    height: 34px; padding: 0 8px;
+    background: var(--surface-panel);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .tab {
+    display: flex; align-items: center; gap: 6px;
+    height: 28.5px; padding: 5px 6px 5px 12px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border); border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    font-size: 12.5px; color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .tab.active { background: var(--surface-page); color: var(--text-primary); border-color: var(--accent); }
+  .tab .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .tab .tx { color: var(--text-muted); font-size: 13px; margin-left: 2px; }
+  .tab .conflict { color: var(--danger); font-weight: 700; margin-left: 4px; }
+
+  /* ------------------------------------------------------------------
+     Markdown edit bar (≈ 35 px)
+     ------------------------------------------------------------------ */
+  .editbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+    padding: 4px 8px;
+    background: var(--surface-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .eb {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 28px; height: 26px; padding: 0 6px;
+    background: transparent; color: var(--text-muted);
+    border: 1px solid transparent; border-radius: 4px;
+    font: 13px/1 var(--font-ui); cursor: pointer;
+  }
+  .eb:hover { color: var(--text-primary); background: var(--accent-soft); }
+  .eb .u { text-decoration: underline; }
+  .sep { width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
+  .actions { display: flex; gap: 4px; align-items: center; margin-left: auto; }
+  .eb.save { color: var(--accent); font-weight: 600; }
+  .eb.save:hover { background: var(--accent); color: var(--text-on-accent); }
+  .eb.close { color: var(--text-muted); }
+  .eb.unsaved { color: var(--accent); border-color: var(--accent); }
+  .eb.unsaved .unsaved-dot { color: var(--accent); font-size: 9px; margin-left: 4px; vertical-align: middle; }
+
+  /* ------------------------------------------------------------------
+     Page and prose (reader / content-blocks)
+     ------------------------------------------------------------------ */
+  .viewer { background: var(--surface-page); }
+  .page {
+    min-height: 300px;
+    padding: 20px 40px 40px;
+    font-size: 14px; line-height: 1.5; color: var(--text-primary);
+    outline: 2px solid var(--accent-soft); outline-offset: -2px;
+    cursor: text;
+  }
+  .page.focused { outline-color: var(--accent); }
+  .page > :first-child { margin-top: 0; }
+  .page h2 { font-size: 21px; line-height: 1.25; font-weight: 650; margin: 29.4px 0 10.5px; }
+  .page h3 { font-size: 17.5px; line-height: 1.25; font-weight: 650; margin: 24.5px 0 8.75px; }
+  .page p { margin: .7em 0; }
+  .page code {
+    font: .9em/1.5 var(--font-mono);
+    background: var(--surface-well); border-radius: 4px; padding: .12em .4em;
+  }
+  .page blockquote {
+    margin: .7em 0; padding: .2em 1em;
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft); color: var(--text-muted);
+  }
+  .page blockquote p { margin: .35em 0; }
+  .page ul, .page ol { margin: .7em 0; padding-left: 1.6em; }
+  .page li { margin: 0; }
+  .page li ul, .page li ol { margin-top: .15em; margin-bottom: 0; }
+  .task { list-style: none; }
+  .cb {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1em; height: 1em; flex: none;
+    margin: 0 .53em 0 -1.53em;
+    border: 1px solid var(--text-muted); border-radius: 3px;
+    vertical-align: -.15em;
+    font-size: .72em; line-height: 1; color: var(--text-on-accent);
+  }
+  .cb.on { background: var(--accent); border-color: var(--accent); }
+  .cb:focus, .cb.focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .caret { display: inline-block; width: 1.5px; height: 1.15em; background: var(--text-primary); vertical-align: -2px; }
+  .page a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  .page hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+  .page hr.sel { border-top-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+
+  /* Table (content-blocks) */
+  .tbl { width: 100%; border-collapse: collapse; margin: .7em 0; font-size: 14px; }
+  .tbl th, .tbl td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .tbl tbody tr:nth-child(odd) { background: var(--surface-panel); }
+  .tbl tbody tr:nth-child(even) { background: var(--surface-page); }
+  .tbl .num { font-family: var(--font-mono); font-size: 12.6px; }
+  .cellsel { background: var(--accent-soft) !important; box-shadow: inset 0 0 0 1px var(--accent); }
+
+  .tblwrap { position: relative; }
+  .te {
+    position: absolute; left: -28px; top: 4px;
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; background: var(--surface-raised);
+    border: 1px solid var(--border); border-radius: 4px;
+    color: var(--text-muted); cursor: pointer;
+  }
+  .te svg { display: block; }
+  .te.hover { color: var(--accent); background: var(--accent-soft); border-color: var(--accent); }
+  .te:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* Code fence (content-blocks) */
+  .pre {
+    position: relative;
+    margin: .7em 0;
+    padding: 22px 16px 14px;
+    background: var(--surface-well);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: var(--font-mono);
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  .pre .code { display: block; padding: 1em; font-size: 12.32px; line-height: 1.5;
+               white-space: pre-wrap; }
+  .pre .lang {
+    position: absolute; top: 6px; left: 16px;
+    font: 10.08px/1.2 var(--font-mono); color: var(--text-muted);
+    max-width: calc(100% - 96px); white-space: nowrap; overflow: hidden;
+    pointer-events: none;
+  }
+  .pre .copy {
+    position: absolute; top: 1px; right: 10px;
+    font: 10.64px/1 var(--font-ui);
+    padding: 4px 8px; border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface-raised); color: var(--text-muted);
+    cursor: pointer; opacity: 0;
+  }
+  .pre.hover .copy, .pre .copy:focus { opacity: 1; }
+  .pre .copy:hover { background: var(--accent-soft); color: var(--text-primary); }
+  .pre .copy.done { color: var(--accent); border-color: var(--accent); }
+  .pre .pill {
+    position: absolute; top: 2px; left: 7px;
+    height: 18px; display: flex; align-items: center;
+    padding: 0 8px; min-width: 24px;
+    border: 1px dashed var(--border); border-radius: 4px;
+    background: var(--surface-raised); color: var(--text-muted);
+    font: 10.08px/1.2 var(--font-mono);
+    cursor: text;
+  }
+  .pre .pill.focus { border: 1px solid var(--accent); color: var(--text-primary); }
+  .pre.editing .lang { display: none; }
+
+  /* List grip and drag chrome (list-edit.js) */
+  .gripwrap { position: relative; }
+  .grip {
+    position: absolute;
+    left: calc(-24px - 1.6em);
+    top: calc(50% - 12px);
+    width: 24px; height: 24px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0; border: 1px solid transparent; border-radius: 4px;
+    background: transparent; color: var(--text-muted);
+    cursor: grab;
+  }
+  .grip svg { display: block; }
+  .grip.hover { background: var(--accent-soft); border-color: var(--border); color: var(--text-primary); }
+  .grip.active { background: var(--accent); color: var(--text-on-accent); cursor: grabbing; }
+  .grip:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .ghost {
+    position: absolute; left: -1.6em; right: 0; top: -.1em; bottom: -.1em;
+    background: var(--accent-soft); border-radius: 2px;
+  }
+  .drop-row { position: relative; list-style: none; height: 2px; margin: 0; padding: 0; }
+  .dropline {
+    display: block; height: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-soft);
+    border-radius: 1px;
+  }
+  .proxy {
+    position: absolute;
+    max-width: 220px; padding: 3px 8px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: 11.2px;
+    background: var(--surface-raised); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+    z-index: 2;
+  }
+
+  /* Annotations — mockup only, never product chrome */
+  .ann {
+    display: inline-flex; align-items: center; gap: 5px;
+    font: 10.5px/1.3 var(--font-ui); color: #8f95a3;
+  }
+  .ann i { display: inline-block; width: 14px; height: 1px; background: #4a4f5d; }
+  .ann-row { padding: 8px 13px; display: flex; gap: 18px; flex-wrap: wrap; border-top: 1px dashed #2b2e38; }
+
+  /* Draft bar */
+  .draftbar {
+    position: relative; margin: 14px auto 0;
+    display: flex; align-items: center; gap: 10px;
+    max-width: 560px; padding: 10px 12px;
+    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+    font-size: 11.9px;
+  }
+  .draftbar .msg { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dbtn {
+    flex: none; padding: 4px 10px;
+    border: 1px solid var(--border); border-radius: 5px;
+    background: transparent; color: var(--text-primary); font: inherit; cursor: pointer;
+  }
+  .dbtn.primary { border-color: var(--accent); color: var(--accent); }
+
+  /* Browser confirm (schematic) */
+  .confirm {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(390px, calc(100% - 48px));
+    background: var(--surface-panel);
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+    padding: 16px 18px 12px;
+    font-size: 13px; color: var(--text-primary);
+  }
+  .confirm p { margin: 0 0 10px; }
+  .confirm .row { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+  .confirm .cbtn {
+    min-width: 76px; padding: 4px 12px;
+    background: var(--surface-raised); color: var(--text-primary);
+    border: 1px solid var(--border-strong); border-radius: 6px;
+    font: 12px/1.3 var(--font-ui); cursor: pointer;
+  }
+  .confirm .cbtn.primary { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); }
+  .confirm .hint { font-size: 10.5px; color: var(--text-muted); margin-top: 8px; }
+
+  /* ------------------------------------------------------------------
+     Phone board (390 px)
+     ------------------------------------------------------------------ */
+  .phone {
+    width: 390px; max-width: 100%;
+    margin: 14px auto;
+    border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; background: var(--surface-page);
+  }
+  .p-top {
+    display: flex; align-items: center; gap: 4px;
+    height: 52px; padding: 0 4px;
+    background: var(--surface-panel); border-bottom: 1px solid var(--border);
+  }
+  .p-ico {
+    width: 44px; height: 44px; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    background: none; border: 0; border-radius: 8px;
+    color: var(--text-primary); font-size: 20px; line-height: 1;
+  }
+  .p-ico.on { background: var(--accent); color: var(--text-on-accent); }
+  .p-title {
+    flex: 1 1 auto; min-width: 0; height: 44px;
+    display: flex; align-items: center;
+    padding: 0 4px; font-size: 16px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .p-bar {
+    display: flex; align-items: center; gap: 2px;
+    height: 52px; padding: 4px 6px;
+    background: var(--surface-panel); border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .p-actions {
+    display: flex; align-items: center; gap: 2px;
+    position: sticky; left: 0;
+    padding-right: 6px;
+    background: var(--surface-panel);
+    box-shadow: 6px 0 8px -6px rgba(0, 0, 0, .45);
+  }
+  .p-eb {
+    flex: none; min-width: 44px; height: 44px; padding: 0 8px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; color: var(--text-muted);
+    border: 1px solid transparent; border-radius: 4px;
+    font: 15px/1 var(--font-ui);
+  }
+  .p-eb.save { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); font-weight: 600; }
+  .p-eb.unsaved { color: var(--accent); border-color: var(--accent); }
+  .p-page {
+    min-height: 340px;
+    padding: 16px 20px 32px;
+    font-size: 16px; line-height: 1.65; color: var(--text-primary);
+    outline: 2px solid var(--accent-soft); outline-offset: -2px;
+  }
+  .p-page.focused { outline-color: var(--accent); }
+  .p-page > :first-child { margin-top: 0; }
+  .p-page h2 { font-size: 22.4px; line-height: 1.25; font-weight: 650; margin: 0 0 .45em; }
+  .p-page p { margin: .85em 0; }
+  .p-page code { font: .9em/1.65 var(--font-mono); background: var(--surface-well); border-radius: 4px; padding: .12em .4em; }
+  .p-page ul { margin: .85em 0; padding-left: 1.6em; }
+  .p-page .pre { padding: 44px 14px 12px; }
+  .p-page .pre .code { font-size: 13px; }
+  .p-page .pre .lang { top: 13px; left: 14px; }
+  .p-page .pre .copy {
+    top: 0; right: 0; width: 44px; height: 44px; padding: 0;
+    font-size: 12px; opacity: 1;
+  }
+  .p-page .pre .pill { top: 12px; left: 5px; }
+  .p-page .te { left: -28px; top: 8px; }
+  .p-foot {
+    height: calc(56px + env(safe-area-inset-bottom, 0px));
+    background: var(--surface-panel); border-top: 1px solid var(--border);
+    display: flex; align-items: stretch;
+  }
+  .p-foot span { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 17px; }
+  .p-foot span.on { color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="intro">
+    <h1>Hybrid mode — the WYSIWYG editing surface</h1>
+    <p>Ten boards, each authored once and repeated in the light theme. Every value is a foundation
+      token or the shipped CSS value cited in <code>docs/ui/hybrid-mode.md</code>. The note is content;
+      the chrome is the design. Annotation text outside a board is not product chrome.</p>
+    <p><b>Glyphs:</b> chrome glyphs are drawn as plain SVG or a non-emoji character where this
+      machine has no emoji font; two emoji-only edit-bar buttons are omitted. The shipped markup
+      still uses emoji at <code>index.html:178</code>, <code>:181</code> and
+      <code>hybrid.js:46</code> until foundations §9.3 replaces them.</p>
+    <p><b>Deliberate deltas from today's stylesheet:</b> the active toggle's label is
+      <code>--text-on-accent</code> instead of white (E1, 2.61:1 → 6.99:1 in dark), and the Save hover
+      takes the same label (E1b). The dark muted text is the foundation value <code>#9799a4</code>,
+      not the old <code>#8b8d98</code>; that change is global, not hybrid-specific.</p>
+  </div>
+
+  <div class="legend">
+    <span><b>Boards:</b> A idle · B hover · C focused · D grip/marker · E list drag · F table · G code chip · H dirty · I conflict · J phone</span>
+    <span><b>Theme:</b> dark and light</span>
+    <span><b>No network requests</b></span>
+  </div>
+
+  <div class="boards">
+
+    <!-- ============================================================
+         A — Hybrid idle
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">A</span><h2>Hybrid idle — full shell</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="topbar editing">
+          <div class="brand"><span>▤</span>Field Notes</div>
+          <div class="chip">Lab notebook <span class="caret">▾</span></div>
+          <div class="chip">Bench tests <span class="caret">▾</span></div>
+          <div class="grow"></div>
+          <div class="top-actions">
+            <button class="tbtn on" aria-pressed="true" title="WYSIWYG edit mode">✎</button>
+            <button class="tbtn" title="Edit Markdown source"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4 1.5 8 5 12M11 4l3.5 4L11 12"/></svg></button>
+          </div>
+        </div>
+        <div class="tabs">
+          <div class="tab active">week-12.md<span class="tx">×</span></div>
+          <div class="tab">flash-id.md<span class="tx">×</span></div>
+        </div>
+        <div class="editbar">
+          <button class="eb">↶</button><button class="eb">↷</button><span class="sep"></span>
+          <button class="eb">H1</button><button class="eb">H2</button><button class="eb">H3</button><span class="sep"></span>
+          <button class="eb"><b>B</b></button><button class="eb"><i>I</i></button><button class="eb"><s>S</s></button><button class="eb"><code>&lt;/&gt;</code></button>
+          <span class="sep"></span>
+          <button class="eb">•&nbsp;List</button><button class="eb">1.&nbsp;List</button><button class="eb">▣</button><button class="eb">&gt;</button>
+          <span class="sep"></span>
+          <button class="eb">{}</button>
+          <span class="actions">
+            <button class="eb close" aria-label="Exit WYSIWYG mode">✕</button>
+          </span>
+        </div>
+        <div class="viewer">
+          <div class="page focused">
+            <h2>Bench tests — week 12</h2>
+            <p>Three boards on the rig. The <code>nRF52840</code> target boots, but the SPI flash ID
+              reads <code>0x00</code> on cold start and recovers after a warm reset.</p>
+            <blockquote><p>Suspect the 3.3 V rail is sagging while the flash probe runs.</p></blockquote>
+            <ul>
+              <li class="task"><span class="cb on">✓</span>Scope the rail at TP4</li>
+              <li class="task"><span class="cb"></span>Re-run <code>flash_id()</code> at −20 °C</li>
+            </ul>
+            <div class="tblwrap">
+              <table class="tbl">
+                <thead><tr><th>Run</th><th>Board</th><th>Flash ID</th><th>Verdict</th></tr></thead>
+                <tbody>
+                  <tr><td>01</td><td>A</td><td class="num">0x00 0x00 0x00</td><td>Fail</td></tr>
+                  <tr><td>02</td><td>A</td><td class="num">0xEF 0x40 0x18</td><td>Pass</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pre">
+              <span class="lang">c</span>
+              <button class="copy">Copy</button>
+              <span class="code">static int flash_probe(const struct spi_dev *dev)
+{
+        uint8_t id[3];
+        return spi_read(dev, CMD_RDID, id, sizeof id);
+}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>page outline: 2 px accent-soft, −2 offset; accent on focus</span>
+        <span class="ann"><i></i>top padding 20 px</span>
+        <span class="ann"><i></i>toggle: accent fill, text-on-accent</span>
+      </div>
+      <p class="board-note"><b>Entry:</b> focus lands on the page; the preview DOM is reused, so no type,
+        margin or block colour changes. Save is hidden while clean; Close shows <b>✕</b> on desktop.</p>
+    </section>
+
+    <!-- ============================================================
+         B — Block hover
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">B</span><h2>Block hover — the three reveals</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="tabs"><div class="tab active">week-12.md<span class="tx">×</span></div></div>
+        <div class="editbar">
+          <button class="eb">↶</button><button class="eb">↷</button><span class="sep"></span>
+          <button class="eb">H1</button><button class="eb">H2</button><button class="eb">H3</button>
+          <span class="actions"><button class="eb close">✕</button></span>
+        </div>
+        <div class="viewer">
+          <div class="page focused">
+            <h2>Flash bring-up</h2>
+            <p>Pointer over the paragraph: nothing happens. There is no block hover outline,
+              no pencil and no handle.</p>
+            <ul>
+              <li class="gripwrap">
+                <button class="grip hover" aria-label="Reorder list item" title="Drag to move this list item">
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="currentColor">
+                    <circle cx="1" cy="1" r="1.1"/><circle cx="5" cy="1" r="1.1"/>
+                    <circle cx="1" cy="5" r="1.1"/><circle cx="5" cy="5" r="1.1"/>
+                    <circle cx="1" cy="9" r="1.1"/><circle cx="5" cy="9" r="1.1"/>
+                  </svg>
+                </button>
+                Probe CS with a 10× scope
+              </li>
+              <li>Check the decoupling on VDD</li>
+            </ul>
+            <div class="tblwrap">
+              <button class="te hover" aria-label="Edit table" title="Edit table">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <path d="M2 3h12v10H2z"/><path d="M2 7h12M6 3v10"/>
+                </svg>
+              </button>
+              <table class="tbl">
+                <thead><tr><th>Signal</th><th>Expected</th><th>Measured</th></tr></thead>
+                <tbody>
+                  <tr><td>CS</td><td>0 → 3.3 V</td><td class="num">0 → 2.1 V</td></tr>
+                  <tr><td>SCK</td><td>8 MHz</td><td class="num">8.0 MHz</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pre hover">
+              <span class="lang">c</span>
+              <button class="copy">Copy</button>
+              <span class="code">spi_write(dev, CMD_WREN, NULL, 0);</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>list grip 24 px, right edge on the list rail</span>
+        <span class="ann"><i></i>table chip 24 px, 4 px gap</span>
+        <span class="ann"><i></i>copy revealed by hover / focus-within</span>
+      </div>
+      <p class="board-note"><b>The full block-chrome set.</b> A paragraph, heading, quote, image, rule or
+        diagram card shows nothing on hover. Only a list item, a table and a fence carry a control.</p>
+    </section>
+
+    <!-- ============================================================
+         C — Block focused
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">C</span><h2>Block focused — caret and selection</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="tabs"><div class="tab active">week-12.md<span class="tx">×</span></div></div>
+        <div class="viewer">
+          <div class="page focused">
+            <h2>Timing budget<span class="caret"></span></h2>
+            <p>The page outline turns <code>--accent</code> when focus is inside. The block itself
+              gains nothing: the caret is the only indicator.</p>
+            <ul>
+              <li class="task"><span class="cb focus" tabindex="0"></span>Task box focused: 2 px accent ring, offset 2</li>
+              <li class="task"><span class="cb on">✓</span>Checked boxes keep the accent fill</li>
+            </ul>
+            <hr class="sel">
+            <p>A selected rule paints its border and a 2 px <code>--accent-soft</code> ring, because the
+              zero-height box has no native selection highlight.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>page ring: accent-soft → accent</span>
+        <span class="ann"><i></i>no per-block focus ring</span>
+        <span class="ann"><i></i>task box is live in hybrid</span>
+      </div>
+      <p class="board-note"><b>Focus is the page's, not the block's.</b> The editable region is one
+        focus target; blocks are caret positions inside it.</p>
+    </section>
+
+    <!-- ============================================================
+         D — Grip and marker
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">D</span><h2>Grip and marker — one column</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="viewer">
+          <div class="page focused">
+            <h3>List kinds</h3>
+            <ul>
+              <li>Bullet: marker in the 1.6em indent</li>
+              <li class="gripwrap">
+                <button class="grip hover" aria-label="Reorder list item" title="Drag to move this list item">
+                  <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" fill="currentColor">
+                    <circle cx="1" cy="1" r="1.1"/><circle cx="5" cy="1" r="1.1"/>
+                    <circle cx="1" cy="5" r="1.1"/><circle cx="5" cy="5" r="1.1"/>
+                    <circle cx="1" cy="9" r="1.1"/><circle cx="5" cy="9" r="1.1"/>
+                  </svg>
+                </button>
+                Bullet with the grip — right edge on the rail
+              </li>
+            </ul>
+            <ol>
+              <li>Ordered item</li>
+              <li>Second item</li>
+            </ol>
+            <ul>
+              <li class="task"><span class="cb on">✓</span>Task item; the box hangs 1em left</li>
+              <li class="task"><span class="cb"></span>Task item</li>
+            </ul>
+            <blockquote><p>Quote: a 3 px rail, no grip.</p></blockquote>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>grip: 24 × 24, radius 4, dot grid 10 × 10</span>
+        <span class="ann"><i></i>marker stays visible; grip sits left of it</span>
+      </div>
+      <p class="board-note"><b>One grip per active item.</b> The grip's right edge aligns to the
+        containing list's left rail, and its <code>y</code> centres on the item's first line, so a
+        nested subtree does not pull it down.</p>
+    </section>
+
+    <!-- ============================================================
+         E — List grip drag
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">E</span><h2>List grip — drag chrome</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="viewer">
+          <div class="page focused">
+            <h3>DMA descriptor order</h3>
+            <ul>
+              <li class="gripwrap">
+                <span class="ghost"></span>
+                Configure channel 1
+              </li>
+              <li>Configure channel 2</li>
+              <li>Arm the transfer</li>
+              <li class="drop-row">
+                <span class="dropline"></span>
+                <div class="proxy" style="left:250px;top:6px">Configure channel 1</div>
+              </li>
+              <li>Kick the timer</li>
+            </ul>
+            <p>While dragging: the source item is a translucent ghost, the chip follows the pointer,
+              and a 2 px accent line marks the resolved boundary.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>ghost: accent-soft, radius 2</span>
+        <span class="ann"><i></i>proxy: ≤ 220 px, 3/8 padding, 11.2 px, shadow</span>
+        <span class="ann"><i></i>drop line: 2 px accent + 1 px accent-soft ring</span>
+      </div>
+      <p class="board-note"><b>Pointer only, with a keyboard twin.</b> <code>Alt+Up/Down</code> moves the
+        item among siblings; <code>Esc</code> cancels the drag. A completed move is announced politely:
+        “Item moved to position 3, level 1”.</p>
+    </section>
+
+    <!-- ============================================================
+         F — Table chip and rectangle
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">F</span><h2>Table chip and cell rectangle</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="viewer">
+          <div class="page focused">
+            <h3>SPI timing</h3>
+            <div class="tblwrap">
+              <button class="te hover" aria-label="Edit table" title="Edit table">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true">
+                  <path d="M2 3h12v10H2z"/><path d="M2 7h12M6 3v10"/>
+                </svg>
+              </button>
+              <table class="tbl">
+                <thead><tr><th>Mode</th><th>SCK</th><th>Setup</th><th>Hold</th></tr></thead>
+                <tbody>
+                  <tr><td>0</td><td class="num">1 MHz</td><td class="cellsel">20 ns</td><td class="cellsel">20 ns</td></tr>
+                  <tr><td>1</td><td class="num">4 MHz</td><td class="cellsel">10 ns</td><td class="cellsel">10 ns</td></tr>
+                  <tr><td>3</td><td class="num">8 MHz</td><td class="num">6 ns</td><td class="num">6 ns</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p>The chip opens the table editor modal. The 2 × 2 rectangle is <code>Ctrl/Cmd</code>+drag;
+              copy yields TSV and an HTML table.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>chip: header-row centre, 8 px edge clamp</span>
+        <span class="ann"><i></i>rectangle: accent-soft + inset 1 px accent</span>
+      </div>
+      <p class="board-note"><b>No table grips.</b> Hybrid editing is cell text only; structure lives in
+        the table editor modal. The chip hides on scroll and after a 120 ms grace.</p>
+    </section>
+
+    <!-- ============================================================
+         G — Code chip editing
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">G</span><h2>Code fence — language chip while editing</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="viewer">
+          <div class="page focused">
+            <h3>Fence, same height in both states</h3>
+            <div class="pre editing hover">
+              <span class="pill focus">c</span>
+              <button class="copy">Copy</button>
+              <span class="code">static int flash_probe(const struct spi_dev *dev)
+{
+        uint8_t id[3];
+        return spi_read(dev, CMD_RDID, id, sizeof id);
+}</span>
+            </div>
+            <div class="pre">
+              <span class="lang">c</span>
+              <button class="copy">Copy</button>
+              <span class="code">static int flash_probe(const struct spi_dev *dev)
+{
+        uint8_t id[3];
+        return spi_read(dev, CMD_RDID, id, sizeof id);
+}</span>
+            </div>
+            <p>Top fence: the chip replaces the label at the same x. Enter commits; Esc restores;
+              an invalid language resets and toasts.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>chip 18 px in a 22 px band; text starts at x = 16</span>
+        <span class="ann"><i></i>copy: top 1, right 10, in the band</span>
+      </div>
+      <p class="board-note"><b>The band is reserved in every state</b>, so clicking a fence never
+        changes its height. On the phone the band is 44 px and the copy target is 44 × 44.</p>
+    </section>
+
+    <!-- ============================================================
+         H — Dirty
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">H</span><h2>Dirty — Save appears, Close and tab mark it</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="tabs">
+          <div class="tab active"><span class="dot"></span>week-12.md<span class="tx">×</span></div>
+          <div class="tab">flash-id.md<span class="tx">×</span></div>
+        </div>
+        <div class="editbar">
+          <button class="eb">↶</button><button class="eb">↷</button><span class="sep"></span>
+          <button class="eb">H1</button><button class="eb">H2</button><button class="eb">H3</button><span class="sep"></span>
+          <button class="eb"><b>B</b></button><button class="eb"><i>I</i></button>
+          <span class="actions">
+            <button class="eb save" aria-label="Save current file"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5h8l3 3v8h-11z"/><path d="M5 2.5v4h5v-4"/><path d="M5 10h6v3.5H5z"/></svg></button>
+            <button class="eb close unsaved" aria-label="Exit WYSIWYG mode, unsaved changes">✕<span class="unsaved-dot">●</span></button>
+          </span>
+        </div>
+        <div class="viewer">
+          <div class="page focused">
+            <h2>Flash bring-up</h2>
+            <p>The first keystroke reveals Save and adds the dot to Close. Autosave will write the
+              bytes silently after the quiet period; <code>Mod+S</code> writes now and toasts
+              “Saved”.</p>
+            <p>If the write fails, the browser alert is the surface and the editor stays open.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>tab dot: 8 px accent</span>
+        <span class="ann"><i></i>Close: accent border + 9 px dot</span>
+        <span class="ann"><i></i>Save: floppy glyph in accent; hover is a fill</span>
+      </div>
+      <p class="board-note"><b>Dirty is never colour alone:</b> a dot on Close and the tab, plus the
+        Save glyph. On the phone the tab strip is gone, so the Save glyph and the Done dot carry it.</p>
+    </section>
+
+    <!-- ============================================================
+         I — External conflict
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">I</span><h2>External conflict — prompt and tab badge</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="tabs">
+          <div class="tab active"><span class="dot"></span>week-12.md<span class="conflict" role="img" aria-label="Changed on disk">↻</span><span class="tx">×</span></div>
+        </div>
+        <div class="editbar">
+          <button class="eb">↶</button><button class="eb">↷</button><span class="sep"></span>
+          <button class="eb">H1</button><button class="eb">H2</button>
+          <span class="actions">
+            <button class="eb save" aria-label="Save current file"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5h8l3 3v8h-11z"/><path d="M5 2.5v4h5v-4"/><path d="M5 10h6v3.5H5z"/></svg></button>
+            <button class="eb close unsaved">✕<span class="unsaved-dot">●</span></button>
+          </span>
+        </div>
+        <div class="viewer" style="position:relative;min-height:250px">
+          <div class="page focused" style="min-height:250px">
+            <h2>Flash bring-up</h2>
+            <p>The buffer is kept. The prompt decides whether the page reloads from disk.</p>
+          </div>
+          <div class="confirm" role="dialog" aria-label="External change">
+            <p>“notes/week-12.md” changed on disk.</p>
+            <p>Discard your unsaved edits and reload from disk?<br>
+              (Cancel keeps your edits and marks the tab as a conflict.)</p>
+            <div class="row"><button class="cbtn">Cancel</button><button class="cbtn primary">OK</button></div>
+            <p class="hint">Schematic of the browser <code>confirm()</code> — no custom dialog ships.</p>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>badge: ↻ in danger, 700, 4 px gap</span>
+        <span class="ann"><i></i>title: “Disk has a newer version…”</span>
+      </div>
+      <p class="board-note"><b>Own echo is ignored.</b> A re-read equal to the saved bytes or to an
+        in-flight write never prompts. Cancel keeps the buffer; the badge clears on the next
+        reload, save or re-key.</p>
+    </section>
+
+    <!-- ============================================================
+         J — Phone
+         ============================================================ -->
+    <section class="board" data-theme="dark">
+      <div class="board-head"><span class="letter">J</span><h2>Phone — 390 px</h2><span class="theme-tag">dark</span></div>
+      <div class="canvas">
+        <div class="phone">
+          <div class="p-top">
+            <button class="p-ico" aria-label="Workspace">▦</button>
+            <button class="p-ico" aria-label="Back">←</button>
+            <div class="p-title">week-12.md</div>
+            <button class="p-ico on" aria-label="Exit WYSIWYG mode">✎</button>
+            <button class="p-ico" aria-label="Note menu">⋯</button>
+          </div>
+          <div class="p-bar">
+            <div class="p-actions">
+              <button class="p-eb save" aria-label="Save current file"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 2.5h8l3 3v8h-11z"/><path d="M5 2.5v4h5v-4"/><path d="M5 10h6v3.5H5z"/></svg></button>
+              <button class="p-eb unsaved">Done<span class="unsaved-dot" style="font-size:9px;margin-left:4px">●</span></button>
+            </div>
+            <button class="p-eb">↶</button><button class="p-eb">↷</button>
+            <button class="p-eb">H2</button>
+            <button class="p-eb"><b>B</b></button><button class="p-eb"><i>I</i></button>
+            <button class="p-eb">•&nbsp;List</button><button class="p-eb">☑</button>
+          </div>
+          <div class="p-page focused">
+            <h2>Bench tests — week 12</h2>
+            <p>Three boards on the rig. The <code>nRF52840</code> target boots, but the flash ID
+              reads <code>0x00</code> on cold start.</p>
+            <ul>
+              <li class="task"><span class="cb on">✓</span>Scope the rail at TP4</li>
+              <li class="task"><span class="cb"></span>Re-run at −20 °C</li>
+            </ul>
+            <div class="pre">
+              <span class="lang">c</span>
+              <button class="copy">Copy</button>
+              <span class="code">uint8_t id[3];
+spi_read(dev, CMD_RDID, id, 3);</span>
+            </div>
+          </div>
+          <div class="p-foot">
+            <span><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 4.5h4l1.5 2H14v7H2z"/></svg></span>
+            <span class="on"><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h4l-1 4 2 2v2H5V8l2-2z"/><path d="M8 10v4"/></svg></span>
+            <span><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h8v12l-4-3-4 3z"/></svg></span>
+            <span><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.2"/></svg></span>
+            <span><svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="7" r="4"/><path d="M10 10l3 3"/></svg></span>
+          </div>
+        </div>
+      </div>
+      <div class="ann-row">
+        <span class="ann"><i></i>toggle and every action 44 × 44</span>
+        <span class="ann"><i></i>edit strip 52, Save/Done sticky left</span>
+        <span class="ann"><i></i>band 44; copy 44 × 44 always visible</span>
+      </div>
+      <p class="board-note"><b>The phone has no hover.</b> Copy is always visible, the table chip
+        follows a focused cell, the grip follows the caret, and the rail, capture and note menu hide
+        while editing.</p>
+    </section>
+
+  </div>
+</div>
+
+<script>
+  /* Repeat every board in the light theme. Authored once; no network. */
+  (function () {
+    var boards = Array.prototype.slice.call(document.querySelectorAll('.board'));
+    boards.forEach(function (b) {
+      var c = b.cloneNode(true);
+      c.setAttribute('data-theme', 'light');
+      var tag = c.querySelector('.theme-tag');
+      if (tag) tag.textContent = 'light';
+      b.parentNode.insertBefore(c, b.nextSibling);
+    });
+  })();
+</script>
+</body>
+</html>

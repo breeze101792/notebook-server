@@ -62,7 +62,7 @@ Both open the modal titled **Edit table**, bound to that table. Preview mode has
 ## 6. Constraints
 
 - Reuse the app's `.settings-overlay > .settings-modal` pattern: modal semantics, free-floating/draggable behaviour, and the shared window geometry from `windows.js`. Geometry is window chrome, not persisted editor state.
-- Use the shared hybrid edit-window shell (`docs/ui/edit-window-guide.md`): the same header, action bar, and commit-only footer as the two design windows. The table supplies only the bar's action slot and the grid.
+- Use the shared hybrid edit-window shell (`docs/archive/ui/edit-window-guide.md`): the same header, action bar, and commit-only footer as the two design windows. The table supplies only the bar's action slot and the grid.
 - Writes go through the existing hybrid write path; the modal never writes Markdown itself. Apply flushes any pending typing snapshot first so the replacement is one undo step. The editor never invents HTML in the note (hybrid invariant G4).
 - Numeric parsing is an assumption: optional sign, decimal point, optional exponent, no thousands separators or units. Marked as an assumption to confirm.
 

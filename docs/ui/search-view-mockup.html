@@ -1,0 +1,1525 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Search view — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A, plus the one addition in
+      search-view.md §7.2 (--opacity-loading). Dark and light are the
+      same names on two class scopes, so a light board can sit inside a
+      dark page. No token aliases itself and no component rule carries a
+      colour literal.
+   ================================================================== */
+:root,
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --scrim: rgba(0, 0, 0, .5);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .35);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .45);
+}
+
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --scrim: rgba(0, 0, 0, .5);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .16);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .2);
+}
+
+/* ---- primitives (theme-independent) ---- */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-prose: var(--font-ui);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --dur-0: 100ms;
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 220ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: ease-out;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+  --icon-xl: 22px;
+
+  --opacity-disabled: .45;
+  --opacity-loading: .6;
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  /* phone tokens, kept as the legacy names from style.css:6978-6983 */
+  --m-topbar-h: 52px;
+  --m-radius: 10px;
+}
+
+/* ==================================================================
+   2. PAGE
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; background: var(--surface-well); }
+body {
+  margin: 0;
+  padding: 0 0 var(--space-8);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font: var(--fw-regular) var(--text-body)/var(--lh-normal) var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: var(--space-7) var(--space-6);
+}
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding-bottom: var(--space-5);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.page-head h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -.01em;
+  line-height: 1.1;
+}
+.page-head .lede {
+  margin: var(--space-2) 0 0;
+  max-width: 78ch;
+  color: var(--text-muted);
+  font-size: var(--text-ui-lg);
+}
+.theme-switch {
+  display: flex;
+  gap: var(--space-hair);
+  padding: var(--space-hair);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+}
+.theme-switch button {
+  height: var(--control-h-sm);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font: var(--fw-medium) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  cursor: pointer;
+}
+.theme-switch button[aria-pressed="true"] {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+}
+.theme-switch button:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+.page-note {
+  margin: var(--space-3) 0 0;
+  max-width: 92ch;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+}
+.page-note code {
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: .92em;
+}
+.section { margin-top: var(--space-7); }
+.section > h2 {
+  margin: 0 0 var(--space-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.section > .lede {
+  margin: 0 0 var(--space-5);
+  max-width: 80ch;
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+}
+.boards {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+.board {
+  width: max-content;
+  overflow: hidden;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
+}
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--stroke-1) solid var(--border);
+  background: var(--surface-panel);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.board-head .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+}
+.board-head .grow { flex: 1 1 auto; }
+.board-head .size { font-weight: var(--fw-regular); }
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin: var(--space-3) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.legend span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.legend i {
+  display: inline-block;
+  width: var(--space-4);
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+}
+.legend i.ring {
+  background: transparent;
+  border: var(--stroke-2) solid var(--accent);
+  background: transparent;
+  height: var(--space-4);
+  width: var(--space-4);
+  border-radius: var(--radius-xs);
+}
+
+/* ==================================================================
+   3. THE PANEL — the Search view at a fixed width. Real class names.
+   ================================================================== */
+.panel {
+  display: flex;
+  flex-direction: column;
+  width: 240px;
+  height: 470px;
+  overflow: hidden;
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+.panel--idle { height: 420px; }
+.panel--typing { height: 500px; }
+.panel--results { height: 580px; }
+.panel--noresults { height: 430px; }
+.panel--error { height: 500px; }
+.panel--timeout { height: 500px; }
+.panel--advanced { height: 660px; }
+.panel--140 { width: 140px; height: 700px; }
+.panel--phone { width: 390px; height: 720px; }
+
+/* --- frame header (owned by the shell; shown for context) --- */
+.panel-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.panel-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.collapse-btn {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.collapse-btn svg { width: var(--icon-md); height: var(--icon-md); }
+.collapse-btn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.collapse-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* --- 3.1 controls zone --- */
+.search-panel-controls {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.search-panel-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+.search-panel-input-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.search-panel-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  padding-inline-end: var(--control-h-body);
+  background: var(--surface-well);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: var(--fw-regular) var(--text-ui)/var(--lh-flat) var(--font-ui);
+}
+.search-panel-input::placeholder { color: var(--text-muted); }
+.search-panel-input:hover { border-color: var(--accent); }
+.search-panel-input:focus,
+.search-panel-input.is-focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+}
+.search-panel-input::-webkit-search-cancel-button,
+.search-panel-input::-webkit-search-decoration,
+.search-panel-input::-webkit-search-results-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* --- 3.2 clear --- */
+.search-panel-clear {
+  position: absolute;
+  top: 50%;
+  right: var(--space-1);
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
+  border: var(--stroke-1) solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+.search-panel-clear[hidden] { display: none; }
+.search-panel-clear svg { display: block; width: var(--icon-sm); height: var(--icon-sm); }
+.search-panel-clear:hover { color: var(--text-primary); background: var(--accent-soft); }
+.search-panel-clear:active {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.search-panel-clear:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* --- 3.3 advanced row --- */
+.search-panel-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-sm);
+  min-width: 0;
+}
+.search-panel-advanced-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h-sm);
+  margin-left: calc(-1 * var(--space-1));
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-muted);
+  font: var(--fw-medium) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  cursor: pointer;
+}
+.search-panel-advanced-toggle:hover {
+  color: var(--text-primary);
+  background: var(--accent-soft);
+}
+.search-panel-advanced-toggle[aria-expanded="true"] { color: var(--text-primary); }
+.search-panel-advanced-toggle:focus-visible,
+.search-panel-advanced-toggle.is-focus {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+.search-panel-advanced-chevron {
+  flex: 0 0 auto;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-right: var(--stroke-1) solid currentColor;
+  border-bottom: var(--stroke-1) solid currentColor;
+  transform: rotate(45deg);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.search-panel-advanced-toggle[aria-expanded="true"]
+  .search-panel-advanced-chevron {
+  transform: rotate(-135deg);
+}
+.search-panel-advanced-badge {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 2ch;
+  height: var(--space-4);
+  padding: 0 var(--space-1);
+  border: var(--stroke-1) solid var(--accent);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  font-variant-numeric: tabular-nums;
+  line-height: var(--lh-flat);
+}
+.search-panel-advanced-badge:empty { display: none; }
+.search-panel-advanced-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-snug);
+  text-align: right;
+}
+.search-panel-advanced-summary:empty { display: none; }
+
+/* --- 3.4 advanced panel and filters --- */
+.search-panel-advanced { display: block; min-width: 0; }
+.search-panel-advanced[hidden] { display: none; }
+.search-panel-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  min-width: 0;
+}
+.search-panel-filter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.search-panel-filter--sort,
+.search-panel-filter--case { grid-column: 1 / -1; }
+.search-panel-filter--case {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.search-panel-filter.is-hidden { display: none; }
+.search-panel-filter-label {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--lh-tight);
+  text-transform: uppercase;
+}
+.search-panel-filters.is-name
+  .search-panel-filter:not(.search-panel-filter--sort) {
+  grid-column: 1 / -1;
+}
+.search-panel-filters.is-name
+  .search-panel-filter:not(.search-panel-filter--sort) .search-panel-mode {
+  grid-template-columns: 1fr 1fr;
+}
+.search-panel-mode {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-hair);
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-hair);
+  background: var(--surface-well);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.search-panel-mode.is-hidden { display: none; }
+.search-panel-mode-opt { position: relative; display: flex; min-width: 0; }
+.search-panel-mode-opt input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.search-panel-mode-opt span {
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out);
+}
+.search-panel-mode-opt span:hover {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+.search-panel-mode-opt input:checked + span {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+  box-shadow: inset 0 calc(-1 * var(--stroke-2)) 0 var(--accent);
+}
+.search-panel-mode-opt input:focus-visible + span {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+
+/* --- 3.5 match case --- */
+.search-panel-case {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--control-h-sm) + var(--space-1));
+  height: var(--control-h-body);
+  cursor: pointer;
+  user-select: none;
+}
+.search-panel-case input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.search-panel-case span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: calc(var(--control-h-sm) + var(--space-1));
+  height: var(--control-h-md);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-flat);
+  transition: background var(--dur-1) var(--ease-out),
+    color var(--dur-1) var(--ease-out),
+    border-color var(--dur-1) var(--ease-out);
+}
+.search-panel-case:hover span { color: var(--text-primary); border-color: var(--accent); }
+.search-panel-case input:checked + span {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.search-panel-case input:focus-visible + span {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* --- 3.6 sort --- */
+.search-panel-select {
+  width: 100%;
+  height: var(--control-h-lg);
+  min-height: 0;
+  padding: 0 var(--space-6) 0 var(--space-3);
+  background-color: var(--surface-well);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: var(--fw-regular) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.search-panel-select:hover { border-color: var(--accent); }
+.search-panel-select:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+.search-panel-select option:disabled { color: var(--text-muted); }
+
+/* --- 3.7 results summary, note, retry --- */
+.search-panel-summary {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-sm);
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+}
+.search-panel-summary-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.search-panel-summary.is-incomplete .search-panel-summary-text {
+  white-space: normal;
+  overflow: visible;
+}
+.search-panel-summary.error { flex-wrap: wrap; color: var(--danger); }
+.search-panel-summary.error .search-panel-summary-text {
+  flex-basis: 100%;
+  white-space: normal;
+  overflow: visible;
+}
+.search-panel-summary.error .search-panel-retry { margin-inline-start: auto; }
+.search-panel-retry {
+  flex: 0 0 auto;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: var(--fw-medium) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  cursor: pointer;
+}
+.search-panel-retry:hover { background: var(--accent-soft); border-color: var(--accent); }
+.search-panel-retry:focus-visible,
+.search-panel-retry.is-focus {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+.search-panel-retry:disabled {
+  opacity: var(--opacity-disabled);
+  cursor: progress;
+}
+.search-panel-empty-action {
+  height: auto;
+  min-height: var(--control-h-sm);
+  margin: 0 var(--space-3) var(--space-4);
+  padding: var(--space-hair) var(--space-2);
+  white-space: normal;
+  text-align: left;
+}
+.search-panel-note {
+  flex: 0 0 auto;
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-snug);
+}
+.search-panel-note[hidden] { display: none; }
+.search-panel-note.is-state { padding: 0; }
+.search-panel-note.is-state .search-panel-empty {
+  padding: var(--space-4) var(--space-3) var(--space-2);
+}
+
+/* --- 3.8 list and rows --- */
+.search-panel-list {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+  margin-right: var(--space-2);
+  padding: 0 var(--space-1) var(--space-2);
+}
+.search-panel-list.is-loading { opacity: var(--opacity-loading); }
+.search-panel-empty {
+  padding: var(--space-4) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+  font-style: italic;
+}
+.search-panel-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.search-panel-hit {
+  display: block;
+  width: 100%;
+  min-height: var(--control-h-md);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.search-panel-hit:hover { background: var(--surface-raised); }
+.search-panel-hit.is-active { background: var(--accent-soft); }
+.search-panel-hit:focus-visible,
+.search-panel-hit.show-focus {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+.search-panel-hit-file {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.search-panel-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sp-file { font-size: var(--text-ui); font-weight: var(--fw-semibold); }
+.sp-dir { color: var(--text-muted); font-weight: var(--fw-regular); }
+.sp-meta {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.sp-count {
+  flex: 0 0 auto;
+  padding: 0 var(--space-2);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-snug);
+  white-space: nowrap;
+}
+.search-panel-hit.is-active .sp-count { color: var(--text-primary); }
+.search-panel-hit-snippet {
+  display: block;
+  margin-top: var(--space-hair);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.search-panel-hit-snippet mark {
+  padding: 0 var(--space-hair);
+  border-radius: var(--radius-xs);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* --- 3.9 narrow panel (the two container queries, applied by class) --- */
+.panel--140 .search-panel-filters { grid-template-columns: 1fr; }
+.panel--140 .search-panel-advanced-summary {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.panel--140 .search-panel-advanced-row.has-nondefault
+  .search-panel-advanced-badge {
+  display: inline-flex;
+}
+.panel--140 .search-panel-select {
+  font-size: var(--text-xs);
+  padding-right: var(--space-5);
+}
+
+/* --- 3.10 phone --- */
+.panel--phone .panel-header {
+  min-height: var(--m-topbar-h);
+  padding: 0 var(--space-1) 0 var(--space-4);
+}
+.panel--phone .collapse-btn {
+  width: var(--control-h-touch);
+  height: var(--control-h-touch);
+}
+.panel--phone .collapse-btn svg {
+  width: var(--icon-xl);
+  height: var(--icon-xl);
+}
+.panel--phone .search-panel-controls {
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.panel--phone .search-panel-input {
+  height: var(--control-h-touch);
+  padding-inline-end: calc(var(--control-h-touch) + var(--space-1));
+  border-radius: var(--m-radius);
+  font-size: 16px;
+}
+.panel--phone .search-panel-clear {
+  right: 0;
+  width: var(--control-h-touch);
+  height: var(--control-h-touch);
+  border-radius: var(--m-radius);
+}
+.panel--phone .search-panel-advanced-row { min-height: var(--control-h-touch); }
+.panel--phone .search-panel-advanced-toggle {
+  height: var(--control-h-touch);
+  font-size: var(--text-body);
+}
+.panel--phone .search-panel-advanced-summary { font-size: var(--text-body); }
+.panel--phone .search-panel-advanced-badge { height: var(--space-5); }
+.panel--phone .search-panel-filter-label { font-size: var(--text-ui); }
+.panel--phone .search-panel-mode-opt span {
+  min-height: var(--control-h-touch);
+  padding: 0 var(--space-1);
+  font-size: var(--text-body);
+}
+.panel--phone .search-panel-case,
+.panel--phone .search-panel-case span {
+  width: var(--control-h-touch);
+  height: var(--control-h-touch);
+  border-radius: var(--m-radius);
+}
+.panel--phone .search-panel-select {
+  height: var(--control-h-touch);
+  padding-right: calc(var(--space-6) + var(--space-1));
+  border-radius: var(--m-radius);
+  font-size: 16px;
+}
+.panel--phone .search-panel-summary {
+  min-height: var(--control-h-md);
+  padding: var(--space-1) var(--space-4) var(--space-2);
+  font-size: var(--text-body);
+}
+.panel--phone .search-panel-note {
+  padding: 0 var(--space-4) var(--space-2);
+  font-size: var(--text-ui-lg);
+}
+.panel--phone .search-panel-retry { min-height: var(--control-h-touch); }
+.panel--phone .search-panel-empty-action {
+  min-height: var(--control-h-touch);
+  margin: 0 var(--space-4) var(--space-4);
+}
+.panel--phone .search-panel-list {
+  margin-right: 0;
+  padding: 0 var(--space-1) var(--space-2);
+}
+.panel--phone .search-panel-hit {
+  min-height: var(--control-h-touch);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+}
+.panel--phone .search-panel-hit:hover { background: transparent; }
+.panel--phone .sp-file { font-size: var(--text-body); }
+.panel--phone .search-panel-hit-snippet { font-size: var(--text-body); }
+.panel--phone .sp-count { font-size: var(--text-ui); }
+.panel--phone .search-panel-empty {
+  padding: var(--space-4);
+  font-size: var(--text-body);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-panel-advanced-chevron,
+  .search-panel-mode-opt span,
+  .search-panel-case span,
+  .search-panel-clear { transition: none; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">docs/ui/search-view.md</p>
+      <h1>Search view</h1>
+      <p class="lede">
+        Query row, Advanced disclosure, four filters, summary, and result list, at the
+        default 240 px, the 140 px floor, and in the phone drawer. One-per-note is the
+        shipped default. Every board uses the real result copy.
+      </p>
+    </div>
+    <div class="theme-switch" role="group" aria-label="Theme">
+      <button type="button" data-theme-btn="theme-dark" aria-pressed="true">Dark</button>
+      <button type="button" data-theme-btn="theme-light" aria-pressed="false">Light</button>
+    </div>
+  </header>
+
+  <p class="page-note">
+    The mockup elides <code>aria-controls</code> wiring so cloned boards stay valid; the
+    document is normative for ARIA. <strong>Focus</strong> is drawn with a class, not a
+    live focus state: the field in the idle board, the active row in the results board,
+    Retry in the error board, and the Advanced trigger at 140.
+  </p>
+  <div class="legend">
+    <span><i class="ring"></i> keyboard focus ring</span>
+    <span><i></i> active row wash</span>
+    <span><i class="ring"></i> inset ring on a row</span>
+  </div>
+
+  <section class="section">
+    <h2>The view at 240 — dark</h2>
+    <p class="lede">Idle is blank by design. The placeholder is the only guidance.</p>
+    <div class="boards">
+
+      <!-- 1. IDLE -->
+      <div class="board">
+        <div class="board-head"><span class="dot"></span><span>Idle</span><span class="grow"></span><span class="size">240 px · field focused</span></div>
+        <div class="panel panel--idle" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input is-focus" type="search" placeholder="Search notebooks…" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search" hidden>
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="false">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true"></span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary"></span>
+            </div>
+          </div>
+          <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true"><span class="search-panel-summary-text"></span></div>
+          <div class="search-panel-note" hidden></div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false"></div>
+        </div>
+      </div>
+
+      <!-- 2. TYPING -->
+      <div class="board">
+        <div class="board-head"><span class="dot"></span><span>Typing</span><span class="grow"></span><span class="size">previous rows dimmed</span></div>
+        <div class="panel panel--typing" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="rail" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="false">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true"></span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary"></span>
+            </div>
+          </div>
+          <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true"><span class="search-panel-summary-text">Searching…</span></div>
+          <div class="search-panel-note">Click a row to open its first match.</div>
+          <div class="search-panel-list is-loading" role="listbox" aria-label="Search results" aria-busy="true">
+            <button class="search-panel-hit is-active" type="button" role="option" aria-selected="true" tabindex="0">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/pinout.md"><span class="sp-file">pinout.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">4 matches</span></span>
+              <span class="search-panel-hit-snippet">The 3V3 rail feeds the sensor breakout through a ferrite bead.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/rail-decoupling.md"><span class="sp-file">rail-decoupling.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">3 matches</span></span>
+              <span class="search-panel-hit-snippet">Decoupling on the analog rail needed a second 100 nF cap.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. FIVE RESULTS -->
+      <div class="board" data-light-clone>
+        <div class="board-head"><span class="dot"></span><span>Five results</span><span class="grow"></span><span class="size">one per note · active row focused</span></div>
+        <div class="panel panel--results" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="rail" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="false">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true"></span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary"></span>
+            </div>
+          </div>
+          <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true"><span class="search-panel-summary-text">5 notes · 11 matches</span></div>
+          <div class="search-panel-note">Click a row to open its first match.</div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false">
+            <button class="search-panel-hit is-active show-focus" type="button" role="option" aria-selected="true" tabindex="0">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/pinout.md"><span class="sp-file">pinout.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count" title="total occurrences in this note">4 matches</span></span>
+              <span class="search-panel-hit-snippet">The 3V3 <mark>rail</mark> feeds the sensor breakout through a ferrite bead.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/rail-decoupling.md"><span class="sp-file">rail-decoupling.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count" title="total occurrences in this note">3 matches</span></span>
+              <span class="search-panel-hit-snippet">Decoupling on the analog <mark>rail</mark> needed a second 100 nF cap.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="test/bench-tests.md"><span class="sp-file">bench-tests.md</span><span class="sp-dir"> (test)</span></span><span class="sp-count" title="total occurrences in this note">2 matches</span></span>
+              <span class="search-panel-hit-snippet">Brown-out test pulls the <mark>rail</mark> to 2.7 V for 50 ms.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="firmware/flash-layout.md"><span class="sp-file">flash-layout.md</span><span class="sp-dir"> (firmware)</span></span><span class="sp-count" title="total occurrences in this note">1 match</span></span>
+              <span class="search-panel-hit-snippet">The bootloader shares the <mark>rail</mark> with the debug probe.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="firmware/i2c-timing.md"><span class="sp-file">i2c-timing.md</span><span class="sp-dir"> (firmware)</span></span><span class="sp-count" title="total occurrences in this note">1 match</span></span>
+              <span class="search-panel-hit-snippet">Keep the <mark>rail</mark> quiet during the 400 kHz burst.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. NO RESULTS -->
+      <div class="board">
+        <div class="board-head"><span class="dot"></span><span>No results</span><span class="grow"></span><span class="size">message, then the action</span></div>
+        <div class="panel panel--noresults" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="spi3" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="false">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true"></span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary"></span>
+            </div>
+          </div>
+          <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true"><span class="search-panel-summary-text">0 matches</span></div>
+          <div class="search-panel-note is-state">
+            <div class="search-panel-empty search-panel-state" role="presentation">No matches found.</div>
+            <button class="search-panel-retry search-panel-empty-action" type="button">Search file names instead</button>
+          </div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false"></div>
+        </div>
+      </div>
+
+      <!-- 5. ERROR -->
+      <div class="board" data-light-clone>
+        <div class="board-head"><span class="dot"></span><span>Error</span><span class="grow"></span><span class="size">rows kept · Retry focused</span></div>
+        <div class="panel panel--error" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="rail" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="false">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true"></span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary"></span>
+            </div>
+          </div>
+          <div class="search-panel-summary error" role="alert" aria-live="assertive" aria-atomic="true">
+            <span class="search-panel-summary-text">Search error: Network error: Failed to fetch</span>
+            <button class="search-panel-retry is-focus" type="button">Retry</button>
+          </div>
+          <div class="search-panel-note" hidden></div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false">
+            <button class="search-panel-hit is-active" type="button" role="option" aria-selected="true" tabindex="0">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/pinout.md"><span class="sp-file">pinout.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">4 matches</span></span>
+              <span class="search-panel-hit-snippet">The 3V3 <mark>rail</mark> feeds the sensor breakout through a ferrite bead.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/rail-decoupling.md"><span class="sp-file">rail-decoupling.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">3 matches</span></span>
+              <span class="search-panel-hit-snippet">Decoupling on the analog <mark>rail</mark> needed a second 100 nF cap.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6. TIMEOUT -->
+      <div class="board">
+        <div class="board-head"><span class="dot"></span><span>Timeout</span><span class="grow"></span><span class="size">caveat wraps</span></div>
+        <div class="panel panel--timeout" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="rail" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="false">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true"></span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary"></span>
+            </div>
+          </div>
+          <div class="search-panel-summary is-incomplete" role="status" aria-live="polite" aria-atomic="true">
+            <span class="search-panel-summary-text">3 notes · 5 matches · search stopped early — results may be incomplete</span>
+          </div>
+          <div class="search-panel-note">Click a row to open its first match.</div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false">
+            <button class="search-panel-hit is-active" type="button" role="option" aria-selected="true" tabindex="0">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/pinout.md"><span class="sp-file">pinout.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">3 matches</span></span>
+              <span class="search-panel-hit-snippet">The 3V3 <mark>rail</mark> feeds the sensor breakout through a ferrite bead.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="firmware/flash-layout.md"><span class="sp-file">flash-layout.md</span><span class="sp-dir"> (firmware)</span></span><span class="sp-count">1 match</span></span>
+              <span class="search-panel-hit-snippet">The bootloader shares the <mark>rail</mark> with the debug probe.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="firmware/i2c-timing.md"><span class="sp-file">i2c-timing.md</span><span class="sp-dir"> (firmware)</span></span><span class="sp-count">1 match</span></span>
+              <span class="search-panel-hit-snippet">Keep the <mark>rail</mark> quiet during the 400 kHz burst.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7. ADVANCED OPEN -->
+      <div class="board" data-light-clone>
+        <div class="board-head"><span class="dot"></span><span>Advanced open</span><span class="grow"></span><span class="size">all four filters</span></div>
+        <div class="panel panel--advanced" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="rail" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row has-nondefault">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="true" title="Search options: Match case · Recently modified">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true">2</span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary" title="Match case · Recently modified">Match case · Recently modified</span>
+            </div>
+            <div class="search-panel-advanced">
+              <div class="search-panel-filters" role="group" aria-label="Search filters">
+                <div class="search-panel-filter">
+                  <span class="search-panel-filter-label">Search in</span>
+                  <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                    <label class="search-panel-mode-opt"><input type="radio" value="content" checked><span>Content</span></label>
+                    <label class="search-panel-mode-opt"><input type="radio" value="name"><span>File name</span></label>
+                  </div>
+                </div>
+                <div class="search-panel-filter">
+                  <span class="search-panel-filter-label">Grouping</span>
+                  <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping">
+                    <label class="search-panel-mode-opt"><input type="radio" value="all"><span>All matches</span></label>
+                    <label class="search-panel-mode-opt"><input type="radio" value="unique" checked><span>One per note</span></label>
+                  </div>
+                </div>
+                <div class="search-panel-filter search-panel-filter--case">
+                  <span class="search-panel-filter-label">Match case</span>
+                  <label class="search-panel-case" title="Match case">
+                    <input type="checkbox" checked aria-label="Match case"><span aria-hidden="true">Aa</span>
+                  </label>
+                </div>
+                <div class="search-panel-filter search-panel-filter--sort">
+                  <label class="search-panel-filter-label" for="sort-adv">Sort</label>
+                  <select class="search-panel-select" id="sort-adv" title="Recently modified">
+                    <option value="path">Path (A–Z)</option>
+                    <option value="mtime" selected>Recently modified</option>
+                    <option value="count">Most matches</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true"><span class="search-panel-summary-text">5 notes · 11 matches</span></div>
+          <div class="search-panel-note">Click a row to open its first match.</div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false">
+            <button class="search-panel-hit is-active" type="button" role="option" aria-selected="true" tabindex="0">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/pinout.md"><span class="sp-file">pinout.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">4 matches</span></span>
+              <span class="search-panel-hit-snippet">The 3V3 <mark>rail</mark> feeds the sensor breakout through a ferrite bead.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Narrow and phone — dark</h2>
+    <p class="lede">
+      At 140 the filter grid is one column, the settings summary is clipped for
+      assistive technology, and the badge carries the count. In the drawer every target
+      is 44 and the field is 16 px.
+    </p>
+    <div class="boards">
+
+      <!-- 8. 140 EXPANDED -->
+      <div class="board">
+        <div class="board-head"><span class="dot"></span><span>140 px expanded</span><span class="grow"></span><span class="size">badge 2 · trigger focused</span></div>
+        <div class="panel panel--140" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M10 3 5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="rail" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row has-nondefault">
+              <button class="search-panel-advanced-toggle is-focus" type="button" aria-expanded="true" title="Search options: Match case · All matches">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true">2</span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary" title="Match case · All matches">Match case · All matches</span>
+            </div>
+            <div class="search-panel-advanced">
+              <div class="search-panel-filters" role="group" aria-label="Search filters">
+                <div class="search-panel-filter">
+                  <span class="search-panel-filter-label">Search in</span>
+                  <div class="search-panel-mode" role="radiogroup" aria-label="Search in">
+                    <label class="search-panel-mode-opt"><input type="radio" value="content" checked><span>Content</span></label>
+                    <label class="search-panel-mode-opt"><input type="radio" value="name"><span>File name</span></label>
+                  </div>
+                </div>
+                <div class="search-panel-filter">
+                  <span class="search-panel-filter-label">Grouping</span>
+                  <div class="search-panel-mode" role="radiogroup" aria-label="Result grouping">
+                    <label class="search-panel-mode-opt"><input type="radio" value="all" checked><span>All matches</span></label>
+                    <label class="search-panel-mode-opt"><input type="radio" value="unique"><span>One per note</span></label>
+                  </div>
+                </div>
+                <div class="search-panel-filter search-panel-filter--case">
+                  <span class="search-panel-filter-label">Match case</span>
+                  <label class="search-panel-case" title="Match case">
+                    <input type="checkbox" checked aria-label="Match case"><span aria-hidden="true">Aa</span>
+                  </label>
+                </div>
+                <div class="search-panel-filter search-panel-filter--sort">
+                  <label class="search-panel-filter-label" for="sort-140">Sort</label>
+                  <select class="search-panel-select" id="sort-140" title="Path (A–Z)">
+                    <option value="path" selected>Path (A–Z)</option>
+                    <option value="mtime">Recently modified</option>
+                    <option value="count">Most matches</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true"><span class="search-panel-summary-text">5 notes · 11 matches</span></div>
+          <div class="search-panel-note">Click a row to open its first match.</div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false">
+            <button class="search-panel-hit is-active" type="button" role="option" aria-selected="true" tabindex="0">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/rail-decoupling.md"><span class="sp-file">rail-decoupling.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-meta">line 42</span></span>
+              <span class="search-panel-hit-snippet">Decoupling on the analog <mark>rail</mark> needed a second 100 nF cap.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 9. PHONE -->
+      <div class="board">
+        <div class="board-head"><span class="dot"></span><span>Phone drawer</span><span class="grow"></span><span class="size">390 · 100 % of drawer</span></div>
+        <div class="panel panel--phone" role="search" aria-label="Search">
+          <div class="panel-header">
+            <h2 class="panel-title">Search</h2>
+            <button class="collapse-btn" type="button" aria-label="Close panel" title="Close panel">
+              <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="search-panel-controls">
+            <div class="search-panel-input-row">
+              <div class="search-panel-input-wrap">
+                <input class="search-panel-input" type="search" value="rail" aria-label="Search notebooks">
+                <button class="search-panel-clear" type="button" aria-label="Clear search" title="Clear search">
+                  <svg viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="M2.5 2.5 9.5 9.5M9.5 2.5 2.5 9.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="search-panel-advanced-row">
+              <button class="search-panel-advanced-toggle" type="button" aria-expanded="false">
+                Advanced <span class="search-panel-advanced-badge" aria-hidden="true"></span><span class="search-panel-advanced-chevron" aria-hidden="true"></span>
+              </button>
+              <span class="search-panel-advanced-summary"></span>
+            </div>
+          </div>
+          <div class="search-panel-summary" role="status" aria-live="polite" aria-atomic="true"><span class="search-panel-summary-text">5 notes · 11 matches</span></div>
+          <div class="search-panel-note">Click a row to open its first match.</div>
+          <div class="search-panel-list" role="listbox" aria-label="Search results" aria-busy="false">
+            <button class="search-panel-hit is-active" type="button" role="option" aria-selected="true" tabindex="0">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/pinout.md"><span class="sp-file">pinout.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">4 matches</span></span>
+              <span class="search-panel-hit-snippet">The 3V3 <mark>rail</mark> feeds the sensor breakout through a ferrite bead.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="hardware/rail-decoupling.md"><span class="sp-file">rail-decoupling.md</span><span class="sp-dir"> (hardware)</span></span><span class="sp-count">3 matches</span></span>
+              <span class="search-panel-hit-snippet">Decoupling on the analog <mark>rail</mark> needed a second 100 nF cap.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="test/bench-tests.md"><span class="sp-file">bench-tests.md</span><span class="sp-dir"> (test)</span></span><span class="sp-count">2 matches</span></span>
+              <span class="search-panel-hit-snippet">Brown-out test pulls the <mark>rail</mark> to 2.7 V for 50 ms.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+            <button class="search-panel-hit" type="button" role="option" aria-selected="false" tabindex="-1">
+              <span class="search-panel-hit-file"><span class="search-panel-path" title="firmware/flash-layout.md"><span class="sp-file">flash-layout.md</span><span class="sp-dir"> (firmware)</span></span><span class="sp-count">1 match</span></span>
+              <span class="search-panel-hit-snippet">The bootloader shares the <mark>rail</mark> with the debug probe.</span>
+              <span class="search-panel-sr">Opens at the first match.</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Light theme — same markup</h2>
+    <p class="lede">
+      The results, Advanced, and error boards are cloned from the dark section, so the
+      two themes cannot drift. Switch the page to Light as well; the boards stay light.
+    </p>
+    <div class="boards theme-light" id="light-boards"></div>
+  </section>
+</main>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var buttons = document.querySelectorAll("[data-theme-btn]");
+  function setTheme(name) {
+    root.className = name;
+    buttons.forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.themeBtn === name));
+    });
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () { setTheme(b.dataset.themeBtn); });
+  });
+
+  var light = document.getElementById("light-boards");
+  document.querySelectorAll("[data-light-clone]").forEach(function (node) {
+    var copy = node.cloneNode(true);
+    copy.removeAttribute("data-light-clone");
+    copy.querySelectorAll("[id]").forEach(function (el) {
+      var old = el.id;
+      el.id = "light-" + old;
+      copy.querySelectorAll('label[for="' + old + '"]').forEach(function (label) {
+        label.setAttribute("for", el.id);
+      });
+    });
+    light.appendChild(copy);
+  });
+})();
+</script>
+</body>
+</html>

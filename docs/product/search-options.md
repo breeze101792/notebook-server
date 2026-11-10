@@ -1,6 +1,6 @@
 # Search options (side-panel Search) — product spec
 
-Status: superseded by [the Advanced search panel design](../design/search-panel-advanced.md), which owns the shipped control surface. Owner: `product-designer`.
+Status: superseded by [the Advanced search panel design](../archive/design/search-panel-advanced.md), which owns the shipped control surface. Owner: `product-designer`.
 Applies to: the Search view in the side panel (`static/js/activity.js`, `mountSearch`), its API wrapper (`static/js/api.js`), search prefs (`static/js/app.js`), the search endpoint (`app.py`), and the tests and contracts named in §9.
 Related: [mobile](mobile.md) owns phone-shell rules; [HTTP API](../contracts/http-api.md) and [configuration](../contracts/configuration.md) own the wire and config contracts. This document owns observable search behaviour.
 

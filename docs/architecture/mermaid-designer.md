@@ -379,8 +379,8 @@ with MIT attribution, version, and source URL (F10).
 
 ## UI design
 
-`docs/architecture/design/mermaid-designer-ui.md` + reference mockup
-`docs/architecture/design/mermaid-designer-mockup.html`.
+`docs/archive/architecture-design/mermaid-designer-ui.md` + reference mockup
+`docs/archive/architecture-design/mermaid-designer-mockup.html`.
 
 - Shell reuses the shared edit-window macros (`templates/_edit_window.html`):
   header, action bar (Select/Connect · Add/Chart on the left, Undo/Redo on the

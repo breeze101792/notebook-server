@@ -4,7 +4,7 @@ Status: implemented. This is the document `build` implemented from; the
 verification record is in the commit that landed it.
 The product definition is
 [`requirements/features/sessions.md`](../requirements/features/sessions.md);
-the visual handoff, copy and CSS are [`ui/sessions.md`](../ui/sessions.md).
+the visual handoff, copy and CSS are [`ui/sessions.md`](../archive/ui/sessions.md).
 Where this document and those disagree, this document owns the data model and
 the call order; `ui/sessions.md` owns pixels and copy.
 
@@ -532,7 +532,7 @@ NB.sessions = {
   saved `activeView` falls back to Explorer, so the view is unreachable.
 
 Placement, row anatomy, keyboard, focus, copy and CSS are in
-[`ui/sessions.md`](../ui/sessions.md) §2-§8 and Appendix A.
+[`ui/sessions.md`](../archive/ui/sessions.md) §2-§8 and Appendix A.
 
 ## 13. States
 

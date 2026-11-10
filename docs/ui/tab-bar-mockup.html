@@ -1,0 +1,1373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File tab strip — mockup</title>
+<!--
+  Reference mockup for docs/ui/tab-bar.md. Standalone: no fonts, no scripts,
+  no network. Every board is drawn twice, dark and light, from the same tokens
+  so the geometry is identical.
+
+  The real stylesheet scopes the tab rules with :where(#tab-bar) for
+  specificity reasons; this page uses .tab-bar .tab, which resolves the same
+  way and reads better in a demo.
+
+  Two mockup-only devices, both marked below:
+    .demo-hover   forces the :hover look
+    .demo-focus   forces the :focus-visible ring
+  Widths are pinned inline on the boards that quote a measured number.
+-->
+<style>
+/* ==================================================================
+   1. Tokens — dark
+   ================================================================== */
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-fg: #14151a;
+  --danger: #ff6b6b;
+  --warn: #f3b454;
+  --border: #383a45;
+  --border-strong: #7b8194;
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --accent-soft: rgba(124, 156, 255, .18);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .35);
+}
+
+/* ==================================================================
+   2. Tokens — light
+   ================================================================== */
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-fg: #ffffff;
+  --danger: #c0392b;
+  --warn: #8a5a0b;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --accent-soft: rgba(47, 95, 208, .12);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .16);
+}
+
+/* ==================================================================
+   3. Primitives (theme-independent)
+   ================================================================== */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+
+  --icon-sm: 14px;
+  --icon-md: 16px;
+
+  --opacity-disabled: .45;
+  --opacity-drag: .4;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  --tab-h: 34px;
+  --z-popover: 1000;
+}
+
+/* ==================================================================
+   4. Page chrome
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  padding: var(--space-7) var(--space-6) var(--space-8);
+  background: #101116;
+  color: #e6e6ea;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: 1.5;
+}
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.page { max-width: 1880px; margin: 0 auto; }
+.hdr h1 { margin: 0 0 var(--space-1); font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+.hdr p { margin: 0 0 var(--space-2); max-width: 78ch; color: #b7bac6; font-size: var(--text-ui); }
+.hdr code { font-family: var(--font-mono); font-size: .92em; color: #dfe3ff; }
+.hdr .rule { height: 1px; background: #2b2d38; margin: var(--space-5) 0 var(--space-6); }
+
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-6); margin: 0 0 var(--space-6); font-size: var(--text-sm); color: #9ea1ae; }
+.legend b { color: #e6e6ea; font-weight: 600; }
+
+table.spec { border-collapse: collapse; width: 100%; margin: 0 0 var(--space-7); font-size: var(--text-ui); }
+table.spec th, table.spec td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #2b2d38; vertical-align: top; }
+table.spec th { color: #9ea1ae; font-weight: 500; font-size: var(--text-sm); }
+table.spec td.n { font-family: var(--font-mono); white-space: nowrap; }
+
+section.specimen { margin: 0 0 var(--space-8); }
+section.specimen > h2 {
+  margin: 0 0 var(--space-1); font-size: 15px; font-weight: 600; color: #f2f3f7;
+}
+section.specimen > p.note {
+  margin: 0 0 var(--space-4); max-width: 92ch; color: #9ea1ae; font-size: var(--text-ui);
+}
+section.specimen > p.note code { font-family: var(--font-mono); font-size: .92em; color: #c9cdea; }
+
+.pair { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; }
+figure.board {
+  margin: 0;
+  flex: 0 0 auto;          /* reference frames keep their measured width */
+  width: 882px;
+  border: 1px solid #34363f;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #17181d;
+  display: flex;
+  flex-direction: column;
+}
+figure.board.narrow { width: 354px; }
+figure.board.phone  { width: 392px; }
+figure.board > figcaption {
+  order: 2;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid #2b2d38;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: #8f93a1;
+  white-space: pre-wrap;
+}
+figure.board > .stage { order: 1; overflow: hidden; }
+
+/* ==================================================================
+   5. The component — docs/ui/tab-bar.md §9.2
+   ================================================================== */
+
+.tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-hair);
+  flex: 0 0 auto;
+  height: var(--tab-h);
+  padding: 0 var(--space-1);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+  overflow: hidden;
+  font-size: var(--text-ui-lg);
+}
+
+.tab-pinned {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-hair);
+  flex: 0 0 auto;
+  max-width: 50%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.tab-pinned::-webkit-scrollbar { display: none; }
+
+.tab-list {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-hair);
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tab-list::-webkit-scrollbar { display: none; }
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1 1 170px;
+  min-width: 120px;
+  max-width: 220px;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: var(--text-ui-lg);
+  line-height: 1.5;
+  color: var(--text-muted);
+  user-select: none;
+}
+.tab-pinned .tab { flex: 0 0 auto; max-width: none; }
+.tab:hover,
+.tab.demo-hover {
+  background: var(--accent-soft);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.tab.dirty { background: var(--accent-soft); color: var(--text-primary); }
+.tab.active {
+  background: var(--surface-page);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+.tab-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab.dirty .tab-label::before {
+  content: "";
+  display: inline-block;
+  width: var(--space-2);
+  height: var(--space-2);
+  margin-right: var(--space-1);
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+  vertical-align: middle;
+}
+.tab-close {
+  display: grid;
+  place-items: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  margin-block: calc(-1 * var(--space-1));
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tab-close:hover { color: var(--danger); background: var(--accent-soft); }
+.tab-close .icon { width: var(--icon-md); height: var(--icon-md); }
+
+.icon { display: block; flex: 0 0 auto; width: var(--icon-md); height: var(--icon-md); }
+.tab-pin { width: var(--icon-sm); height: var(--icon-sm); }
+.tab-conflict { width: var(--icon-sm); height: var(--icon-sm); color: var(--warn); }
+
+.tab.dragging { opacity: var(--opacity-drag); }
+.tab.drop-before { box-shadow: inset var(--stroke-2) 0 0 0 var(--accent); }
+.tab.drop-after  { box-shadow: inset calc(-1 * var(--stroke-2)) 0 0 0 var(--accent); }
+
+.tab:focus-visible,
+.tab.demo-focus {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+
+.tab-bar .outline-toggle {
+  display: grid;
+  place-items: center;
+  align-self: center;
+  flex: 0 0 auto;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.tab-bar .outline-toggle:hover { color: var(--text-primary); background: var(--accent-soft); }
+.tab-bar .outline-toggle[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+.tab-bar .outline-toggle .icon { width: var(--icon-md); height: var(--icon-md); }
+
+/* Ghost: a static still of the collapse, not the animated rule. */
+.tab.is-ghost {
+  flex: 0 0 65px;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  border: none;
+  background: none;
+  overflow: hidden;
+  opacity: .5;
+  pointer-events: none;
+}
+.tab-ghost-fill {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 100%;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+  overflow: hidden;
+  white-space: nowrap;
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-size: var(--text-ui-lg);
+  color: var(--text-muted);
+}
+
+/* ==================================================================
+   6. Menu — controls.md §2.9, the tab's item list
+   ================================================================== */
+.context-menu {
+  min-width: 170px;
+  padding: var(--space-1);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+  z-index: var(--z-popover);
+  font-size: var(--text-ui);
+}
+.context-menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-h-body);
+  padding: 0 var(--space-2);
+  background: none;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.context-menu button:hover { background: var(--accent-soft); }
+.context-menu button.danger { color: var(--danger); }
+.context-menu button.danger:hover { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--danger); }
+.context-menu button[disabled] { color: var(--text-muted); opacity: var(--opacity-disabled); cursor: default; }
+.context-menu button[disabled]:hover { background: none; box-shadow: none; }
+.context-menu hr {
+  height: 0;
+  margin: var(--space-1) var(--space-2);
+  border: 0;
+  border-top: var(--stroke-1) solid var(--border);
+}
+.sub-mark { color: var(--text-muted); font-size: var(--text-xs); }
+
+/* ==================================================================
+   7. Board-specific
+   ================================================================== */
+.stack { display: flex; flex-direction: column; gap: 0; }
+.stack .row { position: relative; }
+.stack .row + .row { border-top: 1px dashed rgba(255, 255, 255, .06); }
+.theme-light .stack .row + .row { border-top-color: rgba(0, 0, 0, .08); }
+.row-tag {
+  position: absolute;
+  right: calc(var(--control-h-md) + var(--space-2));
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--surface-panel);
+  padding: 0 var(--space-1);
+  pointer-events: none;
+}
+
+.anatomy { padding: var(--space-3) var(--space-3) var(--space-2); }
+.anatomy .slots {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-top: var(--space-3);
+}
+.slot {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-xs);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.slot.w14 { width: 14px; border-style: solid; }
+.slot.dot { width: 8px; border-color: var(--accent); border-radius: 50%; }
+.slot.w24 { width: 24px; border-style: solid; }
+.slot.grow { flex: 1 1 auto; }
+.slot.gap { width: var(--space-1); border: none; }
+.slot-key {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.menu-stage { position: relative; min-height: 560px; padding-bottom: var(--space-3); }
+.menu-stage .context-menu {
+  position: absolute;
+  left: 196px;
+  top: 38px;
+  width: 236px;
+}
+
+.bar-frame { padding: 0; }
+
+.phone-shell { background: var(--surface-page); }
+.phone-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 52px;
+  padding: 0 var(--space-1);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.phone-btn .icon { width: var(--icon-md); height: var(--icon-md); }
+.phone-btn {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+.phone-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 44px;
+  padding: 0 var(--space-1);
+  background: none;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font: 600 16px/1.25 var(--font-ui);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.phone-body {
+  padding: var(--space-5);
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+.phone-body p { margin: 0 0 var(--space-3); }
+.phone-body .hint { color: var(--text-muted); font-size: var(--text-ui); line-height: 1.5; }
+</style>
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-pin" viewBox="0 0 16 16">
+      <path fill-rule="evenodd" d="M8 1.5A4.5 4.5 0 0 0 3.5 6c0 3.1 4.5 8.5 4.5 8.5S12.5 9.1 12.5 6 10.49 1.5 8 1.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
+    </symbol>
+    <symbol id="i-close" viewBox="0 0 16 16">
+      <path d="M4.5 4.5l7 7M11.5 4.5l-7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-conflict" viewBox="0 0 16 16">
+      <path d="M13 8a5 5 0 1 1-1.62-3.72" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M13.2 2.6v3.4H9.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-outline" viewBox="0 0 16 16">
+      <path d="M3 4.5h10M3 8h6.5M3 11.5h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="i-back" viewBox="0 0 16 16">
+      <path d="M9.5 3.5L5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="i-more" viewBox="0 0 16 16">
+      <circle cx="3.5" cy="8" r="1.2" fill="currentColor"/>
+      <circle cx="8" cy="8" r="1.2" fill="currentColor"/>
+      <circle cx="12.5" cy="8" r="1.2" fill="currentColor"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="page">
+  <header class="hdr">
+    <h1>File tab strip — <code>#tab-bar</code></h1>
+    <p>Reference rendering for <code>docs/ui/tab-bar.md</code>. Tokens are
+    <code>foundations.md</code> §3–§8; the controls are <code>controls.md</code> §2.8. Every board is
+    drawn dark and light from the same declarations, so any difference between the two is
+    colour only.</p>
+    <p>Hover and focus are forced with <code>.demo-hover</code> and <code>.demo-focus</code>, because a
+    still cannot be hovered. Pinned widths are pinned inline on the boards that quote a measured
+    number.</p>
+    <div class="rule"></div>
+    <div class="legend">
+      <span><b>Bar</b> 880 × 34</span>
+      <span><b>Tab</b> 28.5 high · 120 / 170 / 220</span>
+      <span><b>Gap</b> 2</span>
+      <span><b>Toggle</b> 30 × 30</span>
+      <span><b>Close hit</b> 24 × 24</span>
+      <span><b>Pinned cap</b> 50 % of the bar</span>
+    </div>
+  </header>
+
+  <table class="spec">
+    <thead>
+      <tr><th>Measured</th><th>Value</th><th>How it is reached</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Tab height</td><td class="n">28.52 px</td><td class="n">4 + 4 padding + 1 border + a 19.52 line box</td></tr>
+      <tr><td>Strip width, 880 bar</td><td class="n">840 px</td><td class="n">880 − 8 bar padding − 2 gap − 30 toggle</td></tr>
+      <tr><td>Five tabs at 840</td><td class="n">166.4 px each</td><td class="n">(840 − 4 × 2) / 5</td></tr>
+      <tr><td>One tab</td><td class="n">220 px</td><td class="n">grows to the max rail, left-aligned</td></tr>
+      <tr><td>Thirteen tabs</td><td class="n">120 px each, 1584 scrollWidth</td><td class="n">13 × 120 + 12 × 2, clamped at the min rail</td></tr>
+      <tr><td>Pinned region, three tabs</td><td class="n">426 px</td><td class="n">120 + 138 + 164 + 2 × 2; under the 436 cap</td></tr>
+      <tr><td>Pinned cap, 880 bar</td><td class="n">436 px</td><td class="n">50 % of the bar content box (872), not 440</td></tr>
+      <tr><td>Strip beside it</td><td class="n">412 px → 136 px per tab</td><td class="n">840 − 426 − 2</td></tr>
+      <tr><td>861 viewport, pane 353</td><td class="n">strip 313 → two tabs fit</td><td class="n">(313 − 2) / 2 = 155.5; three clamp to 120 and scroll</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================
+       1. Bar states
+       ============================================================ -->
+  <section class="specimen">
+    <h2>1 · Bar states — zero, one, and only pinned</h2>
+    <p class="note">The bar is always 34 px with its bottom hairline. With nothing pinned,
+    <code>#tab-pinned</code> carries <code>hidden</code> and takes no gap. A single tab grows to the
+    220 rail and the rest of the strip stays empty.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage">
+          <div class="stack">
+            <div class="row">
+              <div class="tab-bar">
+                <div class="tab-list" role="tablist" aria-label="Open files"></div>
+                <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+                  <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+                </button>
+              </div>
+              <span class="row-tag">0 tabs</span>
+            </div>
+            <div class="row">
+              <div class="tab-bar">
+                <div class="tab-list" role="tablist" aria-label="Open files">
+                  <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="notes.md">
+                    <span class="tab-label">notes.md</span>
+                    <button class="tab-close" type="button" aria-label="Close notes.md" title="Close (middle-click also closes)" tabindex="-1">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+                  <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+                </button>
+              </div>
+              <span class="row-tag">1 tab — 220 px</span>
+            </div>
+            <div class="row">
+              <div class="tab-bar">
+                <div class="tab-pinned" role="tablist" aria-label="Pinned files">
+                  <div class="tab pinned active" role="tab" aria-selected="true" tabindex="0" aria-label="Welcome.md, pinned" style="width:132px">
+                    <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                    <span class="tab-label">Welcome.md</span>
+                  </div>
+                  <div class="tab pinned" role="tab" aria-selected="false" tabindex="-1" aria-label="roadmap.md, pinned" style="width:120px">
+                    <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                    <span class="tab-label">roadmap.md</span>
+                  </div>
+                </div>
+                <div class="tab-list" role="tablist" aria-label="Open files"></div>
+                <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline" aria-pressed="true">
+                  <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+                </button>
+              </div>
+              <span class="row-tag">only pinned</span>
+            </div>
+          </div>
+        </div>
+        <figcaption>dark · pinned region hidden / 220 / pinned only</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage">
+          <div class="stack">
+            <div class="row">
+              <div class="tab-bar">
+                <div class="tab-list" role="tablist" aria-label="Open files"></div>
+                <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+                  <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+                </button>
+              </div>
+              <span class="row-tag">0 tabs</span>
+            </div>
+            <div class="row">
+              <div class="tab-bar">
+                <div class="tab-list" role="tablist" aria-label="Open files">
+                  <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="notes.md">
+                    <span class="tab-label">notes.md</span>
+                    <button class="tab-close" type="button" aria-label="Close notes.md" title="Close (middle-click also closes)" tabindex="-1">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+                  <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+                </button>
+              </div>
+              <span class="row-tag">1 tab — 220 px</span>
+            </div>
+            <div class="row">
+              <div class="tab-bar">
+                <div class="tab-pinned" role="tablist" aria-label="Pinned files">
+                  <div class="tab pinned active" role="tab" aria-selected="true" tabindex="0" aria-label="Welcome.md, pinned" style="width:132px">
+                    <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                    <span class="tab-label">Welcome.md</span>
+                  </div>
+                  <div class="tab pinned" role="tab" aria-selected="false" tabindex="-1" aria-label="roadmap.md, pinned" style="width:120px">
+                    <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                    <span class="tab-label">roadmap.md</span>
+                  </div>
+                </div>
+                <div class="tab-list" role="tablist" aria-label="Open files"></div>
+                <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline" aria-pressed="true">
+                  <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+                </button>
+              </div>
+              <span class="row-tag">only pinned</span>
+            </div>
+          </div>
+        </div>
+        <figcaption>light · the toggle's pressed state uses --accent-soft + --accent</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       2. Five mixed tabs
+       ============================================================ -->
+  <section class="specimen">
+    <h2>2 · Five mixed tabs</h2>
+    <p class="note">166.4 px each. The active tab joins the page with an accent border; a dirty tab
+    keeps the wash, the dot and a plain border; a conflicting tab leads with the <code>↻</code>
+    sprite in <code>--warn</code>. The long name ellipsises, and its state marks survive because they
+    sit outside the label.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="README.md">
+                <span class="tab-label">README.md</span>
+                <button class="tab-close" type="button" aria-label="Close README.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="meeting-2026-11-04.md, unsaved changes">
+                <span class="tab-label">meeting-2026-11-04.md</span>
+                <button class="tab-close" type="button" aria-label="Close meeting-2026-11-04.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="index.md, unsaved changes, changed on disk">
+                <svg class="icon tab-conflict" aria-hidden="true" focusable="false"><use href="#i-conflict"/></svg>
+                <span class="tab-label">index.md</span>
+                <button class="tab-close" type="button" aria-label="Close index.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="foundations.md">
+                <span class="tab-label">foundations.md</span>
+                <button class="tab-close" type="button" aria-label="Close foundations.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="CHANGELOG.md">
+                <span class="tab-label">CHANGELOG.md</span>
+                <button class="tab-close" type="button" aria-label="Close CHANGELOG.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>dark · 5 × 166.4 · one active, two dirty, one conflicting</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="README.md">
+                <span class="tab-label">README.md</span>
+                <button class="tab-close" type="button" aria-label="Close README.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="meeting-2026-11-04.md, unsaved changes">
+                <span class="tab-label">meeting-2026-11-04.md</span>
+                <button class="tab-close" type="button" aria-label="Close meeting-2026-11-04.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="index.md, unsaved changes, changed on disk">
+                <svg class="icon tab-conflict" aria-hidden="true" focusable="false"><use href="#i-conflict"/></svg>
+                <span class="tab-label">index.md</span>
+                <button class="tab-close" type="button" aria-label="Close index.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="foundations.md">
+                <span class="tab-label">foundations.md</span>
+                <button class="tab-close" type="button" aria-label="Close foundations.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="CHANGELOG.md">
+                <span class="tab-label">CHANGELOG.md</span>
+                <button class="tab-close" type="button" aria-label="Close CHANGELOG.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>light · dirty label is --text-primary (8.31 / 11.49 on the wash)</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       3. Pinned region
+       ============================================================ -->
+  <section class="specimen">
+    <h2>3 · Pinned region — three pinned, three unpinned</h2>
+    <p class="note">Pinned tabs rest at <code>max(120, content)</code>: 120 / 138 / 164, no close
+    button, a 14 px pin. The region is 426 px, under the 436 cap. The strip keeps 412 and its three
+    tabs are 136 each. No separator between the regions — the bar's own 2 px gap is the spacing.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-pinned" role="tablist" aria-label="Pinned files">
+              <div class="tab pinned" role="tab" aria-selected="false" tabindex="0" aria-label="a.md, pinned" style="width:120px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">a.md</span>
+              </div>
+              <div class="tab pinned active" role="tab" aria-selected="true" tabindex="-1" aria-label="Welcome.md, pinned" style="width:138px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">Welcome.md</span>
+              </div>
+              <div class="tab pinned" role="tab" aria-selected="false" tabindex="-1" aria-label="weekly-notes.md, pinned" style="width:164px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">weekly-notes.md</span>
+              </div>
+            </div>
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="notes/b.md">
+                <span class="tab-label">b.md</span>
+                <button class="tab-close" type="button" aria-label="Close b.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="index.md, unsaved changes">
+                <span class="tab-label">index.md</span>
+                <button class="tab-close" type="button" aria-label="Close index.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="LICENSE.md">
+                <span class="tab-label">LICENSE.md</span>
+                <button class="tab-close" type="button" aria-label="Close LICENSE.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>dark · pinned 120 / 138 / 164 = 426 · strip 412 → 136 each</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-pinned" role="tablist" aria-label="Pinned files">
+              <div class="tab pinned" role="tab" aria-selected="false" tabindex="0" aria-label="a.md, pinned" style="width:120px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">a.md</span>
+              </div>
+              <div class="tab pinned active" role="tab" aria-selected="true" tabindex="-1" aria-label="Welcome.md, pinned" style="width:138px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">Welcome.md</span>
+              </div>
+              <div class="tab pinned" role="tab" aria-selected="false" tabindex="-1" aria-label="weekly-notes.md, pinned" style="width:164px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">weekly-notes.md</span>
+              </div>
+            </div>
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="notes/b.md">
+                <span class="tab-label">b.md</span>
+                <button class="tab-close" type="button" aria-label="Close b.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="index.md, unsaved changes">
+                <span class="tab-label">index.md</span>
+                <button class="tab-close" type="button" aria-label="Close index.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="LICENSE.md">
+                <span class="tab-label">LICENSE.md</span>
+                <button class="tab-close" type="button" aria-label="Close LICENSE.md" title="Close (middle-click also closes)" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>light · the pinned face is the same --surface-raised as any tab</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       4. Overflow
+       ============================================================ -->
+  <section class="specimen">
+    <h2>4 · Overflow — thirteen tabs</h2>
+    <p class="note">Past the 120 px rail the strip stops shrinking and scrolls: 13 × 120 + 12 × 2 =
+    1584 inside 840. The ninth tab is cut at the clip edge, and that is the whole signal — no
+    scrollbar, no fade, no chevron. A wheel is mapped onto <code>scrollLeft</code>; activating a tab
+    is the only thing that reveals it.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="a.md"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="b.md"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="d.md"><span class="tab-label">d.md</span><button class="tab-close" type="button" aria-label="Close d.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="README.md"><span class="tab-label">README.md</span><button class="tab-close" type="button" aria-label="Close README.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="e.md"><span class="tab-label">e.md</span><button class="tab-close" type="button" aria-label="Close e.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="f.md, unsaved changes"><span class="tab-label">f.md</span><button class="tab-close" type="button" aria-label="Close f.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="g.md"><span class="tab-label">g.md</span><button class="tab-close" type="button" aria-label="Close g.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="h.md"><span class="tab-label">h.md</span><button class="tab-close" type="button" aria-label="Close h.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="i.md"><span class="tab-label">i.md</span><button class="tab-close" type="button" aria-label="Close i.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="j.md"><span class="tab-label">j.md</span><button class="tab-close" type="button" aria-label="Close j.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="k.md"><span class="tab-label">k.md</span><button class="tab-close" type="button" aria-label="Close k.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="l.md"><span class="tab-label">l.md</span><button class="tab-close" type="button" aria-label="Close l.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>dark · scrollWidth 840→1584 · the cut is the only affordance</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="a.md"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="b.md"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="d.md"><span class="tab-label">d.md</span><button class="tab-close" type="button" aria-label="Close d.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="README.md"><span class="tab-label">README.md</span><button class="tab-close" type="button" aria-label="Close README.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="e.md"><span class="tab-label">e.md</span><button class="tab-close" type="button" aria-label="Close e.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="f.md, unsaved changes"><span class="tab-label">f.md</span><button class="tab-close" type="button" aria-label="Close f.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="g.md"><span class="tab-label">g.md</span><button class="tab-close" type="button" aria-label="Close g.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="h.md"><span class="tab-label">h.md</span><button class="tab-close" type="button" aria-label="Close h.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="i.md"><span class="tab-label">i.md</span><button class="tab-close" type="button" aria-label="Close i.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="j.md"><span class="tab-label">j.md</span><button class="tab-close" type="button" aria-label="Close j.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="k.md"><span class="tab-label">k.md</span><button class="tab-close" type="button" aria-label="Close k.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="l.md"><span class="tab-label">l.md</span><button class="tab-close" type="button" aria-label="Close l.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>light · same widths; only the colours move</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       5. Anatomy
+       ============================================================ -->
+  <section class="specimen">
+    <h2>5 · Tab anatomy — the five slots</h2>
+    <p class="note">Left to right: pin 14, conflict 14, the dirty dot 8 (inside the label's start),
+    the label (flexes, ellipsises), close 24 × 24. Gaps are 4. The slot widths under the tab are real;
+    the boxes are 22 high for legibility. All five slots are forced onto one tab so they can be
+    measured — a real pinned tab carries no close button (board 3).</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage anatomy">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab pinned dirty active" role="tab" aria-selected="true" tabindex="0" aria-label="meeting-2026-11-04.md, pinned, unsaved changes" style="width:300px;flex:0 0 300px;max-width:none">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <svg class="icon tab-conflict" aria-hidden="true" focusable="false"><use href="#i-conflict"/></svg>
+                <span class="tab-label">meeting-2026-11-04.md</span>
+                <button class="tab-close" type="button" aria-label="Close meeting-2026-11-04.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="slots" aria-hidden="true">
+            <div class="slot w14"></div>
+            <div class="slot gap"></div>
+            <div class="slot w14"></div>
+            <div class="slot gap"></div>
+            <div class="slot dot"></div>
+            <div class="slot grow">label — flex 1 1 auto, 13.02 px, ellipsis</div>
+            <div class="slot gap"></div>
+            <div class="slot w24"></div>
+          </div>
+          <div class="slot-key" aria-hidden="true">14 pin · 4 · 14 conflict · 4 · 8 dot · label · 4 · 24 close</div>
+        </div>
+        <figcaption>dark · 4 + 4 padding, 1 border, 19.52 line = 28.52 high</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage anatomy">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab pinned dirty active" role="tab" aria-selected="true" tabindex="0" aria-label="meeting-2026-11-04.md, pinned, unsaved changes" style="width:300px;flex:0 0 300px;max-width:none">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <svg class="icon tab-conflict" aria-hidden="true" focusable="false"><use href="#i-conflict"/></svg>
+                <span class="tab-label">meeting-2026-11-04.md</span>
+                <button class="tab-close" type="button" aria-label="Close meeting-2026-11-04.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button>
+              </div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="slots" aria-hidden="true">
+            <div class="slot w14"></div>
+            <div class="slot gap"></div>
+            <div class="slot w14"></div>
+            <div class="slot gap"></div>
+            <div class="slot dot"></div>
+            <div class="slot grow">label — flex 1 1 auto, 13.02 px, ellipsis</div>
+            <div class="slot gap"></div>
+            <div class="slot w24"></div>
+          </div>
+          <div class="slot-key" aria-hidden="true">14 pin · 4 · 14 conflict · 4 · 8 dot · label · 4 · 24 close</div>
+        </div>
+        <figcaption>light · active wins the face and border, dirty keeps the dot</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       6. State row
+       ============================================================ -->
+  <section class="specimen">
+    <h2>6 · States side by side</h2>
+    <p class="note">Rest, hover, active, dirty, dirty + active, conflicting, pinned, focus. A pinned
+    + conflicting + dirty tab is legal: the name carries all three phrases. Special tabs (italic
+    label, module icon) are not drawn — their icon channel is out of this pass.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="rest.md" style="flex:1 1 100px"><span class="tab-label">rest.md</span></div>
+              <div class="tab demo-hover" role="tab" aria-selected="false" tabindex="-1" aria-label="hover.md" style="flex:1 1 100px"><span class="tab-label">hover.md</span></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="active.md" style="flex:1 1 100px"><span class="tab-label">active.md</span></div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="dirty.md, unsaved changes" style="flex:1 1 100px"><span class="tab-label">dirty.md</span></div>
+              <div class="tab dirty active" role="tab" aria-selected="false" tabindex="-1" aria-label="dirty-active.md, unsaved changes" style="flex:1 1 100px"><span class="tab-label">dirty+active.md</span></div>
+              <div class="tab demo-focus" role="tab" aria-selected="false" tabindex="-1" aria-label="focus.md" style="flex:1 1 100px"><span class="tab-label">focus.md</span></div>
+            </div>
+            <button class="outline-toggle demo-focus" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="tab-bar">
+            <div class="tab-pinned" role="tablist" aria-label="Pinned files">
+              <div class="tab pinned" role="tab" aria-selected="false" tabindex="0" aria-label="pin.md, pinned" style="width:120px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">pin.md</span>
+              </div>
+              <div class="tab pinned dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="pin-dirty.md, pinned, unsaved changes" style="width:142px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">pin-dirty.md</span>
+              </div>
+              <div class="tab pinned dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="pin-both.md, pinned, unsaved changes, changed on disk" style="width:166px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <svg class="icon tab-conflict" aria-hidden="true" focusable="false"><use href="#i-conflict"/></svg>
+                <span class="tab-label">pin-both.md</span>
+              </div>
+            </div>
+            <div class="tab-list" role="tablist" aria-label="Open files"></div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>dark · tab ring inset (scroller), toggle ring +2 · pinned 120 / 142 / 166 = 428, under the 436 cap</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="rest.md" style="flex:1 1 100px"><span class="tab-label">rest.md</span></div>
+              <div class="tab demo-hover" role="tab" aria-selected="false" tabindex="-1" aria-label="hover.md" style="flex:1 1 100px"><span class="tab-label">hover.md</span></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="active.md" style="flex:1 1 100px"><span class="tab-label">active.md</span></div>
+              <div class="tab dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="dirty.md, unsaved changes" style="flex:1 1 100px"><span class="tab-label">dirty.md</span></div>
+              <div class="tab dirty active" role="tab" aria-selected="false" tabindex="-1" aria-label="dirty-active.md, unsaved changes" style="flex:1 1 100px"><span class="tab-label">dirty+active.md</span></div>
+              <div class="tab demo-focus" role="tab" aria-selected="false" tabindex="-1" aria-label="focus.md" style="flex:1 1 100px"><span class="tab-label">focus.md</span></div>
+            </div>
+            <button class="outline-toggle demo-focus" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="tab-bar">
+            <div class="tab-pinned" role="tablist" aria-label="Pinned files">
+              <div class="tab pinned" role="tab" aria-selected="false" tabindex="0" aria-label="pin.md, pinned" style="width:120px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">pin.md</span>
+              </div>
+              <div class="tab pinned dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="pin-dirty.md, pinned, unsaved changes" style="width:142px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <span class="tab-label">pin-dirty.md</span>
+              </div>
+              <div class="tab pinned dirty" role="tab" aria-selected="false" tabindex="-1" aria-label="pin-both.md, pinned, unsaved changes, changed on disk" style="width:166px">
+                <svg class="icon tab-pin" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg>
+                <svg class="icon tab-conflict" aria-hidden="true" focusable="false"><use href="#i-conflict"/></svg>
+                <span class="tab-label">pin-both.md</span>
+              </div>
+            </div>
+            <div class="tab-list" role="tablist" aria-label="Open files"></div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>light · hover --border-strong (3.36:1); rest --border (1.18:1, recorded)</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       7. Drag
+       ============================================================ -->
+  <section class="specimen">
+    <h2>7 · Drag — the dragged tab and both drop indicators</h2>
+    <p class="note">The dragged tab is at <code>--opacity-drag</code> (.4). The indicator is an
+    <b>inset</b> 2 px accent stripe, so it cannot be clipped by the region's vertical overflow and
+    does not need the 2 px gap. Top row: drop before. Bottom row: drop after.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="a.md" style="flex:1 1 150px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab dragging" role="tab" aria-selected="false" tabindex="-1" aria-label="dragged.md" style="flex:1 1 150px"><span class="tab-label">dragged.md</span><button class="tab-close" type="button" aria-label="Close dragged.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab drop-before" role="tab" aria-selected="false" tabindex="-1" aria-label="target.md" style="flex:1 1 150px"><span class="tab-label">target.md</span><button class="tab-close" type="button" aria-label="Close target.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="c.md" style="flex:1 1 150px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="a.md" style="flex:1 1 150px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab drop-after" role="tab" aria-selected="false" tabindex="-1" aria-label="target.md" style="flex:1 1 150px"><span class="tab-label">target.md</span><button class="tab-close" type="button" aria-label="Close target.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab dragging" role="tab" aria-selected="false" tabindex="-1" aria-label="dragged.md" style="flex:1 1 150px"><span class="tab-label">dragged.md</span><button class="tab-close" type="button" aria-label="Close dragged.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="c.md" style="flex:1 1 150px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>dark · .drop-before (top) · .drop-after (bottom)</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="a.md" style="flex:1 1 150px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab dragging" role="tab" aria-selected="false" tabindex="-1" aria-label="dragged.md" style="flex:1 1 150px"><span class="tab-label">dragged.md</span><button class="tab-close" type="button" aria-label="Close dragged.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab drop-before" role="tab" aria-selected="false" tabindex="-1" aria-label="target.md" style="flex:1 1 150px"><span class="tab-label">target.md</span><button class="tab-close" type="button" aria-label="Close target.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="c.md" style="flex:1 1 150px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="a.md" style="flex:1 1 150px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab drop-after" role="tab" aria-selected="false" tabindex="-1" aria-label="target.md" style="flex:1 1 150px"><span class="tab-label">target.md</span><button class="tab-close" type="button" aria-label="Close target.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab dragging" role="tab" aria-selected="false" tabindex="-1" aria-label="dragged.md" style="flex:1 1 150px"><span class="tab-label">dragged.md</span><button class="tab-close" type="button" aria-label="Close dragged.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="c.md" style="flex:1 1 150px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>light · the stripe is --accent on the wash (3.97:1 dark / 4.20:1 light)</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       8. Ghost mid-close
+       ============================================================ -->
+  <section class="specimen">
+    <h2>8 · Ghost mid-close</h2>
+    <p class="note">A close with the pointer inside the bar leaves an inert copy of the tab's box:
+    <code>flex-basis</code> 202 → 65, opacity 1 → 0.5, at 40 % of the 100 ms collapse. The survivors
+    keep their frozen 202 px and have slid 137 px left. The ghost carries the label only — no pin,
+    no dot, no conflict, no close.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="a.md" style="flex:0 0 202px;width:202px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab is-ghost" aria-hidden="true"><span class="tab-ghost-fill">notes/closing.md</span></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="b.md" style="flex:0 0 202px;width:202px"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md" style="flex:0 0 202px;width:202px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>dark · ghost 65 px, opacity .5 · survivors 202 px, frozen</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="a.md" style="flex:0 0 202px;width:202px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab is-ghost" aria-hidden="true"><span class="tab-ghost-fill">notes/closing.md</span></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="b.md" style="flex:0 0 202px;width:202px"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md" style="flex:0 0 202px;width:202px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>light · removed by a 280 ms timer, not by animationend</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       9. Menu open
+       ============================================================ -->
+  <section class="specimen">
+    <h2>9 · The tab menu</h2>
+    <p class="note">Fourteen items in four groups, as shipped. <code>Move to session</code> is
+    <code>sessions.md</code>'s item; the rest is the tab's. Item height 32, box radius 8,
+    <code>--surface-raised</code>, <code>--shadow-pop</code>, clamped to the viewport. "Close to the
+    left" is disabled here because the tab is the first unpinned one.</p>
+    <div class="pair">
+      <figure class="board theme-dark">
+        <div class="stage menu-stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="a.md" style="flex:1 1 150px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="b.md" style="flex:1 1 150px"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md" style="flex:1 1 150px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="context-menu" role="menu" aria-label="Tab actions">
+            <button role="menuitem">Pin</button>
+            <button role="menuitem">Move to session <span class="sub-mark" aria-hidden="true">▸</span></button>
+            <button role="menuitem">Export…</button>
+            <button role="menuitem">Rename / Move…</button>
+            <button role="menuitem">Copy…</button>
+            <button role="menuitem">Copy path</button>
+            <button role="menuitem">Copy link</button>
+            <button role="menuitem">Add bookmark</button>
+            <hr role="separator">
+            <button role="menuitem">Show in file sidebar</button>
+            <hr role="separator">
+            <button role="menuitem" class="danger">Close</button>
+            <button role="menuitem">Close others</button>
+            <button role="menuitem">Close to the right</button>
+            <button role="menuitem" disabled aria-disabled="true" title="No closable tabs to the left">Close to the left</button>
+            <button role="menuitem" class="danger">Delete</button>
+          </div>
+        </div>
+        <figcaption>dark · 14 items · danger rows are text-only, hover adds an inset ring</figcaption>
+      </figure>
+
+      <figure class="board theme-light">
+        <div class="stage menu-stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab" role="tab" aria-selected="false" tabindex="0" aria-label="a.md" style="flex:1 1 150px"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab active" role="tab" aria-selected="true" tabindex="-1" aria-label="b.md" style="flex:1 1 150px"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md" style="flex:1 1 150px"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Show outline">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+          <div class="context-menu" role="menu" aria-label="Tab actions">
+            <button role="menuitem">Pin</button>
+            <button role="menuitem">Move to session <span class="sub-mark" aria-hidden="true">▸</span></button>
+            <button role="menuitem">Export…</button>
+            <button role="menuitem">Rename / Move…</button>
+            <button role="menuitem">Copy…</button>
+            <button role="menuitem">Copy path</button>
+            <button role="menuitem">Copy link</button>
+            <button role="menuitem">Add bookmark</button>
+            <hr role="separator">
+            <button role="menuitem">Show in file sidebar</button>
+            <hr role="separator">
+            <button role="menuitem" class="danger">Close</button>
+            <button role="menuitem">Close others</button>
+            <button role="menuitem">Close to the right</button>
+            <button role="menuitem" disabled aria-disabled="true" title="No closable tabs to the left">Close to the left</button>
+            <button role="menuitem" class="danger">Delete</button>
+          </div>
+        </div>
+        <figcaption>light · the same box in the light ramp: --shadow-pop at .16</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       10. 861 boundary
+       ============================================================ -->
+  <section class="specimen">
+    <h2>10 · 861 px viewport — the last desktop pixel</h2>
+    <p class="note">The query is <code>max-width: 860px</code>, so at exactly 860 the phone shell
+    applies and the bar is hidden. 861 is the last desktop pixel. The pane is
+    <code>861 − 48 − 240 − 220 = 353</code>; the strip is 313, so two tabs at 155.5 fit and a third
+    clamps to 120 and overflows. This is the width where the strip starts to scroll in ordinary
+    use.</p>
+    <div class="pair">
+      <figure class="board narrow theme-dark">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="a.md"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="b.md"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Hide outline" aria-pressed="true">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>dark · 353 px pane · 3 tabs = 3 × 120 + 4 = 364 in 313</figcaption>
+      </figure>
+
+      <figure class="board narrow theme-light">
+        <div class="stage">
+          <div class="tab-bar">
+            <div class="tab-list" role="tablist" aria-label="Open files">
+              <div class="tab active" role="tab" aria-selected="true" tabindex="0" aria-label="a.md"><span class="tab-label">a.md</span><button class="tab-close" type="button" aria-label="Close a.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="b.md"><span class="tab-label">b.md</span><button class="tab-close" type="button" aria-label="Close b.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+              <div class="tab" role="tab" aria-selected="false" tabindex="-1" aria-label="c.md"><span class="tab-label">c.md</span><button class="tab-close" type="button" aria-label="Close c.md" tabindex="-1"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-close"/></svg></button></div>
+            </div>
+            <button class="outline-toggle" type="button" aria-label="Outline pane" title="Hide outline" aria-pressed="true">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-outline"/></svg>
+            </button>
+          </div>
+        </div>
+        <figcaption>light · the toggle's pressed state: pane open</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       11. Phone
+       ============================================================ -->
+  <section class="specimen">
+    <h2>11 · 390 px — the bar is not there</h2>
+    <p class="note"><code>#tab-bar { display: none }</code> under the mode switch. The current file
+    is the top-bar title, a 44 px button that opens the drawer; <code>⋯</code> closes the file. No
+    strip, no swipe between tabs, no chip row.</p>
+    <div class="pair">
+      <figure class="board phone theme-dark">
+        <div class="stage phone-shell">
+          <div class="phone-bar">
+            <button class="phone-btn" type="button" aria-label="Back"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-back"/></svg></button>
+            <button class="phone-title" type="button" aria-label="Note notes.md — browse notes">notes.md</button>
+            <button class="phone-btn" type="button" aria-label="More"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="phone-body">
+            <p>The tab strip stops at 860 px. This title is the only place the open file is named.</p>
+            <p class="hint">Tapping it opens the drawer, which lists the notebook. Closing the file
+            lives in the topbar&#39;s More button.</p>
+          </div>
+        </div>
+        <figcaption>dark · 390 · #tab-bar display:none, DOM kept</figcaption>
+      </figure>
+
+      <figure class="board phone theme-light">
+        <div class="stage phone-shell">
+          <div class="phone-bar">
+            <button class="phone-btn" type="button" aria-label="Back"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-back"/></svg></button>
+            <button class="phone-title" type="button" aria-label="Note notes.md — browse notes">notes.md</button>
+            <button class="phone-btn" type="button" aria-label="More"><svg class="icon" aria-hidden="true" focusable="false"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="phone-body">
+            <p>The tab strip stops at 860 px. This title is the only place the open file is named.</p>
+            <p class="hint">Tapping it opens the drawer, which lists the notebook. Closing the file
+            lives in the topbar&#39;s More button.</p>
+          </div>
+        </div>
+        <figcaption>light · the phone keeps one title and one drawer</figcaption>
+      </figure>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

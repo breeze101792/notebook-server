@@ -1,0 +1,1654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Top bar — the session picker (reference mockup)</title>
+<style>
+/* ==================================================================
+   REFERENCE MOCKUP — the session picker in the top bar.
+
+   This file illustrates docs/archive/ui/topbar-session.md, which is normative.
+   The spec wins wherever the two differ.
+
+   Every app colour, size and radius below is copied from
+   static/css/style.css (the :root block, the workspace chip at
+   style.css:7843-7995, and the Sessions rows at 8220-8369). No new token.
+
+   Differences from the app, all so several app windows can live on one
+   page:
+     - the app windows are .win boxes; the app's own #app fills the
+       viewport;
+     - the popover is position: absolute inside a positioned wrapper so a
+       still frame can show it. In the app #session-menu is moved to <body>
+       and positioned fixed;
+     - the native tooltip in board 2 is drawn as page furniture, because a
+       real title attribute cannot be screenshotted;
+     - .is-hover / .is-focus force a face that a still frame cannot produce;
+     - board 5's scroll position and scrollbar thumb are drawn.
+
+   Nothing is wired to a server. The theme toggle is the only script.
+   ================================================================== */
+
+/* ---- tokens: verbatim from style.css :root ------------------------ */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #8b8d98;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, 0.18);
+  --border: #383a45;
+  --code-bg: #14151a;
+  --danger: #ff6b6b;
+  --accent-fg: #14151a;
+  --ws-fg-muted: #9799a4;
+  --activity-bar-width: 48px;
+  --side-panel-width: 240px;
+  --topbar-h: 46px;
+  --outline-width: 220px;
+}
+body[data-theme="light"],
+.win[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, 0.12);
+  --border: #d8dde4;
+  --code-bg: #f0f2f5;
+  --danger: #c0392b;
+  --accent-fg: #ffffff;
+  --ws-fg-muted: #5d6470;
+}
+
+/* ---- page furniture only — NOT app tokens ------------------------- */
+:root {
+  --mk-line: #7c9cff;
+  --mk-tag-bg: #1c1d23;
+  --mk-tag-border: #33343d;
+  --mk-tag-fg: #b9c2d8;
+}
+
+* { box-sizing: border-box; }
+/* The app sets html { font-size: calc(14px * --font-scale) }; every rem
+ * below is the app's, so the windows are drawn at --font-scale: 1. */
+html { font-size: 14px; }
+html, body { margin: 0; }
+body {
+  background: #14151a; color: #e6e6ea;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  padding: 28px 32px 64px;
+}
+body[data-theme="light"] { background: #e9ecf1; color: #3a4050; }
+.page-head { max-width: 1180px; margin: 0 auto 26px; display: flex; align-items: flex-end; gap: 20px; }
+.page-head h1 { margin: 0; font-size: 1.65rem; letter-spacing: -.3px; }
+body[data-theme="light"] .page-head h1 { color: #1f2330; }
+.lead { margin: 4px 0 0; color: #8b8d98; font-size: 1rem; line-height: 1.5; max-width: 82ch; }
+body[data-theme="light"] .lead { color: #5d6470; }
+.page-head .spacer { flex: 1 1 auto; }
+.seg { display: inline-flex; border: 1px solid #383a45; border-radius: 7px; overflow: hidden; }
+.seg button {
+  background: #22232a; color: #e6e6ea; border: 0; border-right: 1px solid #383a45;
+  padding: 6px 11px; font: inherit; font-size: .92rem; cursor: pointer;
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: #7c9cff; color: #14151a; font-weight: 600; }
+body[data-theme="light"] .seg { border-color: #d8dde4; }
+body[data-theme="light"] .seg button { background: #fff; color: #3a4050; border-right-color: #d8dde4; }
+body[data-theme="light"] .seg button[aria-pressed="true"] { background: #2f5fd0; color: #fff; }
+
+.board { max-width: 1180px; margin: 0 auto 46px; }
+.board > h2 {
+  font-size: .88rem; text-transform: uppercase; letter-spacing: 1.1px;
+  color: #8b8d98; margin: 0 0 8px; font-weight: 600;
+}
+body[data-theme="light"] .board > h2 { color: #5d6470; }
+.board .cap { margin: 0 0 14px; color: #8b8d98; font-size: .98rem; line-height: 1.55; max-width: 100ch; }
+body[data-theme="light"] .board .cap { color: #5d6470; }
+.board .cap b { color: #e6e6ea; }
+body[data-theme="light"] .board .cap b { color: #1f2330; }
+.row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
+.slice-label { margin: 0 0 8px; font-size: .88rem; color: #8b8d98; letter-spacing: .2px; }
+body[data-theme="light"] .slice-label { color: #5d6470; }
+.note {
+  margin: 12px 0 0; padding: 5px 0 5px 11px; border-left: 2px solid #383a45;
+  color: #8b8d98; font-size: .94rem; line-height: 1.55; max-width: 100ch;
+}
+body[data-theme="light"] .note { color: #5d6470; border-left-color: #d8dde4; }
+.note b { color: #e6e6ea; }
+body[data-theme="light"] .note b { color: #1f2330; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .88em; color: #b9c2d8; }
+body[data-theme="light"] code { color: #3a4050; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+
+/* ---- the app window ---------------------------------------------- */
+.win {
+  width: 1180px; max-width: 100%; height: 620px;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid #33343d; border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .4);
+  position: relative;
+}
+body[data-theme="light"] .win { box-shadow: 0 18px 50px rgba(31, 35, 48, .16); }
+.win--shell { height: 560px; }
+.win--bar { height: auto; }
+.win--phone { width: 390px; height: 210px; }
+.win--picker { height: 300px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 12px; height: var(--topbar-h);
+  padding: 0 12px; background: var(--bg-panel);
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+  position: relative; z-index: 40;
+}
+.topbar > button {
+  background: var(--bg-elev); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 5px 10px; font-size: .93rem; cursor: pointer; font-family: inherit;
+}
+.topbar > button:hover { background: var(--accent-soft); border-color: var(--accent); }
+.topbar > button.brand {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700; letter-spacing: .3px; opacity: .9; font-size: .93rem;
+  background: transparent; border: none; padding: 4px 6px;
+  min-width: 0; max-width: 40%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.brand-icon {
+  width: 1.1em; height: 1.1em; border-radius: 3px; display: block; flex: 0 0 auto;
+  background: linear-gradient(140deg, var(--accent), #9a7bff);
+}
+.spacer { flex: 1 1 auto; }
+.icon-btn {
+  background: none; border: none; color: var(--fg-muted);
+  font-size: 1.3rem; line-height: 1; padding: 4px 8px;
+  border-radius: 6px; cursor: pointer; font-family: inherit;
+}
+.icon-btn:hover { color: var(--fg); background: var(--accent-soft); }
+.topbar-divider {
+  flex: 0 0 1px; align-self: center; width: 1px; height: 16px; background: var(--border);
+}
+
+/* ==================================================================
+   THE CONTROLS — the workspace chip and the session trigger share one
+   chrome. Two pickers in one bar must not invent two different faces,
+   or the second one reads as something other than a picker.
+   ================================================================== */
+.topbar > .ws-chip,
+.session-switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 240px;              /* the chip's own cap; the two yield alike */
+  height: 28px;
+  padding: 0 8px;
+  background: var(--bg-elev);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: .84rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.topbar > .ws-chip:hover,
+.session-switch:hover,
+.session-switch.is-hover,
+.topbar > .ws-chip[aria-expanded="true"],
+.session-switch[aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.topbar > .ws-chip:focus-visible,
+.session-switch:focus-visible,
+.session-switch.is-focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.workspace-glyph { width: 12px; height: 12px; flex: 0 0 12px; color: var(--fg-muted); }
+.workspace-name {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.workspace-caret,
+.session-caret {
+  flex: 0 0 auto; color: var(--fg-muted); font-size: .72rem; line-height: 1;
+  transition: transform .12s ease;
+}
+.topbar > .ws-chip[aria-expanded="true"] .workspace-caret,
+.session-switch[aria-expanded="true"] .session-caret { transform: rotate(180deg); }
+@media (prefers-reduced-motion: reduce) { .workspace-caret, .session-caret { transition: none; } }
+
+/* The wrapper holds the 1 x 16 px rule, the trigger and the popover, so one
+ * node hides the whole session cluster with the bar. */
+.session-bar {
+  display: flex; align-items: center; gap: 12px;
+  flex: 0 1 auto; min-width: 0;
+}
+/* The client fills it; an empty trigger must never paint an empty slot. */
+.session-bar[hidden] { display: none; }
+.session-switch-wrap { position: relative; display: flex; align-items: center; min-width: 0; flex: 0 1 auto; }
+
+/* The glyph: two stacked bars, a set. Deliberately not the workspace's two
+ * stacked cards, so the two pickers never read as the same kind of thing. */
+.session-glyph { width: 12px; height: 12px; flex: 0 0 12px; color: var(--fg-muted); }
+/* The name takes the emphasis the workspace name has: this is a control, and
+ * the one thing it must say is which session a click will leave. */
+.session-switch-name {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--fg);
+  font-size: .84rem; font-weight: 600; line-height: 1.2;
+}
+
+/* ==================================================================
+   #session-menu — the app moves this node to <body> and positions it
+   fixed, 6 px below the trigger's left edge, flipping above on overflow
+   and clamped 8 px from the viewport edges. Here it is absolute inside
+   .session-switch-wrap so one still page can show it attached.
+   Same object, same metrics as .workspace-menu (style.css:7955-8002).
+   ================================================================== */
+.session-menu {
+  --sm-row-h: 32px;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;                    /* the app: 200, above the phone rail */
+  width: 300px;
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+/* A popover drawn on its own, with no trigger above it (boards 4, 5, 9). */
+.session-menu--still { position: relative; top: auto; left: auto; }
+.session-menu-list { display: flex; flex-direction: column; }
+
+/* Rows are siblings, not toggles: picking one switches the session and
+ * closes the menu. Nothing here renames or deletes. */
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--sm-row-h);
+  padding: 6px 8px;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  color: var(--fg);
+  font: inherit;
+  font-size: .93rem;
+  text-align: left;
+  cursor: pointer;
+}
+.session-item:hover,
+.session-item.is-hover { background: var(--accent-soft); }
+.session-item:focus-visible,
+.session-item.is-focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.session-check {
+  flex: 0 0 14px; width: 14px; text-align: center;
+  font-size: .8rem; line-height: 1; color: var(--accent);
+}
+.session-item-name {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* The same 8 px accent dot as .session-dot in the panel and .tab.dirty. */
+.session-item-dot {
+  flex: 0 0 8px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--accent);
+}
+/* Unpinned tab count. Tabular and 2ch-floored so 0..40 holds one column;
+ * right-aligned so a dirty dot never shifts the digits. --ws-fg-muted, the
+ * same token the panel row uses, because the active row here has no tinted
+ * face to sit on. */
+.session-item-count {
+  flex: 0 0 auto; min-width: 2ch;
+  text-align: right;
+  font-size: .76rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ws-fg-muted);
+}
+/* Active: a check, accent text and 600. No tinted face — the check is the
+ * marker, and a tinted face would compete with the hover it must not have. */
+.session-item[aria-current="true"] { color: var(--accent); font-weight: 600; }
+.session-item[aria-current="true"]:hover { background: none; }
+.session-item[aria-current="true"] .session-item-count { color: var(--accent); font-weight: 400; }
+.session-menu-sep { border: 0; border-top: 1px solid var(--border); margin: 4px 2px; }
+
+/* Board 5 only: the scroll position and the thumb are drawn. */
+.session-menu--scroll { height: 420px; overflow: hidden; }
+.session-menu--scroll .session-menu-list { margin-top: -224px; }
+
+/* ---- the activity bar and the panel ------------------------------- */
+.layout {
+  display: grid;
+  grid-template-columns: var(--activity-bar-width) var(--side-panel-width) 1fr;
+  grid-template-rows: minmax(0, 1fr);
+  min-height: 0; flex: 1 1 auto; position: relative;
+}
+.activity-bar {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 0; background: var(--bg-panel); border-right: 1px solid var(--border);
+  overflow: hidden; min-width: 0;
+}
+.activity-btn {
+  width: 36px; height: 36px; display: flex; align-items: center; justify-content: center;
+  background: none; border: none; border-radius: 6px; color: var(--fg-muted);
+  cursor: pointer; font-size: 1.15rem; line-height: 1; padding: 0; position: relative;
+}
+.activity-btn:hover, .activity-btn.active { color: var(--fg); background: var(--accent-soft); }
+.activity-btn.active::before {
+  content: ""; position: absolute; left: -6px; top: 6px; bottom: 6px; width: 2px;
+  border-radius: 1px; background: var(--accent);
+}
+.activity-spacer { flex: 1 1 auto; }
+
+.side-panel {
+  background: var(--bg-panel); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden; min-width: 0;
+}
+.panel-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  padding: 7px 10px; flex: 0 0 auto; font-size: .79rem; text-transform: uppercase;
+  letter-spacing: .8px; color: var(--fg-muted); border-bottom: 1px solid var(--border);
+}
+.panel-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.panel-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel-header-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.session-total {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 18px; padding: 0 5px;
+  border: 1px solid var(--border); border-radius: 5px;
+  color: var(--fg-muted); font-size: .72rem; font-weight: 600; line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.session-add {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; background: none; border: 0; border-radius: 5px;
+  color: var(--fg-muted); font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer;
+}
+.session-add:hover { color: var(--fg); background: var(--accent-soft); }
+.collapse-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; border-radius: 5px;
+  background: none; border: none; color: var(--fg-muted); cursor: pointer;
+  font-size: 1.07rem; line-height: 1;
+}
+.collapse-btn:hover { color: var(--fg); background: var(--accent-soft); }
+
+.sessions-list {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 2px;
+  margin-right: 8px; padding: 6px 6px 10px;
+  overflow-y: auto; overflow-x: hidden;
+}
+.session-row-wrap { flex: 0 0 auto; display: flex; align-items: center; gap: 2px; min-width: 0; }
+.session-row {
+  position: relative; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center;
+  min-height: 30px; padding: 3px 6px 3px 10px;
+  background: none; border: 0; border-radius: 6px; color: var(--fg);
+  font: inherit; font-size: .9rem; line-height: 1.35;
+  text-align: left; white-space: nowrap; cursor: pointer;
+}
+.session-row-wrap:hover .session-row:not([aria-current="true"]) { background: var(--bg-elev); }
+.session-row[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+.session-row[aria-current="true"]::before {
+  content: ""; position: absolute; left: 0; top: 50%;
+  width: 2px; height: 14px; margin-top: -7px;
+  border-radius: 0 1px 1px 0; background: var(--accent);
+}
+.session-name {
+  flex: 1 1 auto; min-width: 0; margin-right: 6px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.session-dot {
+  flex: 0 0 8px; width: 8px; height: 8px; margin-right: 4px;
+  border-radius: 50%; background: var(--accent);
+}
+.session-count {
+  flex: 0 0 auto; min-width: 2ch; text-align: right;
+  font-size: .76rem; font-variant-numeric: tabular-nums; color: var(--ws-fg-muted);
+}
+.session-row[aria-current="true"] .session-count { color: var(--fg); font-weight: 400; }
+.session-more {
+  flex: 0 0 24px; display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0; background: none; border: 0; border-radius: 5px;
+  color: var(--fg-muted); font: inherit; font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.session-row-wrap.is-active .session-more,
+.session-row-wrap:hover .session-more { color: var(--fg); }
+.session-more:hover { color: var(--fg); background: var(--accent-soft); }
+.sessions-foot {
+  flex: 0 0 auto; display: flex; align-items: flex-start; gap: 8px;
+  margin: 0; padding: 9px 12px 10px; border-top: 1px solid var(--border);
+  color: var(--ws-fg-muted); font-size: .76rem; line-height: 1.45;
+}
+.sessions-foot-pin { flex: 0 0 auto; font-size: .72rem; line-height: 1.5; color: var(--fg-muted); }
+
+.editor-pane { background: var(--bg); display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.tab-bar {
+  display: flex; align-items: flex-end; gap: 2px;
+  --tab-min-width: 120px; --tab-width: 170px; --tab-max-width: 220px;
+  flex: 0 0 auto; height: 34px; padding: 0 6px;
+  background: var(--bg-panel); border-bottom: 1px solid var(--border); overflow: hidden;
+}
+.tab-pinned { display: flex; align-items: flex-end; gap: 2px; flex: 0 0 auto; max-width: 50%; height: 100%; overflow: hidden; }
+.tab-list { display: flex; align-items: flex-end; gap: 2px; flex: 1 1 auto; min-width: 0; height: 100%; overflow: hidden; }
+.tab {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1 1 var(--tab-width); min-width: var(--tab-min-width); max-width: var(--tab-max-width);
+  padding: 5px 6px 5px 12px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-bottom: none;
+  border-radius: 6px 6px 0 0; cursor: pointer; white-space: nowrap;
+  font-size: .89rem; color: var(--fg-muted);
+}
+.tab.active { background: var(--bg); color: var(--fg); border-color: var(--accent); }
+.tab .tab-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab.pinned { flex: 0 0 auto; max-width: none; padding-right: 10px; }
+.tab .tab-close { background: none; border: none; color: var(--fg-muted); cursor: pointer; font-size: 16px; line-height: 1; padding: 0 3px; font-family: inherit; }
+.outline-toggle { align-self: center; flex: 0 0 auto; font-size: 1rem; padding: 2px 6px; }
+.editor-body { flex: 1 1 auto; min-height: 0; padding: 28px 32px; overflow: hidden; }
+.doc-h1 { font-size: 1.55rem; font-weight: 700; margin: 0 0 10px; letter-spacing: -.2px; }
+.doc-p { color: var(--fg-muted); margin: 0 0 8px; max-width: 48ch; }
+.doc-rule { border: 0; border-top: 1px solid var(--border); margin: 18px 0; max-width: 48ch; }
+
+/* ---- the phone shell (board 7) ----------------------------------- */
+.phone .topbar { height: 52px; gap: 4px; padding: 0 4px; }
+.phone .topbar .brand,
+.phone .topbar .topbar-divider,
+.phone .topbar .session-bar { display: none; }
+.phone .topbar .ws-chip {
+  width: 44px; height: 44px; padding: 0; gap: 0; justify-content: center; flex: 0 0 auto;
+}
+.phone .topbar .workspace-glyph { width: 20px; height: 20px; flex: 0 0 20px; }
+.phone .topbar .workspace-name {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%);
+  white-space: nowrap; border: 0;
+}
+.phone .topbar .workspace-caret { display: none; }
+.phone .topbar .topbar-actions { flex: 1 1 auto; display: flex; align-items: center; gap: 4px; min-width: 0; }
+.phone .m-btn {
+  width: 44px; height: 44px; flex: 0 0 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: 8px;
+  color: var(--fg); font: inherit; font-size: 20px; line-height: 1; cursor: pointer;
+}
+.phone .m-btn[disabled] { color: var(--fg-muted); opacity: .4; cursor: default; }
+.phone .m-title {
+  flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 4px;
+  background: none; border: 0; border-radius: 8px; color: var(--fg);
+  font: 600 16px/1.25 inherit; text-align: left;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---- state strips (board 2) -------------------------------------- */
+.state-strip {
+  display: flex; align-items: center; gap: 12px;
+  height: 46px; padding: 0 12px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border); border-radius: 10px;
+  width: max-content; max-width: 100%;
+}
+.state-row { gap: 40px; }
+.state-row > div { min-width: 320px; }
+
+/* ---- the drawn native tooltip (board 2) --------------------------- */
+.tipbox {
+  width: 640px; max-width: 100%;
+  padding: 58px 20px 22px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tip-host { position: relative; }
+.tip {
+  position: absolute; left: 0; bottom: calc(100% + 9px);
+  padding: 3px 7px; border-radius: 4px;
+  background: #eceef2; color: #1f2330;
+  font-size: .78rem; line-height: 1.35; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .35);
+  pointer-events: none;
+}
+.tip::after {
+  content: ""; position: absolute; left: 14px; top: 100%;
+  border: 5px solid transparent; border-top-color: #eceef2;
+}
+
+/* ---- measurement furniture (boards 3, 5) ------------------------- */
+.mk-canvas { position: relative; }
+.mk-line { position: absolute; background: var(--mk-line); opacity: .75; }
+.mk-tag {
+  position: absolute; padding: 1px 5px; border-radius: 4px;
+  background: var(--mk-tag-bg); border: 1px solid var(--mk-tag-border);
+  color: var(--mk-tag-fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .7rem; line-height: 1.5; white-space: nowrap;
+}
+.mk-calls { list-style: none; margin: 0; padding: 0; max-width: 560px; }
+.mk-calls li {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 5px 0; border-bottom: 1px solid #33343d;
+  color: #8b8d98; font-size: .94rem; line-height: 1.5;
+}
+body[data-theme="light"] .mk-calls li { border-bottom-color: #d8dde4; color: #5d6470; }
+.mk-calls li:last-child { border-bottom: 0; }
+.mk-calls .mk-num {
+  flex: 0 0 74px; color: #b9c2d8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .8rem; font-variant-numeric: tabular-nums;
+}
+body[data-theme="light"] .mk-calls .mk-num { color: #3a4050; }
+.mk-calls b { color: #e6e6ea; }
+body[data-theme="light"] .mk-calls b { color: #1f2330; }
+.mk-swatch { display: inline-block; vertical-align: -1px; }
+.mk-swatch--check { width: 14px; height: 14px; border: 1px dashed #7c9cff; border-radius: 2px; }
+.mk-swatch--dot { width: 8px; height: 8px; border-radius: 50%; background: #7c9cff; }
+.mk-swatch--row { width: 26px; height: 32px; border: 1px dashed #7c9cff; border-radius: 3px; }
+.mk-thumb {
+  position: absolute; right: 3px; width: 3px; border-radius: 2px;
+  background: #6e7490; opacity: .8;
+}
+
+/* ---- rejected alternatives (board 9) ----------------------------- */
+.ctx-menu {
+  position: absolute; min-width: 170px; padding: 4px;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+}
+.ctx-item {
+  display: block; width: 100%; padding: 5px 8px;
+  background: none; border: 0; border-radius: 4px;
+  color: var(--fg); font: inherit; font-size: .93rem; text-align: left;
+}
+.ctx-item.is-hover { background: var(--accent-soft); }
+.alt-row-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; margin-left: 4px; }
+.alt-icon {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 4px;
+  background: none; border: 0; color: var(--fg-muted); font-size: .9rem; line-height: 1;
+}
+.alt-icon.is-hover { background: var(--accent-soft); color: var(--fg); }
+.alt-danger { color: var(--danger); }
+.alt-rail { width: 460px; height: 240px; }
+
+/* ---- tables ------------------------------------------------------- */
+.spec {
+  width: 100%; border-collapse: collapse; font-size: .94rem;
+  background: var(--bg-panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+}
+.spec th, .spec td { padding: 8px 11px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+.spec th { font-size: .72rem; text-transform: uppercase; letter-spacing: .7px; color: var(--fg-muted); font-weight: 600; }
+.spec td:first-child { color: var(--fg); font-weight: 600; }
+.spec tr:last-child td { border-bottom: 0; }
+.spec code { color: var(--fg-muted); }
+.spec--dark { background: #1c1d23; border-color: #33343d; color: #e6e6ea; }
+.spec-wrap { max-width: 1180px; margin: 0 auto 46px; }
+.spec-wrap h2 {
+  font-size: .88rem; text-transform: uppercase; letter-spacing: 1.1px;
+  color: #8b8d98; margin: 0 0 8px; font-weight: 600;
+}
+body[data-theme="light"] .spec-wrap h2 { color: #5d6470; }
+</style>
+</head>
+<body data-theme="dark">
+
+<svg aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="nb-icon-workspace" viewBox="0 0 16 16">
+    <rect x="2.4" y="4.4" width="9.4" height="9.2" rx="1.8" fill="none"
+          stroke="currentColor" stroke-width="1.3"/>
+    <path d="M5 3.2h6.4a1.6 1.6 0 0 1 1.6 1.6v6.4" fill="none"
+          stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+  </symbol>
+  <!-- The session glyph: two stacked bars, a set. Deliberately not the
+       workspace's two stacked cards, so the two pickers never read as the
+       same kind of thing. 1.3 stroke at a 12 px box, like the chip. -->
+  <symbol id="nb-icon-session" viewBox="0 0 16 16">
+    <rect x="2.5" y="3.3" width="11" height="3.8" rx="1.4" fill="none"
+          stroke="currentColor" stroke-width="1.3"/>
+    <rect x="2.5" y="8.9" width="11" height="3.8" rx="1.4" fill="none"
+          stroke="currentColor" stroke-width="1.3"/>
+  </symbol>
+</svg>
+
+<header class="page-head">
+  <div>
+    <h1>Top bar — the session picker</h1>
+    <p class="lead">The active session's name in the top bar becomes a picker with the workspace chip's face:
+      <b>Notebook&nbsp;│&nbsp;Notes&nbsp;│&nbsp;Deep&nbsp;work&nbsp;▾</b>. Clicking the name you are reading opens the
+      sessions that name could be, in place, without a trip to the rail. This file illustrates
+      <code>docs/archive/ui/topbar-session.md</code> as it is being revised to the picker; where the two differ, the spec wins.</p>
+  </div>
+  <span class="spacer"></span>
+  <div class="seg" role="group" aria-label="Theme">
+    <button type="button" data-theme-btn="dark" aria-pressed="true">Dark</button>
+    <button type="button" data-theme-btn="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<p class="note" style="max-width:1180px;margin:0 auto 34px;"><b>Read this with the spec.</b>
+  This mockup is the visual argument; <code>topbar-session.md</code> is the normative source for markup, CSS, JS, states,
+  ARIA and acceptance criteria. It currently documents the static label, and will be revised to the picker drawn here.</p>
+
+<!-- ============================ 1 ============================ -->
+<section class="board">
+  <h2>1 · In the shell — picker open, Sessions panel open</h2>
+  <p class="cap">One element changed: the label became a button with the chip's chrome, and the popover hangs from it. The
+    Sessions view stays open beside it, because the picker is a second door to the same list, not a replacement. The two
+    active rows name the same session — the popover's <b>Deep work</b> and the panel's <b>Deep work</b> are one fact read
+    twice, not two states that could disagree.</p>
+
+  <div class="win win--shell">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip" title="Notes — /home/shaun/projects/notebook">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+
+      <span class="session-bar">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="session-switch-wrap">
+          <button type="button" class="session-switch" id="session-switch-1"
+                  aria-haspopup="menu" aria-expanded="true" aria-controls="session-menu-1"
+                  title="Session: Deep work">
+            <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+            <span class="sr-only">Session: </span>
+            <span class="session-switch-name">Deep work</span>
+            <span class="session-caret" aria-hidden="true">▾</span>
+          </button>
+
+          <div class="session-menu" id="session-menu-1">
+            <div class="session-menu-list" role="menu" aria-labelledby="session-switch-1">
+              <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+                <span class="session-check" aria-hidden="true">✓</span>
+                <span class="session-item-name">Deep work</span>
+                <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+              </button>
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true"></span>
+                <span class="session-item-name">Firmware bring-up</span>
+                <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+              </button>
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true"></span>
+                <span class="session-item-name">Reading</span>
+                <span class="session-item-dot" aria-hidden="true"></span>
+                <span class="sr-only">, unsaved changes</span>
+                <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+              </button>
+              <hr class="session-menu-sep" role="separator">
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true">+</span>
+                <span class="session-item-name">New session…</span>
+              </button>
+            </div>
+          </div>
+        </span>
+      </span>
+
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+
+    <div class="layout">
+      <nav class="activity-bar" aria-label="Activity bar">
+        <button class="activity-btn" title="Explorer" aria-label="Explorer">📁</button>
+        <button class="activity-btn active" title="Sessions" aria-label="Sessions" aria-pressed="true">🗂</button>
+        <button class="activity-btn" title="Pinned folders" aria-label="Pinned folders">📌</button>
+        <button class="activity-btn" title="Bookmarks" aria-label="Bookmarks">🔖</button>
+        <button class="activity-btn" title="Recent files" aria-label="Recent files">🕒</button>
+        <button class="activity-btn" title="Search" aria-label="Search">🔍</button>
+        <button class="activity-btn" title="AI Assistant" aria-label="AI Assistant">✨</button>
+        <span class="activity-spacer"></span>
+        <button class="activity-btn" title="Settings" aria-label="Settings">⚙</button>
+      </nav>
+
+      <aside class="side-panel" aria-label="Sessions">
+        <div class="panel-header">
+          <div class="panel-heading">
+            <span class="panel-title">Sessions</span>
+            <span class="session-total"><span class="session-total-n">3</span><span class="sr-only"> sessions</span></span>
+          </div>
+          <div class="panel-header-actions">
+            <button class="session-add" title="New session" aria-label="New session">+</button>
+            <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+          </div>
+        </div>
+
+        <div class="sessions-list">
+          <div class="session-row-wrap is-active">
+            <button class="session-row" aria-current="true" title="Deep work">
+              <span class="session-name">Deep work</span>
+              <span class="session-count">2<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Deep work actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap">
+            <button class="session-row" title="Firmware bring-up">
+              <span class="session-name">Firmware bring-up</span>
+              <span class="session-count">0<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Firmware bring-up actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+          <div class="session-row-wrap">
+            <button class="session-row" title="Reading">
+              <span class="session-name">Reading</span>
+              <span class="session-dot" aria-hidden="true"></span>
+              <span class="sr-only">, unsaved changes</span>
+              <span class="session-count">4<span class="sr-only"> tabs</span></span>
+            </button>
+            <button class="session-more" aria-label="Reading actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+          </div>
+        </div>
+
+        <p class="sessions-foot"><span class="sessions-foot-pin" aria-hidden="true">📌</span><span>Pinned tabs are shared by every session.</span></p>
+      </aside>
+
+      <section class="editor-pane">
+        <div class="tab-bar">
+          <div class="tab-pinned">
+            <div class="tab pinned"><span aria-hidden="true">📌</span><span class="tab-label">Power budget.md</span></div>
+          </div>
+          <div class="tab-list">
+            <div class="tab active"><span class="tab-label">Sensors.md</span><button class="tab-close" aria-hidden="true" tabindex="-1">×</button></div>
+          </div>
+          <button class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
+        </div>
+        <div class="editor-body">
+          <h1 class="doc-h1">Sensors</h1>
+          <p class="doc-p">Calibration runs on a 10 Hz timer. The raw stream is filtered before it reaches the log.</p>
+          <hr class="doc-rule">
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <p class="note"><b>Why the trigger is a control now.</b> The bar already says which session you are in; the moment that
+    name is the thing you want to change, the shortest path is the name itself. The rail still opens the full view — with
+    rename and delete in it — but that is one click away from a bar you are already looking at. A name you read is a name
+    you will reach for.</p>
+  <p class="note"><b>Why the popover is attached to the trigger, not the pointer.</b> This is a menu of siblings: the same
+    place every time, left edge under the name that opened it, check column under the glyph. A pointer-positioned menu
+    lands wherever the last click was, which makes the same list look like a different list each time. The caret is the
+    promise that the list belongs to that button.</p>
+  <p class="note"><b>The open menu covers the tab strip, not the panel.</b> The app paints the popover above the editor, so
+    the Sessions rows stay visible and the two names can be compared in one frame: both say <b>Deep work</b>. The picker
+    does not replace the panel — it is the same fact, reached from the bar instead of the rail.</p>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section class="board">
+  <h2>2 · Trigger states</h2>
+  <p class="cap">Four faces, one 28 px box. Resting is the workspace chip's face; hover and expanded are the chip's hover
+    and expanded faces; focus is the same 2 px accent ring at the same 1 px offset. A still frame has no pointer, so
+    <code>.is-hover</code> and <code>.is-focus</code> force the two faces — the app uses <code>:hover</code> and
+    <code>:focus-visible</code>.</p>
+
+  <p class="slice-label">resting — beside the chip it now matches</p>
+  <div class="state-strip">
+    <button class="ws-chip" title="Notes — /home/shaun/projects/notebook">
+      <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+      <span class="workspace-name">Notes</span>
+      <span class="workspace-caret" aria-hidden="true">▾</span>
+    </button>
+    <span class="topbar-divider" aria-hidden="true"></span>
+    <button type="button" class="session-switch" title="Session: Deep work">
+      <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+      <span class="sr-only">Session: </span>
+      <span class="session-switch-name">Deep work</span>
+      <span class="session-caret" aria-hidden="true">▾</span>
+    </button>
+  </div>
+
+  <div class="row state-row" style="margin-top:18px;">
+    <div>
+      <p class="slice-label">hover — <code>--accent-soft</code> face, <code>--accent</code> border</p>
+      <div class="state-strip">
+        <button type="button" class="session-switch is-hover" title="Session: Deep work">
+          <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="session-switch-name">Deep work</span>
+          <span class="session-caret" aria-hidden="true">▾</span>
+        </button>
+      </div>
+    </div>
+    <div>
+      <p class="slice-label">focus-visible — 2 px ring, 1 px offset</p>
+      <div class="state-strip">
+        <button type="button" class="session-switch is-focus" title="Session: Deep work">
+          <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="session-switch-name">Deep work</span>
+          <span class="session-caret" aria-hidden="true">▾</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="row state-row" style="margin-top:18px;">
+    <div>
+      <p class="slice-label">expanded — same face as hover, caret rotated 180°</p>
+      <div class="state-strip">
+        <button type="button" class="session-switch" aria-expanded="true" title="Session: Deep work">
+          <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="session-switch-name">Deep work</span>
+          <span class="session-caret" aria-hidden="true">▾</span>
+        </button>
+      </div>
+    </div>
+    <div>
+      <p class="slice-label">expanded + focus — the caret and the ring are two signals, not one</p>
+      <div class="state-strip">
+        <button type="button" class="session-switch is-focus" aria-expanded="true" title="Session: Deep work">
+          <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="session-switch-name">Deep work</span>
+          <span class="session-caret" aria-hidden="true">▾</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <p class="slice-label" style="margin-top:22px;">a 40-character name — ellipsised, with its tooltip drawn</p>
+  <div class="tipbox">
+    <button type="button" class="session-switch tip-host" style="max-width:240px;"
+            title="Session: Q4 hardware sync — sensor calibration II">
+      <span class="tip">Session: Q4 hardware sync — sensor calibration II</span>
+      <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+      <span class="sr-only">Session: </span>
+      <span class="session-switch-name">Q4 hardware sync — sensor calibration II</span>
+      <span class="session-caret" aria-hidden="true">▾</span>
+    </button>
+  </div>
+
+  <p class="note"><b>Why the two pickers look identical.</b> Both answer “which one am I in?” and both open a list. Giving
+    the session trigger a lighter face would say “this one is only informational”, which is exactly what it is not; giving
+    it a heavier face would make the workspace chip look like the secondary control, and the workspace is the outer
+    container. Same chrome, same 28 px height, same caret behaviour. <b>The tooltip above is drawn</b>, not a live
+    <code>title</code>: the name caps at 40 characters and the trigger caps at 240 px, so a long name always ellipsises
+    and the full string is always one hover away.</p>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section class="board">
+  <h2>3 · The popover, measured</h2>
+  <p class="cap">Same object as the workspace picker: <b>300 px</b> wide, <b>8 px</b> radius, <b>4 px</b> padding,
+    <b>32 px</b> rows, <b>6 px</b> gap under the trigger, <b>420 px</b> ceiling. The numbers are not a new vocabulary —
+    they are copied so the two menus in one bar cannot drift apart.</p>
+
+  <div class="row" style="gap:40px;">
+    <div class="mk-canvas" style="width:420px;height:220px;">
+      <!-- the bar strip, on the page rather than in a .win, so the guides have room -->
+      <div style="position:absolute;left:10px;top:10px;width:380px;height:46px;
+                  background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;
+                  display:flex;align-items:center;gap:12px;padding:0 12px;">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="session-switch-wrap">
+          <button type="button" class="session-switch" aria-expanded="true" title="Session: Deep work">
+            <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+            <span class="sr-only">Session: </span>
+            <span class="session-switch-name">Deep work</span>
+            <span class="session-caret" aria-hidden="true">▾</span>
+          </button>
+        </span>
+      </div>
+
+      <!-- the 6 px gap between the trigger's bottom and the popover's top -->
+      <span class="mk-line" style="left:29px;top:47px;width:1px;height:6px;"></span>
+      <span class="mk-tag" style="left:0;top:58px;">6 px</span>
+
+      <!-- the popover, in flow inside the wrapper but pinned to match the guides -->
+      <div class="session-menu session-menu--still" style="position:absolute;left:35px;top:53px;">
+        <div class="session-menu-list" role="menu" aria-label="Sessions">
+          <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+            <span class="session-check" aria-hidden="true">✓</span>
+            <span class="session-item-name">Deep work</span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Firmware bring-up</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Reading</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="sr-only">, unsaved changes</span>
+            <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- the 4 px padding inset, then the row height, radius and padding, tagged -->
+      <span class="mk-line" style="left:39px;top:57px;width:292px;height:1px;opacity:.35;"></span>
+      <span class="mk-line" style="left:339px;top:57px;width:1px;height:32px;"></span>
+      <span class="mk-tag" style="left:344px;top:56px;">32 px row</span>
+      <span class="mk-tag" style="left:344px;top:78px;">8 px radius</span>
+      <span class="mk-tag" style="left:344px;top:100px;">4 px padding</span>
+
+      <!-- the width guide, below the popover so it clears the trigger -->
+      <span class="mk-line" style="left:35px;top:172px;width:300px;height:1px;"></span>
+      <span class="mk-line" style="left:35px;top:168px;width:1px;height:9px;"></span>
+      <span class="mk-line" style="left:334px;top:168px;width:1px;height:9px;"></span>
+      <span class="mk-tag" style="left:150px;top:176px;">300 px</span>
+    </div>
+
+    <ul class="mk-calls">
+      <li><span class="mk-num">300 px</span><span><b>Width.</b> Fixed, not shrink-to-fit: a name that ellipsises inside
+        a fixed column keeps the check, dot and count in one place. The row names yield; the chrome does not.</span></li>
+      <li><span class="mk-num">6 px</span><span><b>Gap.</b> The caret points down at the popover; 6 px is close enough to
+        read as attached and far enough that the trigger's hover face is not touched.</span></li>
+      <li><span class="mk-num">4 px</span><span><b>Padding.</b> The first row's hover face stops 4 px inside the frame, so
+        the popover reads as a container rather than a stack of rows.</span></li>
+      <li><span class="mk-num"><span class="mk-swatch mk-swatch--row"></span> 32 px</span><span><b>Row.</b> A 32 px
+        target in a 300 px menu, the same as the workspace picker. Eight of them fit without a scroll.</span></li>
+      <li><span class="mk-num"><span class="mk-swatch mk-swatch--check"></span> 14 px</span><span><b>Check column.</b>
+        Empty on inactive rows, so the names never shift as the active session changes. The same column the workspace
+        picker uses.</span></li>
+      <li><span class="mk-num"><span class="mk-swatch mk-swatch--dot"></span> 8 px</span><span><b>Dirty dot.</b> The same
+        8 px accent dot as the panel row and the dirty tab, so the three never disagree about which session has unsaved
+        edits.</span></li>
+      <li><span class="mk-num">420 px</span><span><b>Ceiling.</b> <code>max-height: min(70vh, 420px)</code>. Twenty
+        sessions scroll instead of growing the menu over the editor.</span></li>
+      <li><span class="mk-num">8 px</span><span><b>Radius.</b> The workspace popover's radius. Two menus of the same kind
+        in one bar share one corner.</span></li>
+    </ul>
+  </div>
+
+  <p class="slice-label" style="margin-top:26px;">row states — rest · hover · focus (roving tabindex) · active</p>
+  <div class="session-menu session-menu--still" style="width:300px;">
+    <div class="session-menu-list" role="menu" aria-label="Row states">
+      <button type="button" class="session-item" role="menuitem" tabindex="-1">
+        <span class="session-check" aria-hidden="true"></span>
+        <span class="session-item-name">Firmware bring-up</span>
+        <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+      </button>
+      <button type="button" class="session-item is-hover" role="menuitem" tabindex="-1">
+        <span class="session-check" aria-hidden="true"></span>
+        <span class="session-item-name">Firmware bring-up · hover</span>
+        <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+      </button>
+      <button type="button" class="session-item is-focus" role="menuitem" tabindex="-1">
+        <span class="session-check" aria-hidden="true"></span>
+        <span class="session-item-name">Firmware bring-up · focus</span>
+        <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+      </button>
+      <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+        <span class="session-check" aria-hidden="true">✓</span>
+        <span class="session-item-name">Deep work</span>
+        <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+      </button>
+    </div>
+  </div>
+
+  <p class="note"><b>Positioning, and what this still frame cannot show.</b> In the app <code>#session-menu</code> is
+    moved to <code>&lt;body&gt;</code> and positioned <code>fixed</code>: 6 px below the trigger's left edge, flipped above
+    the trigger when it would overflow the viewport, and clamped 8 px from the left and right edges. Here it is
+    <code>position: absolute</code> inside a positioned wrapper, so one static page can show it attached to the button
+    that owns it.</p>
+  <p class="note"><b>Why the active row has no tinted face.</b> The check, the accent text and the 600 weight are three
+    cues already; a fourth would paint the one row that cannot be hovered, which makes it look pressed. Hover on the
+    active row stays transparent — the row is where you already are, so hovering it must change nothing.</p>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section class="board">
+  <h2>4 · Who sees the New row</h2>
+  <p class="cap">The picker switches sessions; it does not create them for everyone. <b>Admin:</b> a separator and a
+    <b>New session…</b> row, so creating one is reachable from the bar. <b>Viewer:</b> no separator, no row — the role
+    cannot create a session, and a disabled row in a 32 px menu is a promise the role cannot keep. <b>At the 20-session
+    cap:</b> no row either, because there is nothing to offer.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">admin — 3 sessions, New available</p>
+      <div class="session-menu session-menu--still">
+        <div class="session-menu-list" role="menu" aria-label="Sessions, admin">
+          <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+            <span class="session-check" aria-hidden="true">✓</span>
+            <span class="session-item-name">Deep work</span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Firmware bring-up</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Reading</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="sr-only">, unsaved changes</span>
+            <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+          </button>
+          <hr class="session-menu-sep" role="separator">
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true">+</span>
+            <span class="session-item-name">New session…</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">viewer — same list, no New row</p>
+      <div class="session-menu session-menu--still">
+        <div class="session-menu-list" role="menu" aria-label="Sessions, viewer">
+          <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+            <span class="session-check" aria-hidden="true">✓</span>
+            <span class="session-item-name">Deep work</span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Firmware bring-up</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Reading</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="sr-only">, unsaved changes</span>
+            <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">at 20 of 20 — the tail, no separator, no New row</p>
+      <div class="session-menu session-menu--still">
+        <div class="session-menu-list" role="menu" aria-label="Sessions, at the cap">
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Lab inventory</span>
+            <span class="session-item-count">1<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Archive</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+        </div>
+      </div>
+      <span class="mk-tag" style="position:static;display:inline-block;margin-top:10px;">20 of 20 — nothing follows</span>
+    </div>
+  </div>
+
+  <p class="note"><b>Why the New row is admin-only, and why it lives here at all.</b> Creating a session belongs to the
+    picker because the picker is where you decide which session you are in — and “a new one” is one of the answers.
+    Renaming and deleting do not belong here: they are edits to a row that already exists, they are destructive, and the
+    panel's ⋯ already owns them with room for a confirmation. The role check is the same one the panel's <code>+</code>
+    uses, so the two surfaces can never disagree about whether creation is offered.</p>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section class="board">
+  <h2>5 · Twenty sessions — the list scrolls, the bar does not move</h2>
+  <p class="cap">Twenty rows at 32 px are 640 px of list; the ceiling is 420. The menu scrolls inside itself, the top bar
+    keeps its 46 px, and the editor behind it is never resized. When the menu opens the app scrolls the active row into
+    view before the first paint, so the current session is never the one you have to hunt for.</p>
+
+  <div class="row" style="gap:32px;">
+    <div class="mk-canvas" style="width:380px;height:432px;">
+      <div class="session-menu session-menu--still session-menu--scroll">
+        <div class="session-menu-list" role="menu" aria-label="Sessions, 20 of 20">
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Deep work</span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Firmware bring-up</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Reading</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="sr-only">, unsaved changes</span>
+            <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Sensors</span>
+            <span class="session-item-count">3<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Power budget</span>
+            <span class="session-item-count">1<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Datasheet notes</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="sr-only">, unsaved changes</span>
+            <span class="session-item-count">6<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">I2C debugging</span>
+            <span class="session-item-count">5<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+            <span class="session-check" aria-hidden="true">✓</span>
+            <span class="session-item-name">Sensor calibration</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="sr-only">, unsaved changes</span>
+            <span class="session-item-count">7<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Bootloader review</span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">EMC pre-scan</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Errata sweep</span>
+            <span class="session-item-count">9<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Zephyr config</span>
+            <span class="session-item-count">3<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Toolchain notes</span>
+            <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Thermal tests</span>
+            <span class="session-item-count">1<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">BOM review</span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Interview prep</span>
+            <span class="session-item-count">3<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Weekly log</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="sr-only">, unsaved changes</span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Rust embedded</span>
+            <span class="session-item-count">8<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Lab inventory</span>
+            <span class="session-item-count">1<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Archive</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+        </div>
+        <span class="mk-thumb" style="top:146px;height:272px;"></span>
+      </div>
+      <span class="mk-line" style="left:310px;top:0;width:1px;height:420px;"></span>
+      <span class="mk-tag" style="left:318px;top:194px;">420 px</span>
+    </div>
+
+    <div style="flex:1 1 420px;min-width:380px;">
+      <table class="spec spec--dark">
+        <thead><tr><th>Case</th><th>Behaviour</th></tr></thead>
+        <tbody>
+          <tr><td>open</td><td>scrolls the active row into view, then paints. No hunt, no flash of the wrong slice</td></tr>
+          <tr><td>keyboard</td><td><code>↑</code> <code>↓</code> move the roving tabindex and scroll the list; the active session stays one keystroke away</td></tr>
+          <tr><td>switch</td><td>the picked session becomes active, the menu closes, the trigger's name changes in the same render</td></tr>
+          <tr><td>at the cap</td><td>no New row; the panel's <code>+</code> explains the cap with a sentence a menu row has no room for</td></tr>
+          <tr><td>20 of 20</td><td>640 px of rows in a 420 px box: the scroll is the limit, the bar is not</td></tr>
+        </tbody>
+      </table>
+      <p class="note"><b>Drawn, not live:</b> the scroll offset and the thin scrollbar thumb in the frame are page
+        furniture. The app uses a real scroll container, so a mouse wheel, a trackpad, the keyboard and the platform
+        scrollbar all work.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section class="board">
+  <h2>6 · Narrow desktop — 861 px</h2>
+  <p class="cap">The narrowest width that is still the desktop shell, with a long brand, a long workspace name, a long
+    session name and the popover open. The three left-hand names share the shortfall and ellipsise; the actions keep their
+    width. The popover stays inside the viewport because it is aligned to the trigger's left edge, not centred on it.</p>
+
+  <div class="win win--picker" style="width:861px;">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Shaun’s engineering notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip" title="Firmware bring-up board">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Firmware bring-up board</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="session-bar">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="session-switch-wrap">
+          <button type="button" class="session-switch" id="session-switch-6"
+                  aria-haspopup="menu" aria-expanded="true" aria-controls="session-menu-6"
+                  title="Session: Q4 hardware sync — sensor calibration II">
+            <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+            <span class="sr-only">Session: </span>
+            <span class="session-switch-name">Q4 hardware sync — sensor calibration II</span>
+            <span class="session-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="session-menu" id="session-menu-6">
+            <div class="session-menu-list" role="menu" aria-labelledby="session-switch-6">
+              <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+                <span class="session-check" aria-hidden="true">✓</span>
+                <span class="session-item-name">Q4 hardware sync — sensor calibration II</span>
+                <span class="session-item-dot" aria-hidden="true"></span>
+                <span class="sr-only">, unsaved changes</span>
+                <span class="session-item-count">7<span class="sr-only"> tabs</span></span>
+              </button>
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true"></span>
+                <span class="session-item-name">Firmware bring-up</span>
+                <span class="session-item-count">3<span class="sr-only"> tabs</span></span>
+              </button>
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true"></span>
+                <span class="session-item-name">I2C debugging</span>
+                <span class="session-item-count">5<span class="sr-only"> tabs</span></span>
+              </button>
+              <hr class="session-menu-sep" role="separator">
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true">+</span>
+                <span class="session-item-name">New session…</span>
+              </button>
+            </div>
+          </div>
+        </span>
+      </span>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+  </div>
+
+  <p class="note"><b>Why the trigger caps at 240 px, the chip's own cap.</b> Two pickers side by side should yield at the
+    same rate: if the session trigger could grow, it would squeeze the workspace name first at exactly the widths where
+    both are long. The brand keeps its shipped hard clip (<code>text-overflow</code> does not apply to its inline-flex
+    box) — a pre-existing quirk this feature does not change. Below 861 px the phone shell takes over and the trigger goes
+    with the bar's desktop furniture (board 7).</p>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section class="board">
+  <h2>7 · Top bar hidden, and the phone</h2>
+  <p class="cap">With “Hide top bar” on, the picker goes with the bar — it is part of that bar. Nothing becomes
+    unreachable, because the session list has a second door on the rail (🗂), which opens the same list with rename and
+    delete beside it. That second door is why the picker may be top-bar-only: the workspace switch needed a rail mount
+    because it had no other way in; the session model has one. The phone has no sessions at all, so it has no trigger.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">top bar hidden — the rail still opens Sessions</p>
+      <div class="win" style="width:520px; height:210px;">
+        <div class="layout" style="grid-template-columns: var(--activity-bar-width) var(--side-panel-width) 1fr;">
+          <nav class="activity-bar" aria-label="Activity bar">
+            <button class="activity-btn" title="Explorer" aria-label="Explorer">📁</button>
+            <button class="activity-btn active" title="Sessions" aria-label="Sessions" aria-pressed="true">🗂</button>
+            <button class="activity-btn" title="Pinned folders" aria-label="Pinned folders">📌</button>
+            <button class="activity-btn" title="Bookmarks" aria-label="Bookmarks">🔖</button>
+            <span class="activity-spacer"></span>
+            <button class="activity-btn" title="Settings" aria-label="Settings">⚙</button>
+          </nav>
+          <aside class="side-panel" aria-label="Sessions">
+            <div class="panel-header">
+              <div class="panel-heading">
+                <span class="panel-title">Sessions</span>
+                <span class="session-total"><span>3</span><span class="sr-only"> sessions</span></span>
+              </div>
+              <div class="panel-header-actions">
+                <button class="session-add" title="New session" aria-label="New session">+</button>
+                <button class="collapse-btn" title="Collapse sessions" aria-label="Collapse sessions">‹</button>
+              </div>
+            </div>
+            <div class="sessions-list">
+              <div class="session-row-wrap is-active">
+                <button class="session-row" aria-current="true" title="Deep work">
+                  <span class="session-name">Deep work</span>
+                  <span class="session-count">2<span class="sr-only"> tabs</span></span>
+                </button>
+                <button class="session-more" aria-label="Deep work actions">⋯</button>
+              </div>
+              <div class="session-row-wrap">
+                <button class="session-row" title="Firmware bring-up">
+                  <span class="session-name">Firmware bring-up</span>
+                  <span class="session-count">0<span class="sr-only"> tabs</span></span>
+                </button>
+                <button class="session-more" aria-label="Firmware bring-up actions">⋯</button>
+              </div>
+              <div class="session-row-wrap">
+                <button class="session-row" title="Reading">
+                  <span class="session-name">Reading</span>
+                  <span class="session-dot" aria-hidden="true"></span>
+                  <span class="sr-only">, unsaved changes</span>
+                  <span class="session-count">4<span class="sr-only"> tabs</span></span>
+                </button>
+                <button class="session-more" aria-label="Reading actions">⋯</button>
+              </div>
+            </div>
+          </aside>
+          <section class="editor-pane">
+            <div class="editor-body" style="padding:18px;">
+              <h1 class="doc-h1" style="font-size:1.15rem;">Sensors</h1>
+              <p class="doc-p" style="font-size:.9rem;">No bar, no picker. The 🗂 icon is the way in.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="slice-label">phone · 390 px — no session chip</p>
+      <div class="win win--phone phone">
+        <div class="topbar">
+          <button class="ws-chip" title="Workspace: Notes" aria-label="Workspace: Notes">
+            <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+            <span class="workspace-name">Notes</span>
+          </button>
+          <!-- rendered, and hidden by the phone query, exactly as in the app -->
+          <span class="session-bar">
+            <span class="topbar-divider" aria-hidden="true"></span>
+            <span class="session-switch-wrap">
+              <button type="button" class="session-switch" title="Session: Deep work">
+                <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+                <span class="sr-only">Session: </span>
+                <span class="session-switch-name">Deep work</span>
+                <span class="session-caret" aria-hidden="true">▾</span>
+              </button>
+            </span>
+          </span>
+          <div class="topbar-actions">
+            <button class="m-btn" title="Back" aria-label="Back" disabled>←</button>
+            <button class="m-title" type="button">Sensors</button>
+            <button class="m-btn" title="Quick capture" aria-label="Quick capture">＋</button>
+            <button class="m-btn" title="Note menu" aria-label="Note menu">⋯</button>
+          </div>
+        </div>
+        <div class="editor-body" style="padding:16px 20px;">
+          <h1 class="doc-h1" style="font-size:1.1rem;">Sensors</h1>
+          <p class="doc-p">The phone top bar names the note, not a session.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><b>Why hiding the bar does not cost the feature.</b> The picker is a shortcut, not the only route: it
+    offers switching (and, for an admin, creation) from where you are already looking. The panel offers the same switch
+    plus rename and delete. A control that disappears with its container is fine when its job is also done one rail click
+    away — that was not true of the workspace switch, which is why that one got a rail mount and this one does not.</p>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section class="board">
+  <h2>8 · Light theme</h2>
+  <p class="cap">The tokens swap and the geometry does not: same 28 px trigger, same 300 px popover, same faces. The
+    active row's <code>--accent</code> is <code>#2f5fd0</code>, which is darker than the dark theme's and reads as text
+    rather than as a highlight.</p>
+
+  <div class="win win--picker" data-theme="light">
+    <div class="topbar">
+      <button class="brand"><span class="brand-icon"></span>Notebook</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+      <button class="ws-chip" title="Notes — /home/shaun/projects/notebook">
+        <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-workspace"/></svg>
+        <span class="workspace-name">Notes</span>
+        <span class="workspace-caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="session-bar">
+        <span class="topbar-divider" aria-hidden="true"></span>
+        <span class="session-switch-wrap">
+          <button type="button" class="session-switch" id="session-switch-8"
+                  aria-haspopup="menu" aria-expanded="true" aria-controls="session-menu-8"
+                  title="Session: Deep work">
+            <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+            <span class="sr-only">Session: </span>
+            <span class="session-switch-name">Deep work</span>
+            <span class="session-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="session-menu" id="session-menu-8">
+            <div class="session-menu-list" role="menu" aria-labelledby="session-switch-8">
+              <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+                <span class="session-check" aria-hidden="true">✓</span>
+                <span class="session-item-name">Deep work</span>
+                <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+              </button>
+              <button type="button" class="session-item is-hover" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true"></span>
+                <span class="session-item-name">Firmware bring-up · hover</span>
+                <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+              </button>
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true"></span>
+                <span class="session-item-name">Reading</span>
+                <span class="session-item-dot" aria-hidden="true"></span>
+                <span class="sr-only">, unsaved changes</span>
+                <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+              </button>
+              <hr class="session-menu-sep" role="separator">
+              <button type="button" class="session-item" role="menuitem" tabindex="-1">
+                <span class="session-check" aria-hidden="true">+</span>
+                <span class="session-item-name">New session…</span>
+              </button>
+            </div>
+          </div>
+        </span>
+      </span>
+      <span class="spacer"></span>
+      <button class="icon-btn" title="Back">←</button>
+      <button class="icon-btn" title="Edit Markdown source">📝</button>
+    </div>
+  </div>
+
+  <table class="spec spec--dark" style="margin-top:18px;">
+    <thead>
+      <tr><th>Pair</th><th>Dark</th><th>Light</th><th>Verdict</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>name — <code>--fg</code> on <code>--bg-elev</code></td><td>11.6</td><td>13.5</td><td>passes 4.5:1</td></tr>
+      <tr><td>caret — <code>--fg-muted</code> on <code>--bg-elev</code></td><td>4.3</td><td>5.1</td><td>a decorative glyph, <code>aria-hidden</code>; above 3:1 either way</td></tr>
+      <tr><td>active row — <code>--accent</code> on <code>--bg-elev</code></td><td>5.4</td><td>4.9</td><td>passes 4.5:1</td></tr>
+      <tr><td>count — <code>--ws-fg-muted</code> on <code>--bg-elev</code></td><td>5.0</td><td>5.1</td><td>passes 4.5:1; the panel's count token, not <code>--fg-muted</code></td></tr>
+    </tbody>
+  </table>
+
+  <p class="note"><b>Why the caret may sit under 4.5:1.</b> It is a shape, not text: it is <code>aria-hidden</code>, its
+    meaning is carried by the button's <code>aria-haspopup</code>, and 3:1 is the bar for a non-text indicator. It is
+    <code>--fg-muted</code> because it must not compete with the name, and it takes <code>--fg</code> on hover and when
+    expanded, like the chip's.</p>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section class="board">
+  <h2>9 · Rejected alternatives</h2>
+  <p class="cap">Three shapes that were drawn and dropped. Each one either duplicates a surface that already exists or
+    asks one element to do two jobs — that is the reason, not taste.</p>
+
+  <div class="row">
+    <div>
+      <p class="slice-label">A · a session chip on the activity rail</p>
+      <div class="win alt-rail">
+        <div class="layout" style="grid-template-columns: var(--activity-bar-width) 1fr;">
+          <nav class="activity-bar" aria-label="Activity bar">
+            <button class="activity-btn" title="Explorer" aria-label="Explorer">📁</button>
+            <button class="activity-btn active" title="Sessions" aria-label="Sessions">🗂</button>
+            <button class="activity-btn" title="Session picker" aria-label="Session picker">
+              <svg class="workspace-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+            </button>
+            <button class="activity-btn" title="Pinned folders" aria-label="Pinned folders">📌</button>
+            <span class="activity-spacer"></span>
+            <button class="activity-btn" title="Settings" aria-label="Settings">⚙</button>
+          </nav>
+          <section class="editor-pane">
+            <div class="editor-body" style="padding:18px;">
+              <p class="doc-p" style="font-size:.9rem;">Two session doors, 40 px apart: 🗂 opens the panel, the glyph
+                below opens a menu of the same sessions.</p>
+            </div>
+          </section>
+        </div>
+      </div>
+      <span class="mk-tag" style="position:static;display:inline-block;margin-top:10px;">two doors, one list</span>
+    </div>
+
+    <div>
+      <p class="slice-label">B · rename and delete inside the popover</p>
+      <div class="session-menu session-menu--still">
+        <div class="session-menu-list" role="menu" aria-label="Sessions with row actions">
+          <button type="button" class="session-item" role="menuitem" aria-current="true" tabindex="0">
+            <span class="session-check" aria-hidden="true">✓</span>
+            <span class="session-item-name">Deep work</span>
+            <span class="alt-row-actions" aria-hidden="true">
+              <span class="alt-icon is-hover">✎</span>
+              <span class="alt-icon">🗑</span>
+            </span>
+            <span class="session-item-count">2<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Firmware bring-up</span>
+            <span class="session-item-count">0<span class="sr-only"> tabs</span></span>
+          </button>
+          <button type="button" class="session-item" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Reading</span>
+            <span class="session-item-dot" aria-hidden="true"></span>
+            <span class="session-item-count">4<span class="sr-only"> tabs</span></span>
+          </button>
+          <hr class="session-menu-sep" role="separator">
+          <button type="button" class="session-item alt-danger" role="menuitem" tabindex="-1">
+            <span class="session-check" aria-hidden="true"></span>
+            <span class="session-item-name">Delete session</span>
+          </button>
+        </div>
+      </div>
+      <span class="mk-tag" style="position:static;display:inline-block;margin-top:10px;">a destructive row on the switch surface</span>
+    </div>
+
+    <div>
+      <p class="slice-label">C · <code>NB.menu</code> at the cursor</p>
+      <div style="position:relative;width:300px;height:196px;background:var(--bg-panel);
+                  border:1px solid var(--border);border-radius:10px;">
+        <button type="button" class="session-switch" aria-expanded="true"
+                style="position:absolute;left:14px;top:12px;" title="Session: Deep work">
+          <svg class="session-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg>
+          <span class="sr-only">Session: </span>
+          <span class="session-switch-name">Deep work</span>
+          <span class="session-caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="ctx-menu" style="left:96px;top:56px;">
+          <button type="button" class="ctx-item" tabindex="-1">Deep work</button>
+          <button type="button" class="ctx-item is-hover" tabindex="-1">Firmware bring-up</button>
+          <button type="button" class="ctx-item" tabindex="-1">Reading</button>
+          <button type="button" class="ctx-item" tabindex="-1">New session…</button>
+        </div>
+        <span class="mk-line" style="left:96px;top:44px;width:1px;height:12px;"></span>
+      </div>
+      <span class="mk-tag" style="position:static;display:inline-block;margin-top:10px;">flat text, lands wherever the pointer was</span>
+    </div>
+  </div>
+
+  <table class="spec spec--dark" style="margin-top:22px;">
+    <thead><tr><th>Direction</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>A · a session chip on the activity rail</td><td><b>Rejected.</b> It is a third mount of the same list: the
+        🗂 icon already opens the Sessions panel, and the workspace chip already has a rail mount for the bar-hidden case.
+        A session glyph beside 🗂 offers two doors 40 px apart that show the same rows, and the top bar would still need
+        the name — so the rail copy adds a control without removing one.</td></tr>
+      <tr><td>B · rename and delete inside the popover</td><td><b>Rejected.</b> The panel's ⋯ owns rename and delete,
+        with room for a dialog, a confirmation and the “at the cap” state. Putting them on a 300 px switch surface makes
+        the primary action of a row ambiguous (click the name to switch, or to edit?) and puts a destructive control one
+        pixel from the thing you use forty times a day. Switching is a read; this would mix a write into it.</td></tr>
+      <tr><td>C · <code>NB.menu</code> at the cursor</td><td><b>Rejected.</b> <code>NB.menu</code> is flat text: no check
+        column, no tab counts, no dirty dot, no attached caret, and no <code>aria-current</code> row to inherit a roving
+        tabindex from. It also opens at the pointer, so the list moves between clicks and detaches from the name that
+        opened it — the opposite of what a picker attached to a named trigger needs.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<div class="spec-wrap">
+  <h2>10 · Behaviour and ARIA, in one place</h2>
+  <table class="spec spec--dark">
+    <thead><tr><th>Case</th><th>What happens</th></tr></thead>
+    <tbody>
+      <tr><td>trigger markup</td><td><code>&lt;button id="session-switch" aria-haspopup="menu" aria-expanded&gt;</code>; glyph, <code>.sr-only</code> “Session: ”, name, caret. Accessible name: “Session: Deep work”, menu</td></tr>
+      <tr><td>first paint</td><td><code>#session-bar</code> ships hidden; <code>sessions.js</code> fills the name, sets the trigger's <code>title</code> and unhides it at module load</td></tr>
+      <tr><td>open</td><td><code>aria-expanded="true"</code>, caret rotates, menu painted; the active row takes the roving tabindex and is scrolled into view</td></tr>
+      <tr><td>keyboard</td><td><code>Enter</code>/<code>Space</code>/<code>↓</code> open; <code>↑</code>/<code>↓</code> move, <code>Home</code>/<code>End</code> jump, <code>Enter</code> picks, <code>Esc</code> closes and returns focus to the trigger</td></tr>
+      <tr><td>pick</td><td><code>swapTo(id)</code>, menu closes, focus returns to the trigger; its name and the popover check update in the same <code>tabs:changed</code> render as the panel rows</td></tr>
+      <tr><td>refused pick</td><td>the menu closes, the name does not change and no message is shown — the save prompt or the editor already explains the refusal; the panel behaves the same way</td></tr>
+      <tr><td>outside click / scroll</td><td>closes without moving focus; only Escape and a pick refocus the trigger</td></tr>
+      <tr><td>resize / trigger hidden</td><td>a resize re-places the popover; if the trigger is no longer visible (under 861 px, or the top bar hidden), the popover closes instead of anchoring to a hidden button</td></tr>
+      <tr><td>rename / delete elsewhere</td><td>both repaint from the same <code>refresh()</code>; the trigger is one more output of the function that paints the panel</td></tr>
+      <tr><td>viewer</td><td>same picker, no New row and no separator; switching is allowed</td></tr>
+      <tr><td>20-session cap</td><td>no New row; the list scrolls; the panel's <code>+</code> states the cap</td></tr>
+      <tr><td>top bar hidden</td><td>the picker is gone with the bar; the rail's 🗂 still opens Sessions</td></tr>
+      <tr><td>phone</td><td><code>#session-bar</code> is <code>display:none</code> with the Sessions view; the phone names the note</td></tr>
+      <tr><td>empty model</td><td><code>#session-bar[hidden]</code> — no empty slot and no stray divider</td></tr>
+      <tr><td>reduced motion</td><td>the caret has no transition; the rotation is instant</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  (function () {
+    var buttons = Array.prototype.slice.call(document.querySelectorAll("[data-theme-btn]"));
+    function setTheme(theme) {
+      document.body.dataset.theme = theme;
+      buttons.forEach(function (b) {
+        b.setAttribute("aria-pressed", b.dataset.themeBtn === theme ? "true" : "false");
+      });
+    }
+    buttons.forEach(function (b) {
+      b.addEventListener("click", function () { setTheme(b.dataset.themeBtn); });
+    });
+    setTheme("dark");
+  })();
+</script>
+</body>
+</html>

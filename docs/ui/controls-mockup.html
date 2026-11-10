@@ -1,0 +1,2190 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Controls — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A, plus the six additions in
+      controls.md §1.2. No value below is invented outside those two.
+      Dark and light are the same names on two class scopes, so a
+      light board can sit inside a dark page.
+   ================================================================== */
+
+:root,
+.theme-dark {
+  /* ---- base (dark) ---- */
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;          /* foundation §3.6 — was #8b8d98 */
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(124, 156, 255, .28);
+
+  /* ---- semantic ---- */
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+
+  /* ---- elevation ---- */
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .35);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .45);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .5);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .3);
+
+  /* ---- addition: the switch knob leaves Settings (controls.md §1.2) ---- */
+  --switch-knob: var(--fg);
+}
+
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(47, 95, 208, .16);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .16);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .2);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .22);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .14);
+
+  --switch-knob: var(--accent-fg);
+}
+
+/* ---- primitives (theme-independent) ---- */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --z-inline: 2;
+  --z-draft: 80;
+  --z-chrome: 100;
+  --z-rail: 150;
+  --z-anchored: 200;
+  --z-scrim: 400;
+  --z-drawer: 410;
+  --z-sheet: 600;
+  --z-popover: 1000;
+  --z-modal: 2000;
+  --z-dialog: 2100;
+  --z-toast: 3000;
+
+  --dur-0: 100ms;
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 220ms;
+  --dur-4: 380ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: ease-out;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --control-h-body: 32px;      /* addition, controls.md §1.2 */
+  --opacity-disabled: .45;     /* addition, controls.md §1.2 */
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  /* overlay control — a control over an arbitrary image (addition) */
+  --overlay-control-fg: #ffffff;
+  --overlay-control-pill: rgba(0, 0, 0, .55);
+  --overlay-control-face: rgba(255, 255, 255, .14);
+  --overlay-control-border: rgba(255, 255, 255, .28);
+  --overlay-control-ring: #ffffff;
+}
+
+/* ==================================================================
+   2. PAGE CHROME — mockup scaffolding, not part of the design
+   ================================================================== */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  background: var(--surface-page);
+  color: var(--text-primary);
+}
+
+::selection { background: var(--selection); color: var(--text-primary); }
+
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.page-head {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-anchored);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+}
+.page-head h1 { margin: 0; font-size: var(--text-lg); font-weight: var(--fw-semibold); }
+.page-head .sub { color: var(--text-muted); font-size: var(--text-sm); }
+.page-head .spacer { flex: 1 1 auto; }
+.seg-toggle {
+  display: inline-flex;
+  height: var(--control-h-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  overflow: hidden;
+}
+.seg-toggle button {
+  min-width: 64px;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+.seg-toggle button + button { border-left: 1px solid var(--border); }
+.seg-toggle button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+.seg-toggle button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+main { display: block; }
+
+.sec {
+  padding: var(--space-6) var(--space-5) var(--space-7);
+  border-bottom: 1px solid var(--border);
+}
+.sec > h2 {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-semibold);
+}
+.sec > .lede {
+  max-width: 84ch;
+  margin: 0 0 var(--space-5);
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+}
+.sec > .lede code { font-family: var(--font-mono); font-size: .95em; }
+
+.grid {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+}
+.grid--wide { grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); }
+
+.cell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.cell .cap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.cell .real {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.states {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.states > figure { margin: 0; display: flex; flex-direction: column; gap: var(--space-1); align-items: flex-start; }
+.states > figure > figcaption {
+  font-size: var(--text-2xs);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border: 1px solid;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.tag-cur { color: var(--text-muted); border-color: var(--border); }
+.tag-prop { color: var(--accent); border-color: var(--accent); }
+.tag-fix { color: var(--danger); border-color: var(--danger); }
+
+.note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  max-width: 90ch;
+}
+.kbd {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* ==================================================================
+   3. COMPONENTS — the target, exactly as controls.md specifies
+   ================================================================== */
+
+/* --- button (§2.1) -------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-ui);
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-flat);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: var(--fw-semibold);
+}
+.btn--ghost { background: transparent; border-color: transparent; color: var(--text-muted); }
+.btn--danger { background: transparent; border-color: transparent; color: var(--danger); }
+.btn--link { background: transparent; border-color: transparent; color: var(--accent); padding: 0 var(--space-hair); }
+.btn--sm { height: var(--control-h-sm); padding: 0 var(--space-2); font-size: var(--text-sm); }
+.btn--lg { height: var(--control-h-lg); }
+.btn--block { width: 100%; }
+
+/* forced states for the board */
+.is-hover { background: var(--accent-soft); border-color: var(--accent); }
+.is-hover.btn--ghost { background: var(--accent-soft); border-color: transparent; color: var(--text-primary); }
+.is-hover.btn--danger { background: transparent; border-color: transparent; box-shadow: inset 0 0 0 1px var(--danger); color: var(--danger); }
+.is-hover.btn--primary { box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft); }
+.is-hover.btn--link { text-decoration: underline; }
+.is-pressed { transform: translateY(1px); }
+.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.is-disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+
+/* --- icon button (§2.2) -------------------------------------------- */
+.icobtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.icobtn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.icobtn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.icobtn--sm { width: var(--control-h-sm); height: var(--control-h-sm); }
+.icobtn--body { width: var(--control-h-body); height: var(--control-h-body); }
+.icobtn--lg { width: var(--control-h-lg); height: var(--control-h-lg); }
+.icobtn--touch { width: var(--control-h-touch); height: var(--control-h-touch); }
+.icobtn--round { border-radius: var(--radius-circle); }
+.icobtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.icobtn[disabled] { opacity: var(--opacity-disabled); cursor: not-allowed; background: transparent; color: var(--text-muted); }
+.icon { display: block; width: var(--icon-md); height: var(--icon-md); }
+
+/* --- toolbar button (§2.1 / §2.3) ---------------------------------- */
+.tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-ui);
+  line-height: var(--lh-flat);
+  cursor: pointer;
+}
+.tool:hover { background: var(--accent-soft); color: var(--text-primary); }
+.tool:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.tool[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.tool[disabled], .tool[aria-disabled="true"] { opacity: var(--opacity-disabled); cursor: not-allowed; background: transparent; color: var(--text-muted); }
+.tool--body { min-width: var(--control-h-body); height: var(--control-h-body); border: 1px solid transparent; }
+.tool--chip { min-width: 0; padding: 0 var(--space-3); height: var(--control-h-body); font-size: var(--text-sm); color: var(--text-primary); }
+.tool--chip[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--accent); font-weight: var(--fw-semibold); }
+.tool--danger:hover { background: var(--danger-soft); color: var(--danger); }
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-hair);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.tb-group { display: inline-flex; align-items: center; gap: var(--space-hair); }
+.tb-sep { flex: 0 0 auto; width: 1px; height: 20px; margin: 0 var(--space-2); background: var(--border); }
+
+/* --- fields (§2.4, §2.5) ------------------------------------------ */
+.field { display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.field > label { font-size: var(--text-ui); color: var(--text-muted); }
+.input, .select, .textarea {
+  width: 100%;
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-ui);
+}
+.textarea { min-height: calc(var(--control-h-lg) * 2); padding: var(--space-2) var(--space-3); resize: vertical; line-height: var(--lh-normal); }
+.input::placeholder, .textarea::placeholder { color: var(--text-muted); }
+.input:disabled, .select:disabled, .textarea:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.select { padding-right: var(--space-6); }
+.input:focus, .select:focus, .textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+}
+.is-focus.input, .is-focus.select, .is-focus.textarea {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+}
+.is-invalid.input, .is-invalid.textarea, .is-invalid.select {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 var(--stroke-3) var(--danger-soft);
+}
+.readonly-input {
+  border-color: var(--border);
+  background: var(--surface-well);
+  color: var(--text-muted);
+}
+.search { position: relative; }
+.search .input { padding-right: var(--control-h-body); }
+.search .search-clear {
+  position: absolute;
+  top: 50%;
+  right: var(--space-1);
+  transform: translateY(-50%);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.search .search-clear:hover { background: var(--accent-soft); color: var(--text-primary); }
+.search .search-clear:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.mono { font-family: var(--font-mono); }
+
+/* --- switch, checkbox, radio chip (§2.7) -------------------------- */
+.switch { position: relative; display: inline-flex; width: 36px; height: 20px; flex: 0 0 auto; }
+.switch input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.switch .track {
+  width: 36px; height: 20px;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  transition: background var(--dur-1) var(--ease-out);
+}
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 2px; left: 2px;
+  width: 16px; height: 16px;
+  border-radius: var(--radius-circle);
+  background: var(--switch-knob);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { transform: translateX(16px); }
+.switch input:focus-visible + .track { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.switch input:disabled + .track { opacity: var(--opacity-disabled); cursor: not-allowed; }
+
+.checkline { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-ui); }
+.checkline input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.checkline input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.chipcheck {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+.chipcheck input { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+.chipcheck:has(input:checked) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+.chipcheck:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: 1px; }
+
+/* --- segmented + tablist (§2.8) ---------------------------------- */
+.seg {
+  display: inline-flex;
+  height: var(--control-h-md);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  overflow: hidden;
+}
+.seg button {
+  min-width: var(--control-h-lg);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold); }
+.seg button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+.navlist { display: flex; flex-direction: column; gap: var(--space-hair); width: 200px; }
+.navlist button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.navlist button:hover { background: var(--accent-soft); color: var(--text-primary); }
+.navlist button[aria-selected="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+  box-shadow: inset var(--stroke-2) 0 0 var(--accent);
+}
+.navlist button:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+
+/* --- chip + badge (§2.6) ---------------------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: .02em;
+  white-space: nowrap;
+}
+.badge--accent { border-color: var(--accent); color: var(--accent); }
+.badge--warn { border-color: var(--warn); color: var(--warn); }
+.badge--ok { border-color: var(--ok); color: var(--ok); }
+.badge--count {
+  padding: 0;
+  border: 0;
+  min-width: 2ch;
+  justify-content: flex-end;
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+.chip-object {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--control-h-sm);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+.chip-object .x {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--control-h-sm); height: var(--control-h-sm);
+  margin-right: calc(-1 * var(--space-1));
+  border: 0; border-radius: var(--radius-xs);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.chip-object .x:hover { background: var(--danger-soft); color: var(--danger); }
+.chip-object .x:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+
+/* --- menu (§2.9) ------------------------------------------------- */
+.menu {
+  width: 240px;
+  padding: var(--space-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+}
+.menu button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-h-body);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu button:hover { background: var(--accent-soft); }
+.menu button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.menu button[disabled] { color: var(--text-muted); opacity: var(--opacity-disabled); cursor: default; background: transparent; }
+.menu button.danger { color: var(--danger); }
+.menu button.danger:hover { box-shadow: inset 0 0 0 1px var(--danger); background: transparent; }
+.menu .check { flex: 0 0 14px; width: 14px; color: var(--accent); }
+.menu .kbd { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+.menu hr { border: 0; border-top: 1px solid var(--border); margin: var(--space-1) var(--space-2); }
+.menu button[aria-current="page"] { color: var(--accent); font-weight: var(--fw-semibold); }
+
+/* --- rows (§2.16) ------------------------------------------------ */
+.rowlist { display: flex; flex-direction: column; gap: var(--space-hair); }
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.row:hover { background: var(--surface-raised); }
+.row:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.row.is-selected { background: var(--accent-soft); font-weight: var(--fw-semibold); }
+.row .name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .meta { flex: 0 0 auto; font-size: var(--text-xs); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.row--tree { min-height: var(--control-h-sm); border-radius: var(--radius-xs); padding-left: var(--space-1); }
+.row--tree.is-selected { color: var(--accent); }
+.row--tree.is-multi { background: var(--accent-soft); box-shadow: inset var(--stroke-2) 0 0 var(--accent); font-weight: var(--fw-regular); color: var(--text-primary); }
+.row .glyph { width: var(--icon-md); height: var(--icon-md); flex: 0 0 var(--icon-md); color: var(--text-muted); }
+.row .more {
+  flex: 0 0 var(--control-h-sm);
+  width: var(--control-h-sm); height: var(--control-h-sm);
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: var(--radius-xs);
+  background: transparent; color: var(--text-muted); cursor: pointer;
+}
+.row .more:hover { background: var(--accent-soft); color: var(--text-primary); }
+.row .more:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.tree-indent { display: inline-block; width: 18px; flex: 0 0 18px; }
+
+/* --- frames (§2.11, §2.12, §2.13) -------------------------------- */
+.dlg {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.dlg-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+.dlg-head h3 { margin: 0; font-size: var(--text-lg); font-weight: var(--fw-semibold); }
+.dlg-body { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-4); }
+.dlg-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border);
+}
+.dlg-foot .status { margin-right: auto; font-size: var(--text-sm); color: var(--text-muted); }
+
+.sheet {
+  width: 320px;
+  max-width: 100%;
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-sheet);
+  padding-bottom: var(--space-3);
+}
+.sheet-grabber { width: 36px; height: 4px; margin: var(--space-2) auto; border-radius: var(--radius-pill); background: var(--border); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: 0 var(--space-2) 0 var(--space-4); min-height: 52px; }
+.sheet-head h3 { margin: 0; font-size: 16px; font-weight: var(--fw-semibold); }
+.sheet-body { padding: 0 var(--space-4) var(--space-3); }
+.sheet-foot { padding: var(--space-2) var(--space-4) 0; }
+.sheet-foot .btn { width: 100%; height: var(--control-h-touch); border-radius: var(--radius-md); }
+
+.lightbox {
+  position: relative;
+  height: 260px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-well);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox .art { font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-muted); }
+.lightbox-controls {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  background: var(--overlay-control-pill);
+}
+.overlay-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border: 1px solid var(--overlay-control-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--overlay-control-fg);
+  font: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+.overlay-btn:hover { background: var(--overlay-control-face); }
+.overlay-btn:focus-visible { outline: 2px solid var(--overlay-control-ring); outline-offset: var(--focus-offset); }
+.overlay-pct { min-width: 3.2em; text-align: center; font-size: var(--text-xs); color: var(--overlay-control-fg); font-variant-numeric: tabular-nums; }
+
+/* --- feedback (§2.14) ------------------------------------------- */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-ui);
+}
+.banner .msg { flex: 1 1 auto; min-width: 0; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inline-error {
+  min-height: calc(var(--text-sm) * var(--lh-normal));
+  margin: 0;
+  color: var(--danger);
+  font-size: var(--text-sm);
+  line-height: var(--lh-normal);
+}
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-toast);
+  font-size: var(--text-ui);
+}
+.toast--warn { border-color: var(--warn); color: var(--warn); }
+.status { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--text-sm); font-weight: var(--fw-semibold); color: var(--text-primary); }
+.status::before { content: ""; width: 8px; height: 8px; border-radius: var(--radius-circle); background: var(--text-muted); flex: 0 0 auto; }
+.status--ok { color: var(--ok); }
+.status--ok::before { background: var(--ok); }
+.status--warn { color: var(--warn); }
+.status--warn::before { background: var(--warn); }
+.status--danger { color: var(--danger); }
+.status--danger::before { background: var(--danger); }
+.status--accent { color: var(--accent); }
+.status--accent::before { background: var(--accent); }
+
+/* --- content states (§2.15) ------------------------------------- */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+}
+.state .glyph { color: var(--text-muted); }
+.state--error { color: var(--danger); }
+.readonly-block {
+  padding: var(--space-4);
+  background: var(--surface-well);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.readonly-block .head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-2); font-family: var(--font-mono); }
+.spinner {
+  width: var(--icon-md); height: var(--icon-md);
+  border: var(--stroke-2) solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: var(--radius-circle);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation-duration: 1.6s; }
+  .switch .track, .switch .track::after { transition: none; }
+}
+
+/* --- real contexts (§14) ---------------------------------------- */
+.editbar-demo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-hair);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.eb-primary { color: var(--accent); font-weight: var(--fw-semibold); }
+.eb-primary:hover { background: var(--accent); color: var(--text-on-accent); }
+.settings-row { display: flex; align-items: center; gap: var(--space-3); min-width: 0; padding: var(--space-2) 0; }
+.settings-row > .label { flex: 0 0 132px; min-width: 0; color: var(--text-muted); font-size: var(--text-ui-lg); }
+.settings-row > .control { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "input input" "attach actions";
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft); }
+.composer textarea {
+  grid-area: input;
+  min-height: 40px; max-height: 160px;
+  border: 0; background: transparent; color: var(--text-primary);
+  font: inherit; font-size: var(--text-ui); line-height: var(--lh-normal);
+  padding: var(--space-1) var(--space-1) 0; resize: none;
+}
+.composer textarea::placeholder { color: var(--text-muted); }
+.composer textarea:focus { outline: none; }
+.composer .attach { grid-area: attach; justify-self: start; }
+.composer .actions { grid-area: actions; justify-self: end; display: flex; gap: var(--space-1); }
+.send { background: var(--accent); color: var(--text-on-accent); border: 0; }
+.send:hover { background: var(--accent); color: var(--text-on-accent); box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft); }
+.send[disabled] { background: var(--surface-raised); color: var(--text-muted); border: 1px solid var(--border); opacity: .6; }
+
+/* --- compare strip --------------------------------------------- */
+.compare { display: grid; gap: var(--space-3); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.board {
+  padding: var(--space-4);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.board .head {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.board .specimen { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+
+/* --- phone board (§5) ------------------------------------------ */
+.phone-wrap { display: flex; gap: var(--space-5); flex-wrap: wrap; align-items: flex-start; }
+.phone {
+  width: 390px;
+  max-width: 100%;
+  height: 660px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-page);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sheet);
+}
+.phone-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 52px;
+  padding: 0 var(--space-1);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.phone-top .title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 var(--space-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 16px; font-weight: var(--fw-semibold);
+}
+.phone-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: var(--space-4) var(--space-5); }
+.phone-rail {
+  display: flex;
+  height: 56px;
+  background: var(--surface-panel);
+  border-top: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.phone-rail .icobtn { flex: 1 1 0; width: auto; height: 56px; border-radius: 0; color: var(--text-muted); }
+.phone-rail .icobtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--text-primary); }
+.phone-editbar {
+  display: flex;
+  gap: var(--space-hair);
+  height: 52px;
+  padding: var(--space-1) var(--space-1);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex: 0 0 auto;
+}
+.phone-editbar .tool { min-width: var(--control-h-touch); height: var(--control-h-touch); font-size: 15px; flex: 0 0 auto; }
+.phone-editbar .pinned {
+  position: sticky; left: 0;
+  display: flex; gap: var(--space-hair);
+  padding-right: var(--space-1);
+  background: var(--surface-panel);
+  box-shadow: 6px 0 8px -6px rgba(0,0,0,.45);
+}
+.phone .row { min-height: var(--control-h-touch); border-radius: var(--radius-md); }
+.phone .input { min-height: var(--control-h-touch); font-size: 16px; }
+.phone .menu button { min-height: 48px; padding: 0 14px; font-size: 15px; }
+.phone .toast { width: 100%; min-height: var(--control-h-touch); border-radius: var(--radius-md); font-size: 14px; }
+
+/* --- delta table ------------------------------------------------ */
+.delta { width: 100%; border-collapse: collapse; font-size: var(--text-ui); }
+.delta th, .delta td { text-align: left; vertical-align: top; padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--border); }
+.delta th { font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted); }
+.delta code { font-family: var(--font-mono); font-size: .92em; color: var(--text-muted); }
+
+@media (max-width: 620px) {
+  .sec { padding: var(--space-5) var(--space-3) var(--space-6); }
+  .page-head { padding: var(--space-2) var(--space-3); }
+}
+</style>
+</head>
+<body>
+
+<svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="nb-icon-refresh" viewBox="0 0 16 16"><path d="M13 8a5 5 0 1 1-1.6-3.7M13 3v3.2h-3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-chevron" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.3" fill="currentColor"/><circle cx="8" cy="8" r="1.3" fill="currentColor"/><circle cx="12.5" cy="8" r="1.3" fill="currentColor"/></symbol>
+  <symbol id="nb-icon-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="nb-icon-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="nb-icon-search" viewBox="0 0 16 16"><circle cx="6.8" cy="6.8" r="4.3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 10l3.2 3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="nb-icon-undo" viewBox="0 0 16 16"><path d="M4 6h5a4 4 0 0 1 4 4v2M6.4 3.6 4 6l2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-redo" viewBox="0 0 16 16"><path d="M12 6H7a4 4 0 0 0-4 4v2M9.6 3.6 12 6l-2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5M6.7 6.8v4M9.3 6.8v4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="nb-icon-folder" viewBox="0 0 16 16"><path d="M2 5.2h4.2l1.3 1.5H14v6.1H2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-file" viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M9 2v3h3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-pin" viewBox="0 0 16 16"><path d="M6 2h4l-.7 3.4L11 8H5l1.7-2.6zM8 8v6" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-star" viewBox="0 0 16 16"><path d="m8 2.4 1.7 3.5 3.8.5-2.8 2.7.7 3.8L8 11.1 4.6 12.9l.7-3.8L2.5 6.4l3.8-.5z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+</svg>
+
+<header class="page-head">
+  <h1>Controls</h1>
+  <span class="sub">controls.md — every component, every state, at desktop density, plus a 390 px phone board</span>
+  <span class="spacer"></span>
+  <div class="seg-toggle" role="group" aria-label="Theme">
+    <button type="button" data-theme-btn="theme-dark" aria-pressed="true">Dark</button>
+    <button type="button" data-theme-btn="theme-light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ============================================================
+     1. The set at a glance, both themes side by side
+     ============================================================ -->
+<section class="sec">
+  <h2>1 · The set at a glance</h2>
+  <p class="lede">Every specimen is the target in <code>controls.md</code>. The theme switch in the page header
+    re-scopes the whole document; this strip keeps both themes side by side so a value can be compared without
+    switching. Tags: <span class="tag tag-cur">current</span> marks a specimen that matches what ships,
+    <span class="tag tag-prop">proposed</span> marks one that changes, <span class="tag tag-fix">fix</span> marks a
+    contrast repair.</p>
+
+  <div class="compare">
+    <div class="board theme-dark">
+      <div class="head"><span>Dark</span><span class="kbd">--surface-page #1a1b1f</span></div>
+      <div class="specimen">
+        <button class="btn btn--primary" type="button">Apply</button>
+        <button class="btn" type="button">Cancel</button>
+        <button class="btn btn--ghost" type="button">Reset</button>
+        <button class="btn btn--danger" type="button">Remove</button>
+        <span class="switch"><input type="checkbox" id="sw-a" checked><span class="track"></span></span>
+        <span class="badge badge--accent">Active</span>
+        <span class="badge badge--warn">Not found</span>
+        <span class="status status--ok">Saved</span>
+        <input class="input" placeholder="Filter notes…" style="max-width:180px" aria-label="Example field">
+      </div>
+    </div>
+    <div class="board theme-light">
+      <div class="head"><span>Light</span><span class="kbd">--surface-page #ffffff</span></div>
+      <div class="specimen">
+        <button class="btn btn--primary" type="button">Apply</button>
+        <button class="btn" type="button">Cancel</button>
+        <button class="btn btn--ghost" type="button">Reset</button>
+        <button class="btn btn--danger" type="button">Remove</button>
+        <span class="switch"><input type="checkbox" id="sw-b" checked><span class="track"></span></span>
+        <span class="badge badge--accent">Active</span>
+        <span class="badge badge--warn">Not found</span>
+        <span class="status status--ok">Saved</span>
+        <input class="input" placeholder="Filter notes…" style="max-width:180px" aria-label="Example field">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     2. Button
+     ============================================================ -->
+<section class="sec">
+  <h2>2 · Button</h2>
+  <p class="lede">Five variants, one size scale. The primary face is <code>--accent</code> with
+    <code>--text-on-accent</code>; the halo is the hover, not a brightness filter.</p>
+
+  <div class="grid grid--wide">
+    <div class="cell">
+      <div class="cap">Primary <span class="tag tag-fix">fix</span></div>
+      <div class="real">.settings-action--primary · .designer-btn--commit → primary</div>
+      <div class="states">
+        <figure><button class="btn btn--primary" type="button">Apply</button><figcaption>rest</figcaption></figure>
+        <figure><button class="btn btn--primary is-hover" type="button">Apply</button><figcaption>hover · halo</figcaption></figure>
+        <figure><button class="btn btn--primary is-pressed" type="button">Apply</button><figcaption>pressed</figcaption></figure>
+        <figure><button class="btn btn--primary is-focus" type="button">Apply</button><figcaption>focus</figcaption></figure>
+        <figure><button class="btn btn--primary is-disabled" type="button" disabled>Apply</button><figcaption>disabled</figcaption></figure>
+        <figure><button class="btn btn--primary is-disabled" type="button" aria-busy="true" disabled>Saving…</button><figcaption>busy</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Secondary <span class="tag tag-cur">current</span></div>
+      <div class="real">.settings-action · .designer-btn · .ai-btn · .search-panel-retry</div>
+      <div class="states">
+        <figure><button class="btn" type="button">Cancel</button><figcaption>rest</figcaption></figure>
+        <figure><button class="btn is-hover" type="button">Cancel</button><figcaption>hover</figcaption></figure>
+        <figure><button class="btn is-pressed" type="button">Cancel</button><figcaption>pressed</figcaption></figure>
+        <figure><button class="btn is-focus" type="button">Cancel</button><figcaption>focus</figcaption></figure>
+        <figure><button class="btn is-disabled" type="button" disabled>Cancel</button><figcaption>disabled</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Ghost <span class="tag tag-cur">current</span></div>
+      <div class="real">.ws-btn · .shortcut-change · .designer-btn--ghost · .ai-turn-control</div>
+      <div class="states">
+        <figure><button class="btn btn--ghost" type="button">Rename</button><figcaption>rest</figcaption></figure>
+        <figure><button class="btn btn--ghost is-hover" type="button">Rename</button><figcaption>hover</figcaption></figure>
+        <figure><button class="btn btn--ghost is-focus" type="button">Rename</button><figcaption>focus</figcaption></figure>
+        <figure><button class="btn btn--ghost is-disabled" type="button" disabled>Rename</button><figcaption>disabled</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Danger <span class="tag tag-cur">current</span></div>
+      <div class="real">.ws-btn--danger · .settings-ai-remove · .designer-btn--danger</div>
+      <div class="states">
+        <figure><button class="btn btn--danger" type="button">Remove</button><figcaption>rest</figcaption></figure>
+        <figure><button class="btn btn--danger is-hover" type="button">Remove</button><figcaption>hover</figcaption></figure>
+        <figure><button class="btn btn--danger is-focus" type="button">Remove</button><figcaption>focus</figcaption></figure>
+        <figure><button class="btn btn--danger is-disabled" type="button" disabled>Remove</button><figcaption>disabled</figcaption></figure>
+      </div>
+      <p class="note">Never filled. White on <code>--danger</code> is 2.4:1 and there is no
+        <code>--text-on-danger</code> pair.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Link <span class="tag tag-cur">current</span></div>
+      <div class="real">#brand · inline text actions</div>
+      <div class="states">
+        <figure><button class="btn btn--link" type="button">notebook</button><figcaption>rest</figcaption></figure>
+        <figure><button class="btn btn--link is-hover" type="button">notebook</button><figcaption>hover · underline</figcaption></figure>
+        <figure><button class="btn btn--link is-focus" type="button">notebook</button><figcaption>focus</figcaption></figure>
+      </div>
+      <p class="note">A control that must be indistinguishable from a label until it is touched.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Sizes</div>
+      <div class="real">--control-h-sm 24 · md 30 · lg 36</div>
+      <div class="states">
+        <figure><button class="btn btn--sm" type="button">Small 24</button><figcaption>sm</figcaption></figure>
+        <figure><button class="btn" type="button">Default 30</button><figcaption>md</figcaption></figure>
+        <figure><button class="btn btn--lg" type="button">Large 36</button><figcaption>lg</figcaption></figure>
+      </div>
+      <p class="note"><code>sm</code> is for a row action inside a card. <code>lg</code> is for a dialog's
+        single action and <code>#welcome</code>.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     3. Icon button
+     ============================================================ -->
+<section class="sec">
+  <h2>3 · Icon button</h2>
+  <p class="lede">Five sizes. The glyph is 16 px on the 16 grid at a 1.5 px stroke, drawn in
+    <code>currentColor</code>; the accessible name is on the button. <code>title</code> is the tooltip, and it is
+    never the only name.</p>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="cap">Sizes</div>
+      <div class="real">sm 24 · md 30 · body 32 · lg 36 · touch 44</div>
+      <div class="states">
+        <figure><button class="icobtn icobtn--sm" type="button" aria-label="More" title="More"><svg class="icon" aria-hidden="true"><use href="#nb-icon-more"/></svg></button><figcaption>24</figcaption></figure>
+        <figure><button class="icobtn" type="button" aria-label="Reload" title="Reload"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button><figcaption>30</figcaption></figure>
+        <figure><button class="icobtn icobtn--body" type="button" aria-label="Bold" title="Bold"><svg class="icon" aria-hidden="true"><use href="#nb-icon-star"/></svg></button><figcaption>32</figcaption></figure>
+        <figure><button class="icobtn icobtn--lg" type="button" aria-label="Files" title="Files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg></button><figcaption>36</figcaption></figure>
+        <figure><button class="icobtn icobtn--touch" type="button" aria-label="Search" title="Search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-search"/></svg></button><figcaption>44</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">States</div>
+      <div class="real">.icon-btn · .collapse-btn · .search-panel-clear</div>
+      <div class="states">
+        <figure><button class="icobtn" type="button" aria-label="Reload"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button><figcaption>rest</figcaption></figure>
+        <figure><button class="icobtn" type="button" aria-label="Reload" style="background:var(--accent-soft);color:var(--text-primary)"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button><figcaption>hover</figcaption></figure>
+        <figure><button class="icobtn is-focus" type="button" aria-label="Reload"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button><figcaption>focus</figcaption></figure>
+        <figure><button class="icobtn" type="button" aria-label="Reload" disabled><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button><figcaption>disabled</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Toggle <span class="tag tag-fix">fix</span></div>
+      <div class="real">.te-tool[aria-pressed] · .edit-chip[aria-pressed] · #edit-toggle.editing</div>
+      <div class="states">
+        <figure><button class="icobtn icobtn--body" type="button" aria-label="Bold" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#nb-icon-star"/></svg></button><figcaption>off</figcaption></figure>
+        <figure><button class="icobtn icobtn--body" type="button" aria-label="Bold" aria-pressed="true"><svg class="icon" aria-hidden="true"><use href="#nb-icon-star"/></svg></button><figcaption>on · wash</figcaption></figure>
+      </div>
+      <p class="note">The on state is a wash and an accent glyph, never a filled accent. Six shipped rules fill
+        the face with <code>#fff</code> on it (controls.md §1.1 D1).</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Round</div>
+      <div class="real">.ai-send · .ai-stop</div>
+      <div class="states">
+        <figure><button class="icobtn icobtn--body icobtn--round send" type="button" aria-label="Send"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron"/></svg></button><figcaption>enabled</figcaption></figure>
+        <figure><button class="icobtn icobtn--body icobtn--round send" type="button" aria-label="Send" disabled><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron"/></svg></button><figcaption>disabled</figcaption></figure>
+        <figure><button class="icobtn icobtn--body icobtn--round" type="button" aria-label="Stop"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button><figcaption>stop</figcaption></figure>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Tooltip <span class="tag tag-cur">current</span></div>
+      <div class="real">native title · no custom tooltip</div>
+      <div class="states">
+        <figure><button class="icobtn" type="button" aria-label="Reload file tree from disk" title="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button><figcaption>hover me</figcaption></figure>
+        <figure><button class="icobtn" type="button" aria-label="More" title="More"><svg class="icon" aria-hidden="true"><use href="#nb-icon-more"/></svg></button><figcaption>rest</figcaption></figure>
+      </div>
+      <p class="note">The tooltip is the native <code>title</code>. The accessible name is
+        <code>aria-label</code>. A fact needed to act — a disabled reason, a folder that vanished — is visible
+        text, not a tooltip.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     4. Toolbar
+     ============================================================ -->
+<section class="sec">
+  <h2>4 · Toolbar and toolbar group</h2>
+  <p class="lede">One row. Groups are <code>role="group"</code>, separators are <code>aria-hidden</code>. Three
+    overflow behaviours exist, one per surface; a row never has two.</p>
+
+  <div class="grid grid--wide">
+    <div class="cell">
+      <div class="cap">Toolbar, desktop</div>
+      <div class="real">role="toolbar" · 30 px controls · 2 px group gap</div>
+      <div class="toolbar" role="toolbar" aria-label="Example tools">
+        <div class="tb-group" role="group" aria-label="History">
+          <button class="tool tool--body" type="button" aria-label="Undo" disabled><svg class="icon" aria-hidden="true"><use href="#nb-icon-undo"/></svg></button>
+          <button class="tool tool--body" type="button" aria-label="Redo" disabled><svg class="icon" aria-hidden="true"><use href="#nb-icon-redo"/></svg></button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Text">
+          <button class="tool" type="button" aria-pressed="false">B</button>
+          <button class="tool" type="button" aria-pressed="false">I</button>
+          <button class="tool" type="button" aria-pressed="false">S</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Insert">
+          <button class="tool" type="button">Link</button>
+          <button class="tool" type="button">Image</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Destructive">
+          <button class="tool tool--danger" type="button"><svg class="icon" aria-hidden="true"><use href="#nb-icon-trash"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Toolbar, body size</div>
+      <div class="real">--control-h-body 32 · edit-window bar</div>
+      <div class="toolbar" role="toolbar" aria-label="Body-size tools">
+        <div class="tb-group" role="group" aria-label="Mode">
+          <button class="tool tool--body" type="button" aria-pressed="true">Select</button>
+          <button class="tool tool--body" type="button" aria-pressed="false">Connect</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Insert">
+          <button class="tool tool--body tool--chip" type="button">Add</button>
+          <button class="tool tool--body tool--chip" type="button">Chart</button>
+        </div>
+      </div>
+      <p class="note"><code>Add</code> and <code>Chart</code> focus the matching sidebar section. A chip never
+        copies a form into the bar (edit-window.md §5).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     5. Fields
+     ============================================================ -->
+<section class="sec">
+  <h2>5 · Text input, search, textarea, number, select</h2>
+  <p class="lede">One border, one focus, one invalid state. <code>--border-strong</code> is the boundary —
+    <code>--border</code> is 1.27:1 and is not a control boundary.</p>
+
+  <div class="grid grid--wide">
+    <div class="cell">
+      <div class="cap">Text input <span class="tag tag-fix">fix</span></div>
+      <div class="real">.settings-text-input · .auth-input (mono) · 36 px</div>
+      <div class="field"><label for="f1">Site title</label><input id="f1" class="input" value="Notes"></div>
+      <div class="field"><label for="f2">Focus</label><input id="f2" class="input is-focus" value="Focused field"></div>
+      <div class="field">
+        <label for="f3">Folder</label>
+        <input id="f3" class="input is-invalid" value="notes/work" aria-invalid="true" aria-describedby="e1">
+        <p class="inline-error" id="e1" role="alert">Use an absolute path, like /home/you/notes.</p>
+      </div>
+      <div class="field"><label for="f4">Disabled</label><input id="f4" class="input" value="Read only" disabled></div>
+      <div class="field"><label for="f5">Read-only echo</label><input id="f5" class="input readonly-input mono" value="/home/you/notes" readonly></div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Search with clear <span class="tag tag-prop">proposed</span></div>
+      <div class="real">.search-panel-input · .search-panel-clear 22 → 24</div>
+      <div class="search">
+        <input class="input" placeholder="Search notebooks…" aria-label="Search notebooks" value="todo">
+        <button class="search-clear" type="button" aria-label="Clear search" title="Clear search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+      </div>
+      <div class="search">
+        <input class="input" placeholder="Empty — no clear button" aria-label="Empty search">
+      </div>
+      <p class="note">The field reserves <code>--control-h-body</code> on the right so the text never runs under
+        the clear button. The native cancel button stays suppressed.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Textarea</div>
+      <div class="real">.settings-vimrc-area · #capture-sheet textarea</div>
+      <div class="field"><label for="t1">Initial Vim script</label><textarea id="t1" class="textarea mono" rows="4">set number
+set tabstop=2</textarea></div>
+      <div class="field"><label for="t2">Invalid</label><textarea id="t2" class="textarea is-invalid" rows="2" aria-invalid="true"></textarea></div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Number</div>
+      <div class="real">.settings-number-input · 90 px · right aligned</div>
+      <div class="settings-row">
+        <span class="label">Autosave delay</span>
+        <span class="control">
+          <input class="input" type="number" inputmode="numeric" min="0" max="600" step="5" value="30" style="max-width:90px;text-align:right" aria-label="Autosave delay in seconds">
+          <span class="badge">seconds</span>
+        </span>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Select <span class="tag tag-fix">fix</span></div>
+      <div class="real">.search-panel-select · .ai-model-select (no focus rule today)</div>
+      <div class="field"><label for="s1">Model</label>
+        <select id="s1" class="select"><option>gpt-4.1</option><option>local model</option><option disabled>unavailable</option></select>
+      </div>
+      <div class="field"><label for="s2">Focus</label>
+        <select id="s2" class="select is-focus"><option>Focused select</option></select>
+      </div>
+      <p class="note">Native popup. A custom listbox would re-implement type-ahead, Home/End and the platform
+        picker.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     6. Choice
+     ============================================================ -->
+<section class="sec">
+  <h2>6 · Checkbox, radio chip, switch</h2>
+  <p class="lede">The switch keeps the Settings shape and a native input, with two repairs: the track becomes
+    <code>--border-strong</code> (3:1) and the motion snaps to <code>--dur-1</code>.</p>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="cap">Switch <span class="tag tag-prop">proposed</span></div>
+      <div class="real">#settings-overlay input[type=checkbox] · 36 × 20</div>
+      <div class="states">
+        <figure><span class="switch"><input type="checkbox" id="sw1"><span class="track"></span></span><figcaption>off</figcaption></figure>
+        <figure><span class="switch"><input type="checkbox" id="sw2" checked><span class="track"></span></span><figcaption>on</figcaption></figure>
+        <figure><span class="switch"><input type="checkbox" id="sw3"><span class="track" style="outline:var(--focus-ring);outline-offset:2px"></span></span><figcaption>focus</figcaption></figure>
+        <figure><span class="switch"><input type="checkbox" id="sw4" disabled><span class="track"></span></span><figcaption>disabled</figcaption></figure>
+      </div>
+      <p class="note">Track off = <code>--border-strong</code>; on = <code>--accent</code>; knob =
+        <code>--switch-knob</code>.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Checkbox</div>
+      <div class="real">.search-panel-case (as a chip) · native box</div>
+      <div class="states">
+        <label class="checkline"><input type="checkbox">Task list (content)</label>
+        <label class="chipcheck"><input type="checkbox"><span>Aa</span><span>Match case</span></label>
+        <label class="chipcheck"><input type="checkbox" checked><span>Aa</span><span>Match case · on</span></label>
+      </div>
+      <p class="note">A checkbox that filters is a chip toggle. A checkbox inside a note is content and keeps
+        the native box.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Radio chip <span class="tag tag-cur">current</span></div>
+      <div class="real">.theme-options · .font-size-options · +6 groups</div>
+      <div class="states">
+        <label class="chipcheck"><input type="radio" name="demo-theme"><span>Dark</span></label>
+        <label class="chipcheck"><input type="radio" name="demo-theme" checked><span>Light</span></label>
+        <label class="chipcheck"><input type="radio" name="demo-theme" disabled><span>Auto</span></label>
+      </div>
+      <p class="note">Native radio, visually hidden, <code>:has(:checked)</code> paints the chip.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Segmented</div>
+      <div class="real">.graph-view-mode · .search-panel-mode</div>
+      <div class="states">
+        <div class="seg" role="group" aria-label="Graph mode">
+          <button type="button" aria-pressed="true">2D</button>
+          <button type="button" aria-pressed="false">3D</button>
+        </div>
+        <div class="seg" role="group" aria-label="Mode">
+          <button type="button" aria-pressed="false">Name</button>
+          <button type="button" aria-pressed="true">Content</button>
+          <button type="button" aria-pressed="false">Both</button>
+        </div>
+      </div>
+      <p class="note">The ring is inset because the container clips.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     7. Tablist
+     ============================================================ -->
+<section class="sec">
+  <h2>7 · Tablist</h2>
+  <p class="lede">A vertical tablist for Settings and a horizontal one for the file strip. One tab has
+    <code>tabindex="0"</code>; the arrows move and select.</p>
+
+  <div class="grid grid--wide">
+    <div class="cell">
+      <div class="cap">Vertical · Settings nav <span class="tag tag-cur">current</span></div>
+      <div class="real">.settings-nav-item · 30 px · 2 px accent rail</div>
+      <div class="navlist" role="tablist" aria-orientation="vertical" aria-label="Settings">
+        <button type="button" role="tab" aria-selected="true" tabindex="0"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>General</button>
+        <button type="button" role="tab" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#nb-icon-star"/></svg>Appearance</button>
+        <button type="button" role="tab" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>Shortcuts</button>
+        <button type="button" role="tab" aria-selected="false" tabindex="-1"><svg class="icon" aria-hidden="true"><use href="#nb-icon-trash"/></svg>Security</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Horizontal · file tabs <span class="tag tag-prop">proposed</span></div>
+      <div class="real">.tab → role="tab" · 34 px bar · close 24</div>
+      <div style="display:flex;align-items:flex-end;gap:2px;background:var(--surface-panel);padding:6px 6px 0;border-radius:var(--radius-sm) var(--radius-sm) 0 0;border:1px solid var(--border);border-bottom:0">
+        <div role="tab" aria-selected="true" tabindex="0" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 12px;border:1px solid var(--accent);border-bottom:0;border-radius:6px 6px 0 0;background:var(--surface-page);color:var(--text-primary);font-size:.89rem">
+          <span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">notes.md</span>
+          <button class="icobtn icobtn--sm" type="button" aria-label="Close notes.md"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+        </div>
+        <div role="tab" aria-selected="false" tabindex="-1" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 12px;border:1px solid var(--border);border-bottom:0;border-radius:6px 6px 0 0;background:var(--surface-raised);color:var(--text-muted);font-size:.89rem">
+          <span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">todo.md</span>
+          <button class="icobtn icobtn--sm" type="button" aria-label="Close todo.md"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+        </div>
+        <div role="tab" aria-selected="false" tabindex="-1" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 6px 0 12px;border:1px solid var(--accent);border-bottom:0;border-radius:6px 6px 0 0;background:var(--accent-soft);color:var(--text-muted);font-size:.89rem">
+          <span style="width:8px;height:8px;border-radius:50%;background:var(--accent)"></span>
+          <span style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">draft.md · dirty</span>
+          <button class="icobtn icobtn--sm" type="button" aria-label="Close draft.md"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+        </div>
+      </div>
+      <p class="note">The close button is nested and keeps its own tab stop, because a button cannot contain a
+        button — the same reason as the Sessions row (sessions.md D4).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     8. Chip and badge
+     ============================================================ -->
+<section class="sec">
+  <h2>8 · Chip and badge</h2>
+  <p class="lede">A badge reports; a chip names or filters. Both are outline-only: <code>--accent</code> text on
+    an <code>--accent-soft</code> fill is 4.18:1 in the light theme.</p>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="cap">Status badges</div>
+      <div class="real">.ws-badge · .stg-tag</div>
+      <div class="states">
+        <span class="badge badge--accent">Active</span>
+        <span class="badge">Default</span>
+        <span class="badge badge--warn">Not found</span>
+        <span class="badge badge--ok">Installed</span>
+        <span class="badge" style="color:var(--danger);border-color:var(--danger)">Read-only</span>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Counts</div>
+      <div class="real">.session-count · --text-2xs 9 px fixed</div>
+      <div class="states">
+        <button class="row" type="button"><span class="name">Work</span><span class="badge badge--count">12</span></button>
+        <button class="row is-selected" type="button"><span class="name">Notes</span><span class="badge badge--count" style="color:var(--text-primary)">7</span></button>
+      </div>
+      <p class="note">Tabular digits, right-aligned, <code>min-width: 2ch</code>, so 0…40 holds one column.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Object chip <span class="tag tag-cur">current</span></div>
+      <div class="real">.ai-attach-chip</div>
+      <div class="states">
+        <span class="chip-object"><span>notes.md</span><button class="x" type="button" aria-label="Remove notes.md"><svg class="icon" aria-hidden="true" style="width:12px;height:12px"><use href="#nb-icon-close"/></svg></button></span>
+        <span class="chip-object"><span>diagram.svg</span><button class="x" type="button" aria-label="Remove diagram.svg"><svg class="icon" aria-hidden="true" style="width:12px;height:12px"><use href="#nb-icon-close"/></svg></button></span>
+        <span class="chip-object" style="border-color:var(--danger);color:var(--danger)"><span>big.bin</span><button class="x" type="button" aria-label="Remove big.bin"><svg class="icon" aria-hidden="true" style="width:12px;height:12px"><use href="#nb-icon-close"/></svg></button></span>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Toolbar chip <span class="tag tag-cur">current</span></div>
+      <div class="real">.edit-chip · a chip-shaped button</div>
+      <div class="states">
+        <button class="tool tool--chip" type="button">Examples ▾</button>
+        <button class="tool tool--chip" type="button" aria-pressed="true">Chart</button>
+        <button class="tool tool--chip" type="button" disabled>Source</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     9. Menu
+     ============================================================ -->
+<section class="sec">
+  <h2>9 · Menu, item, submenu, separator</h2>
+  <p class="lede">One appearance, five instances: <code>NB.menu</code>, the session popover, the workspace
+    popover, the edit-bar dropdowns, the table-view popover. Only width and placement differ.</p>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="cap">Full menu</div>
+      <div class="real">.context-menu · 32 px item · 48 px on phone</div>
+      <div class="menu" role="menu" aria-label="Note actions">
+        <button type="button" role="menuitem"><span class="check">✓</span>Open</button>
+        <button type="button" role="menuitem">Copy link<span class="kbd">Ctrl+C</span></button>
+        <button type="button" role="menuitem" aria-current="page"><span class="check">✓</span>Notes</button>
+        <button type="button" role="menuitem">Move to session…<span class="kbd">▸</span></button>
+        <hr>
+        <button type="button" role="menuitem" disabled aria-disabled="true" title="Only the default workspace cannot be removed">Remove</button>
+        <button type="button" role="menuitem" class="danger">Delete</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Item states</div>
+      <div class="real">hover · focus-inset · disabled · danger · current</div>
+      <div class="menu" role="menu" aria-label="Item states">
+        <button type="button" role="menuitem" style="background:var(--accent-soft)">Hovered</button>
+        <button type="button" role="menuitem" class="is-focus" style="outline:var(--focus-ring);outline-offset:-2px">Focused</button>
+        <button type="button" role="menuitem" disabled aria-disabled="true">Disabled</button>
+        <button type="button" role="menuitem" class="danger" style="box-shadow:inset 0 0 0 1px var(--danger)">Danger hover</button>
+        <button type="button" role="menuitem" aria-current="page">Current row</button>
+      </div>
+      <p class="note">The danger hover keeps the face and adds an inset danger ring: a
+        <code>--danger-soft</code> fill puts the label at 3.73:1.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Anchored, with a trigger</div>
+      <div class="real">.session-menu · .workspace-menu · --z-popover</div>
+      <div style="display:flex;flex-direction:column;gap:var(--space-1)">
+        <button class="btn btn--sm" type="button" aria-haspopup="menu" aria-expanded="true" style="align-self:flex-start;background:var(--accent-soft);border-color:var(--accent)">Notes ▾</button>
+        <div class="menu" role="menu" aria-label="Sessions" style="width:220px">
+          <button type="button" role="menuitem" aria-current="true"><span class="check">✓</span><span class="name">Notes</span><span class="badge badge--count" style="color:var(--accent)">12</span></button>
+          <button type="button" role="menuitem"><span class="check"></span><span class="name">Work</span><span class="badge badge--count">4</span></button>
+          <hr>
+          <button type="button" role="menuitem">New session…</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     10. Frames
+     ============================================================ -->
+<section class="sec">
+  <h2>10 · Dialog, sheet, lightbox</h2>
+  <p class="lede">One shell for every modal: <code>.settings-overlay</code> + <code>.settings-modal</code>.
+    The sheet is the phone's content pane. The lightbox is the one surface where a control sits over an image.</p>
+
+  <div class="grid grid--wide">
+    <div class="cell">
+      <div class="cap">Dialog <span class="tag tag-cur">current</span></div>
+      <div class="real">.settings-modal · 420 px · --radius-lg · --shadow-modal</div>
+      <div class="dlg">
+        <div class="dlg-head">
+          <h3>Add workspace</h3>
+          <button class="icobtn" type="button" aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+        </div>
+        <div class="dlg-body">
+          <div class="field"><label for="d1">Name</label><input id="d1" class="input" value="Work journal"></div>
+          <div class="field">
+            <label for="d2">Folder</label>
+            <input id="d2" class="input is-invalid" value="work" aria-invalid="true" aria-describedby="d-err">
+            <p class="inline-error" id="d-err" role="alert">Use an absolute path, like /home/you/notes.</p>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn btn--primary" type="button">Add workspace</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Sheet <span class="tag tag-cur">current</span></div>
+      <div class="real">#capture-sheet · --radius-xl top · --shadow-sheet · 52 px header</div>
+      <div class="sheet">
+        <div class="sheet-grabber"></div>
+        <div class="sheet-head">
+          <h3>Quick capture</h3>
+          <button class="icobtn icobtn--touch" type="button" aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+        </div>
+        <div class="sheet-body">
+          <textarea class="textarea" rows="3" placeholder="Jot something down…" aria-label="Capture" style="min-height:96px;font-size:16px"></textarea>
+        </div>
+        <div class="sheet-foot">
+          <button class="btn btn--primary" type="button" style="height:var(--control-h-touch);border-radius:var(--radius-md);width:100%">Send</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Lightbox <span class="tag tag-prop">proposed</span></div>
+      <div class="real">.mermaid-lightbox-overlay · --overlay-control-* · four instances</div>
+      <div class="lightbox">
+        <span class="art">[ rendered diagram ]</span>
+        <div class="lightbox-controls">
+          <button class="overlay-btn" type="button" aria-label="Zoom out">−</button>
+          <span class="overlay-pct" aria-live="polite">100%</span>
+          <button class="overlay-btn" type="button" aria-label="Zoom in">+</button>
+          <button class="overlay-btn" type="button" aria-label="Fit to page">⤢</button>
+          <button class="overlay-btn" type="button" aria-label="Close" style="outline:2px solid var(--overlay-control-ring);outline-offset:2px">×</button>
+        </div>
+      </div>
+      <p class="note">The focus ring is white because the backdrop is an image. A control boundary cannot be
+        guaranteed at 3:1 there, so the pill carries its own dark face.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     11. Feedback
+     ============================================================ -->
+<section class="sec">
+  <h2>11 · Banner, inline error, toast, status line</h2>
+  <p class="lede">Four shapes, told apart by position and persistence. A toast never carries a destructive
+    action.</p>
+
+  <div class="grid">
+    <div class="cell">
+      <div class="cap">Banner <span class="tag tag-prop">proposed</span></div>
+      <div class="real">#draft-bar · role="status"</div>
+      <div class="banner" role="status">
+        <span class="msg">Unsaved changes in notes.md</span>
+        <button class="btn btn--sm btn--primary" type="button">Recover</button>
+        <button class="btn btn--sm" type="button">Discard</button>
+      </div>
+      <div class="banner" role="alert" style="border-color:var(--danger);color:var(--danger)">
+        <span class="msg" style="color:inherit">Saved the note, but the diagram did not render.</span>
+        <button class="btn btn--sm" type="button">Dismiss</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Inline error</div>
+      <div class="real">.auth-error · 18 px reserved</div>
+      <p class="inline-error" role="alert">That folder doesn’t exist.</p>
+      <p class="inline-error" role="alert" style="min-height:calc(var(--text-sm) * var(--lh-normal) * 2)">This folder overlaps “Notes” (/home/you/notes). Workspaces can’t contain one another.</p>
+      <p class="note">The height is reserved so the buttons beneath do not jump when the message appears.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Toast</div>
+      <div class="real">.toast · --shadow-toast · --z-toast</div>
+      <div class="states">
+        <span class="toast" role="status">Saved</span>
+        <span class="toast toast--warn" role="status">Draft kept</span>
+      </div>
+      <p class="note">Never takes focus. One at a time. 2.4 s.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Status line</div>
+      <div class="real">.stg-status · #&lt;prefix&gt;-status · role="status"</div>
+      <div class="states">
+        <span class="status status--ok">Installed</span>
+        <span class="status status--warn">Adapter missing</span>
+        <span class="status status--danger">Save failed</span>
+        <span class="status status--accent">Selected</span>
+        <span class="status">Not installed</span>
+      </div>
+      <p class="note">Colour is never the only signal: every state carries a word.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     12. Content states
+     ============================================================ -->
+<section class="sec">
+  <h2>12 · Empty, loading, error, read-only</h2>
+  <p class="lede">One geometry, four messages. The error keeps the user's input; the read-only block has no
+    focusable descendant.</p>
+
+  <div class="grid grid--wide">
+    <div class="cell">
+      <div class="cap">Empty</div>
+      <div class="real">.tree-empty · #welcome · .search-panel-empty</div>
+      <div class="state">
+        <svg class="icon glyph" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+        <span>No notes yet.</span>
+        <button class="btn btn--primary btn--sm" type="button">New note</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Loading</div>
+      <div class="real">aria-busy="true" · spinner 1.6× under reduced motion</div>
+      <div class="state" aria-busy="true">
+        <span class="spinner" aria-hidden="true"></span>
+        <span>Searching…</span>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Error</div>
+      <div class="real">.search-panel-state · role="alert" · Retry</div>
+      <div class="state state--error" role="alert">
+        <span>Search failed: could not reach the server.</span>
+        <button class="btn btn--sm" type="button">Retry</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">Read-only <span class="tag tag-cur">current</span></div>
+      <div class="real">.settings-ai-acp-row · no tabbable descendant</div>
+      <div class="readonly-block">
+        <div class="head"><span>ACP AGENTS</span><span class="badge">Read-only</span></div>
+        <div>Local coding agents the assistant can drive over the Agent Client Protocol. Configured by editing
+          <code>config/acp.json</code> on the server.</div>
+        <div style="margin-top:var(--space-2)"><code>opencode</code> · <span class="status status--ok">Installed</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     13. Rows
+     ============================================================ -->
+<section class="sec">
+  <h2>13 · Tree row and list row</h2>
+  <p class="lede">Same geometry, different behaviour. A tree row expands; a list row selects. Both take an inset
+    ring because they live in scrollers.</p>
+
+  <div class="grid grid--wide">
+    <div class="cell">
+      <div class="cap">Tree <span class="tag tag-prop">proposed</span></div>
+      <div class="real">role="tree" / "treeitem" · roving tabindex · 24 px · 4 px radius</div>
+      <div role="tree" aria-label="Files" aria-multiselectable="true" class="rowlist">
+        <div role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1" class="row row--tree">
+          <svg class="icon glyph" aria-hidden="true"><use href="#nb-icon-chevron"/></svg>
+          <svg class="icon glyph" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+          <span class="name">projects</span>
+          <button class="more" type="button" aria-label="projects actions" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true" style="width:14px;height:14px"><use href="#nb-icon-more"/></svg></button>
+        </div>
+        <div role="treeitem" aria-level="2" tabindex="0" aria-selected="true" class="row row--tree is-selected" style="padding-left:calc(var(--space-1) + 18px)">
+          <svg class="icon glyph" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+          <span class="name">notes.md</span>
+        </div>
+        <div role="treeitem" aria-level="2" tabindex="-1" class="row row--tree is-multi" style="padding-left:calc(var(--space-1) + 18px)">
+          <svg class="icon glyph" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+          <span class="name">todo.md · multi-selected</span>
+        </div>
+        <div role="treeitem" aria-level="2" tabindex="-1" class="row row--tree" style="padding-left:calc(var(--space-1) + 18px);outline:var(--focus-ring);outline-offset:-2px">
+          <svg class="icon glyph" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+          <span class="name">focused row</span>
+        </div>
+        <div role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1" class="row row--tree">
+          <svg class="icon glyph" aria-hidden="true" style="transform:rotate(0deg)"><use href="#nb-icon-chevron"/></svg>
+          <svg class="icon glyph" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+          <span class="name">archive</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">List row <span class="tag tag-cur">current</span></div>
+      <div class="real">.session-row · 30 px · 6 px radius · 14 px marker</div>
+      <div class="rowlist" role="list">
+        <div style="display:flex;align-items:center;gap:2px">
+          <button class="row is-selected" type="button" aria-current="true" style="min-height:30px">
+            <span class="name">Notes</span>
+            <span class="badge badge--count" style="color:var(--text-primary)">12</span>
+          </button>
+          <button class="icobtn icobtn--sm" type="button" aria-label="Notes actions" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true" style="width:14px;height:14px"><use href="#nb-icon-more"/></svg></button>
+        </div>
+        <div style="display:flex;align-items:center;gap:2px">
+          <button class="row" type="button" style="min-height:30px">
+            <span class="name">Work journal</span>
+            <span class="badge badge--count">4</span>
+          </button>
+          <button class="icobtn icobtn--sm" type="button" aria-label="Work journal actions" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true" style="width:14px;height:14px"><use href="#nb-icon-more"/></svg></button>
+        </div>
+        <div class="row" style="min-height:30px;background:var(--surface-raised)"><span class="name">Hovered</span><span class="meta">2h ago</span></div>
+        <div class="row" style="min-height:30px;outline:var(--focus-ring);outline-offset:-2px"><span class="name">Focused</span><span class="meta">yesterday</span></div>
+      </div>
+      <p class="note">Hover is neutral <code>--surface-raised</code>; only the current row is tinted.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     14. Real contexts
+     ============================================================ -->
+<section class="sec">
+  <h2>14 · The contexts that stress the set</h2>
+  <p class="lede">These eight are the places where the components meet. Each one is a real surface in the app;
+    the labels name the module that builds it.</p>
+
+  <div class="grid grid--wide">
+
+    <div class="cell" style="grid-column:1 / -1">
+      <div class="cap">1 · The full edit bar <span class="tag tag-prop">proposed</span></div>
+      <div class="real">templates/index.html:296-370 · static/js/editbar.js · wraps at desktop, scrolls on phone</div>
+      <div class="editbar-demo" role="toolbar" aria-label="Formatting">
+        <div class="tb-group" role="group" aria-label="History">
+          <button class="tool tool--body" type="button" aria-label="Undo" disabled><svg class="icon" aria-hidden="true"><use href="#nb-icon-undo"/></svg></button>
+          <button class="tool tool--body" type="button" aria-label="Redo" disabled><svg class="icon" aria-hidden="true"><use href="#nb-icon-redo"/></svg></button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Headings">
+          <button class="tool" type="button">H1</button><button class="tool" type="button">H2</button><button class="tool" type="button">H3</button><button class="tool" type="button">H4</button><button class="tool" type="button">H5</button><button class="tool" type="button">H6</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Inline">
+          <button class="tool" type="button"><b>B</b></button><button class="tool" type="button"><i>I</i></button><button class="tool" type="button"><s>S</s></button><button class="tool" type="button"><code>&lt;/&gt;</code></button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Lists">
+          <button class="tool" type="button">• List</button><button class="tool" type="button">1. List</button><button class="tool" type="button">☑</button><button class="tool" type="button">&gt;</button>
+          <button class="tool" type="button" aria-haspopup="true" aria-expanded="false">☰</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Insert">
+          <button class="tool" type="button">🔗</button><button class="tool" type="button">🖼</button><button class="tool" type="button" aria-haspopup="true" aria-expanded="false">😀</button><button class="tool" type="button">{}</button>
+          <button class="tool tool--chip" type="button" aria-haspopup="true" aria-expanded="false">Examples ▾</button><button class="tool" type="button">──</button>
+          <button class="tool" type="button" aria-haspopup="true" aria-expanded="false">▦</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <button class="tool" type="button">Tx</button>
+        <span style="flex:1 1 auto"></span>
+        <div class="tb-group" role="group" aria-label="Mode">
+          <button class="tool" type="button">Preview</button>
+          <button class="tool eb-primary" type="button">Save</button>
+          <button class="tool" type="button">Close</button>
+        </div>
+      </div>
+      <p class="note">Emoji glyphs stand in for the sprite symbols the build will ship (foundations §9.3 AC8). The
+        glyph fallback is a staging state, not a shipped style. Save is the bar's only primary, on desktop as on
+        the phone (controls.md §9 C3).</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">2 · A Settings row</div>
+      <div class="real">templates/index.html:739 · #settings-overlay · 132 px label gutter</div>
+      <div class="settings-row">
+        <span class="label">Autosave</span>
+        <span class="control"><span class="switch"><input type="checkbox" id="sw-row" checked><span class="track"></span></span></span>
+      </div>
+      <div class="settings-row">
+        <span class="label">Site title</span>
+        <span class="control"><input class="input" value="Notebook" aria-label="Site title"></span>
+      </div>
+      <div class="settings-row">
+        <span class="label">Watching</span>
+        <span class="control"><span class="status status--ok">Watching 3 folders</span></span>
+      </div>
+      <div class="settings-row">
+        <span class="label">Save prompt</span>
+        <span class="control">
+          <button class="btn btn--primary btn--sm" type="button">Save prompt</button>
+          <button class="btn btn--sm btn--ghost" type="button">Reset</button>
+        </span>
+      </div>
+      <p class="note">The label is <code>--fg-muted</code>, the value <code>--text-primary</code>, and the control
+        cell wraps. Nothing is clipped at the compact modal width.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">3 · The AI composer</div>
+      <div class="real">static/js/ai.js:2321-2375 · borderless textarea in a framed card</div>
+      <div class="composer">
+        <textarea rows="2" placeholder="Ask the AI to write or edit notes; it can list and read files…" aria-label="Message"></textarea>
+        <button class="icobtn icobtn--body attach" type="button" aria-label="Attach files" title="Attach files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-plus"/></svg></button>
+        <div class="actions">
+          <button class="icobtn icobtn--body icobtn--round send" type="button" aria-label="Send"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron"/></svg></button>
+        </div>
+      </div>
+      <div class="composer" style="margin-top:var(--space-2);border-color:var(--accent)">
+        <textarea rows="1" aria-label="Message, streaming">Summarise the last three meetings…</textarea>
+        <button class="icobtn icobtn--body attach" type="button" aria-label="Attach files" aria-disabled="true" style="opacity:var(--opacity-disabled)"><svg class="icon" aria-hidden="true"><use href="#nb-icon-plus"/></svg></button>
+        <div class="actions">
+          <button class="icobtn icobtn--body icobtn--round" type="button" aria-label="Stop generating"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+        </div>
+      </div>
+      <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+        <span class="chip-object"><span>notes.md</span><button class="x" type="button" aria-label="Remove notes.md"><svg class="icon" aria-hidden="true" style="width:12px;height:12px"><use href="#nb-icon-close"/></svg></button></span>
+        <span class="chip-object" style="border-color:var(--danger);color:var(--danger)"><span>big.bin</span><button class="x" type="button" aria-label="Remove big.bin"><svg class="icon" aria-hidden="true" style="width:12px;height:12px"><use href="#nb-icon-close"/></svg></button></span>
+      </div>
+      <p class="note">Attach, send and stop are one size (32) on one row. The card owns the border and the focus
+        halo.</p>
+    </div>
+
+    <div class="cell" style="grid-column:1 / -1">
+      <div class="cap">4 · The table-editor toolbar</div>
+      <div class="real">#table-editor-overlay .te-toolbar · static/js/table-editor.js · six groups</div>
+      <div class="toolbar" role="toolbar" aria-label="Table tools">
+        <div class="tb-group" role="group" aria-label="Rows">
+          <button class="tool tool--body" type="button" title="Insert row above" aria-label="Insert row above">↥</button>
+          <button class="tool tool--body" type="button" title="Insert row below" aria-label="Insert row below">↧</button>
+          <button class="tool tool--body" type="button" aria-disabled="true" title="Delete row" aria-label="Delete row">−</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Columns">
+          <button class="tool tool--body" type="button" title="Insert column left" aria-label="Insert column left">⇤</button>
+          <button class="tool tool--body" type="button" title="Insert column right" aria-label="Insert column right">⇥</button>
+          <button class="tool tool--body" type="button" title="Delete column" aria-label="Delete column">−</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Clipboard">
+          <button class="tool tool--body" type="button" aria-label="Cut">✂</button>
+          <button class="tool tool--body" type="button" aria-label="Copy">⧉</button>
+          <button class="tool tool--body" type="button" aria-label="Paste">⎘</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Alignment">
+          <button class="tool tool--body" type="button" aria-pressed="true" aria-label="Align left">≡</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Sort">
+          <span class="kbd" style="margin:0 var(--space-1) 0 var(--space-2)">Sort</span>
+          <select class="select" style="height:var(--control-h-body);min-height:0;font-size:var(--text-sm);max-width:140px" aria-label="Sort column"><option>Column A</option></select>
+          <button class="tool tool--body" type="button" aria-pressed="false" aria-label="Ascending">↑</button>
+        </div>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <div class="tb-group" role="group" aria-label="Table">
+          <button class="tool tool--body tool--danger" type="button" aria-label="Delete table"><svg class="icon" aria-hidden="true"><use href="#nb-icon-trash"/></svg></button>
+        </div>
+      </div>
+      <p class="note">A contextual tool keeps its tab stop and uses <code>aria-disabled</code>; only native
+        disabled leaves the tab order, and that is reserved for history (edit-window.md §4).</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">5 · A session row menu</div>
+      <div class="real">static/js/sessions.js · .session-row + .session-more · NB.menu</div>
+      <div class="rowlist">
+        <div style="display:flex;align-items:center;gap:2px">
+          <button class="row is-selected" type="button" aria-current="true" style="min-height:30px"><span style="width:2px;height:14px;border-radius:0 1px 1px 0;background:var(--accent)"></span><span class="name">Notes</span><span class="badge badge--count" style="color:var(--text-primary)">12</span></button>
+          <button class="icobtn icobtn--sm" type="button" aria-label="Notes actions" aria-haspopup="menu" aria-expanded="true" style="background:var(--accent-soft);color:var(--text-primary)"><svg class="icon" aria-hidden="true" style="width:14px;height:14px"><use href="#nb-icon-more"/></svg></button>
+        </div>
+        <div style="display:flex;align-items:center;gap:2px">
+          <button class="row" type="button" style="min-height:30px"><span class="name">Work journal</span><span class="badge badge--count">4</span></button>
+          <button class="icobtn icobtn--sm" type="button" aria-label="Work journal actions" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true" style="width:14px;height:14px"><use href="#nb-icon-more"/></svg></button>
+        </div>
+      </div>
+      <div class="menu" role="menu" aria-label="Notes actions" style="width:190px;margin-top:var(--space-1)">
+        <button type="button" role="menuitem">Rename…</button>
+        <button type="button" role="menuitem" disabled aria-disabled="true" title="The active session cannot be deleted">Delete</button>
+      </div>
+      <p class="note">The <code>…</code> is visible at rest and shows its open state. The menu is the shipped
+        170 px box; width alone may differ.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">6 · A dialog footer</div>
+      <div class="real">_edit_window.html:51-61 · [status][Cancel][Apply]</div>
+      <div class="dlg" style="max-width:100%">
+        <div class="dlg-head"><h3>Edit table</h3><span class="badge">TABLE</span></div>
+        <div class="dlg-body" style="min-height:80px;justify-content:center;align-items:center;color:var(--text-muted);font-size:var(--text-sm)">[ the grid ]</div>
+        <div class="dlg-foot">
+          <span class="status" role="status" style="margin-right:auto">Ready</span>
+          <span class="kbd" aria-hidden="true">Esc cancels</span>
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn btn--primary" type="button" disabled>Apply</button>
+        </div>
+      </div>
+      <p class="note">Order is fixed. The hint is the table's only exception and is hidden at ≤ 520 px.</p>
+    </div>
+
+    <div class="cell">
+      <div class="cap">7 · An empty state</div>
+      <div class="real">#welcome · viewer.js</div>
+      <div class="state">
+        <span style="font-size:2rem" aria-hidden="true">📓</span>
+        <span style="font-size:var(--text-lg);color:var(--text-primary);font-weight:var(--fw-semibold)">Welcome to your notebook</span>
+        <span>Create a new note to get started, or pick one from the left.</span>
+        <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+          <button class="btn btn--primary" type="button">+ New note</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="cell">
+      <div class="cap">8 · An error state</div>
+      <div class="real">#mobile-state · mobile-shell.md §4.10</div>
+      <div class="state state--error" role="alert">
+        <span style="font-size:2rem" aria-hidden="true">⚠</span>
+        <span style="font-size:var(--text-lg);color:var(--text-primary);font-weight:var(--fw-semibold)">Can’t reach the server</span>
+        <span class="mono">http://192.168.1.20:8080</span>
+        <span>Nothing is cached on this phone.</span>
+        <button class="btn btn--primary" type="button">Retry</button>
+      </div>
+      <p class="note">Unreachable and sign-in must never look alike: Retry, not a password field.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     15. Phone
+     ============================================================ -->
+<section class="sec">
+  <h2>15 · Phone, 390 × 660</h2>
+  <p class="lede">44 px targets, 16 px fields, sheets for content. Every value here is under the phone query
+    (<code>max-width: 860px</code>, or a coarse pointer up to 1023 px).</p>
+
+  <div class="phone-wrap">
+    <div class="phone">
+      <div class="phone-top">
+        <button class="icobtn icobtn--touch" type="button" aria-label="Back" disabled><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron"/></svg></button>
+        <span class="title">notes.md</span>
+        <button class="icobtn icobtn--touch" type="button" aria-label="Quick capture"><svg class="icon" aria-hidden="true"><use href="#nb-icon-plus"/></svg></button>
+        <button class="icobtn icobtn--touch" type="button" aria-label="Note menu" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#nb-icon-more"/></svg></button>
+      </div>
+      <div class="phone-editbar" role="toolbar" aria-label="Formatting">
+        <div class="pinned">
+          <button class="tool" type="button" style="background:var(--accent);color:var(--text-on-accent)">Save</button>
+          <button class="tool" type="button">Done</button>
+        </div>
+        <button class="tool" type="button" aria-label="Undo"><svg class="icon" aria-hidden="true"><use href="#nb-icon-undo"/></svg></button>
+        <button class="tool" type="button" aria-label="Redo"><svg class="icon" aria-hidden="true"><use href="#nb-icon-redo"/></svg></button>
+        <span class="tb-sep" aria-hidden="true"></span>
+        <button class="tool" type="button">H1</button>
+        <button class="tool" type="button">H2</button>
+        <button class="tool" type="button">H3</button>
+        <button class="tool" type="button"><b>B</b></button>
+        <button class="tool" type="button"><i>I</i></button>
+        <button class="tool" type="button">•</button>
+        <button class="tool" type="button">1.</button>
+        <button class="tool" type="button">☑</button>
+      </div>
+      <div class="phone-body">
+        <div class="rowlist" role="list">
+          <div style="display:flex;align-items:center;gap:2px">
+            <button class="row is-selected" type="button" aria-current="true"><span class="name">notes.md</span><span class="badge badge--count" style="color:var(--text-primary)">12</span></button>
+            <button class="icobtn icobtn--touch" type="button" aria-label="notes.md actions" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#nb-icon-more"/></svg></button>
+          </div>
+          <div style="display:flex;align-items:center;gap:2px">
+            <button class="row" type="button"><span class="name">todo.md</span></button>
+            <button class="icobtn icobtn--touch" type="button" aria-label="todo.md actions" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#nb-icon-more"/></svg></button>
+          </div>
+          <div style="display:flex;align-items:center;gap:2px">
+            <button class="row" type="button"><span class="name">a very long note name that ellipsizes</span></button>
+            <button class="icobtn icobtn--touch" type="button" aria-label="Actions" aria-haspopup="menu" aria-expanded="false"><svg class="icon" aria-hidden="true"><use href="#nb-icon-more"/></svg></button>
+          </div>
+        </div>
+        <div style="margin-top:var(--space-3)">
+          <input class="input" type="search" placeholder="Search notebooks…" aria-label="Search notebooks">
+        </div>
+        <div style="display:flex;gap:var(--space-2);margin-top:var(--space-2)">
+          <span class="badge badge--accent">Active</span>
+          <span class="badge badge--warn">Not found</span>
+          <span class="status status--ok">Online</span>
+        </div>
+        <div class="banner" role="status" style="margin-top:var(--space-3)">
+          <span class="msg">Unsaved changes</span>
+          <button class="btn btn--sm btn--primary" type="button" style="height:var(--control-h-touch)">Recover</button>
+        </div>
+        <div style="margin-top:var(--space-3)">
+          <span class="toast" role="status">Saved</span>
+        </div>
+        <div class="menu" role="menu" aria-label="Note actions" style="width:100%;margin-top:var(--space-3)">
+          <button type="button" role="menuitem" style="min-height:48px;padding:0 14px;font-size:15px">Open</button>
+          <button type="button" role="menuitem" style="min-height:48px;padding:0 14px;font-size:15px">Copy link</button>
+          <button type="button" role="menuitem" style="min-height:48px;padding:0 14px;font-size:15px">Copy path</button>
+        </div>
+        <div class="sheet" style="width:100%;margin-top:var(--space-3)">
+          <div class="sheet-grabber"></div>
+          <div class="sheet-head"><h3>Quick capture</h3><button class="icobtn icobtn--touch" type="button" aria-label="Close"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button></div>
+          <div class="sheet-body"><textarea class="textarea" rows="2" placeholder="Jot something down…" aria-label="Capture" style="min-height:96px;font-size:16px"></textarea></div>
+          <div class="sheet-foot"><button class="btn btn--primary" type="button" style="height:var(--control-h-touch);border-radius:var(--radius-md);width:100%">Send</button></div>
+        </div>
+      </div>
+      <nav class="phone-rail" aria-label="Views">
+        <button class="icobtn" type="button" aria-pressed="true" aria-label="Files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg></button>
+        <button class="icobtn" type="button" aria-pressed="false" aria-label="Search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+        <button class="icobtn" type="button" aria-pressed="false" aria-label="Sessions"><svg class="icon" aria-hidden="true"><use href="#nb-icon-file"/></svg></button>
+        <button class="icobtn" type="button" aria-pressed="false" aria-label="Settings"><svg class="icon" aria-hidden="true"><use href="#nb-icon-star"/></svg></button>
+      </nav>
+    </div>
+
+    <div style="max-width:380px;display:flex;flex-direction:column;gap:var(--space-3)">
+      <p class="note"><strong>What the board shows.</strong> The top bar is 52 px with 44 px controls; the rail is
+        56 px with four equal targets. The edit bar is 52 px, scrolls sideways, and pins Save and Done at the
+        left. Rows are 44. Fields are 16 px and 44 high. Menu items are 48. The banner's action grows to 44. The
+        sheet is bottom-anchored with a 52 px header and a full-width 44 px primary.</p>
+      <p class="note"><strong>What it does not show.</strong> The drawer, the scrim, the keyboard inset and the
+        safe-area padding. Those are the shell's, not the controls'. See
+        <code>docs/archive/design/mobile-shell.md</code> §3.3 and §4.3.</p>
+      <p class="note"><strong>Lightbox.</strong> Tap-to-zoom is not offered on the phone in v1
+        (<code>mobile-shell.md</code> §4.7), so the lightbox has no phone state. It is absent, not disabled.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     16. Current vs proposed
+     ============================================================ -->
+<section class="sec">
+  <h2>16 · Current vs proposed</h2>
+  <p class="lede">Everything that changes, in one list. Each row is one commit in controls.md §3.3.</p>
+
+  <table class="delta">
+    <thead>
+      <tr><th style="width:26%">Control</th><th style="width:34%">Current</th><th style="width:30%">Proposed</th><th>Why</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Any accent fill</td><td><code>color: #fff</code> on <code>--accent</code> — 2.61:1 dark</td><td><code>--text-on-accent</code> — 6.99:1 dark</td><td>D1, AC1</td></tr>
+      <tr><td>Toggle on-state</td><td>accent fill + white glyph (3 rules)</td><td><code>--accent-soft</code> face + <code>--accent</code> glyph</td><td>Same failure, one idiom</td></tr>
+      <tr><td>Primary hover</td><td><code>filter: brightness()</code>, <code>opacity: .88</code></td><td>3 px <code>--accent-soft</code> halo</td><td>Foundations §11.4</td></tr>
+      <tr><td>Focus ring</td><td>absent on 12 families</td><td>one <code>:where()</code> rule, <code>--focus-ring</code></td><td>D3, AC2</td></tr>
+      <tr><td>File tree</td><td><code>div</code>, no role, no tabindex</td><td><code>role="tree"</code>, roving tabindex, arrow keys</td><td>Foundations AC9</td></tr>
+      <tr><td>File tabs</td><td><code>div</code>, no role, no focus</td><td><code>role="tab"</code>, <code>aria-selected</code>, roving tabindex, named close</td><td>D3</td></tr>
+      <tr><td>Icon buttons</td><td>20 / 22 / 24 / 26 / 30 / 32 / 36 px</td><td>24 / 30 / 32 / 36 / 44</td><td>D2</td></tr>
+      <tr><td>Radii</td><td>4 / 5 / 6 / 8</td><td><code>--radius-xs</code> or <code>--radius-sm</code>; pills <code>--radius-pill</code></td><td>D2</td></tr>
+      <tr><td>Switch track</td><td><code>--border</code> — 1.27:1 light</td><td><code>--border-strong</code> — 3.36:1 light</td><td>AC11</td></tr>
+      <tr><td>Switch motion</td><td><code>.15s ease</code></td><td><code>--dur-1</code> / <code>--ease-out</code></td><td>Token</td></tr>
+      <tr><td>Fields</td><td>three looks, three heights</td><td>36 px, <code>--border-strong</code>, one focus halo</td><td>AC12</td></tr>
+      <tr><td>Search clear</td><td>22 px</td><td>24 px, slot reserved</td><td>AC13</td></tr>
+      <tr><td>Menus</td><td>five boxes, four item heights</td><td>one box, 32 px item (48 touch)</td><td>D4, AC14</td></tr>
+      <tr><td>Toast</td><td>no role</td><td><code>role="status" aria-live="polite"</code></td><td>AC15</td></tr>
+      <tr><td>Lightbox controls</td><td>literal <code>#fff</code> / <code>rgba()</code></td><td><code>--overlay-control-*</code></td><td>AC21</td></tr>
+      <tr><td>Edit-bar Save</td><td>transparent desktop, filled phone</td><td>filled in both</td><td>C3</td></tr>
+      <tr><td>Draft bar primary</td><td>accent outline</td><td>accent fill</td><td>C4</td></tr>
+      <tr><td>Te-tool</td><td>28 px</td><td>32 px (<code>--control-h-body</code>)</td><td>C2</td></tr>
+    </tbody>
+  </table>
+</section>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var buttons = document.querySelectorAll("[data-theme-btn]");
+  function apply(name) {
+    var root = document.documentElement;
+    root.className = name;
+    buttons.forEach(function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-theme-btn") === name ? "true" : "false");
+    });
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () { apply(b.getAttribute("data-theme-btn")); });
+  });
+})();
+</script>
+</body>
+</html>

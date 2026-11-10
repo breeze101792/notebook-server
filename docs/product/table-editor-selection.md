@@ -2,7 +2,7 @@
 
 **Status:** shipped (table edit window — selection and clipboard; in-modal undo/redo in the shared action bar).
 **Date:** 2026-11-01, amended 2026-11-07 (shared edit-window shell) · **Owner:** `product-designer` · **Scope:** the hybrid (WYSIWYG) "Edit table" modal only.
-Related: `docs/product/table-editor.md` (the modal; AC1–AC18 and AC45–AC46 remain in force), `docs/design/table-editor.md`, `docs/architecture/table-editor.md`.
+Related: `docs/product/table-editor.md` (the modal; AC1–AC18 and AC45–AC46 remain in force), `docs/archive/design/table-editor.md`, `docs/architecture/table-editor.md`.
 
 ## 1. Goal and audience
 

@@ -833,7 +833,7 @@ the value is captured before highlight.js runs), and the Copy button sits at the
 right, revealed on hover. Clicking the fence swaps that text for the language chip
 without changing the block's height, and puts the caret at the clicked source
 position (a rendered plugin block has no source there, so it opens at the end).
-Plugin containers and error boxes get no band; see `docs/ui/code-block-chip.md`.
+Plugin containers and error boxes get no band; see `docs/archive/ui/code-block-chip.md`.
 
 | Pos | Op | Before | After | Status |
 |---|---|---|---|---|
@@ -1669,5 +1669,5 @@ Toolbar taps call `preventDefault` on `mousedown` and restore a captured range
 if focus moved, so a command acts on the caret the user had and the on-screen
 keyboard stays open. Drag-reorder grips, the right-click formatting menu, and
 the keyboard chord table remain desktop-only. See
-[`mobile.md`](mobile.md) §13 and [`../design/mobile-shell.md`](../design/mobile-shell.md) §4.12.
+[`mobile.md`](mobile.md) §13 and [`../design/mobile-shell.md`](../archive/design/mobile-shell.md) §4.12.
 

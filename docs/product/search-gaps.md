@@ -1,6 +1,6 @@
 # Search gap analysis — daily-use audit
 
-Status: superseded by [the Advanced search panel design](../design/search-panel-advanced.md); gaps G1 and G3 remain open. Owner: `product-designer`.
+Status: superseded by [the Advanced search panel design](../archive/design/search-panel-advanced.md); gaps G1 and G3 remain open. Owner: `product-designer`.
 Applies to: the side-panel Search (`static/js/activity.js`, `mountSearch`),
 `/api/search` (`app.py`), the viewer jump (`static/js/viewer.js`), the search
 prefs (`static/js/app.js`), and the tests and contracts named below.

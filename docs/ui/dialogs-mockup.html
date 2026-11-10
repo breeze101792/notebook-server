@@ -1,0 +1,1398 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dialogs — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A, unchanged.
+      Dark and light are the same names on two scopes, so a light board
+      can sit inside a dark page. No alias is invented here, and no
+      token refers to itself.
+   ================================================================== */
+
+:root,
+.theme-dark {
+  /* ---- base (dark) ---- */
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(124, 156, 255, .28);
+
+  /* ---- semantic (dark) ---- */
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+
+  /* ---- elevation (dark) ---- */
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .3);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .5);
+}
+
+.theme-light {
+  /* ---- base (light) ---- */
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(47, 95, 208, .16);
+
+  /* ---- semantic (light) ---- */
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+
+  /* ---- elevation (light) ---- */
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .14);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .22);
+}
+
+/* ---- primitives (theme-independent) ---- */
+:root {
+  --font-scale: 1;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-prose: var(--font-ui);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --z-modal: 2000;
+  --z-dialog: 2100;
+  --z-toast: 3000;
+
+  --dur-1: 120ms;
+  --ease-out: ease-out;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+  --opacity-disabled: .45;
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: calc(14px * var(--font-scale, 1)); }
+
+body {
+  margin: 0;
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+}
+
+code, .mono { font-family: var(--font-mono); }
+
+/* ==================================================================
+   2. DOCUMENT CHROME
+   ================================================================== */
+
+.page-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-6) var(--space-5);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.page-head h1 { margin: 0; font-size: 28px; font-weight: var(--fw-semibold); letter-spacing: -.01em; line-height: 1.1; }
+.page-head .lede { margin: var(--space-2) 0 0; max-width: 84ch; color: var(--text-muted); font-size: var(--text-ui-lg); }
+
+.seg {
+  display: inline-flex; gap: var(--space-hair); padding: var(--space-hair);
+  border: var(--stroke-1) solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+}
+.seg button {
+  appearance: none; height: 28px; padding: 0 var(--space-3);
+  border: 0; border-radius: var(--radius-xs); background: transparent;
+  color: var(--text-muted); font: var(--fw-medium) var(--text-ui)/1 var(--font-ui);
+  cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--surface-raised); color: var(--text-primary); box-shadow: inset 0 0 0 1px var(--border); }
+.seg button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.sec { max-width: 1456px; margin: 0 auto; padding: var(--space-6) var(--space-6) 0; }
+.sec > h2 {
+  margin: 0 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-sm)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.sec > .lede { margin: 0 0 var(--space-5); max-width: 96ch; color: var(--text-muted); font-size: var(--text-ui); }
+.sec > .lede code { color: var(--text-primary); }
+.notes { margin: var(--space-3) 0 0; padding-left: var(--space-5); color: var(--text-muted); font-size: var(--text-sm); max-width: 104ch; }
+.notes li { margin: var(--space-1) 0; }
+.notes strong { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.tag {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-pill);
+  font: var(--fw-semibold) var(--text-2xs)/1 var(--font-mono);
+  letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted);
+}
+.tag--fix { color: var(--accent); border-color: var(--accent); }
+.tag--gap { color: var(--warn); border-color: var(--warn); }
+
+.board {
+  width: max-content; max-width: 100%;
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-page);
+}
+.board + .board { margin-top: var(--space-5); }
+.board-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+  font: var(--fw-semibold) var(--text-2xs)/1 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.board-head .dot { width: 6px; height: 6px; border-radius: var(--radius-circle); background: var(--accent); }
+.board-head .grow { flex: 1 1 auto; }
+.board-head .size { font-weight: var(--fw-regular); text-transform: none; letter-spacing: 0; }
+
+/* The stage is the viewport for that board. */
+.stage { position: relative; overflow: hidden; background: var(--surface-page); }
+.stage--auth   { width: 620px; height: 380px; }
+.stage--form   { width: 620px; height: 430px; }
+.stage--export { width: 700px; height: 700px; }
+.stage--confirm{ width: 640px; height: 320px; }
+.stage--phone  { width: 390px; height: 720px; }
+
+/* A dim, out-of-focus shell behind the scrim. */
+.shell {
+  position: absolute; inset: 0;
+  padding: 40px 28px;
+  display: flex; flex-direction: column; gap: 14px;
+  filter: blur(2px);
+  opacity: .55;
+}
+.shell span { display: block; height: 10px; border-radius: var(--radius-pill); background: var(--surface-raised); }
+.shell span:nth-child(1) { width: 34%; height: 18px; }
+.shell span:nth-child(2) { width: 78%; }
+.shell span:nth-child(3) { width: 64%; }
+.shell span:nth-child(4) { width: 71%; }
+.shell span:nth-child(5) { width: 22%; }
+
+.overlay { position: absolute; inset: 0; background: var(--overlay-scrim); z-index: 1; }
+
+.board-note {
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-top: var(--stroke-1) solid var(--border);
+  color: var(--text-muted);
+  font: var(--fw-regular) var(--text-sm)/1.35 var(--font-mono);
+  max-width: 700px;
+}
+.board-note strong { color: var(--accent); font-weight: var(--fw-semibold); }
+
+/* ==================================================================
+   3. THE DIALOG FRAME — dialogs.md §1
+      Shipped values: style.css:1369-1387 (overlay), :1801-1840 (box),
+      :1897-1910 (header), :1921-1927 (body), :1984-1989 (sections),
+      :2257-2265 (footer), :2272-2280 / :5755-5759 (widths).
+   ================================================================== */
+
+.dlg {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  display: flex; flex-direction: column;
+  width: min(420px, 92%);
+  background: var(--surface-panel);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.dlg--export { width: min(520px, 92%); }
+
+.dlg-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: var(--stroke-1) solid var(--border);
+  flex-shrink: 0;
+  cursor: move;
+}
+.dlg-head h2 { margin: 0; font-size: 1.14rem; font-weight: var(--fw-semibold); letter-spacing: .3px; }
+.dlg-actions { display: flex; align-items: center; gap: var(--space-hair); flex-shrink: 0; }
+
+.icon-btn {
+  background: none; border: none; color: var(--text-muted);
+  font-size: 1.3rem; line-height: 1; padding: 4px 8px;
+  border-radius: var(--radius-sm); cursor: pointer;
+  font-family: inherit;
+}
+.icon-btn:hover { color: var(--text-primary); background: var(--accent-soft); }
+.win-max { display: inline-flex; align-items: center; padding: 4px 6px; }
+.win-max svg { display: block; }
+
+/* Body, shape A: the column form (auth, workspace, session). */
+.dlg-form {
+  display: flex; flex-direction: column; gap: 0;
+  padding: 14px 18px 18px;
+  min-height: 0;
+}
+/* Body, shape B: the section scroller (export). */
+.dlg-sections {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 4px 18px 18px;
+  min-width: 0;
+}
+
+.dlg-foot {
+  display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: 12px 18px;
+  border-top: var(--stroke-1) solid var(--border);
+  background: var(--surface-panel);
+  flex-shrink: 0;
+}
+
+.grip {
+  position: absolute; right: 2px; bottom: 2px;
+  width: 18px; height: 18px;
+  border-radius: 0 0 10px 0;
+  cursor: nwse-resize;
+}
+.grip::after {
+  content: ""; position: absolute; right: 4px; bottom: 4px;
+  width: 10px; height: 10px;
+  border-right: var(--stroke-2) solid var(--text-muted);
+  border-bottom: var(--stroke-2) solid var(--text-muted);
+  opacity: .55; border-bottom-right-radius: 2px;
+}
+
+/* ==================================================================
+   4. ROWS, FIELDS, ERRORS — dialogs.md §1.9, §3.2, §10.2
+   ================================================================== */
+
+.row { display: flex; align-items: center; gap: var(--space-3); padding: 6px 0; min-width: 0; }
+.dlg-form .row { padding: 8px 0; }
+.label { flex: 0 0 130px; color: var(--text-muted); font-size: .93rem; }
+.label--short { flex-basis: 92px; }
+
+.input {
+  flex: 1 1 auto; min-width: 0;
+  height: var(--control-h-lg);
+  padding: var(--space-1) var(--space-2);
+  font-family: inherit; font-size: var(--text-ui);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  /* E1: --border-strong, the 3:1 control boundary (foundations §3.5). */
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+}
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+}
+.input[aria-invalid="true"] { border-color: var(--danger); }
+.input[aria-invalid="true"]:focus { box-shadow: 0 0 0 var(--stroke-3) var(--danger-soft); }
+.input::placeholder { color: var(--text-muted); }
+
+/* The one mono field outside a path chip (style.css:2297-2307). */
+.input--auth {
+  padding: 7px 10px;
+  font: 1rem var(--font-mono);
+  background: var(--surface-page);
+}
+
+.resolved {
+  flex: 1 1 auto; min-width: 0;
+  padding: 3px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: .8rem;
+  overflow-wrap: anywhere;
+}
+
+.mono-chip {
+  font-family: var(--font-mono);
+  font-size: .86rem;
+  background: var(--surface-raised);
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+.help { color: var(--text-muted); font-size: .93rem; margin: 4px 0 12px; }
+.help--section { font-size: .89rem; margin: 0 0 10px; line-height: 1.5; }
+
+.err { color: var(--danger); font-size: .89rem; min-height: 18px; margin: 2px 0 4px; }
+
+.form-actions { display: flex; justify-content: flex-end; align-items: center; gap: var(--space-2); padding: 6px 0; }
+
+.btn {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  font-family: inherit; font-size: var(--text-ui); line-height: var(--lh-flat);
+  cursor: pointer; white-space: nowrap;
+}
+.btn:hover { background: var(--accent-soft); border-color: var(--accent); }
+.btn--primary {
+  background: var(--accent); border-color: var(--accent);
+  color: var(--text-on-accent); font-weight: var(--fw-semibold);
+}
+.btn--primary:hover { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft); }
+.btn[disabled] { opacity: .5; cursor: not-allowed; background: var(--surface-raised); border-color: var(--border); color: var(--text-primary); }
+.btn--primary[disabled] { opacity: .5; cursor: progress; background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+/* E7: the phone row height. Applied in the phone board, not at desktop. */
+.btn--touch { min-height: var(--control-h-touch); }
+.input--touch { min-height: var(--control-h-touch); font-size: 16px; }
+/* The auth submit's own disabled value is .6, not the generic .5 (style.css:2314). */
+.btn--auth[disabled] { opacity: .6; }
+
+/* ==================================================================
+   5. EXPORT SECTIONS — dialogs.md §5.1
+   ================================================================== */
+
+.h3 {
+  margin: 0 0 10px;
+  font-size: .79rem; font-weight: var(--fw-semibold);
+  text-transform: uppercase; letter-spacing: .8px;
+  color: var(--text-muted);
+}
+.section { padding: 14px 0; border-bottom: var(--stroke-1) solid var(--border); }
+.opts { display: flex; gap: 14px; }
+.opts label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: .93rem; }
+.opts input { margin: 0; accent-color: var(--accent); }
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-size: .93rem; }
+.check input { margin: 0; accent-color: var(--accent); }
+.select { font-family: inherit; }
+
+/* ==================================================================
+   6. TOAST AND NATIVE CONFIRM — dialogs.md §6
+   ================================================================== */
+
+.toast {
+  display: inline-flex; align-items: center;
+  padding: 8px 14px;
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: .86rem;
+  box-shadow: var(--shadow-toast);
+  max-width: 80vw;
+}
+.toast--warn { border-color: var(--warn); color: var(--warn); }
+.toast--phone { width: 358px; min-height: 44px; border-radius: 10px; font-size: 14px; }
+
+.confirm {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 2;
+  width: min(420px, 88%);
+  background: var(--surface-panel);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  padding: 18px;
+}
+.confirm-url {
+  font: var(--fw-regular) var(--text-xs)/1.2 var(--font-mono);
+  color: var(--text-muted);
+  margin: 0 0 var(--space-3);
+}
+.confirm-msg {
+  margin: 0 0 var(--space-4);
+  font: var(--fw-regular) var(--text-ui-lg)/1.5 var(--font-mono);
+  white-space: pre-wrap;
+  color: var(--text-primary);
+}
+.confirm-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+.confirm-actions .btn { font-family: var(--font-ui); }
+
+.figure-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-5); }
+.figure-cell { display: flex; flex-direction: column; gap: var(--space-2); }
+.figure-cell .cap { font: var(--fw-regular) var(--text-xs)/1.2 var(--font-mono); color: var(--text-muted); }
+.figure-cell .cap--block { margin: var(--space-2) 0 0; display: block; }
+.phone-frame {
+  width: 390px; padding: var(--space-3);
+  background: var(--surface-page);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+}
+.phone-frame--gap { margin-top: var(--space-5); }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <div>
+    <p class="eyebrow">docs/ui/dialogs.md — reference mockup</p>
+    <h1>Dialogs: frame, auth, workspace, session, export</h1>
+    <p class="lede">Fifteen boards at the shipped numbers. Three deltas are visible here:
+      the <code>--border-strong</code> field boundary (E1, at rest), the focus and invalid
+      states (E2, E3), and the login label in <code>--text-on-accent</code> (E4). Nothing
+      else is redesigned.</p>
+  </div>
+  <div class="seg" role="group" aria-label="Theme">
+    <button type="button" data-theme-btn="theme-dark" aria-pressed="true">Dark</button>
+    <button type="button" data-theme-btn="theme-light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<main>
+
+<!-- ============================================================ -->
+<section class="sec">
+  <h2>Auth — the password gate</h2>
+  <p class="lede">420 px, height to content. No close, no cancel, no backdrop dismissal:
+    the gate cannot be dismissed. The maximize control is injected by <code>NB.windows</code>
+    into every modal header, including this one.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Auth — rest</span><span class="size">420 px</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--auth">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="a1-title" aria-describedby="a1-help" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="a1-title">Sign in</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+          </div>
+        </div>
+        <form class="dlg-form" onsubmit="return false">
+          <p class="help" id="a1-help">This notebook is password-protected. Enter the password to continue.</p>
+          <div class="row">
+            <label class="label" for="a1-pw">Password</label>
+            <input class="input input--auth" id="a1-pw" type="password" autocomplete="current-password" aria-describedby="a1-err">
+          </div>
+          <div class="err" id="a1-err" role="alert"></div>
+          <div class="form-actions">
+            <button class="btn btn--primary" type="button">Sign in</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Auth — signing in</span><span class="size">submit disabled</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--auth">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="a2-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="a2-title">Sign in</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+          </div>
+        </div>
+        <form class="dlg-form" aria-busy="true" onsubmit="return false">
+          <p class="help">This notebook is password-protected. Enter the password to continue.</p>
+          <div class="row">
+            <label class="label" for="a2-pw">Password</label>
+            <input class="input input--auth" id="a2-pw" type="password" value="correct horse battery">
+          </div>
+          <div class="err" role="alert"></div>
+          <div class="form-actions">
+            <button class="btn btn--primary btn--auth" type="button" disabled>Sign in</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board theme-light">
+    <div class="board-head"><span class="dot"></span><span class="grow">Auth — error</span><span class="size">light · “Invalid password”</span><span class="tag">shipped copy</span></div>
+    <div class="stage stage--auth">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="a3-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="a3-title">Sign in</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+          </div>
+        </div>
+        <form class="dlg-form" onsubmit="return false">
+          <p class="help">This notebook is password-protected. Enter the password to continue.</p>
+          <div class="row">
+            <label class="label" for="a3-pw">Password</label>
+            <input class="input input--auth" id="a3-pw" type="password" value="not-the-password"
+                   aria-invalid="true" aria-describedby="a3-err">
+          </div>
+          <div class="err" id="a3-err" role="alert">Invalid password</div>
+          <div class="form-actions">
+            <button class="btn btn--primary" type="button">Sign in</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Copy:</strong> empty field → “Enter the password.”, 401 → “Invalid password”,
+      429 → “Too many failed attempts; try again in a minute”. Server sentences are printed
+      unedited.</li>
+    <li><strong>E4 applies here:</strong> the label is <code>--text-on-accent</code>, near-black
+      in dark and white in light. The light board shows the unchanged light result.</li>
+    <li><strong>E5 applies here:</strong> the field carries <code>aria-describedby</code> to the
+      error and <code>aria-invalid</code> on failure; the board shows both.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section class="sec">
+  <h2>Workspace — add and rename</h2>
+  <p class="lede">One dialog, two modes. Add shows the Folder row and hides “Will open” until the
+    path is absolute; rename hides the Folder row and shows the stored path permanently.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Workspace — add, empty</span><span class="size">420 px</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--form">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="w1-title" aria-describedby="w1-help" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="w1-title">Add workspace</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <form class="dlg-form" novalidate onsubmit="return false">
+          <p class="help" id="w1-help">Point at a folder of Markdown notes on this machine. Nothing is copied or moved.</p>
+          <div class="row">
+            <label class="label" for="w1-name">Name</label>
+            <input class="input" id="w1-name" type="text" maxlength="60" autocomplete="off" spellcheck="false" placeholder="Work journal">
+          </div>
+          <div class="row">
+            <label class="label" for="w1-path">Folder</label>
+            <input class="input" id="w1-path" type="text" autocomplete="off" spellcheck="false" placeholder="/home/you/notes">
+          </div>
+          <div class="err" role="alert"></div>
+          <div class="form-actions">
+            <button class="btn" type="button">Cancel</button>
+            <button class="btn btn--primary" type="submit" disabled>Add workspace</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Workspace — add, path typed</span><span class="size">“Will open” visible</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--form">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="w2-title" aria-describedby="w2-help" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="w2-title">Add workspace</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <form class="dlg-form" novalidate onsubmit="return false">
+          <p class="help" id="w2-help">Point at a folder of Markdown notes on this machine. Nothing is copied or moved.</p>
+          <div class="row">
+            <label class="label" for="w2-name">Name</label>
+            <input class="input" id="w2-name" type="text" maxlength="60" autocomplete="off" spellcheck="false" value="work-notes">
+          </div>
+          <div class="row">
+            <label class="label" for="w2-path">Folder</label>
+            <input class="input" id="w2-path" type="text" autocomplete="off" spellcheck="false" value="/home/you/work-notes" aria-describedby="w2-resolved">
+          </div>
+          <div class="row">
+            <span class="label">Will open</span>
+            <span class="resolved" id="w2-resolved">/home/you/work-notes</span>
+          </div>
+          <div class="err" role="alert"></div>
+          <div class="form-actions">
+            <button class="btn" type="button">Cancel</button>
+            <button class="btn btn--primary" type="submit">Add workspace</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Workspace — rename</span><span class="size">Folder row hidden · path shown</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--form">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="w3-title" aria-describedby="w3-help" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="w3-title">Rename workspace</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <form class="dlg-form" novalidate onsubmit="return false">
+          <p class="help" id="w3-help">Rename only changes the label. The folder stays where it is.</p>
+          <div class="row">
+            <label class="label" for="w3-name">Name</label>
+            <input class="input" id="w3-name" type="text" maxlength="60" autocomplete="off" spellcheck="false" value="Work">
+          </div>
+          <div class="row">
+            <span class="label">Will open</span>
+            <span class="resolved">/home/you/work-notes</span>
+          </div>
+          <div class="err" role="alert"></div>
+          <div class="form-actions">
+            <button class="btn" type="button">Cancel</button>
+            <button class="btn btn--primary" type="submit">Save</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board theme-light">
+    <div class="board-head"><span class="dot"></span><span class="grow">Workspace — error</span><span class="size">light · path_missing</span><span class="tag tag--fix">E1 · E2</span></div>
+    <div class="stage stage--form">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="w4-title" aria-describedby="w4-help" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="w4-title">Add workspace</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <form class="dlg-form" novalidate onsubmit="return false">
+          <p class="help" id="w4-help">Point at a folder of Markdown notes on this machine. Nothing is copied or moved.</p>
+          <div class="row">
+            <label class="label" for="w4-name">Name</label>
+            <input class="input" id="w4-name" type="text" maxlength="60" autocomplete="off" spellcheck="false" value="Work journal">
+          </div>
+          <div class="row">
+            <label class="label" for="w4-path">Folder</label>
+            <input class="input" id="w4-path" type="text" autocomplete="off" spellcheck="false"
+                   value="/home/you/notes-typo" aria-invalid="true" aria-describedby="w4-err">
+          </div>
+          <div class="row">
+            <span class="label">Will open</span>
+            <span class="resolved">/home/you/notes-typo</span>
+          </div>
+          <div class="err" id="w4-err" role="alert">That folder doesn’t exist.</div>
+          <div class="form-actions">
+            <button class="btn" type="button">Cancel</button>
+            <button class="btn btn--primary" type="submit">Add workspace</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Submit is disabled only for an empty name, or an empty Folder in add mode.</strong>
+      A relative path keeps the button enabled and is caught on submit with
+      “Use an absolute path, like /home/you/notes.”</li>
+    <li><strong>“Will open” echoes the typed string</strong>, not the server’s realpath. The
+      board copies that behaviour; §3.3 records it and P13 proposes the honest label.</li>
+    <li><strong>The name is auto-filled</strong> from the folder basename until the user types in it.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section class="sec">
+  <h2>Session — create, and the delete confirm</h2>
+  <p class="lede">40 characters after trimming, 20 sessions per workspace. The delete is a native
+    confirm: no styling, no markup, no focus contract of ours.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Session — create</span><span class="size">420 px · label column 92</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--form">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="s1-title" aria-describedby="s1-help" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="s1-title">New session</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <form class="dlg-form" novalidate onsubmit="return false">
+          <p class="help" id="s1-help">A session is a named set of open tabs. Pinned tabs stay in every session.</p>
+          <div class="row">
+            <label class="label label--short" for="s1-name">Name</label>
+            <input class="input" id="s1-name" type="text" maxlength="40" autocomplete="off" spellcheck="false"
+                   placeholder="Deep work" aria-describedby="s1-err">
+          </div>
+          <div class="err" id="s1-err" role="alert"></div>
+          <div class="form-actions">
+            <button class="btn" type="button">Cancel</button>
+            <button class="btn btn--primary" type="submit">Create session</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Session — delete confirm</span><span class="size">native browser chrome, not ours</span><span class="tag tag--gap">unstyled</span></div>
+    <div class="stage stage--confirm">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="confirm">
+        <p class="confirm-url">127.0.0.1:5000</p>
+        <p class="confirm-msg">Delete “Deep work”?
+Its 3 open tabs will close. You’ll switch to “Reading”.
+
+Unsaved edits in its files will be lost.</p>
+        <div class="confirm-actions">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn" type="button">OK</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>The confirm is composed, not fixed:</strong> the tab sentence changes with the count,
+      the “You’ll switch to …” clause appears only when the active session has a neighbour, and
+      the unsaved line appears only when a file in that session is dirty.</li>
+    <li><strong>The dialog never disables submit for content.</strong> Validation runs on submit and
+      every open resets the button, so a past failed submit cannot leave the next one dead.</li>
+    <li><strong>Pinned tabs are words here, not the 📌 glyph</strong> — that glyph lives in the
+      Sessions panel footnote, which is out of scope.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section class="sec">
+  <h2>Export</h2>
+  <p class="lede">520 px. Three sections in a scroller, three secondary footer buttons. Every open
+    resets to HTML / Fit / Light / TOC on / Current file.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Export — default</span><span class="size">HTML · Fit · Light · TOC on</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--export">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg dlg--export" role="dialog" aria-modal="true" aria-labelledby="e1-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="e1-title">Export</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div class="dlg-sections">
+          <div class="section">
+            <h3 class="h3">Format</h3>
+            <div class="row">
+              <span class="label">Output</span>
+              <div class="opts" role="radiogroup" aria-label="Export format">
+                <label><input type="radio" name="m-format" value="pdf"> PDF</label>
+                <label><input type="radio" name="m-format" value="html" checked> HTML</label>
+              </div>
+            </div>
+            <p class="help help--section">PDF opens the browser's print dialog — choose "Save as PDF".
+              HTML downloads a self-contained file with the rendered note and diagrams baked in.</p>
+          </div>
+          <div class="section">
+            <h3 class="h3">Options</h3>
+            <div class="row">
+              <span class="label">Width</span>
+              <div class="opts" role="radiogroup" aria-label="Export page width">
+                <label><input type="radio" name="m-width" value="fit" checked> Fit</label>
+                <label><input type="radio" name="m-width" value="80"> 80%</label>
+                <label><input type="radio" name="m-width" value="full"> Full</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Colors</span>
+              <div class="opts" role="radiogroup" aria-label="Export color theme">
+                <label><input type="radio" name="m-theme" value="light" checked> Light</label>
+                <label><input type="radio" name="m-theme" value="dark"> Dark</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Contents</span>
+              <label class="check"><input type="checkbox" checked> Table of contents</label>
+            </div>
+          </div>
+          <div class="section">
+            <h3 class="h3">Scope</h3>
+            <div class="row">
+              <span class="label">File</span>
+              <div class="opts" role="radiogroup" aria-label="Export scope">
+                <label><input type="radio" name="m-scope" value="current" checked> Current file</label>
+                <label><input type="radio" name="m-scope" value="section"> Section</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Note</span>
+              <code class="mono-chip">notes/design.md</code>
+            </div>
+          </div>
+          <div class="err" role="alert" hidden></div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn" type="button">Preview</button>
+          <button class="btn" type="button">Export</button>
+        </div>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board theme-light">
+    <div class="board-head"><span class="dot"></span><span class="grow">Export — section scope / preview target</span><span class="size">light · PDF</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--export">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg dlg--export" role="dialog" aria-modal="true" aria-labelledby="e2-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="e2-title">Export</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div class="dlg-sections">
+          <div class="section">
+            <h3 class="h3">Format</h3>
+            <div class="row">
+              <span class="label">Output</span>
+              <div class="opts" role="radiogroup" aria-label="Export format">
+                <label><input type="radio" name="m2-format" value="pdf" checked> PDF</label>
+                <label><input type="radio" name="m2-format" value="html"> HTML</label>
+              </div>
+            </div>
+            <p class="help help--section">PDF opens the browser's print dialog — choose "Save as PDF".
+              HTML downloads a self-contained file with the rendered note and diagrams baked in.</p>
+          </div>
+          <div class="section">
+            <h3 class="h3">Options</h3>
+            <div class="row">
+              <span class="label">Width</span>
+              <div class="opts" role="radiogroup" aria-label="Export page width">
+                <label><input type="radio" name="m2-width" value="fit" checked> Fit</label>
+                <label><input type="radio" name="m2-width" value="80"> 80%</label>
+                <label><input type="radio" name="m2-width" value="full"> Full</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Colors</span>
+              <div class="opts" role="radiogroup" aria-label="Export color theme">
+                <label><input type="radio" name="m2-theme" value="light" checked> Light</label>
+                <label><input type="radio" name="m2-theme" value="dark"> Dark</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Contents</span>
+              <label class="check"><input type="checkbox" checked> Table of contents</label>
+            </div>
+          </div>
+          <div class="section">
+            <h3 class="h3">Scope</h3>
+            <div class="row">
+              <span class="label">File</span>
+              <div class="opts" role="radiogroup" aria-label="Export scope">
+                <label><input type="radio" name="m2-scope" value="current"> Current file</label>
+                <label><input type="radio" name="m2-scope" value="section" checked> Section</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Note</span>
+              <code class="mono-chip">notes/design.md</code>
+            </div>
+            <div class="row">
+              <span class="label">Heading</span>
+              <select class="input select" aria-label="Section heading">
+                <option># Design notes</option>
+                <option selected>## Layout</option>
+                <option>## Motion</option>
+              </select>
+            </div>
+          </div>
+          <div class="err" role="alert" hidden></div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn" type="button">Preview</button>
+          <button class="btn" type="button">Export</button>
+        </div>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Export — running (PDF)</span><span class="size">no visible change</span><span class="tag tag--gap">gap · P2</span></div>
+    <div class="stage stage--export">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg dlg--export" role="dialog" aria-modal="true" aria-labelledby="e3-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="e3-title">Export</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div class="dlg-sections">
+          <div class="section">
+            <h3 class="h3">Format</h3>
+            <div class="row">
+              <span class="label">Output</span>
+              <div class="opts" role="radiogroup" aria-label="Export format">
+                <label><input type="radio" name="m3-format" value="pdf" checked> PDF</label>
+                <label><input type="radio" name="m3-format" value="html"> HTML</label>
+              </div>
+            </div>
+            <p class="help help--section">PDF opens the browser's print dialog — choose "Save as PDF".
+              HTML downloads a self-contained file with the rendered note and diagrams baked in.</p>
+          </div>
+          <div class="section">
+            <h3 class="h3">Options</h3>
+            <div class="row">
+              <span class="label">Width</span>
+              <div class="opts" role="radiogroup" aria-label="Export page width">
+                <label><input type="radio" name="m3-width" value="fit" checked> Fit</label>
+                <label><input type="radio" name="m3-width" value="80"> 80%</label>
+                <label><input type="radio" name="m3-width" value="full"> Full</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Colors</span>
+              <div class="opts" role="radiogroup" aria-label="Export color theme">
+                <label><input type="radio" name="m3-theme" value="light" checked> Light</label>
+                <label><input type="radio" name="m3-theme" value="dark"> Dark</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Contents</span>
+              <label class="check"><input type="checkbox" checked> Table of contents</label>
+            </div>
+          </div>
+          <div class="section">
+            <h3 class="h3">Scope</h3>
+            <div class="row">
+              <span class="label">File</span>
+              <div class="opts" role="radiogroup" aria-label="Export scope">
+                <label><input type="radio" name="m3-scope" value="current" checked> Current file</label>
+                <label><input type="radio" name="m3-scope" value="section"> Section</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Note</span>
+              <code class="mono-chip">notes/design.md</code>
+            </div>
+          </div>
+          <div class="err" role="alert" hidden></div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn" type="button">Preview</button>
+          <button class="btn" type="button">Export</button>
+        </div>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+    <p class="board-note"><strong>Exactly the board above.</strong> Nothing is disabled, nothing
+      spins, nothing says “Exporting…”. Pagination can wait 2 × 15 s before the print dialog
+      opens, and closing the dialog does not stop it. P2 proposes the missing state.</p>
+  </div>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">Export — error</span><span class="size">“Select a section heading to export.”</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--export">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg dlg--export" role="dialog" aria-modal="true" aria-labelledby="e4-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="e4-title">Export</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div class="dlg-sections">
+          <div class="section">
+            <h3 class="h3">Format</h3>
+            <div class="row">
+              <span class="label">Output</span>
+              <div class="opts" role="radiogroup" aria-label="Export format">
+                <label><input type="radio" name="m4-format" value="pdf" checked> PDF</label>
+                <label><input type="radio" name="m4-format" value="html"> HTML</label>
+              </div>
+            </div>
+            <p class="help help--section">PDF opens the browser's print dialog — choose "Save as PDF".
+              HTML downloads a self-contained file with the rendered note and diagrams baked in.</p>
+          </div>
+          <div class="section">
+            <h3 class="h3">Options</h3>
+            <div class="row">
+              <span class="label">Width</span>
+              <div class="opts" role="radiogroup" aria-label="Export page width">
+                <label><input type="radio" name="m4-width" value="fit" checked> Fit</label>
+                <label><input type="radio" name="m4-width" value="80"> 80%</label>
+                <label><input type="radio" name="m4-width" value="full"> Full</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Colors</span>
+              <div class="opts" role="radiogroup" aria-label="Export color theme">
+                <label><input type="radio" name="m4-theme" value="light" checked> Light</label>
+                <label><input type="radio" name="m4-theme" value="dark"> Dark</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Contents</span>
+              <label class="check"><input type="checkbox" checked> Table of contents</label>
+            </div>
+          </div>
+          <div class="section">
+            <h3 class="h3">Scope</h3>
+            <div class="row">
+              <span class="label">File</span>
+              <div class="opts" role="radiogroup" aria-label="Export scope">
+                <label><input type="radio" name="m4-scope" value="current"> Current file</label>
+                <label><input type="radio" name="m4-scope" value="section" checked> Section</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Note</span>
+              <code class="mono-chip">notes/readme.md</code>
+            </div>
+            <div class="row">
+              <span class="label">Heading</span>
+              <select class="input select" aria-label="Section heading" disabled>
+                <option>(this note has no headings)</option>
+              </select>
+            </div>
+          </div>
+          <div class="err" role="alert">Select a section heading to export.</div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn" type="button">Cancel</button>
+          <button class="btn" type="button">Preview</button>
+          <button class="btn" type="button">Export</button>
+        </div>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Preview opens a new tab</strong>, not a pane: it is <code>window.open</code> on a
+      blob URL, and the PDF preview shows the real paginated sheets.</li>
+    <li><strong>The last section keeps its bottom rule</strong> because the error line is a sibling
+      after it, not a section.</li>
+    <li><strong>All three footer buttons are secondary.</strong> The commit action does not look
+      like one; P1 proposes the promotion.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section class="sec">
+  <h2>390 px — the phone</h2>
+  <p class="lede">No dialog becomes a sheet or full-screen. <code>min(420px, 92vw)</code> is
+    358.8 px at 390, with a visible scrim strip each side. Fields are 16 px and targets 44 px
+    after E7; the header <code>×</code> stays 26 px (P8).</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">390 — export</span><span class="size">358.8 px · widest content</span><span class="tag tag--fix">E7</span></div>
+    <div class="stage stage--phone">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg dlg--export" role="dialog" aria-modal="true" aria-labelledby="p1-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="p1-title">Export</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+            <button class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+          </div>
+        </div>
+        <div class="dlg-sections">
+          <div class="section">
+            <h3 class="h3">Format</h3>
+            <div class="row">
+              <span class="label">Output</span>
+              <div class="opts" role="radiogroup" aria-label="Export format">
+                <label><input type="radio" name="p1-format" value="pdf"> PDF</label>
+                <label><input type="radio" name="p1-format" value="html" checked> HTML</label>
+              </div>
+            </div>
+          </div>
+          <div class="section">
+            <h3 class="h3">Options</h3>
+            <div class="row">
+              <span class="label">Width</span>
+              <div class="opts" role="radiogroup" aria-label="Export page width">
+                <label><input type="radio" name="p1-width" value="fit" checked> Fit</label>
+                <label><input type="radio" name="p1-width" value="80"> 80%</label>
+                <label><input type="radio" name="p1-width" value="full"> Full</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Colors</span>
+              <div class="opts" role="radiogroup" aria-label="Export color theme">
+                <label><input type="radio" name="p1-theme" value="light" checked> Light</label>
+                <label><input type="radio" name="p1-theme" value="dark"> Dark</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Contents</span>
+              <label class="check"><input type="checkbox" checked> Table of contents</label>
+            </div>
+          </div>
+          <div class="section">
+            <h3 class="h3">Scope</h3>
+            <div class="row">
+              <span class="label">File</span>
+              <div class="opts" role="radiogroup" aria-label="Export scope">
+                <label><input type="radio" name="p1-scope" value="current" checked> Current file</label>
+                <label><input type="radio" name="p1-scope" value="section"> Section</label>
+              </div>
+            </div>
+            <div class="row">
+              <span class="label">Note</span>
+              <code class="mono-chip">notes/design.md</code>
+            </div>
+          </div>
+          <div class="err" role="alert" hidden></div>
+        </div>
+        <div class="dlg-foot">
+          <button class="btn btn--touch" type="button">Cancel</button>
+          <button class="btn btn--touch" type="button">Preview</button>
+          <button class="btn btn--touch" type="button">Export</button>
+        </div>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span><span class="grow">390 — auth</span><span class="size">358.8 px · 16 px field</span><span class="tag">shipped · E1</span></div>
+    <div class="stage stage--phone">
+      <div class="shell"><span></span><span></span><span></span><span></span><span></span></div>
+      <div class="overlay"></div>
+      <div class="dlg" role="dialog" aria-modal="true" aria-labelledby="p2-title" tabindex="-1">
+        <div class="dlg-head">
+          <h2 id="p2-title">Sign in</h2>
+          <div class="dlg-actions">
+            <button class="icon-btn win-max" type="button" title="Maximize" aria-label="Maximize" aria-pressed="false">
+              <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+            </button>
+          </div>
+        </div>
+        <form class="dlg-form" onsubmit="return false">
+          <p class="help">This notebook is password-protected. Enter the password to continue.</p>
+          <div class="row">
+            <label class="label" for="p2-pw">Password</label>
+            <input class="input input--auth input--touch" id="p2-pw" type="password">
+          </div>
+          <div class="err" role="alert"></div>
+          <div class="form-actions">
+            <button class="btn btn--primary btn--touch" type="button">Sign in</button>
+          </div>
+        </form>
+        <div class="grip" title="Drag to resize" aria-hidden="true"></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>The label column does not shrink.</strong> At 358.8 px the 130 px label leaves
+      ~180 px for the field; the 92 px session label leaves ~218.</li>
+    <li><strong>E7 is why the field and the buttons are 44 px here.</strong> Shipped, only the
+      auth field is 44; the workspace, session and export fields would be ~33 px with 12.6 px
+      type. Radio rows stay ~33 px — E7 does not claim them.</li>
+    <li><strong>The keyboard is unhandled.</strong> Nothing sets <code>--m-kb</code> on these four,
+      so the field can sit behind the keyboard on a short viewport (§14.2).</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<section class="sec">
+  <h2>Toast — the only other feedback surface</h2>
+  <p class="lede">One node, one sentence, no action, 1.5 s. It never takes focus and never blocks
+    the pointer under it.</p>
+
+  <div class="figure-row">
+    <div class="figure-cell">
+      <div class="toast" role="status" aria-live="polite">Could not switch workspace: Network error</div>
+      <span class="cap">desktop · bottom-right 20 px · --shadow-toast</span>
+    </div>
+    <div class="figure-cell">
+      <div class="toast toast--warn" role="status" aria-live="polite">Could not remove the workspace: Not found</div>
+      <span class="cap">.warn variant · --warn border and text</span>
+    </div>
+  </div>
+
+  <div class="phone-frame phone-frame--gap">
+    <div class="toast toast--phone" role="status" aria-live="polite">Could not load workspaces: Network error</div>
+    <span class="cap cap--block">390 · full width, 44 px tall, above the rail + inset, radius 10</span>
+  </div>
+
+  <ul class="notes">
+    <li><strong>A toast is never the answer to a failure inside a dialog.</strong> That failure goes
+      in the dialog's own error slot, on the field that owns it, and the dialog stays open.</li>
+    <li><strong>Nothing destructive lives in a toast.</strong> The three destructive decisions are
+      native confirms with the copy in §6.4.</li>
+  </ul>
+</section>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+  var buttons = document.querySelectorAll("[data-theme-btn]");
+  function apply(name) {
+    document.documentElement.className = name;
+    buttons.forEach(function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-theme-btn") === name ? "true" : "false");
+    });
+  }
+  buttons.forEach(function (b) {
+    b.addEventListener("click", function () { apply(b.getAttribute("data-theme-btn")); });
+  });
+})();
+</script>
+</body>
+</html>

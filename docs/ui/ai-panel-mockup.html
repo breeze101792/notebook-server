@@ -1,0 +1,1605 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI panel — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A. The AI additions are declared
+      there; ai-panel.md §10.1 records why. Every name below is either in the foundation or
+      proposed there. No alias points back at a semantic token, so there
+      is no custom-property cycle.
+   ================================================================== */
+
+:root,
+.theme-dark {
+  /* ---- base (dark) ---- */
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(124, 156, 255, .28);
+
+  /* ---- semantic ---- */
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+
+  /* ---- elevation ---- */
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .35);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .35);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .45);
+
+  /* ---- additions: the diff tints (ai-panel.md §10.1) ---- */
+  --diff-add-bg: rgba(95, 212, 154, .10);
+  --diff-del-bg: rgba(255, 107, 107, .10);
+}
+
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(47, 95, 208, .16);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .16);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .18);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .2);
+
+  --diff-add-bg: rgba(22, 112, 63, .10);
+  --diff-del-bg: rgba(192, 57, 43, .10);
+}
+
+/* ---- primitives (theme-independent) ---- */
+:root {
+  --font-scale: 1;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --z-inline: 2;
+
+  --dur-0: 100ms;
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 220ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: ease-out;
+  --ease-linear: linear;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+
+  --opacity-disabled: .45;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  /* ---- additions: numbers the AI panel and its JS share ---- */
+  --ai-composer-min-h: 40px;
+  --ai-composer-max-h: 160px;
+  --ai-diff-max-h: 260px;
+}
+
+/* ==================================================================
+   2. PAGE CHROME — mockup scaffolding, not part of the design
+   ================================================================== */
+
+* { box-sizing: border-box; }
+
+html { font-size: calc(14px * var(--font-scale)); }
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  background: var(--surface-page);
+  color: var(--text-primary);
+}
+
+::selection { background: var(--selection); color: var(--text-primary); }
+
+.icon, .ai-turn-control > svg {
+  width: var(--icon-md);
+  height: var(--icon-md);
+  display: block;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.icon-fill { fill: currentColor; stroke: none; }
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.page-head {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+}
+.page-head h1 { margin: 0; font-size: var(--text-lg); font-weight: var(--fw-semibold); }
+.page-head .sub { color: var(--text-muted); font-size: var(--text-sm); }
+.page-head .spacer { flex: 1 1 auto; }
+.page-head .legend { display: inline-flex; gap: var(--space-3); color: var(--text-muted); font-size: var(--text-xs); }
+.page-head .legend span { display: inline-flex; align-items: center; gap: var(--space-1); }
+.page-head .swatch { width: var(--space-3); height: var(--space-3); border-radius: var(--radius-xs); border: 1px solid var(--border); }
+
+main { display: block; }
+
+.sec {
+  padding: var(--space-6) var(--space-5) var(--space-7);
+  border-bottom: 1px solid var(--border);
+}
+.sec > h2 { margin: 0 0 var(--space-1); font-size: var(--text-lg); font-weight: var(--fw-semibold); }
+.sec > .lede {
+  max-width: 84ch;
+  margin: 0 0 var(--space-5);
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+}
+.sec > .lede code { font-family: var(--font-mono); font-size: .95em; }
+
+.frames {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: var(--space-5) var(--space-7);
+  align-items: start;
+}
+.frame { margin: 0; }
+.frame figcaption {
+  margin-bottom: var(--space-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.note {
+  max-width: 84ch;
+  margin: var(--space-3) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* The panel floats on a stage so the board reads as a surface, not as a
+ * page. The panel itself carries no shadow, per foundations P1. */
+.stage {
+  padding: var(--space-3);
+  background: var(--surface-page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.panel {
+  width: 240px;
+  height: 560px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  color: var(--text-primary);
+}
+.panel.narrow { width: 140px; height: 686px; }
+.panel.mid { height: 600px; }
+.panel.tall { height: 830px; }
+
+/* ==================================================================
+   3. AI PANEL — ai-panel.md §10.3 (the target CSS)
+   ================================================================== */
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  flex: 0 0 auto;
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+}
+.panel-title {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-hair);
+  flex: 0 0 auto;
+}
+.collapse-btn {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-ui-lg);
+  line-height: var(--lh-flat);
+  cursor: pointer;
+}
+.collapse-btn:hover { color: var(--text-primary); background: var(--accent-soft); }
+.collapse-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.ai-clear {
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--stroke-1) solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.ai-clear:hover:not(:disabled) { color: var(--text-primary); background: var(--accent-soft); }
+.ai-clear:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.ai-clear:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.ai-config-hint {
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-1) solid var(--warn);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+}
+.ai-config-hint .icon { display: inline-block; vertical-align: -3px; color: var(--warn); margin-right: var(--space-1); }
+
+.ai-model-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  flex: 0 0 auto;
+}
+.ai-model-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-6) 0 var(--space-3);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: var(--text-ui);
+}
+.ai-model-select:hover:not(:disabled) { border-color: var(--accent); }
+.ai-model-select:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.ai-model-select:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+
+.ai-acp-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+  margin: 0 var(--space-3) var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: var(--lh-snug);
+}
+.ai-acp-tag {
+  flex: 0 0 auto;
+  padding: 1px var(--space-2);
+  border: var(--stroke-1) solid var(--accent);
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-flat);
+}
+
+.ai-chat-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.ai-empty {
+  margin: auto;
+  max-width: calc(60 * var(--space-2));
+  padding: var(--space-6) var(--space-2);
+  text-align: center;
+  color: var(--text-muted);
+}
+.ai-empty-icon { color: var(--text-muted); margin: 0 auto var(--space-2); width: var(--icon-lg); height: var(--icon-lg); }
+.ai-empty-title {
+  margin: 0 0 var(--space-1);
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  font-weight: var(--fw-semibold);
+}
+.ai-empty-hint { margin: 0; font-size: var(--text-sm); line-height: var(--lh-snug); }
+
+.ai-msg { display: flex; flex-direction: column; min-width: 0; flex: 0 0 auto; }
+.ai-msg-user { align-items: flex-end; }
+.ai-msg-assistant { align-items: stretch; }
+
+.ai-user-text {
+  max-width: 95%;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: var(--text-ui-lg);
+  line-height: var(--lh-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ai-msg-assistant > .ai-prose-span {
+  color: var(--text-primary);
+  font-size: var(--text-ui-lg);
+  line-height: var(--lh-prose);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.ai-msg-assistant > .ai-prose-span + .ai-prose-span { margin-top: var(--space-1); }
+.ai-prose-span > :first-child { margin-top: 0; }
+.ai-prose-span > :last-child { margin-bottom: 0; }
+.ai-prose-span p { margin: .45em 0; }
+.ai-prose-span h1, .ai-prose-span h2, .ai-prose-span h3,
+.ai-prose-span h4, .ai-prose-span h5, .ai-prose-span h6 {
+  margin: .8em 0 .35em;
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-heading);
+}
+.ai-prose-span h1 { font-size: var(--text-lg); }
+.ai-prose-span h2 { font-size: var(--text-body); }
+.ai-prose-span h3, .ai-prose-span h4,
+.ai-prose-span h5, .ai-prose-span h6 { font-size: var(--text-ui-lg); }
+.ai-prose-span ul, .ai-prose-span ol { margin: .45em 0; padding-left: 1.5em; }
+.ai-prose-span li { margin: .18em 0; }
+.ai-prose-span li > p:first-child { margin-top: 0; }
+.ai-prose-span li > p:last-child { margin-bottom: 0; }
+.ai-prose-span code {
+  font-family: var(--font-mono);
+  font-size: .82em;
+  background: var(--surface-well);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 0 var(--space-1);
+}
+.ai-prose-span pre {
+  position: relative;
+  margin: var(--space-2) 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-well);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  line-height: var(--lh-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
+}
+.ai-prose-span pre code { background: transparent; border: 0; padding: 0; font-size: inherit; }
+.ai-prose-span blockquote {
+  margin: .45em 0;
+  padding: var(--space-hair) var(--space-3);
+  border-left: var(--stroke-3) solid var(--border);
+  color: var(--text-muted);
+}
+.ai-prose-span a { color: var(--accent); }
+
+.ai-tool-trace {
+  min-height: var(--control-h-sm);
+  padding: var(--space-1) 0 var(--space-1) var(--space-2);
+  border-left: var(--stroke-2) solid var(--border);
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+.ai-tool-trace > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  list-style: none;
+  cursor: pointer;
+}
+.ai-tool-trace > summary::-webkit-details-marker { display: none; }
+.ai-tool-trace[data-state="event"],
+.ai-tool-trace[data-state="running"] {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.ai-tool-name {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+}
+.ai-tool-trace > .ai-tool-name:only-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ai-tool-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+.ai-tool-out {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.ai-tool-trace[data-state="err"] .ai-tool-out { color: var(--danger); }
+.ai-tool-body {
+  margin: var(--space-1) 0 0;
+  max-height: calc(var(--space-8) * 2);
+  overflow: auto;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-normal);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-tool-caret {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.ai-tool-trace[open] .ai-tool-caret { transform: rotate(90deg); }
+.ai-tool-trace > summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.ai-tool-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  flex: 0 0 auto;
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+  animation: ai-pulse 1.6s var(--ease-linear) infinite;
+}
+@keyframes ai-pulse { 50% { opacity: .35; } }
+.ai-tool-trace[data-state="event"] .ai-tool-name { color: var(--text-muted); }
+
+.ai-turn-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.ai-status-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-circle);
+  background: var(--text-muted);
+}
+
+.ai-stream-caret {
+  display: inline-block;
+  width: var(--stroke-2);
+  height: 1em;
+  margin-left: var(--space-hair);
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: ai-caret 1s steps(2, start) infinite;
+}
+@keyframes ai-caret { 50% { opacity: 0; } }
+
+.ai-error {
+  margin-top: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-1) solid var(--danger);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-error-label { font-weight: var(--fw-semibold); }
+.ai-error-icon { display: inline-block; vertical-align: -3px; color: var(--danger); margin-right: var(--space-1); }
+
+.ai-turn-control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  min-height: var(--control-h-sm);
+  margin-top: var(--space-1);
+  padding: 0 var(--space-1);
+  border: var(--stroke-1) solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-xs);
+  line-height: var(--lh-flat);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.ai-turn-control > svg { width: var(--icon-sm); height: var(--icon-sm); flex: 0 0 auto; }
+.ai-regenerate { align-self: flex-start; }
+.ai-edit { align-self: flex-end; }
+.ai-turn-control:hover:not(:disabled) { color: var(--text-primary); background: var(--accent-soft); }
+.ai-turn-control:active:not(:disabled) { background: var(--accent-soft); }
+.ai-turn-control:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.ai-turn-control:disabled { opacity: var(--opacity-disabled); color: var(--text-muted); background: transparent; cursor: not-allowed; }
+
+.ai-jump {
+  position: sticky;
+  bottom: 0;
+  align-self: center;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-float);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.ai-jump[hidden] { display: none; }
+
+/* --- edit card --- */
+.ai-edit-card {
+  flex: 0 0 auto;
+  margin: 0;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.ai-edit-card.applying { border-color: var(--accent); }
+.ai-edit-card.ok { border-color: var(--ok); }
+.ai-edit-card.errored { border-color: var(--danger); }
+.ai-edit-card.rejected { border-color: var(--border); }
+
+.ai-edit-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.ai-edit-op {
+  flex: 0 0 auto;
+  padding: 1px var(--space-2);
+  border: var(--stroke-1) solid currentColor;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--warn);
+}
+.ai-edit-card[data-op="write"] .ai-edit-op { color: var(--ok); }
+.ai-edit-card[data-op="append"] .ai-edit-op,
+.ai-edit-card[data-op="prepend"] .ai-edit-op,
+.ai-edit-card[data-op="replace"] .ai-edit-op { color: var(--text-muted); }
+.ai-edit-path {
+  order: 2;
+  flex: 1 0 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+.ai-diff-stats { order: 1; margin-left: auto; display: inline-flex; gap: var(--space-1); flex: 0 0 auto; }
+.ai-stat {
+  padding: 0 var(--space-1);
+  border: var(--stroke-1) solid currentColor;
+  border-radius: var(--radius-pill);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+.ai-stat.del { border-color: var(--danger); }
+.ai-stat.add { border-color: var(--ok); }
+.ai-edit-desc {
+  padding: var(--space-1) var(--space-3) 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.ai-patch-ops-note {
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--stroke-1) solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.ai-diff {
+  background: var(--surface-well);
+  border-bottom: var(--stroke-1) solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--lh-normal);
+  overflow: auto;
+  max-height: var(--ai-diff-max-h);
+}
+.diff-row {
+  display: grid;
+  grid-template-columns: 1.8em 1.8em 1em 1fr;
+  align-items: baseline;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  min-width: max-content;
+  padding-right: var(--space-2);
+}
+.diff-num {
+  text-align: right;
+  padding: 0 var(--space-1) 0 0;
+  color: var(--text-muted);
+  user-select: none;
+  font-size: var(--text-xs);
+}
+.diff-sign { user-select: none; font-weight: var(--fw-semibold); }
+.diff-text { white-space: pre-wrap; color: var(--text-primary); }
+.diff-hunk {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-raised);
+  border-bottom: var(--stroke-1) solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.diff-add { background: var(--diff-add-bg); }
+.diff-add .diff-sign { color: var(--ok); }
+.diff-del { background: var(--diff-del-bg); }
+.diff-del .diff-sign { color: var(--danger); }
+.diff-del .diff-text { text-decoration: line-through; text-decoration-color: var(--danger); }
+.diff-ctx { color: var(--text-muted); }
+.diff-more {
+  display: block;
+  padding: var(--space-1) var(--space-2);
+  color: var(--text-muted);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+.ai-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+}
+.ai-btn {
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-ui);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out);
+}
+.ai-btn:hover:not(:disabled) { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.ai-btn.ai-apply {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+  font-weight: var(--fw-semibold);
+}
+.ai-btn.ai-apply:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+}
+.ai-btn:active:not(:disabled) { transform: translateY(1px); }
+.ai-btn:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.ai-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.ai-card-status {
+  padding: var(--space-2) var(--space-3);
+  border-top: var(--stroke-1) solid var(--border);
+  font-size: var(--text-sm);
+}
+.ai-card-status:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.ai-card-status.applied { color: var(--ok); }
+.ai-card-status.error { color: var(--danger); }
+.ai-card-status.rejected { color: var(--text-muted); }
+
+/* --- composer --- */
+.ai-input-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    "input  input"
+    "attach actions";
+  align-items: end;
+  gap: var(--space-1);
+  margin: var(--space-2) var(--space-3) var(--space-3);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  flex: 0 0 auto;
+}
+.ai-input-row:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+}
+.ai-input-row.ai-streaming { border-color: var(--accent); }
+.ai-input {
+  grid-area: input;
+  resize: none;
+  min-height: var(--ai-composer-min-h);
+  max-height: var(--ai-composer-max-h);
+  padding: var(--space-1) var(--space-1) 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-ui-lg);
+  line-height: var(--lh-normal);
+}
+.ai-input:focus { outline: none; }
+.ai-input::placeholder { color: var(--text-muted); }
+.ai-input:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+
+.ai-attach {
+  grid-area: attach;
+  justify-self: start;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.ai-attach:hover:not(:disabled) { color: var(--text-primary); background: var(--accent-soft); }
+.ai-attach:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; color: var(--text-muted); background: transparent; }
+
+.ai-send, .ai-stop {
+  grid-area: actions;
+  justify-self: end;
+  width: var(--control-h-body);
+  height: var(--control-h-body);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-circle);
+  cursor: pointer;
+}
+.ai-send { border: 0; background: var(--accent); color: var(--text-on-accent); }
+.ai-send:hover:not(:disabled) { box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft); }
+.ai-send:active:not(:disabled) { transform: translateY(1px); }
+.ai-send:disabled {
+  background: var(--surface-well);
+  color: var(--text-muted);
+  border: var(--stroke-1) solid var(--border-strong);
+  box-shadow: none;
+  opacity: var(--opacity-disabled);
+  cursor: not-allowed;
+}
+.ai-stop { border: var(--stroke-1) solid var(--border-strong); background: var(--surface-raised); color: var(--text-primary); }
+.ai-stop:hover { color: var(--danger); border-color: var(--danger); }
+.ai-send[hidden], .ai-stop[hidden] { display: none; }
+.ai-attach svg, .ai-send svg, .ai-stop svg { width: var(--icon-md); height: var(--icon-md); }
+.ai-attach:focus-visible, .ai-send:focus-visible, .ai-stop:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+.ai-attach-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  flex: 0 0 auto;
+}
+.ai-attach-bar[hidden] { display: none; }
+.ai-attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 100%;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-1) 0 var(--space-2);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  color: var(--text-primary);
+  font-size: var(--text-xs);
+}
+.ai-attach-chip-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-attach-chip-size { flex: 0 200 auto; min-width: 0; overflow: hidden; color: var(--text-muted); white-space: nowrap; }
+.ai-attach-chip-thumb {
+  flex: 0 0 auto;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xs);
+  object-fit: cover;
+}
+.ai-attach-chip-thumb[hidden] { display: none; }
+.ai-attach-chip-remove {
+  flex: 0 0 auto;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  margin-right: calc(-1 * var(--space-1));
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-ui);
+  line-height: var(--lh-flat);
+  cursor: pointer;
+}
+.ai-attach-chip-remove:hover { color: var(--danger); }
+.ai-attach-chip-remove:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.ai-attach-chip.error {
+  flex: 1 1 100%;
+  border-color: var(--danger);
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--text-primary);
+  padding: 0 var(--space-1) 0 var(--space-2);
+}
+
+.ai-user-files {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+  max-width: 95%;
+}
+.ai-user-file {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-2);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.ai-user-thumb {
+  max-height: calc(var(--space-8) * 2);
+  max-width: 100%;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ai-drop-active { outline: var(--stroke-2) dashed var(--accent); outline-offset: calc(-1 * var(--stroke-2)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-stream-caret { animation: none; opacity: 1; }
+  .ai-tool-dot { animation: none; opacity: 1; }
+  .ai-tool-caret { transition: none; }
+  .ai-turn-control { transition: none; }
+  .ai-btn { transition: none; }
+}
+
+/* ==================================================================
+   4. PHONE BOARD — mockup scaffolding for the drawer; the panel rules
+      inside are the §10.4 phone block.
+   ================================================================== */
+
+.phone-stage {
+  position: relative;
+  width: 390px;
+  height: 680px;
+  overflow: hidden;
+  background: var(--surface-page);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  --m-scrim: rgba(0, 0, 0, .45);
+  --m-radius: 10px;
+}
+.reader-peek {
+  position: absolute;
+  inset: 0;
+  padding: 62px 20px 0;
+  color: var(--text-muted);
+}
+.reader-bar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-4);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: var(--fw-semibold);
+}
+.reader-line {
+  height: 10px;
+  margin-bottom: 12px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-raised);
+}
+.reader-line.w80 { width: 80%; }
+.reader-line.w60 { width: 60%; }
+.reader-line.w90 { width: 90%; }
+.scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--m-scrim);
+}
+.drawer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 335px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-panel);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-sheet);
+}
+.drawer .panel { width: 100%; height: 100%; border: 0; }
+
+/* Phone overrides — ai-panel.md §10.4. */
+.drawer .panel-header { min-height: 52px; padding: 0 var(--space-1) 0 var(--space-4); gap: var(--space-1); }
+.drawer .panel-title { font-size: var(--text-ui); }
+.drawer .ai-clear { min-height: var(--control-h-touch); padding: 0 var(--space-2); font-size: var(--text-ui); }
+.drawer .collapse-btn { width: var(--control-h-touch); height: var(--control-h-touch); }
+.drawer .ai-model-bar { padding: var(--space-2) var(--space-4) var(--space-1); }
+.drawer .ai-model-select { height: var(--control-h-touch); font-size: 16px; border-radius: var(--m-radius); }
+.drawer .ai-acp-note { margin-inline: var(--space-4); font-size: var(--text-sm); }
+.drawer .ai-chat-log { padding: var(--space-3) var(--space-4); }
+.drawer .ai-user-text,
+.drawer .ai-msg-assistant > .ai-prose-span { font-size: 16px; }
+.drawer .ai-input-row { margin: var(--space-2) var(--space-3) var(--space-3); }
+.drawer .ai-input { min-height: var(--control-h-touch); font-size: 16px; }
+.drawer .ai-attach, .drawer .ai-send, .drawer .ai-stop { width: var(--control-h-touch); height: var(--control-h-touch); }
+.drawer .ai-attach { border-radius: var(--radius-md); }
+.drawer .ai-attach-chip { min-height: var(--control-h-md); font-size: var(--text-ui); }
+.drawer .ai-attach-chip-remove {
+  width: var(--control-h-touch);
+  height: var(--control-h-touch);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) 0;
+}
+.drawer .ai-turn-control { min-height: var(--control-h-touch); padding: 0 var(--space-2); font-size: var(--text-ui); }
+.drawer .ai-btn { min-height: var(--control-h-touch); font-size: 16px; }
+.drawer .ai-jump { min-height: var(--control-h-touch); }
+
+/* Mockup-only: a thumbnail standing in for a logic-analyzer screenshot.
+ * The app uses the object URL of the attached image. */
+.thumb-shot {
+  display: inline-block;
+  background:
+    linear-gradient(to bottom, transparent 46%, var(--accent) 46%, var(--accent) 54%, transparent 54%) 0 0 / 100% 100% no-repeat,
+    repeating-linear-gradient(to right, var(--surface-well) 0 3px, var(--surface-panel) 3px 6px);
+}
+</style>
+</head>
+<body>
+
+<svg class="icon-sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-sparkle" viewBox="0 0 16 16"><path d="M8 1.5l1.7 4.8L14.5 8l-4.8 1.7L8 14.5 6.3 9.7 1.5 8l4.8-1.7z"/></symbol>
+  <symbol id="i-paperclip" viewBox="0 0 16 16"><path d="M13.2 7.3l-5.4 5.4a3.2 3.2 0 0 1-4.5-4.5l5.4-5.4a2.1 2.1 0 0 1 3 3l-5.4 5.4a1 1 0 0 1-1.5-1.5l4.8-4.8"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 16 16"><path d="M8 13V3"/><path d="M3.5 7.5L8 3l4.5 4.5"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 16 16"><rect x="5" y="5" width="6" height="6" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="M10 3L5 8l5 5"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 16 16"><path d="M6 3l5 5-5 5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M8 4.8v3.6"/><path d="M8 11.2v.1"/></symbol>
+  <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8"/><path d="M12 4l-8 8"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 16 16"><path d="M3 8a5 5 0 1 0 1.6-3.7"/><path d="M3 2.5v3h3"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/></symbol>
+</defs></svg>
+
+<header class="page-head">
+  <h1>AI panel — mockup</h1>
+  <span class="sub">Every board is paired: dark left, light right. Read <code>ai-panel.md</code>; it is normative.</span>
+  <span class="spacer"></span>
+  <span class="legend">
+    <span><i class="swatch" style="background:var(--surface-panel)"></i>panel</span>
+    <span><i class="swatch" style="background:var(--surface-raised)"></i>raised</span>
+    <span><i class="swatch" style="background:var(--surface-well)"></i>well</span>
+  </span>
+</header>
+
+<main>
+
+<!-- ============================ 1 · empty, no provider ============ -->
+<section class="sec" id="empty">
+  <h2>1 · Empty — no provider configured</h2>
+  <p class="lede">The log carries the one message that matters; the select shows the value
+  and is inert; the composer is visible but disabled. No banner repeats the same fact.
+  Clear is disabled because there is nothing to clear.</p>
+  <div class="frames">
+    <figure class="frame">
+      <figcaption>Dark · 240 px</figcaption>
+      <div class="stage">
+        <div class="panel theme-dark">
+          <div class="panel-header">
+            <h2 class="panel-title">AI Assistant</h2>
+            <div class="panel-header-actions">
+              <button class="ai-clear" type="button" disabled title="Clear the conversation (the assistant forgets the context)">Clear</button>
+              <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ai-model-bar">
+            <select class="ai-model-select" aria-label="Model and provider" disabled>
+              <option>No provider</option>
+            </select>
+          </div>
+          <div class="ai-chat-log">
+            <div class="ai-empty">
+              <svg class="ai-empty-icon" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg>
+              <p class="ai-empty-title">No provider configured.</p>
+              <p class="ai-empty-hint">Open Settings → AI to add one (any OpenAI-compatible endpoint works).</p>
+            </div>
+          </div>
+          <form class="ai-input-row" aria-label="Message composer">
+            <textarea class="ai-input" rows="3" aria-label="Message" disabled placeholder="Ask the AI to write or edit notes; it can list and read files…"></textarea>
+            <button class="ai-attach" type="button" aria-label="Attach files" title="Attach files" disabled>
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-paperclip"/></svg>
+            </button>
+            <button class="ai-send" type="submit" aria-label="Send message" title="Send (Enter)" disabled>
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================ 2 · conversation ================== -->
+<section class="sec" id="conversation">
+  <h2>2 · Conversation — prose, a trace, an edit card, two attachments</h2>
+  <p class="lede">A read-only tool ran, the reply streams as prose, and the patch waits as a
+  card. The card is the only raised surface. The trace output is collapsed. Two pending
+  attachments make Send live with an empty field.</p>
+  <div class="frames">
+    <figure class="frame">
+      <figcaption>Dark · 240 px</figcaption>
+      <div class="stage">
+        <div class="panel tall theme-dark">
+          <div class="panel-header">
+            <h2 class="panel-title">AI Assistant</h2>
+            <div class="panel-header-actions">
+              <button class="ai-clear" type="button" title="Clear the conversation (the assistant forgets the context)">Clear</button>
+              <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ai-model-bar">
+            <select class="ai-model-select" aria-label="Model and provider" title="local · qwen3.8:latest">
+              <option>local · qwen3.8:latest</option>
+            </select>
+          </div>
+          <div class="ai-chat-log" role="log" aria-label="Conversation" aria-live="off">
+
+            <div class="ai-msg ai-msg-user" role="group" aria-label="Your message">
+              <div class="ai-user-text">Add a bus-recovery section to notes/i2c-bus.md.</div>
+              <button class="ai-turn-control ai-edit" type="button" disabled title="Clear the draft and attachments first">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg>Edit
+              </button>
+            </div>
+
+            <details class="ai-tool-trace" data-test-tool-trace="read" data-state="ok">
+              <summary>
+                <svg class="icon ai-tool-caret" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
+                <span class="ai-tool-name">read</span>
+                <span class="ai-tool-path" title="notes/i2c-bus.md">notes/i2c-bus.md</span>
+                <span class="ai-tool-out">1,204 chars</span>
+              </summary>
+              <pre class="ai-tool-body"># I2C bus
+## Bus recovery
+If SDA is held low after a reset, the bus is stuck.
+## Timing
+Standard mode runs at 100 kHz.</pre>
+            </details>
+
+            <div class="ai-msg ai-msg-assistant" role="group" aria-label="Assistant reply">
+              <span class="ai-prose-span">
+                <p>Here is the section, after <strong>Bus recovery</strong> and before
+                <strong>Timing</strong>.</p>
+              </span>
+              <button class="ai-turn-control ai-regenerate" type="button" disabled title="Re-run the model on your last question">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>Regenerate
+              </button>
+            </div>
+
+            <div class="ai-edit-card" data-op="patch">
+              <div class="ai-edit-head">
+                <span class="ai-edit-op">patch</span>
+                <span class="ai-edit-path" title="notes/i2c-bus.md">notes/i2c-bus.md</span>
+                <span class="ai-diff-stats"><span class="ai-stat del">−0</span><span class="ai-stat add">+4</span></span>
+              </div>
+              <div class="ai-edit-desc">Adds a nine-clock recovery procedure.</div>
+              <div class="ai-diff">
+                <div class="diff-row diff-hunk">@@ -14,3 +14,7 @@</div>
+                <div class="diff-row diff-ctx"><span class="diff-num">14</span><span class="diff-num">14</span><span class="diff-sign"></span><span class="diff-text">## Bus recovery</span></div>
+                <div class="diff-row diff-ctx"><span class="diff-num">15</span><span class="diff-num">15</span><span class="diff-sign"></span><span class="diff-text">If SDA is held low after a reset, the bus is stuck.</span></div>
+                <div class="diff-row diff-add"><span class="diff-num"></span><span class="diff-num">16</span><span class="diff-sign">+</span><span class="diff-text">### Nine-clock recovery</span></div>
+                <div class="diff-row diff-add"><span class="diff-num"></span><span class="diff-num">17</span><span class="diff-sign">+</span><span class="diff-text">Toggle SCL nine times with SDA released, then</span></div>
+                <div class="diff-row diff-add"><span class="diff-num"></span><span class="diff-num">18</span><span class="diff-sign">+</span><span class="diff-text">issue a STOP. Log the attempt in bring-up.md.</span></div>
+                <div class="diff-row diff-add"><span class="diff-num"></span><span class="diff-num">19</span><span class="diff-sign">+</span><span class="diff-text">This clears a slave that missed a STOP.</span></div>
+                <div class="diff-row diff-ctx"><span class="diff-num">16</span><span class="diff-num">20</span><span class="diff-sign"></span><span class="diff-text">## Timing</span></div>
+              </div>
+              <div class="ai-edit-actions">
+                <button class="ai-btn" type="button">Reject</button>
+                <button class="ai-btn ai-apply" type="button">Apply</button>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="ai-attach-bar">
+            <span class="ai-attach-chip">
+              <span class="ai-attach-chip-thumb thumb-shot" aria-hidden="true"></span>
+              <span class="ai-attach-chip-name">logic-analyzer.png</span>
+              <span class="ai-attach-chip-size">96 KB</span>
+              <button class="ai-attach-chip-remove" type="button" aria-label="Remove logic-analyzer.png">×</button>
+            </span>
+            <span class="ai-attach-chip">
+              <span class="ai-attach-chip-name">bring-up.md</span>
+              <span class="ai-attach-chip-size">12.4 KB</span>
+              <button class="ai-attach-chip-remove" type="button" aria-label="Remove bring-up.md">×</button>
+            </span>
+          </div>
+
+          <form class="ai-input-row" aria-label="Message composer">
+            <textarea class="ai-input" rows="3" aria-label="Message" placeholder="Ask the AI to write or edit notes; it can list and read files…"></textarea>
+            <button class="ai-attach" type="button" aria-label="Attach files" title="Attach files">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-paperclip"/></svg>
+            </button>
+            <button class="ai-send" type="submit" aria-label="Send message" title="Send (Enter)">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================ 3 · streaming ===================== -->
+<section class="sec" id="streaming">
+  <h2>3 · Streaming — caret, Stop, disabled attach</h2>
+  <p class="lede">The partial reply carries the caret at its end. Stop replaces Send in the
+  same slot; the card border turns accent. Attach and the provider select are disabled for
+  the whole turn. Nothing else moves.</p>
+  <div class="frames">
+    <figure class="frame">
+      <figcaption>Dark · 240 px</figcaption>
+      <div class="stage">
+        <div class="panel tall theme-dark">
+          <div class="panel-header">
+            <h2 class="panel-title">AI Assistant</h2>
+            <div class="panel-header-actions">
+              <button class="ai-clear" type="button" title="Clear the conversation (the assistant forgets the context)">Clear</button>
+              <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ai-model-bar">
+            <select class="ai-model-select" aria-label="Model and provider" disabled>
+              <option>local · qwen3.8:latest</option>
+            </select>
+          </div>
+          <div class="ai-chat-log" role="log" aria-label="Conversation" aria-live="off">
+            <div class="ai-msg ai-msg-user" role="group" aria-label="Your message">
+              <div class="ai-user-text">Why does the SPI transfer stall after the third byte?</div>
+            </div>
+            <details class="ai-tool-trace" data-test-tool-trace="read" data-state="ok">
+              <summary>
+                <svg class="icon ai-tool-caret" aria-hidden="true" focusable="false"><use href="#i-chevron-right"/></svg>
+                <span class="ai-tool-name">read</span>
+                <span class="ai-tool-path" title="notes/spi-bringup.md">notes/spi-bringup.md</span>
+                <span class="ai-tool-out">2,318 chars</span>
+              </summary>
+              <pre class="ai-tool-body">SPI1 on PA5/PA6/PA7. FIFO underrun shows as OVR in SR.</pre>
+            </details>
+            <div class="ai-msg ai-msg-assistant" role="group" aria-label="Assistant reply">
+              <span class="ai-prose-span">
+                <p>The stall is a FIFO underrun. The third byte drains the TX FIFO before the
+                ISR refills it, so the master keeps clocking and reads <code>0xFF</code>.</p>
+                <p>Check <code>SPI_SR.OVR</code> after the transfer. If it is set, the fix is to
+                preload two frames and raise the TXE interrupt priority above the DMA
+                completion<span class="ai-stream-caret" aria-hidden="true"></span></p>
+              </span>
+            </div>
+          </div>
+          <form class="ai-input-row ai-streaming" aria-label="Message composer">
+            <textarea class="ai-input" rows="3" aria-label="Message" placeholder="Ask the AI to write or edit notes; it can list and read files…"></textarea>
+            <button class="ai-attach" type="button" aria-label="Attach files" title="Attach files" disabled>
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-paperclip"/></svg>
+            </button>
+            <button class="ai-send" type="submit" aria-label="Send message" title="Send (Enter)" hidden>
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up"/></svg>
+            </button>
+            <button class="ai-stop" type="button" aria-label="Stop generating" title="Stop generating">
+              <svg class="icon icon-fill" aria-hidden="true" focusable="false"><use href="#i-stop"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================ 4 · error ========================= -->
+<section class="sec" id="error">
+  <h2>4 · Error — the failure block and Retry</h2>
+  <p class="lede">The sentence is <code>--text-primary</code>; the border and the alert
+  glyph carry danger. The turn control under the bubble reads Retry and calls the same
+  regenerate path. The composer is live again.</p>
+  <div class="frames">
+    <figure class="frame">
+      <figcaption>Dark · 240 px</figcaption>
+      <div class="stage">
+        <div class="panel mid theme-dark">
+          <div class="panel-header">
+            <h2 class="panel-title">AI Assistant</h2>
+            <div class="panel-header-actions">
+              <button class="ai-clear" type="button" title="Clear the conversation (the assistant forgets the context)">Clear</button>
+              <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ai-model-bar">
+            <select class="ai-model-select" aria-label="Model and provider">
+              <option>local · qwen3.8:latest</option>
+            </select>
+          </div>
+          <div class="ai-chat-log" role="log" aria-label="Conversation" aria-live="off">
+            <div class="ai-msg ai-msg-user" role="group" aria-label="Your message">
+              <div class="ai-user-text">Summarise notes/thermal.md and flag the risky parts.</div>
+            </div>
+            <div class="ai-msg ai-msg-assistant" role="group" aria-label="Assistant reply">
+              <div class="ai-error" role="alert">
+                <svg class="icon ai-error-icon" aria-hidden="true" focusable="false"><use href="#i-alert"/></svg><span class="ai-error-label">AI request failed:</span> could not reach the server.
+              </div>
+              <button class="ai-turn-control ai-regenerate" type="button" title="Retry the last request">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>Retry
+              </button>
+            </div>
+          </div>
+          <form class="ai-input-row" aria-label="Message composer">
+            <textarea class="ai-input" rows="3" aria-label="Message" placeholder="Ask the AI to write or edit notes; it can list and read files…"></textarea>
+            <button class="ai-attach" type="button" aria-label="Attach files" title="Attach files">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-paperclip"/></svg>
+            </button>
+            <button class="ai-send" type="submit" aria-label="Send message" title="Send (Enter)">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================ 5 · ACP =========================== -->
+<section class="sec" id="acp">
+  <h2>5 · ACP — its own tools, no review here</h2>
+  <p class="lede">The provider row carries an ACP pill and one visible consequence. Trace
+  rows are the agent's own tool titles: plain rows with no chevron and no output. Attach is
+  text-only. Regenerate and Edit behave exactly as for a model.</p>
+  <div class="frames">
+    <figure class="frame">
+      <figcaption>Dark · 240 px</figcaption>
+      <div class="stage">
+        <div class="panel tall theme-dark">
+          <div class="panel-header">
+            <h2 class="panel-title">AI Assistant</h2>
+            <div class="panel-header-actions">
+              <button class="ai-clear" type="button" title="Clear the conversation (the assistant forgets the context)">Clear</button>
+              <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ai-model-bar">
+            <select class="ai-model-select" aria-label="Model and provider" title="opencode · ollama/qwen3.8:latest">
+              <option>opencode · ollama/qwen3.8:latest</option>
+            </select>
+          </div>
+          <div class="ai-acp-note">
+            <span class="ai-acp-tag">ACP</span>
+            <span>Runs its own tools. Changes are applied outside this panel's review.</span>
+          </div>
+          <div class="ai-chat-log" role="log" aria-label="Conversation" aria-live="off">
+            <div class="ai-msg ai-msg-user" role="group" aria-label="Your message">
+              <div class="ai-user-text">Why does the SPI transfer stall after the third byte?</div>
+              <button class="ai-turn-control ai-edit" type="button" title="Edit your last question and resend">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg>Edit
+              </button>
+            </div>
+            <div class="ai-tool-trace" data-state="event">
+              <span class="ai-tool-name">read notes/spi-bringup.md</span>
+            </div>
+            <div class="ai-tool-trace" data-state="event">
+              <span class="ai-tool-name">search STM32 SPI FIFO underrun</span>
+            </div>
+            <div class="ai-msg ai-msg-assistant" role="group" aria-label="Assistant reply">
+              <span class="ai-prose-span">
+                <p>The third byte drains the TX FIFO before the ISR refills it. The master keeps
+                clocking and reads <code>0xFF</code>. Check <code>SPI_SR.OVR</code>; if it is set,
+                preload two frames and raise the TXE interrupt above the DMA completion.</p>
+                <p>I left <code>notes/spi-bringup.md</code> unchanged: the fix belongs in the
+                driver, not the note.</p>
+              </span>
+              <button class="ai-turn-control ai-regenerate" type="button" title="Re-run the model on your last question">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>Regenerate
+              </button>
+            </div>
+          </div>
+          <form class="ai-input-row" aria-label="Message composer">
+            <textarea class="ai-input" rows="3" aria-label="Message" placeholder="Ask the AI to write or edit notes; it can list and read files…"></textarea>
+            <button class="ai-attach" type="button" aria-label="Attach text files" title="Attach text files (ACP agents do not accept images)">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-paperclip"/></svg>
+            </button>
+            <button class="ai-send" type="submit" aria-label="Send message" title="Send (Enter)">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </figure>
+  </div>
+</section>
+
+<!-- ============================ 6 · 140 px ======================== -->
+<section class="sec" id="floor">
+  <h2>6 · The 140 px floor</h2>
+  <p class="lede">Nothing is hidden. The title ellipsizes, the select clips at the arrow, the
+  card head puts the op and stats on one row and the path on the next (the stats wrap at 140),
+  the actions take two rows, the diff scrolls sideways, and the chip's size text clips before
+  its name. The composer still keeps its action row.</p>
+  <div class="frames">
+    <figure class="frame">
+      <figcaption>Dark · 140 px</figcaption>
+      <div class="stage">
+        <div class="panel narrow theme-dark">
+          <div class="panel-header">
+            <h2 class="panel-title">AI Assistant</h2>
+            <div class="panel-header-actions">
+              <button class="ai-clear" type="button" title="Clear the conversation (the assistant forgets the context)">Clear</button>
+              <button class="collapse-btn" type="button" aria-label="Collapse panel" title="Collapse panel">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-chevron-left"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="ai-model-bar">
+            <select class="ai-model-select" aria-label="Model and provider" title="local · qwen3.8:latest">
+              <option>local · qwen3.8:latest</option>
+            </select>
+          </div>
+          <div class="ai-chat-log" role="log" aria-label="Conversation" aria-live="off">
+            <div class="ai-msg ai-msg-user" role="group" aria-label="Your message">
+              <div class="ai-user-text">Rename it.</div>
+              <button class="ai-turn-control ai-edit" type="button" title="Edit your last question and resend">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-edit"/></svg>Edit
+              </button>
+            </div>
+            <div class="ai-msg ai-msg-assistant" role="group" aria-label="Assistant reply">
+              <span class="ai-prose-span"><p>Renamed to <strong>Bring-up log</strong>.</p></span>
+              <button class="ai-turn-control ai-regenerate" type="button" title="Re-run the model on your last question">
+                <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-refresh"/></svg>Regenerate
+              </button>
+            </div>
+            <div class="ai-edit-card" data-op="patch">
+              <div class="ai-edit-head">
+                <span class="ai-edit-op">patch</span>
+                <span class="ai-edit-path" title="notes/spi.md">notes/spi.md</span>
+                <span class="ai-diff-stats"><span class="ai-stat del">−1</span><span class="ai-stat add">+1</span></span>
+              </div>
+              <div class="ai-diff">
+                <div class="diff-row diff-hunk">@@ -2 +2 @@</div>
+                <div class="diff-row diff-del"><span class="diff-num">2</span><span class="diff-num"></span><span class="diff-sign">−</span><span class="diff-text">## Bring-up</span></div>
+                <div class="diff-row diff-add"><span class="diff-num"></span><span class="diff-num">2</span><span class="diff-sign">+</span><span class="diff-text">## Bring-up log</span></div>
+              </div>
+              <div class="ai-edit-actions">
+                <button class="ai-btn" type="button">Reject</button>
+                <button class="ai-btn ai-apply" type="button">Apply</button>
+              </div>
+            </div>
+          </div>
+          <div class="ai-attach-bar">
+            <span class="ai-attach-chip">
+              <span class="ai-attach-chip-name">bring-up.md</span>
+              <span class="ai-attach-chip-size">12.4 KB</span>
+              <button class="ai-attach-chip-remove" type="button" aria-label="Remove bring-up.md">×</button>
+            </span>
+          </div>
+          <form class="ai-input-row" aria-label="Message composer">
+            <textarea class="ai-input" rows="3" aria-label="Message" placeholder="Ask the AI to write or edit notes; it can list and read files…"></textarea>
+            <button class="ai-attach" type="button" aria-label="Attach files" title="Attach files">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-paperclip"/></svg>
+            </button>
+            <button class="ai-send" type="submit" aria-label="Send message" title="Send (Enter)">
+              <svg class="icon" aria-hidden="true" focusable="false"><use href="#i-arrow-up"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+    </figure>
+  </div>
+  <p class="note">The chip's name is 11 characters and the card path is four; at 116 px the
+  size clips first. The diff's gutter is 1.8 em per number, so the code column scrolls rather
+  than shrinking to one character.</p>
+</section>
+
+
+
+</main>
+
+<script>
+/* Mockup scaffolding only: duplicate every board once in the light theme
+ * so each design can be compared without a toggle. No app behaviour. */
+document.addEventListener("submit", (e) => { e.preventDefault(); });
+
+document.querySelectorAll(".frame").forEach((frame) => {
+  const copy = frame.cloneNode(true);
+  copy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+  const panel = copy.querySelector(".panel");
+  if (panel) {
+    panel.classList.remove("theme-dark");
+    panel.classList.add("theme-light");
+  }
+  const stage = copy.querySelector(".stage, .phone-stage");
+  if (stage) stage.classList.add("theme-light");
+  const caption = copy.querySelector("figcaption");
+  if (caption) caption.textContent = caption.textContent.replace("Dark", "Light");
+  frame.after(copy);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,1679 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Side-panel views — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A. Names and values are the
+      document's; --tree-indent is declared there too. Each theme block
+      declares base values first, then the semantic aliases over them.
+      No alias points at itself.
+   ================================================================== */
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --scrim: rgba(0, 0, 0, .5);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .35);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .45);
+
+  --m-scrim: rgba(0, 0, 0, .45);
+}
+
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --scrim: rgba(0, 0, 0, .5);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .16);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .2);
+
+  --m-scrim: rgba(0, 0, 0, .45);
+}
+
+/* A theme wrapper sets its own computed text colour, so a descendant that
+   inherits `color` does not inherit the value computed on <body>. */
+.theme-dark, .theme-light { color: var(--text-primary); }
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --z-popover: 1000;
+
+  --dur-0: 100ms;
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 220ms;
+  --dur-4: 380ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: ease-out;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+  --icon-xl: 22px;
+
+  --tree-indent: 18px;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+  --opacity-disabled: .45;
+  --opacity-drag: .4;
+}
+
+/* ==================================================================
+   2. PAGE CHROME — mockup only. Not part of the spec.
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--fw-regular) var(--text-body)/var(--lh-normal) var(--font-ui);
+}
+.page { max-width: 1220px; margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-8); }
+.page > header { margin-bottom: var(--space-7); }
+.page h1 { margin: 0 0 var(--space-2); font-size: var(--text-lg); font-weight: var(--fw-heading); }
+.page header p { margin: 0; max-width: calc(60 * var(--space-2)); color: var(--fg-muted); font-size: var(--text-ui); }
+code { font-family: var(--font-mono); font-size: var(--text-xs); }
+/* foundations §9.2: an outer svg without width and height renders 300 × 150 */
+.icon { width: var(--icon-md); height: var(--icon-md); display: block; }
+.page header p + p { margin-top: var(--space-2); }
+.key { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-4); font-size: var(--text-sm); color: var(--fg-muted); }
+.key b { color: var(--fg); font-weight: var(--fw-medium); }
+
+.board-row { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; margin-bottom: var(--space-6); }
+.board {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--bg);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+}
+.board figcaption { margin-top: var(--space-3); max-width: 340px; font-size: var(--text-sm); color: var(--fg-muted); line-height: var(--lh-snug); }
+.board figcaption strong { display: block; margin-bottom: var(--space-hair); color: var(--fg); font-weight: var(--fw-semibold); }
+.tpill { display: inline-block; margin-left: var(--space-1); padding: 0 var(--space-1); border: var(--stroke-1) solid var(--border); border-radius: var(--radius-pill); font-size: var(--text-2xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--fg-muted); vertical-align: 1px; }
+
+/* ==================================================================
+   3. SHELL + PANEL — shell-frame.md §3, §4
+   ================================================================== */
+.shell { display: flex; height: 470px; border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.shell.phone-shell { height: auto; border: 0; }
+
+.rail {
+  width: var(--space-8);
+  flex: 0 0 var(--space-8);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-hair);
+  padding: var(--space-2) 0;
+  background: var(--bg-panel);
+  border-right: var(--stroke-1) solid var(--border);
+}
+.rail-btn {
+  position: relative;
+  width: var(--control-h-lg);
+  height: var(--control-h-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+}
+.rail-btn .icon { width: var(--icon-lg); height: var(--icon-lg); }
+.rail-btn.is-active { background: var(--accent-soft); color: var(--text-primary); }
+.rail-btn.is-active::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * (var(--space-8) - var(--control-h-lg)) / 2);
+  top: var(--space-1);
+  bottom: var(--space-1);
+  width: var(--stroke-2);
+  border-radius: var(--stroke-1);
+  background: var(--accent);
+}
+.rail-spacer { flex: 1 1 auto; }
+
+.panel {
+  width: 240px;
+  flex: 0 0 240px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--surface-panel);
+  border-right: var(--stroke-1) solid var(--border);
+}
+.panel.narrow { width: 140px; flex-basis: 140px; }
+.panel.flush { height: 100%; }
+
+/* ---- header (§1.2, shell-frame §4.2) ---- */
+.phead {
+  position: relative;
+  z-index: 20;
+  flex: 0 0 auto;
+  min-height: var(--control-h-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.pheading { display: flex; align-items: center; gap: var(--space-1); min-width: 0; }
+.ptitle {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pcount {
+  flex: 0 0 auto;
+  min-width: 2ch;
+  padding: 0 var(--space-1);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.pactions { display: flex; align-items: center; gap: var(--space-hair); flex: 0 0 auto; }
+
+.icon-btn {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.icon-btn .icon { width: var(--icon-md); height: var(--icon-md); }
+.icon-btn:hover, .icon-btn.is-hover { background: var(--accent-soft); color: var(--text-primary); }
+.icon-btn.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.icon-btn.is-busy { color: var(--text-primary); }
+.icon-btn.is-busy .icon { animation: spin var(--dur-4) var(--ease-out) 1; }
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ---- body / scrollers (§1.3) ---- */
+.scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 var(--space-1) var(--space-1);
+  margin-right: var(--space-2);
+  scrollbar-gutter: stable;
+}
+.topsec {
+  flex: 0 0 auto;
+  max-height: 140px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--space-1);
+  margin-right: var(--space-2);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.sectitle {
+  padding: 0 var(--space-2) var(--space-1);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ---- rows (§2.6, §2.7, controls §2.16) ---- */
+.prow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-h-sm);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-xs);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.prow.list-row {
+  min-height: var(--control-h-md);
+  gap: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+.prow:hover, .prow.is-hover { background: var(--surface-raised); }
+.prow.is-selected {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+  box-shadow: inset var(--stroke-2) 0 0 var(--accent);
+}
+.prow.is-multi {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-weight: var(--fw-regular);
+  box-shadow: inset var(--stroke-2) 0 0 var(--accent);
+}
+.prow.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+/* Explorer keeps the shipped look: 3px 6px, accent wash, accent text. */
+[aria-label="Files"] .prow {
+  min-height: 0;
+  padding: 3px 6px;
+  gap: 4px;
+  border-radius: 4px;
+}
+[aria-label="Files"] .prow:hover { background: var(--accent-soft); }
+[aria-label="Files"] .prow.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+  box-shadow: none;
+}
+[aria-label="Files"] .prow.is-multi {
+  background: var(--accent-soft);
+  color: var(--fg);
+  font-weight: var(--fw-regular);
+  box-shadow: inset var(--stroke-2) 0 0 var(--accent);
+}
+[aria-label="Files"] .prow.is-focus { outline-offset: var(--focus-offset-inset); }
+
+
+.prow.is-drag { opacity: var(--opacity-drag); }
+
+.tree-icon { width: var(--icon-md); height: var(--icon-md); flex: 0 0 var(--icon-md); color: var(--text-muted); }
+.tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-sm);
+  color: inherit;
+}
+
+/* Shipped guide: one 18px cell per ancestor, plus a corner cell. */
+.guide { display: inline-flex; align-self: stretch; flex: 0 0 auto; }
+.cell { position: relative; width: var(--tree-indent); height: 100%; flex: 0 0 auto; }
+.cell.vert::after,
+.cell.cnr::after,
+.cell.cnr-last::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  left: 8px;
+  width: var(--stroke-1);
+  background: var(--border);
+}
+.cell.cnr::before,
+.cell.cnr-last::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  right: 0;
+  height: var(--stroke-1);
+  background: var(--border);
+}
+.cell.cnr-last::after { bottom: 50%; }
+
+
+.action {
+  display: none;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  flex: 0 0 var(--control-h-sm);
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  margin-block: calc(-1 * var(--space-1));
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-flat);
+}
+.action .icon { width: var(--icon-sm); height: var(--icon-sm); }
+.prow:hover .action,
+.prow.is-hover .action,
+.action[aria-pressed="true"] { display: inline-flex; }
+.action[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.action.is-action { display: inline-flex; }
+.action:hover { background: var(--accent-soft); color: var(--text-primary); }
+.action.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.star { font-size: var(--text-sm); line-height: var(--lh-flat); }
+
+.more-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  margin-left: auto;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+}
+
+/* ---- list rows ---- */
+.bookmark-pin { flex: 0 0 var(--icon-sm); color: var(--text-muted); font-size: var(--text-sm); line-height: var(--lh-flat); text-align: center; }
+.bookmark-name, .recent-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: var(--text-ui);
+  font-weight: var(--fw-medium);
+  color: inherit;
+}
+.recent-row { justify-content: space-between; }
+.recent-name { flex: 1 1 auto; min-width: 0; }
+.recent-dir {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  font-weight: var(--fw-regular);
+}
+
+/* ---- Recent field (§5.2) ---- */
+.recent-strip { flex: 0 0 auto; padding: var(--space-2) var(--space-3); }
+.field-wrap { position: relative; }
+.field {
+  width: 100%;
+  height: var(--control-h-lg);
+  padding: 0 var(--control-h-body) 0 var(--space-3);
+  background: var(--surface-well);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: var(--fw-regular) var(--text-ui)/var(--lh-normal) var(--font-ui);
+}
+.field::placeholder { color: var(--text-muted); }
+.field.is-focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft); }
+.field-clear {
+  position: absolute;
+  right: var(--space-1);
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.field-clear .icon { width: var(--icon-sm); height: var(--icon-sm); }
+
+/* ---- content states (§1.5) ---- */
+.state {
+  padding: var(--space-6) var(--space-4);
+  max-width: calc(60 * var(--space-2));
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+  line-height: var(--lh-normal);
+}
+.state.state-error { color: var(--danger); }
+.state .retry {
+  display: inline-flex;
+  align-items: center;
+  height: var(--control-h-sm);
+  margin-top: var(--space-3);
+  padding: 0 var(--space-2);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  font-weight: var(--fw-medium);
+}
+
+/* ---- menus (§2.9 of controls) ---- */
+.stage { position: relative; display: flex; height: 420px; }
+.faux-editor {
+  width: 280px;
+  background: var(--surface-page);
+  border-left: var(--stroke-1) solid var(--border);
+  padding: var(--space-4);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.faux-editor p { margin: 0 0 var(--space-2); }
+.faux-editor .bar { height: var(--space-2); border-radius: var(--radius-xs); background: var(--surface-raised); margin-bottom: var(--space-2); }
+.faux-editor .bar.short { width: 62%; }
+.menu {
+  position: absolute;
+  z-index: var(--z-popover);
+  min-width: 190px;
+  padding: var(--space-1);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-pop);
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--control-h-body);
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font-size: var(--text-ui);
+  text-align: left;
+}
+.menu-item.is-hover { background: var(--accent-soft); }
+.menu-item.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.menu-item[disabled] { color: var(--text-muted); opacity: var(--opacity-disabled); }
+.menu-item.danger { color: var(--danger); }
+.menu-sep { height: var(--stroke-1); margin: var(--space-1) var(--space-2); background: var(--border); border: 0; }
+.menu-label { margin-bottom: var(--space-1); padding: 0 var(--space-2); font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted); }
+
+/* ==================================================================
+   4. PHONE — mobile-shell.md §3, §4.3–§4.6
+   ================================================================== */
+.phone {
+  width: 390px;
+  height: 640px;
+  position: relative;
+  overflow: hidden;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
+  color: var(--text-primary);
+}
+.ptop {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-1);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.ptop .icon-btn { width: var(--control-h-touch); height: var(--control-h-touch); }
+.ptop-title { flex: 1 1 auto; min-width: 0; font-size: 16px; font-weight: var(--fw-semibold); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ptop .icon { width: var(--icon-xl); height: var(--icon-xl); }
+.reader-stub { padding: var(--space-4); color: var(--text-muted); font-size: var(--text-ui); }
+.reader-stub .bar { height: var(--space-2); margin-bottom: var(--space-2); border-radius: var(--radius-xs); background: var(--surface-raised); }
+.reader-stub .bar.short { width: 55%; }
+.scrim { position: absolute; inset: 0; background: var(--m-scrim); }
+.drawer {
+  position: absolute;
+  top: 0; bottom: 0; left: 0;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-panel);
+  border-right: var(--stroke-1) solid var(--border);
+  box-shadow: var(--shadow-sheet);
+}
+.drawer .phead { min-height: 52px; padding: 0 var(--space-1) 0 var(--space-4); gap: var(--space-1); }
+.drawer .ptitle { font-size: 12px; }
+.drawer .icon-btn { width: var(--control-h-touch); height: var(--control-h-touch); }
+.drawer .prow { min-height: var(--control-h-touch); gap: var(--space-1); padding: 0 var(--space-2); border-radius: var(--radius-md); }
+.drawer .prow.is-selected { box-shadow: inset var(--stroke-3) 0 0 var(--accent); }
+.drawer .tree-name { font-size: 15px; }
+.drawer .tree-icon { width: var(--icon-md); height: var(--icon-md); flex-basis: var(--icon-md); }
+.drawer .more-btn { display: inline-flex; width: var(--control-h-touch); height: var(--control-h-touch); flex: 0 0 var(--control-h-touch); font-size: var(--text-lg); }
+.drawer .topsec { max-height: 176px; margin-right: 0; }
+.drawer .scroller { margin-right: 0; }
+.drawer .recent-strip { padding: var(--space-2) var(--space-3); }
+.drawer .field { height: var(--control-h-touch); font-size: 16px; }
+.drawer .field-clear { width: var(--control-h-touch); height: var(--control-h-touch); right: 0; }
+.pfoot {
+  flex: 0 0 var(--control-h-touch);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-3);
+  border-top: var(--stroke-1) solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.dot { width: var(--space-2); height: var(--space-2); flex: 0 0 var(--space-2); border-radius: var(--radius-circle); background: var(--ok); }
+.pfoot .origin { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+
+/* ==================================================================
+   5. ANALYSIS STRIPS — row states, anatomy, sizes
+   ================================================================== */
+.strip { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: flex-start; }
+.mini { width: 220px; }
+.mini .cap { margin-bottom: var(--space-1); font-size: var(--text-xs); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted); }
+.stack { display: flex; flex-direction: column; gap: var(--space-hair); }
+.swatches { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); font-size: var(--text-sm); color: var(--text-muted); }
+.swatches div { display: flex; align-items: center; gap: var(--space-2); }
+.sw { width: var(--control-h-sm); height: var(--control-h-sm); flex: 0 0 var(--control-h-sm); border-radius: var(--radius-xs); border: var(--stroke-1) solid var(--border); }
+
+.anatomy { width: 260px; }
+.anatomy .panel { width: 240px; border: var(--stroke-1) solid var(--border); border-right-width: var(--stroke-1); }
+.dim { display: flex; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+.dim::before { content: ""; width: var(--control-h-sm); height: var(--stroke-1); background: var(--border-strong); }
+</style>
+</head>
+<body class="theme-dark">
+
+<svg class="icon-sprite" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="nb-icon-folder" viewBox="0 0 16 16">
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.3 1.6h5.1A1.5 1.5 0 0 1 14 6.1v5.4A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-folder-open" viewBox="0 0 16 16">
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.3 1.6h5.1A1.5 1.5 0 0 1 14 6.1V7H2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M2.4 7h11.9l-1.4 5.1a1 1 0 0 1-1 .9H3.4a1 1 0 0 1-1-.9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-file" viewBox="0 0 16 16">
+      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M9 2.5v3h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-readme" viewBox="0 0 16 16">
+      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M6 8h4M6 10.5h4M6 5.5h1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-license" viewBox="0 0 16 16">
+      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="7" cy="9" r="1.7" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M7 10.7v2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    </symbol>
+    <symbol id="nb-icon-claude" viewBox="0 0 16 16">
+      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M8 6.4v3.2M6.4 8h3.2M6.9 6.9l2.2 2.2M9.1 6.9 6.9 9.1" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-pin" viewBox="0 0 16 16">
+      <path d="M6 2.5h4l-.6 3.2 2.1 2v1H4.5v-1l2.1-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M8 8.7v4.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-bookmark" viewBox="0 0 16 16">
+      <path d="M4.5 2.5h7v11l-3.5-2.4L4.5 13.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-refresh" viewBox="0 0 16 16">
+      <path d="M13 8a5 5 0 1 1-1.6-3.7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M13.2 2.6v3.2h-3.2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-chevron-left" viewBox="0 0 16 16">
+      <path d="M9.8 3.6 5.4 8l4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-clock" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M8 4.8V8l2.2 1.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-search" viewBox="0 0 16 16">
+      <circle cx="7" cy="7" r="4.2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="m10.2 10.2 3 3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-sparkle" viewBox="0 0 16 16">
+      <path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8l4.2-1.3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-section-none" viewBox="0 0 16 16">
+      <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-dasharray="2.2 2"/>
+      <path d="M4.6 11.2 11.4 4.9" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-close" viewBox="0 0 16 16">
+      <path d="m4.5 4.5 7 7m0-7-7 7" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-sessions" viewBox="0 0 16 16">
+      <rect x="2.5" y="3.5" width="11" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M6 2.5v11" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    </symbol>
+    <symbol id="nb-icon-graph" viewBox="0 0 16 16">
+      <circle cx="4" cy="11.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="11.5" cy="4.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="12" cy="11.5" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="m5.2 10.3 5.1-4.5M5.4 11.5h5" fill="none" stroke="currentColor" stroke-width="1.2"/>
+    </symbol>
+    <symbol id="nb-icon-gear" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="2.1" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M8 2.2v1.4M8 12.4v1.4M2.2 8h1.4M12.4 8h1.4M3.9 3.9l1 1M11.1 11.1l1 1M12.1 3.9l-1 1M4.9 11.1l-1 1" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-back" viewBox="0 0 16 16">
+      <path d="M9.8 3.6 5.4 8l4.4 4.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="page">
+  <header>
+    <h1>Side-panel views — Explorer, Pinned, Bookmarks, Recent</h1>
+    <p>Static reference for <b>side-panel-views.md</b>. Every colour, size and space is a token
+       from foundations Appendix A; the indent is <code>--tree-indent: 18px</code>.
+       Nothing loads from the network.</p>
+    <p>Boards alternate dark and light. State classes stand in for the pointer: <code>is-hover</code>,
+       <code>is-focus</code>, <code>is-selected</code>, <code>is-multi</code>, <code>is-drag</code>.</p>
+    <div class="key">
+      <span><b>240 px</b> default panel</span>
+      <span><b>140 px</b> floor</span>
+      <span><b>22 px</b> tree row</span>
+      <span><b>30 px</b> list row</span>
+      <span><b>18 px</b> indent</span>
+      <span>top section drawn at 140 px for the board; the app caps it at 30 vh</span>
+    </div>
+  </header>
+
+  <!-- ============ 1. EXPLORER, DARK ============ -->
+  <div class="board-row">
+    <figure class="board theme-dark">
+      <div class="shell">
+        <nav class="rail" aria-label="Activity bar">
+          <button class="rail-btn is-active" aria-label="Explorer"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg></button>
+          <button class="rail-btn" aria-label="Sessions"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sessions"/></svg></button>
+          <button class="rail-btn" aria-label="Pinned folders"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+          <button class="rail-btn" aria-label="Bookmarks"><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+          <button class="rail-btn" aria-label="Recent files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+          <button class="rail-btn" aria-label="Search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+          <button class="rail-btn" aria-label="AI Assistant"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sparkle"/></svg></button>
+          <div class="rail-spacer"></div>
+          <button class="rail-btn" aria-label="Graph"><svg class="icon" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+          <button class="rail-btn" aria-label="Settings"><svg class="icon" aria-hidden="true"><use href="#nb-icon-gear"/></svg></button>
+        </nav>
+
+        <section class="panel" aria-label="Side panel">
+          <div class="phead">
+            <h2 class="ptitle">Files</h2>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Top section: Pinned folders. Click to show Bookmarks." title="Top section: Pinned folders. Click to show Bookmarks." data-mode="pinned"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="icon-btn" aria-label="Reload file tree from disk" title="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+              <button class="icon-btn" aria-label="Collapse panel" title="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+
+          <div class="topsec" aria-label="Pinned folders">
+            <div class="sectitle">Pinned</div>
+            <div class="prow">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name" title="projects">projects</span>
+              <button class="action" aria-label="Unpin folder projects" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+            <div class="prow">
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-readme"/></svg>
+              <span class="tree-name" title="projects/README.md">README.md</span>
+            </div>
+            <div class="prow is-selected">
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="projects/notes.md">notes.md</span>
+            </div>
+            <div class="prow is-hover">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="archive">archive</span>
+              <button class="action" aria-label="Unpin folder archive" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+            <div class="prow">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="scratch">scratch</span>
+              <button class="action" aria-label="Unpin folder scratch" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+          </div>
+
+          <div class="scroller" role="tree" aria-label="Files" aria-multiselectable="true">
+            <div class="prow is-hover" role="treeitem" aria-level="1" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="Welcome.md">Welcome.md</span>
+              <button class="action" aria-pressed="true" aria-label="Remove bookmark Welcome.md" title="Remove bookmark"><span class="star">★</span></button>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name" title="projects">projects</span>
+              <button class="action" aria-pressed="true" aria-label="Unpin folder projects" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+            <div class="prow" role="treeitem" aria-level="2" aria-expanded="true" tabindex="-1">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name" title="projects/docs">docs</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="3" aria-expanded="false" tabindex="-1">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell vert"></span><span class="cell cnr"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="projects/docs/ui">ui</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="3" tabindex="-1">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="projects/docs/architecture.md">architecture.md</span>
+            </div>
+            <div class="prow is-selected is-focus" role="treeitem" aria-level="2" aria-selected="true" tabindex="0">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="projects/notes.md">notes.md</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="archive">archive</span>
+            </div>
+            <div class="prow is-multi" role="treeitem" aria-level="1" aria-selected="true" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="scratch">scratch</span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <figcaption><strong>Explorer, pinned mode <span class="tpill">Dark</span></strong>
+        The inline section caps at 30 vh and scrolls on its own. Hover is neutral; the open note
+        is accent-washed with a 2 px bar and a 600 name. Welcome.md is hovered (star lit because it
+        is bookmarked); scratch is multi-selected.</figcaption>
+    </figure>
+
+    <!-- ============ 2. EXPLORER, LIGHT ============ -->
+    <figure class="board theme-light">
+      <div class="shell">
+        <nav class="rail" aria-label="Activity bar">
+          <button class="rail-btn is-active" aria-label="Explorer"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg></button>
+          <button class="rail-btn" aria-label="Sessions"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sessions"/></svg></button>
+          <button class="rail-btn" aria-label="Pinned folders"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+          <button class="rail-btn" aria-label="Bookmarks"><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+          <button class="rail-btn" aria-label="Recent files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+          <button class="rail-btn" aria-label="Search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+          <button class="rail-btn" aria-label="AI Assistant"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sparkle"/></svg></button>
+        </nav>
+
+        <section class="panel" aria-label="Side panel">
+          <div class="phead">
+            <h2 class="ptitle">Files</h2>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Top section: Bookmarks. Click to show None." title="Top section: Bookmarks. Click to show None." data-mode="bookmarks"><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="icon-btn" aria-label="Reload file tree from disk" title="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+              <button class="icon-btn" aria-label="Collapse panel" title="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+
+          <div class="topsec" aria-label="Bookmarks">
+            <div class="sectitle">Bookmarks</div>
+            <div class="prow list-row">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="Welcome.md">Welcome.md</span>
+            </div>
+            <div class="prow list-row">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="docs/release-checklist.md">release-checklist.md</span>
+            </div>
+            <div class="prow list-row">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="notes/design-notes.md">design-notes.md</span>
+            </div>
+          </div>
+
+          <div class="scroller" role="tree" aria-label="Files" aria-multiselectable="true">
+            <div class="prow" role="treeitem" aria-level="1" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="Welcome.md">Welcome.md</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name" title="projects">projects</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="2" aria-expanded="false" tabindex="-1">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="projects/docs">docs</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="2" tabindex="-1">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="projects/notes.md">notes.md</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="archive">archive</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="scratch">scratch</span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <figcaption><strong>Explorer, bookmarks mode <span class="tpill">Light</span></strong>
+        The inline list uses the 30 px list row; the tree below keeps 24 px. The toggle glyph is
+        the current mode; the label names the current mode and the next.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 3. TOP-SECTION MODES ============ -->
+  <div class="board-row">
+    <figure class="board theme-dark">
+      <div class="strip">
+        <div class="mini theme-dark">
+          <div class="panel" style="height:auto;width:200px;flex-basis:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <h2 class="ptitle">Files</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+                <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="cap">pinned (default)</div>
+        </div>
+        <div class="mini theme-dark">
+          <div class="panel" style="height:auto;width:200px;flex-basis:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <h2 class="ptitle">Files</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Top section: Bookmarks. Click to show None."><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+                <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="cap">bookmarks</div>
+        </div>
+        <div class="mini theme-dark">
+          <div class="panel" style="height:auto;width:200px;flex-basis:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <h2 class="ptitle">Files</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Top section: None. Click to show Pinned folders."><svg class="icon" aria-hidden="true"><use href="#nb-icon-section-none"/></svg></button>
+                <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="cap">none</div>
+        </div>
+      </div>
+      <figcaption><strong>The three modes <span class="tpill">Dark</span></strong>
+        One button, three glyphs, one cycle. A mode whose list is empty shows nothing above the
+        tree — there is no inline empty hint.</figcaption>
+    </figure>
+
+    <!-- ============ 4. HEADER ACTION STATES ============ -->
+    <figure class="board theme-light">
+      <div class="strip">
+        <div class="mini">
+          <div class="cap">rest</div>
+          <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+        </div>
+        <div class="mini">
+          <div class="cap">hover</div>
+          <button class="icon-btn is-hover" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+        </div>
+        <div class="mini">
+          <div class="cap">focus-visible</div>
+          <button class="icon-btn is-focus" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+        </div>
+        <div class="mini">
+          <div class="cap">busy (aria-busy)</div>
+          <button class="icon-btn is-busy" aria-busy="true" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+        </div>
+      </div>
+      <figcaption><strong>Refresh, four states <span class="tpill">Light</span></strong>
+        Hover is the standard icon-button wash. The glyph rotates once at 380 ms; under
+        <code>prefers-reduced-motion</code> it does not rotate and <code>aria-busy</code> carries
+        the state.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 5. PINNED + BOOKMARKS ============ -->
+  <div class="board-row">
+    <figure class="board theme-dark">
+      <div class="shell">
+        <nav class="rail" aria-label="Activity bar">
+          <button class="rail-btn" aria-label="Explorer"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg></button>
+          <button class="rail-btn" aria-label="Sessions"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sessions"/></svg></button>
+          <button class="rail-btn is-active" aria-label="Pinned folders"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+          <button class="rail-btn" aria-label="Bookmarks"><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+          <button class="rail-btn" aria-label="Recent files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+          <button class="rail-btn" aria-label="Search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+          <button class="rail-btn" aria-label="AI Assistant"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sparkle"/></svg></button>
+        </nav>
+        <section class="panel" aria-label="Side panel">
+          <div class="phead">
+            <div class="pheading">
+              <h2 class="ptitle">Pinned</h2>
+              <span class="pcount">4<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"> pinned folders</span></span>
+            </div>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+          <div class="scroller" role="tree" aria-label="Pinned folders">
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="0">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name" title="projects">projects</span>
+              <button class="action" aria-label="Unpin folder projects" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+            <div class="prow" role="treeitem" aria-level="2" tabindex="-1">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-readme"/></svg>
+              <span class="tree-name" title="projects/README.md">README.md</span>
+            </div>
+            <div class="prow is-selected" role="treeitem" aria-level="2" aria-selected="true" tabindex="-1">
+              <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="projects/notes.md">notes.md</span>
+            </div>
+            <div class="prow is-hover" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="archive">archive</span>
+              <button class="action" aria-label="Unpin folder archive" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="scratch">scratch</span>
+              <button class="action" aria-label="Unpin folder scratch" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="references">references</span>
+              <button class="action" aria-label="Unpin folder references" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            </div>
+          </div>
+        </section>
+      </div>
+      <figcaption><strong>Pinned <span class="tpill">Dark</span></strong>
+        A tree with a count. Unpin appears on hover; the row menu carries it for the keyboard,
+        together with <code>Move up</code> / <code>Move down</code>. The active note is selected in
+        both pin surfaces at once.</figcaption>
+    </figure>
+
+    <figure class="board theme-light">
+      <div class="shell">
+        <nav class="rail" aria-label="Activity bar">
+          <button class="rail-btn" aria-label="Explorer"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg></button>
+          <button class="rail-btn" aria-label="Sessions"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sessions"/></svg></button>
+          <button class="rail-btn" aria-label="Pinned folders"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+          <button class="rail-btn is-active" aria-label="Bookmarks"><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+          <button class="rail-btn" aria-label="Recent files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+          <button class="rail-btn" aria-label="Search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+        </nav>
+        <section class="panel" aria-label="Side panel">
+          <div class="phead">
+            <div class="pheading">
+              <h2 class="ptitle">Bookmarks</h2>
+              <span class="pcount">5<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)"> bookmarks</span></span>
+            </div>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Bookmark the active file" title="Bookmark the active file"><span class="star" aria-hidden="true">☆</span></button>
+              <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+          <div class="scroller">
+            <div class="prow list-row is-selected">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="Welcome.md">Welcome.md</span>
+            </div>
+            <div class="prow list-row">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="notes/design-notes.md">design-notes.md</span>
+            </div>
+            <div class="prow list-row is-hover">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="docs/release-checklist.md">release-checklist.md</span>
+            </div>
+            <div class="prow list-row">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="meetings/2026-11-04.md">2026-11-04.md</span>
+            </div>
+            <div class="prow list-row">
+              <span class="bookmark-pin" aria-hidden="true">★</span>
+              <span class="bookmark-name" title="scratch.md">scratch.md</span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <figcaption><strong>Bookmarks <span class="tpill">Light</span></strong>
+        30 px native-button rows inside a draggable wrapper. The star is a marker, not a control;
+        the header <code>☆</code> adds the active file. Selection is a face, weight and a 2 px
+        bar — never accent text.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 6. RECENT, BOTH THEMES ============ -->
+  <div class="board-row">
+    <figure class="board theme-dark">
+      <div class="shell">
+        <nav class="rail" aria-label="Activity bar">
+          <button class="rail-btn" aria-label="Explorer"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg></button>
+          <button class="rail-btn" aria-label="Sessions"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sessions"/></svg></button>
+          <button class="rail-btn" aria-label="Pinned folders"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+          <button class="rail-btn" aria-label="Bookmarks"><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+          <button class="rail-btn is-active" aria-label="Recent files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+          <button class="rail-btn" aria-label="Search"><svg class="icon" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+        </nav>
+        <section class="panel" aria-label="Side panel">
+          <div class="phead">
+            <h2 class="ptitle">Recent</h2>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+          <div class="recent-strip">
+            <div class="field-wrap">
+              <input class="field" type="search" value="no" readonly aria-label="Filter recent files" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="recent-list-a" aria-activedescendant="recent-option-a1">
+              <button class="field-clear" aria-label="Clear filter" title="Clear filter"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+            </div>
+          </div>
+          <div class="scroller" id="recent-list-a" role="listbox" aria-label="Recent files">
+            <div class="prow list-row" role="option" aria-selected="false" id="recent-option-a0">
+              <span class="recent-name" title="Welcome.md">Welcome.md</span>
+            </div>
+            <div class="prow list-row is-selected" role="option" aria-selected="true" id="recent-option-a1">
+              <span class="recent-name" title="notes/design-notes.md">design-notes.md</span>
+              <span class="recent-dir">notes</span>
+            </div>
+            <div class="prow list-row" role="option" aria-selected="false" id="recent-option-a2">
+              <span class="recent-name" title="docs/release-checklist.md">release-checklist.md</span>
+              <span class="recent-dir">docs</span>
+            </div>
+            <div class="prow list-row is-hover" role="option" aria-selected="false" id="recent-option-a3">
+              <span class="recent-name" title="projects/docs/ui/spec.md">spec.md</span>
+              <span class="recent-dir">projects/docs/ui</span>
+            </div>
+            <div class="prow list-row" role="option" aria-selected="false" id="recent-option-a4">
+              <span class="recent-name" title="meetings/2026-11-04.md">2026-11-04.md</span>
+              <span class="recent-dir">meetings</span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <figcaption><strong>Recent, filtered <span class="tpill">Dark</span></strong>
+        The field is a labelled combobox; the list is a listbox, so the field stays the only Tab
+        stop. Directory is mono <code>--text-xs</code>; a root-level file shows no meta. No
+        timestamp exists in the model.</figcaption>
+    </figure>
+
+    <figure class="board theme-light">
+      <div class="shell">
+        <section class="panel" aria-label="Side panel">
+          <div class="phead">
+            <h2 class="ptitle">Recent</h2>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+          <div class="recent-strip">
+            <div class="field-wrap">
+              <input class="field is-focus" type="search" value="" readonly aria-label="Filter recent files" role="combobox" aria-expanded="true" aria-autocomplete="list" aria-controls="recent-list-b" aria-activedescendant="recent-option-b0">
+            </div>
+          </div>
+          <div class="scroller" id="recent-list-b" role="listbox" aria-label="Recent files">
+            <div class="prow list-row is-selected" role="option" aria-selected="true" id="recent-option-b0">
+              <span class="recent-name" title="projects/notes.md">notes.md</span>
+              <span class="recent-dir">projects</span>
+            </div>
+            <div class="prow list-row" role="option" aria-selected="false" id="recent-option-b1">
+              <span class="recent-name" title="Welcome.md">Welcome.md</span>
+            </div>
+            <div class="prow list-row" role="option" aria-selected="false" id="recent-option-b2">
+              <span class="recent-name" title="docs/architecture.md">architecture.md</span>
+              <span class="recent-dir">docs</span>
+            </div>
+            <div class="prow list-row" role="option" aria-selected="false" id="recent-option-b3">
+              <span class="recent-name" title="archive/2025/retro.md">retro.md</span>
+              <span class="recent-dir">archive/2025</span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <figcaption><strong>Recent, field focused <span class="tpill">Light</span></strong>
+        Focus is an accent border plus a 3 px wash halo — no outline, because the border is the
+        visible replacement. The clear control appears only when the field holds text.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 7. EMPTY AND ERROR STATES ============ -->
+  <div class="board-row">
+    <figure class="board theme-dark">
+      <div class="strip">
+        <div class="mini">
+          <div class="panel" style="width:200px;flex-basis:200px;height:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <h2 class="ptitle">Files</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+                <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="state" role="status">No files yet. Right-click here to create one.</div>
+          </div>
+          <div class="cap">Explorer — empty</div>
+        </div>
+
+        <div class="mini theme-light">
+          <div class="panel" style="width:200px;flex-basis:200px;height:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <h2 class="ptitle">Files</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="state state-error" role="alert">Couldn’t load files.<br><button class="retry">Retry</button></div>
+          </div>
+          <div class="cap">Explorer — error</div>
+        </div>
+
+        <div class="mini">
+          <div class="panel" style="width:200px;flex-basis:200px;height:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <div class="pheading"><h2 class="ptitle">Pinned</h2><span class="pcount">0</span></div>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="state" role="status">No pinned folders. Pin one from a folder’s menu.</div>
+          </div>
+          <div class="cap">Pinned — empty</div>
+        </div>
+
+        <div class="mini theme-light">
+          <div class="panel" style="width:200px;flex-basis:200px;height:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <div class="pheading"><h2 class="ptitle">Bookmarks</h2><span class="pcount">0</span></div>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Bookmark the active file"><span class="star" aria-hidden="true">☆</span></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="state" role="status">No bookmarks yet. Bookmark a note from the file tree.</div>
+          </div>
+          <div class="cap">Bookmarks — empty</div>
+        </div>
+
+        <div class="mini">
+          <div class="panel" style="width:200px;flex-basis:200px;height:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <h2 class="ptitle">Recent</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="recent-strip">
+              <div class="field-wrap"><input class="field" type="search" value="" readonly aria-label="Filter recent files" placeholder="Filter recent files…"></div>
+            </div>
+            <div class="state" role="status">No recent notes yet.</div>
+          </div>
+          <div class="cap">Recent — no history</div>
+        </div>
+
+        <div class="mini theme-light">
+          <div class="panel" style="width:200px;flex-basis:200px;height:200px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <div class="phead">
+              <h2 class="ptitle">Recent</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="recent-strip">
+              <div class="field-wrap">
+                <input class="field" type="search" value="zzz" readonly aria-label="Filter recent files">
+                <button class="field-clear" aria-label="Clear filter" title="Clear filter"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+              </div>
+            </div>
+            <div class="state" role="status">No recent files match.</div>
+          </div>
+          <div class="cap">Recent — no match</div>
+        </div>
+      </div>
+      <figcaption><strong>Empty and error <span class="tpill">Dark + Light</span></strong>
+        One block geometry for all five names: <code>--space-6</code> padding, 480 px maximum
+        measure, <code>--text-ui</code>, <code>--text-muted</code>, no italics. Error takes
+        <code>--danger</code> and one <code>sm</code> Retry. The Explorer keeps its previous tree
+        behind the error.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 8. NARROW PANEL ============ -->
+  <div class="board-row">
+    <figure class="board theme-light">
+      <div class="shell">
+        <nav class="rail" aria-label="Activity bar">
+          <button class="rail-btn is-active" aria-label="Explorer"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg></button>
+          <button class="rail-btn" aria-label="Sessions"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sessions"/></svg></button>
+          <button class="rail-btn" aria-label="Pinned folders"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+          <button class="rail-btn" aria-label="Bookmarks"><svg class="icon" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+          <button class="rail-btn" aria-label="Recent files"><svg class="icon" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+        </nav>
+        <section class="panel narrow" aria-label="Side panel">
+          <div class="phead">
+            <h2 class="ptitle">Files</h2>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Top section: None. Click to show Pinned folders."><svg class="icon" aria-hidden="true"><use href="#nb-icon-section-none"/></svg></button>
+              <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+              <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+          <div class="scroller" role="tree" aria-label="Files">
+            <div class="prow is-hover" role="treeitem" aria-level="1">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="Welcome.md">Welcome.md</span>
+              <button class="action" aria-pressed="false" aria-label="Add bookmark Welcome.md" title="Add bookmark"><span class="star">☆</span></button>
+            </div>
+            <div class="prow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="0">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name" title="projects">projects</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="2" aria-expanded="true">
+              <span class="guide" aria-hidden="true"><span class="cell"></span><span class="cell cnr"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name" title="projects/docs">docs</span>
+            </div>
+            <div class="prow is-selected" role="treeitem" aria-level="3" aria-selected="true">
+              <span class="guide" aria-hidden="true"><span class="cell"></span><span class="cell vert"></span><span class="cell cnr"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="projects/docs/architecture.md">architecture.md</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="3">
+              <span class="guide" aria-hidden="true"><span class="cell"></span><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name" title="projects/docs/release-checklist.md">release-checklist.md</span>
+            </div>
+            <div class="prow" role="treeitem" aria-level="2" aria-expanded="false">
+              <span class="guide" aria-hidden="true"><span class="cell"></span><span class="cell cnr-last"></span></span>
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name" title="projects/archive">archive</span>
+            </div>
+          </div>
+        </section>
+      </div>
+      <figcaption><strong>140 px floor <span class="tpill">Light</span></strong>
+        The title ellipsizes, the three 24 px actions stay, and the name yields before the icon.
+        Three levels of indent take 54 px of a 107 px row. Nothing wraps; no second breakpoint.</figcaption>
+    </figure>
+
+    <!-- ============ 9. ROW STATES ============ -->
+    <figure class="board theme-dark">
+      <div class="strip">
+        <div class="mini">
+          <div class="cap">tree row — rest / hover / selected / focus / multi</div>
+          <div class="panel" style="width:220px;flex-basis:220px;height:auto;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);padding:var(--space-1)">
+            <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name">rest.md</span><button class="action" aria-pressed="false" aria-label="Add bookmark rest.md"><span class="star">☆</span></button></div>
+            <div class="prow is-hover"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name">hover.md</span><button class="action" aria-pressed="false" aria-label="Add bookmark hover.md"><span class="star">☆</span></button></div>
+            <div class="prow is-selected"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name">selected.md</span><button class="action" aria-pressed="true" aria-label="Remove bookmark selected.md"><span class="star">★</span></button></div>
+            <div class="prow is-focus"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name">focused.md</span></div>
+            <div class="prow is-multi"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name">multi-selected</span></div>
+          </div>
+        </div>
+        <div class="mini">
+          <div class="cap">list row — rest / hover / selected / drag</div>
+          <div class="panel" style="width:220px;flex-basis:220px;height:auto;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);padding:var(--space-1)">
+            <div class="prow list-row"><span class="bookmark-pin" aria-hidden="true">★</span><span class="bookmark-name">rest.md</span></div>
+            <div class="prow list-row is-hover"><span class="bookmark-pin" aria-hidden="true">★</span><span class="bookmark-name">hover.md</span></div>
+            <div class="prow list-row is-selected"><span class="bookmark-pin" aria-hidden="true">★</span><span class="bookmark-name">selected.md</span></div>
+            <div class="prow list-row is-drag"><span class="bookmark-pin" aria-hidden="true">★</span><span class="bookmark-name">dragging.md</span></div>
+          </div>
+        </div>
+        <div class="mini">
+          <div class="cap">row actions — off / on / hover / focus</div>
+          <div class="panel" style="width:220px;flex-basis:220px;height:auto;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm);padding:var(--space-1)">
+            <div class="prow is-hover"><span class="tree-name">off</span><button class="action" aria-pressed="false" aria-label="Add bookmark off"><span class="star">☆</span></button></div>
+            <div class="prow"><span class="tree-name">on</span><button class="action" aria-pressed="true" aria-label="Remove bookmark on"><span class="star">★</span></button></div>
+            <div class="prow"><span class="tree-name">pin on</span><button class="action" aria-pressed="true" aria-label="Unpin folder pin"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+            <div class="prow is-hover"><span class="tree-name">focus</span><button class="action is-focus" aria-pressed="false" aria-label="Add bookmark focus"><span class="star">☆</span></button></div>
+          </div>
+        </div>
+      </div>
+      <figcaption><strong>Row and action states <span class="tpill">Dark</span></strong>
+        Hover is <code>--surface-raised</code>. Selection is <code>--accent-soft</code> plus a 2 px
+        inset accent bar; the open note adds 600. Multi-selection keeps the neutral face and the
+        bar. Actions are 24 px, revealed on hover or while pressed.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 10. ROW ANATOMY ============ -->
+  <div class="board-row">
+    <figure class="board theme-light">
+      <div class="anatomy">
+        <div class="panel">
+          <div class="prow is-selected">
+            
+            <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+            <span class="tree-name">architecture.md</span>
+            <button class="action is-action" aria-pressed="false" aria-label="Add bookmark architecture.md"><span class="star">☆</span></button>
+          </div>
+        </div>
+        <div class="dim">22 px row = 3 + 16 + 3</div>
+        <div class="dim">16 px icon, 4 px gap</div>
+        <div class="dim">18 px per guide level, continuous strokes</div>
+        <div class="dim">24 × 24 row action</div>
+        <div class="dim">8 px scroller inset on the resize edge</div>
+      </div>
+      <figcaption><strong>Row anatomy <span class="tpill">Light</span></strong>
+        Tree rows are 22 px, list rows 30 px. The name is the only flexible child; the icon, guide,
+        action and count never shrink.</figcaption>
+    </figure>
+
+    <!-- ============ 11. MENUS ============ -->
+    <figure class="board theme-dark">
+      <div class="stage" style="height:560px">
+        <section class="panel flush" style="border-right:var(--stroke-1) solid var(--border)">
+          <div class="phead">
+            <div class="pheading"><h2 class="ptitle">Bookmarks</h2><span class="pcount">5</span></div>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Bookmark the active file"><span class="star" aria-hidden="true">☆</span></button>
+              <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+          <div class="scroller">
+            <div class="prow list-row is-selected"><span class="bookmark-pin" aria-hidden="true">★</span><span class="bookmark-name">Welcome.md</span></div>
+            <div class="prow list-row"><span class="bookmark-pin" aria-hidden="true">★</span><span class="bookmark-name">design-notes.md</span></div>
+            <div class="prow list-row"><span class="bookmark-pin" aria-hidden="true">★</span><span class="bookmark-name">release-checklist.md</span></div>
+          </div>
+        </section>
+        <div class="faux-editor" aria-hidden="true">
+          <div class="bar"></div><div class="bar short"></div><div class="bar"></div>
+          <p>The menu clamps to the viewport and overhangs the editor. It is the same 190 px
+             <code>NB.menu</code> box everywhere.</p>
+        </div>
+
+        <div class="menu" role="menu" style="left:132px;top:20px">
+          <button class="menu-item is-hover" role="menuitem">Open</button>
+          <hr class="menu-sep">
+          <button class="menu-item" role="menuitem">Export…</button>
+          <button class="menu-item" role="menuitem">Rename / Move…</button>
+          <button class="menu-item" role="menuitem">Copy…</button>
+          <button class="menu-item" role="menuitem">Copy path</button>
+          <button class="menu-item" role="menuitem">Copy link</button>
+          <button class="menu-item" role="menuitem">Remove bookmark</button>
+          <button class="menu-item" role="menuitem">Move up</button>
+          <button class="menu-item" role="menuitem" disabled>Move down</button>
+          <hr class="menu-sep">
+          <button class="menu-item" role="menuitem">Show in file sidebar</button>
+          <hr class="menu-sep">
+          <button class="menu-item danger" role="menuitem">Delete</button>
+        </div>
+      </div>
+      <figcaption><strong>Bookmark row menu <span class="tpill">Dark</span></strong>
+        The two reorder items make the drag optional for the keyboard. Disabled is
+        <code>--text-muted</code> at <code>--opacity-disabled</code>, skipped by the arrow walk.
+        <code>Esc</code> returns focus to the row button.</figcaption>
+    </figure>
+
+    <figure class="board theme-light">
+      <div class="stage" style="height:470px">
+        <section class="panel flush" style="border-right:var(--stroke-1) solid var(--border);width:230px;flex-basis:230px">
+          <div class="phead">
+            <h2 class="ptitle">Files</h2>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+              <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+            </div>
+          </div>
+          <div class="scroller">
+            <div class="prow is-hover"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg><span class="tree-name">projects</span><button class="action" aria-pressed="true" aria-label="Unpin folder projects"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+            <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name">notes.md</span></div>
+          </div>
+        </section>
+        <div class="faux-editor" aria-hidden="true" style="width:250px">
+          <div class="bar"></div><div class="bar short"></div>
+        </div>
+        <div class="menu" role="menu" style="left:150px;top:20px;min-width:210px">
+          <button class="menu-item is-focus" role="menuitem">New file…</button>
+          <button class="menu-item" role="menuitem">New folder…</button>
+          <hr class="menu-sep">
+          <button class="menu-item" role="menuitem">Rename / Move…</button>
+          <button class="menu-item" role="menuitem">Copy…</button>
+          <button class="menu-item" role="menuitem">Unpin folder</button>
+          <hr class="menu-sep">
+          <button class="menu-item" role="menuitem">Collapse all folders</button>
+          <hr class="menu-sep">
+          <button class="menu-item danger" role="menuitem">Delete</button>
+        </div>
+      </div>
+      <figcaption><strong>Folder row menu <span class="tpill">Light</span></strong>
+        Focus lands on the first item. The same menu opens from <code>Shift+F10</code> on the
+        focused row, which is how the keyboard reaches the pin and bookmark actions.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 12. PHONE DRAWER ============ -->
+  <div class="board-row">
+    <figure class="board theme-dark">
+      <div class="phone">
+        <div class="ptop">
+          <button class="icon-btn" aria-label="Workspace"><svg class="icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg></button>
+          <button class="icon-btn" aria-label="Back"><svg class="icon" aria-hidden="true"><use href="#nb-icon-back"/></svg></button>
+          <span class="ptop-title">Home</span>
+          <button class="icon-btn" aria-label="Capture"><svg class="icon" aria-hidden="true"><use href="#nb-icon-sparkle"/></svg></button>
+          <button class="icon-btn" aria-label="More"><span aria-hidden="true">⋯</span></button>
+        </div>
+        <div class="reader-stub" aria-hidden="true">
+          <div class="bar"></div><div class="bar short"></div><div class="bar"></div><div class="bar"></div><div class="bar short"></div>
+        </div>
+        <div class="scrim"></div>
+        <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+          <div class="phead">
+            <span class="ptitle" id="drawer-title">Files</span>
+            <div class="pactions">
+              <button class="icon-btn" aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+              <button class="icon-btn" aria-label="Close panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+            </div>
+          </div>
+          <div class="topsec">
+            <div class="sectitle">Pinned</div>
+            <div class="prow">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name">projects</span>
+              <button class="more-btn" aria-label="projects actions" aria-expanded="false">⋯</button>
+            </div>
+            <div class="prow">
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name">notes.md</span>
+              <button class="more-btn" aria-label="notes.md actions" aria-expanded="false">⋯</button>
+            </div>
+          </div>
+          <div class="scroller" role="tree" aria-label="Files">
+            <div class="prow">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name">Welcome.md</span>
+              <button class="more-btn" aria-label="Welcome.md actions" aria-expanded="false">⋯</button>
+            </div>
+            <div class="prow">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name">projects</span>
+              <button class="more-btn" aria-label="projects actions" aria-expanded="false">⋯</button>
+            </div>
+            <div class="prow">
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+              <span class="tree-name">docs</span>
+              <button class="more-btn" aria-label="docs actions" aria-expanded="false">⋯</button>
+            </div>
+            <div class="prow is-selected">
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name">architecture.md</span>
+              <button class="more-btn" aria-label="architecture.md actions" aria-expanded="false">⋯</button>
+            </div>
+            <div class="prow">
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+              <span class="tree-name">release-checklist.md</span>
+              <button class="more-btn" aria-label="release-checklist.md actions" aria-expanded="false">⋯</button>
+            </div>
+            <div class="prow">
+              
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name">archive</span>
+              <button class="more-btn" aria-label="archive actions" aria-expanded="false">⋯</button>
+            </div>
+            <div class="prow">
+              <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+              <span class="tree-name">scratch</span>
+              <button class="more-btn" aria-label="scratch actions" aria-expanded="false">⋯</button>
+            </div>
+          </div>
+          <div class="pfoot">
+            <span class="dot" aria-hidden="true"></span>
+            <span class="origin">notebook-server · </span><span>Online</span>
+          </div>
+        </aside>
+      </div>
+      <figcaption><strong>Phone drawer <span class="tpill">Dark</span></strong>
+        340 px drawer, 52 px header, 44 px rows, <code>…</code> always visible, star and pin
+        removed. The drawer is modal: scrim, focus trap, focus returns to the opener. Pinned and
+        Bookmarks are read-only here, so their edit actions do not exist.</figcaption>
+    </figure>
+
+    <figure class="board theme-light">
+      <div class="strip">
+        <div class="mini">
+          <div class="cap">widths at the default panel</div>
+          <div class="swatches">
+            <div><span class="sw" style="background:var(--surface-panel)"></span>panel 240</div>
+            <div><span class="sw" style="background:var(--bg)"></span>view 239</div>
+            <div><span class="sw" style="background:var(--surface-raised)"></span>row 24 / 30</div>
+            <div><span class="sw" style="background:var(--accent-soft)"></span>selection</div>
+            <div><span class="sw" style="background:var(--accent)"></span>bar + focus</div>
+            <div><span class="sw" style="background:var(--surface-well)"></span>field 36 / 44</div>
+          </div>
+        </div>
+        <div class="mini" style="width:260px">
+          <div class="cap">panel arithmetic</div>
+          <div class="state" style="padding:0;max-width:none;font-family:var(--font-mono);font-size:var(--text-xs)">
+            240 − 1 border<br>
+            − 8 handle inset<br>
+            − 8 list inset<br>
+            − 16 row inset<br>
+            = 207 px of content at 240<br><br>
+            140 − 1 − 8 − 8 − 16 = 107 px at the floor
+          </div>
+        </div>
+      </div>
+      <figcaption><strong>Sizes <span class="tpill">Light</span></strong>
+        The 8 px resize inset is inside the view, on the resize edge only. Scrollbars reserve
+        their gutter so a growing list does not shift the names.</figcaption>
+    </figure>
+  </div>
+</div>
+</body>
+</html>

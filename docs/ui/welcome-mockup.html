@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Welcome and empty states — mockup</title>
+<style>
+:root,.theme-dark{
+  --bg:#1a1b1f;--bg-panel:#22232a;--bg-elev:#2a2b34;--fg:#e6e6ea;--fg-muted:#9799a4;
+  --accent:#7c9cff;--accent-soft:rgba(124,156,255,.18);--accent-fg:#14151a;
+  --border:#383a45;--border-strong:#7b8194;
+  --surface-page:var(--bg);--surface-panel:var(--bg-panel);--surface-raised:var(--bg-elev);
+  --surface-well:#14151a;--code-bg:#14151a;
+  --text-primary:var(--fg);--text-muted:var(--fg-muted);--text-on-accent:var(--accent-fg);
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --text-xs:.72rem;--text-sm:.8rem;--text-ui:.86rem;--text-body:1rem;
+  --fw-regular:400;--fw-medium:500;--fw-semibold:600;--fw-heading:650;
+  --space-hair:2px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--space-7:32px;
+  --radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-pill:999px;--radius-circle:50%;
+  --stroke-1:1px;--stroke-2:2px;--stroke-3:3px;
+  --control-h-sm:24px;--control-h-md:30px;--control-h-lg:36px;--control-h-touch:44px;
+  --icon-sm:14px;--icon-md:16px;--icon-lg:17px;--icon-xl:22px;
+  --focus-ring:2px solid var(--accent);--focus-offset:2px;--focus-offset-inset:-2px;
+  --shadow-pop:0 6px 24px rgba(0,0,0,.35);--shadow-modal:0 20px 60px rgba(0,0,0,.5);
+  --z-chrome:100;--z-rail:150;--z-scrim:400;--z-drawer:410;--z-sheet:600;
+  --m-hit:44px;--m-topbar-h:52px;--m-rail-h:56px;--m-gutter:20px;
+}
+.theme-light{
+  --bg:#ffffff;--bg-panel:#f6f7f9;--bg-elev:#eceef2;--fg:#1f2330;--fg-muted:#5d6470;
+  --accent:#2f5fd0;--accent-soft:rgba(47,95,208,.12);--accent-fg:#ffffff;
+  --border:#d8dde4;--border-strong:#78828f;--surface-well:#f0f2f5;--code-bg:#f0f2f5;
+  --danger:#c0392b;--shadow-pop:0 6px 24px rgba(0,0,0,.16);--shadow-modal:0 20px 60px rgba(0,0,0,.22);
+}
+*{box-sizing:border-box}html{font-size:14px}
+body{margin:0;background:#0b0c10;color:var(--text-primary);font:400 .86rem/1.5 var(--font-ui);padding:28px}
+.page{max-width:1320px;margin:0 auto}
+h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:72ch}
+.sec{margin:0 0 26px}.sec h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8b90a0;margin:0 0 10px;font-weight:600}
+.gallery{display:flex;flex-wrap:wrap;gap:22px}
+.board{width:760px;max-width:100%;height:420px;border-radius:12px;overflow:hidden;border:1px solid #2c2f3a;background:var(--surface-page);display:flex}
+.panel{width:220px;border-right:1px solid var(--border);background:var(--surface-panel);padding:14px}
+.ptitle{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin:0 0 10px}
+.trow{display:flex;align-items:center;gap:6px;min-height:24px;padding:2px 4px;border-radius:4px;color:var(--text-primary);font-size:13px}
+.trow.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.trow .gi{width:16px;text-align:center;color:var(--text-muted);font-size:12px}
+.main{flex:1 1 auto;display:flex;flex-direction:column;min-width:0}
+.tabs{height:34px;border-bottom:1px solid var(--border);background:var(--surface-panel);display:flex;align-items:flex-end;padding:0 4px;gap:2px}
+.tab{height:28px;display:flex;align-items:center;padding:0 12px;border:1px solid var(--border);border-bottom:0;border-radius:6px 6px 0 0;background:var(--surface-raised);color:var(--text-muted);font-size:13px}
+.tab.active{background:var(--surface-page);color:var(--text-primary);border-color:var(--accent)}
+.stage{flex:1 1 auto;display:flex;align-items:center;justify-content:center;padding:24px;position:relative}
+.welcome{max-width:480px;text-align:center}
+.wicon{font-size:48px;line-height:1;margin-bottom:12px}
+.welcome .wtitle{margin:0 0 8px;font-size:1.4rem;font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-primary)}
+.wsub{margin:0 0 24px;color:var(--text-muted);font-size:1rem;line-height:1.5}
+.wactions{display:flex;gap:10px;justify-content:center;margin-bottom:28px;flex-wrap:wrap}
+.wbtn{height:36px;padding:0 16px;border:1px solid var(--border);border-radius:6px;background:var(--surface-raised);color:var(--text-primary);font:400 .95rem/1 var(--font-ui);cursor:pointer}
+.wbtn:hover{border-color:var(--accent);color:var(--accent)}
+.wbtn:focus-visible{outline:var(--focus-ring);outline-offset:var(--focus-offset)}
+.wdiv{border:0;border-top:1px solid var(--border);margin:0 0 20px}
+.wtips{margin:0;padding:0;list-style:none;color:var(--text-muted);font-size:.9rem;line-height:1.6;text-align:left}
+.wtips li{margin-bottom:4px}
+kbd{border:1px solid var(--border);border-radius:4px;padding:1px 6px;font-size:.82em;color:var(--text-primary);font-family:var(--font-mono)}
+.error{align-self:center;text-align:center;max-width:420px}
+.error .glyph{font-size:40px;color:var(--warn);margin-bottom:8px}
+.error h2{margin:0 0 6px;font-size:1.2rem;font-weight:600;text-transform:none;letter-spacing:0;color:var(--text-primary)}
+.error p{margin:0 0 14px;color:var(--text-muted)}
+.empty-tree{color:var(--text-muted);font-size:13px;padding:16px 12px}
+.foot{color:#8b90a0;font-size:12px;margin:8px 0 0;max-width:760px}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Welcome and empty states</h1>
+  <p class="lede">Static reference for <b>welcome.md</b>. The welcome replaces the reader inside the editor
+    pane; the side panel, tab bar and outline stay.</p>
+
+  <section class="sec">
+    <h2>1 · desktop welcome — fresh, seeded notebook</h2>
+    <div class="board">
+      <aside class="panel"><p class="ptitle">Files</p>
+        <div class="trow"><span class="gi">▾</span>📁 Welcome</div>
+        <div class="trow"><span class="gi"> </span>📄 Welcome.md</div>
+        <div class="trow"><span class="gi">▸</span>📁 projects</div>
+      </aside>
+      <div class="main">
+        <div class="tabs"></div>
+        <div class="stage"><div class="welcome">
+          <div class="wicon">📓</div>
+          <h2 class="wtitle">Welcome to your notebook</h2>
+          <p class="wsub">Create a new note to get started, or pick one from the left.</p>
+          <div class="wactions"><button class="wbtn">+ New note</button><button class="wbtn">Open Welcome.md</button></div>
+          <hr class="wdiv">
+          <ul class="wtips">
+            <li><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> to save while editing</li>
+            <li>Right-click the sidebar to create, rename, copy, or delete</li>
+            <li>Use the Search panel to find anything in your notebook</li>
+            <li>The ⚙ button picks theme, font size, and wallpaper</li>
+          </ul>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>2 · no tabs, notes exist</h2>
+    <div class="board">
+      <aside class="panel"><p class="ptitle">Files</p>
+        <div class="trow"><span class="gi">▸</span>📁 projects</div>
+        <div class="trow"><span class="gi"> </span>📄 README.md</div>
+        <div class="trow"><span class="gi"> </span>📄 bench.md</div>
+        <div class="trow"><span class="gi"> </span>📄 notes.md</div>
+      </aside>
+      <div class="main"><div class="tabs"></div><div class="stage"><div class="welcome">
+        <div class="wicon">📓</div><h2 class="wtitle">Welcome to your notebook</h2>
+        <p class="wsub">Create a new note to get started, or pick one from the left.</p>
+        <div class="wactions"><button class="wbtn">+ New note</button></div>
+        <hr class="wdiv"><ul class="wtips"><li><kbd>Ctrl/Cmd</kbd> + <kbd>S</kbd> to save while editing</li><li>Right-click the sidebar to create, rename, copy, or delete</li></ul>
+      </div></div></div>
+    </div>
+    <p class="foot">Open Welcome.md is hidden when the file does not exist.</p>
+  </section>
+
+  <section class="sec">
+    <h2>3 · empty workspace</h2>
+    <div class="board">
+      <aside class="panel"><p class="ptitle">Files</p><div class="empty-tree">No files yet. Right-click here to create one.</div></aside>
+      <div class="main"><div class="tabs"></div><div class="stage"><div class="welcome">
+        <div class="wicon">📓</div><h2 class="wtitle">Welcome to your notebook</h2>
+        <p class="wsub">Create a new note to get started, or pick one from the left.</p>
+        <div class="wactions"><button class="wbtn">+ New note</button></div>
+        <hr class="wdiv"><ul class="wtips"><li>Right-click the sidebar to create a note</li></ul>
+      </div></div></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>4 · no workspace</h2>
+    <div class="board">
+      <aside class="panel"><p class="ptitle">Files</p><div class="empty-tree">No workspace configured.</div></aside>
+      <div class="main">
+        <div class="tabs"></div>
+        <div class="stage"><div class="welcome"><div class="wicon">▦</div><h2 class="wtitle">No workspace</h2><p class="wsub">This page is not attached to a notebook folder.</p></div></div>
+      </div>
+    </div>
+    <p class="foot">Absent, not disabled: no chip, no rail mount, no Sessions.</p>
+  </section>
+
+  <section class="sec">
+    <h2>5 · load failure / offline</h2>
+    <div class="gallery">
+      <div class="board" style="width:520px"><aside class="panel"><p class="ptitle">Files</p><div class="trow active"><span class="gi"> </span>📄 bench.md</div></aside>
+        <div class="main"><div class="tabs"><span class="tab active">bench.md</span></div>
+          <div class="stage"><div class="error"><div class="glyph">⚠</div><h2>Couldn’t open the note</h2><p>The server did not answer. Your draft is kept.</p><button class="wbtn">Retry</button></div></div>
+        </div>
+      </div>
+      <div class="board" style="width:520px"><aside class="panel"><p class="ptitle">Files</p><div class="trow active"><span class="gi"> </span>📄 bench.md</div></aside>
+        <div class="main"><div class="tabs"><span class="tab active">bench.md</span></div>
+          <div class="stage"><div class="error"><div class="glyph">⚠</div><h2>You’re offline</h2><p>The note is still open; reconnect to reload.</p><button class="wbtn">Retry</button></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>6 · first run — seeded Welcome.md</h2>
+    <div class="board">
+      <aside class="panel"><p class="ptitle">Files</p>
+        <div class="trow"><span class="gi">▸</span>📁 Welcome</div>
+        <div class="trow active"><span class="gi"> </span>📄 Welcome.md</div>
+        <div class="trow"><span class="gi">▸</span>📁 projects</div>
+        <div class="trow"><span class="gi">▸</span>📁 archive</div>
+      </aside>
+      <div class="main"><div class="tabs"></div><div class="stage"><div class="welcome">
+        <div class="wicon">📓</div><h2 class="wtitle">Welcome to your notebook</h2>
+        <p class="wsub">Create a new note to get started, or pick one from the left.</p>
+        <div class="wactions"><button class="wbtn">+ New note</button><button class="wbtn">Open Welcome.md</button></div>
+        <hr class="wdiv"><ul class="wtips"><li>Start with <b>Welcome.md</b> for the syntax tour</li></ul>
+      </div></div></div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>7 · 390 phone — reference to mobile-shell.md</h2>
+    <div class="board" style="width:390px;height:520px;border-radius:28px;display:flex;flex-direction:column">
+      <div style="height:44px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 20px 6px;color:var(--text-muted);font-size:12px"><span>9:41</span><span>▮▮▮</span></div>
+      <div style="display:flex;align-items:center;gap:4px;height:52px;padding:0 4px;border-bottom:1px solid var(--border);background:var(--surface-panel)"><span style="padding:0 10px;color:var(--text-muted)">▦ Lab notebook</span></div>
+      <div style="flex:1;padding:20px">
+        <h2 style="font-size:22px;margin:4px 0">No notes yet</h2>
+        <p style="color:var(--text-muted);font-size:14px;margin:0 0 20px">Capture one with ＋.</p>
+        <div style="display:flex;align-items:center;gap:12px;min-height:44px"><span style="width:24px;text-align:center">🔍</span>Search</div>
+        <div style="display:flex;align-items:center;gap:12px;min-height:44px"><span style="width:24px;text-align:center">🗂</span>Browse notes</div>
+      </div>
+      <div style="height:56px;border-top:1px solid var(--border);background:var(--surface-panel);display:flex"><span style="flex:1;display:grid;place-items:center;color:var(--text-muted)">▤</span><span style="flex:1;display:grid;place-items:center;color:var(--text-muted)">📌</span><span style="flex:1;display:grid;place-items:center;color:var(--text-muted)">🔖</span><span style="flex:1;display:grid;place-items:center;color:var(--text-muted)">🕒</span><span style="flex:1;display:grid;place-items:center;color:var(--text-muted)">🔍</span></div>
+    </div>
+    <p class="foot">Home is owned by <b>mobile-shell.md</b>; this board only shows the empty copy.</p>
+  </section>
+
+  <p class="foot">Static boards. The predicates and failure paths are in <code>welcome.md</code>; the shell is
+    <code>static/css/style.css</code> and <code>static/js/viewer.js</code>.</p>
+</div>
+<script>
+(function(){
+  var root=document.documentElement,state='theme-dark';
+  var b=document.createElement('button');b.textContent='Light';
+  b.style.cssText='position:fixed;top:12px;right:12px;z-index:9999;padding:6px 10px;border-radius:6px;border:1px solid #444;background:#222;color:#eee;cursor:pointer';
+  b.onclick=function(){state=state==='theme-dark'?'theme-light':'theme-dark';root.className=state;b.textContent=state==='theme-dark'?'Light':'Dark';};
+  document.body.appendChild(b);
+})();
+</script>
+</body>
+</html>

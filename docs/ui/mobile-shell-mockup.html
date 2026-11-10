@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mobile shell — mockup</title>
+<style>
+:root,.theme-dark{
+  --bg:#1a1b1f;--bg-panel:#22232a;--bg-elev:#2a2b34;--fg:#e6e6ea;--fg-muted:#9799a4;
+  --accent:#7c9cff;--accent-soft:rgba(124,156,255,.18);--accent-fg:#14151a;
+  --border:#383a45;--border-strong:#7b8194;
+  --surface-page:var(--bg);--surface-panel:var(--bg-panel);--surface-raised:var(--bg-elev);
+  --surface-well:#14151a;--code-bg:#14151a;
+  --text-primary:var(--fg);--text-muted:var(--fg-muted);--text-on-accent:var(--accent-fg);
+  --danger:#ff6b6b;--ok:#5fd49a;--warn:#f3b454;
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --text-xs:.72rem;--text-sm:.8rem;--text-ui:.86rem;--text-body:1rem;
+  --fw-regular:400;--fw-medium:500;--fw-semibold:600;--fw-heading:650;
+  --space-hair:2px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;
+  --radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-pill:999px;--radius-circle:50%;
+  --stroke-1:1px;--stroke-2:2px;--stroke-3:3px;
+  --control-h-sm:24px;--control-h-md:30px;--control-h-lg:36px;--control-h-touch:44px;
+  --icon-sm:14px;--icon-md:16px;--icon-lg:17px;--icon-xl:22px;
+  --focus-ring:2px solid var(--accent);--focus-offset:2px;--focus-offset-inset:-2px;
+  --shadow-sheet:0 12px 40px rgba(0,0,0,.45);--shadow-modal:0 20px 60px rgba(0,0,0,.5);
+  --z-chrome:100;--z-rail:150;--z-scrim:400;--z-drawer:410;--z-sheet:600;--z-toast:3000;
+  --m-hit:44px;--m-topbar-h:52px;--m-rail-h:56px;--m-gutter:20px;--m-reader-max:680px;
+  --m-radius:10px;--m-sheet-radius:16px;--m-scrim:rgba(0,0,0,.45);
+}
+.theme-light{
+  --bg:#ffffff;--bg-panel:#f6f7f9;--bg-elev:#eceef2;--fg:#1f2330;--fg-muted:#5d6470;
+  --accent:#2f5fd0;--accent-soft:rgba(47,95,208,.12);--accent-fg:#ffffff;
+  --border:#d8dde4;--border-strong:#78828f;--surface-well:#f0f2f5;--code-bg:#f0f2f5;
+  --danger:#c0392b;--ok:#16703f;--warn:#8a5a0b;
+  --shadow-sheet:0 12px 40px rgba(0,0,0,.2);--shadow-modal:0 20px 60px rgba(0,0,0,.22);
+}
+*{box-sizing:border-box}html{font-size:14px}
+body{margin:0;background:#0b0c10;color:var(--text-primary);font:400 .86rem/1.5 var(--font-ui);padding:28px}
+.page{max-width:1320px;margin:0 auto}
+h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:72ch}
+.sec{margin:0 0 26px}.sec h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:#8b90a0;margin:0 0 10px;font-weight:600}
+.gallery{display:flex;flex-wrap:wrap;gap:22px}
+.phone{width:390px;height:844px;border-radius:30px;overflow:hidden;border:8px solid #222;background:var(--surface-page);position:relative;display:flex;flex-direction:column;flex:0 0 auto}
+.phone.light{border-color:#c9ccd4}
+.status{height:44px;display:flex;align-items:flex-end;justify-content:space-between;padding:0 22px 6px;color:var(--text-muted);font-size:12px}
+.top{height:var(--m-topbar-h);display:flex;align-items:center;gap:var(--space-1);padding:0 var(--space-1);border-bottom:1px solid var(--border);background:var(--surface-panel);flex:0 0 auto}
+.top .chip{display:inline-flex;align-items:center;gap:6px;height:44px;padding:0 10px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface-raised);font-size:.86rem;font-weight:600;max-width:140px}
+.top .back,.top .icon{width:44px;height:44px;display:grid;place-items:center;border:0;background:transparent;color:var(--text-primary);font-size:20px}
+.top .title{flex:1 1 auto;min-width:0;padding:0 4px;font:600 16px/1.25 var(--font-ui);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top .icon.pen{font-size:18px}
+.body{flex:1 1 auto;min-height:0;overflow:auto;padding:16px var(--m-gutter) 0}
+.prose{font-size:16px;line-height:1.65;max-width:var(--m-reader-max);margin:0 auto}
+.prose h1{font-size:1.7em;font-weight:650;margin:0 0 .5em}.prose h2{font-size:1.4em;font-weight:650;margin:1.2em 0 .4em}
+.prose p{margin:.7em 0}.prose li{margin:.35em 0}.prose code{font-family:var(--font-mono);font-size:.82em;background:var(--surface-well);padding:.12em .4em;border-radius:4px}
+.prose .quote{border-left:3px solid var(--accent);background:var(--accent-soft);color:var(--text-muted);padding:.2em 1em;border-radius:0 6px 6px 0;margin:.7em 0}
+.rail{height:calc(var(--m-rail-h) + 12px);display:flex;align-items:stretch;border-top:1px solid var(--border);background:var(--surface-panel);flex:0 0 auto;padding-bottom:12px}
+.rail button{flex:1 1 0;min-width:44px;border:0;background:transparent;color:var(--text-muted);font-size:22px;position:relative}
+.rail button.active{background:var(--accent-soft);color:var(--text-primary)}
+.rail button.active::before{content:"";position:absolute;left:24%;right:24%;top:0;height:2px;background:var(--accent);border-radius:1px}
+.scrim{position:absolute;inset:0;background:var(--m-scrim);z-index:400}
+.drawer{position:absolute;top:0;bottom:0;left:0;width:340px;max-width:86%;background:var(--surface-panel);z-index:410;box-shadow:var(--shadow-sheet);display:flex;flex-direction:column}
+.dhead{height:52px;display:flex;align-items:center;gap:4px;padding:0 4px 0 16px;border-bottom:1px solid var(--border);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted)}
+.dhead .close{margin-left:auto;width:44px;height:44px;border:0;background:transparent;color:var(--text-muted);font-size:24px}
+.dbody{flex:1 1 auto;overflow:auto;padding:8px 6px}
+.drow{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 8px;border-radius:6px;color:var(--text-primary)}
+.drow.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.drow .gi{width:24px;text-align:center;color:var(--text-muted)}
+.home{flex:1 1 auto;overflow:auto;padding:20px var(--m-gutter)}
+.home h2{font-size:22px;font-weight:600;margin:4px 0}
+.home .sub{color:var(--text-muted);font-size:14px;margin:0 0 20px}
+.hrow{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 8px;border-radius:8px}
+.hrow .gi{width:24px;text-align:center;font-size:18px;color:var(--text-muted)}
+.hsep{border-top:1px solid var(--border);margin:12px 4px}
+.sheet{position:absolute;left:0;right:0;bottom:0;z-index:600;background:var(--surface-panel);border-radius:var(--m-sheet-radius) var(--m-sheet-radius) 0 0;box-shadow:var(--shadow-sheet);max-height:min(72dvh,560px);display:flex;flex-direction:column}
+.shead{height:52px;display:flex;align-items:center;padding:0 4px 0 16px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600}
+.shead .close{margin-left:auto;width:44px;height:44px;border:0;background:transparent;color:var(--text-muted);font-size:24px}
+.sbody{padding:12px 16px calc(12px + 12px);display:flex;flex-direction:column;gap:10px;overflow:auto}
+.sbody textarea{width:100%;min-height:96px;padding:10px 12px;border:1px solid var(--border-strong);border-radius:var(--m-radius);background:var(--surface-well);color:var(--text-primary);font:400 16px/1.5 var(--font-ui);resize:none}
+.srow{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px}
+.srow b{font-weight:600}
+.sseg{display:inline-flex;border:1px solid var(--border-strong);border-radius:var(--radius-pill);overflow:hidden}
+.sseg span{padding:6px 12px;font-size:.86rem;color:var(--text-muted)}
+.sseg .on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.sbtn{min-height:44px;padding:0 18px;border:1px solid var(--border-strong);border-radius:var(--m-radius);background:var(--surface-raised);color:var(--text-primary);font:500 .86rem/1 var(--font-ui)}
+.sbtn.primary{background:var(--accent);border-color:var(--accent);color:var(--text-on-accent)}
+.sbtn.danger{color:var(--danger);background:transparent;border-color:transparent}
+.sfoot{display:flex;justify-content:flex-end;gap:8px;padding:0 16px 12px}
+.status-line{min-height:20px;font-size:13px;color:var(--text-muted)}
+.status-line.err{color:var(--danger)}
+.state{flex:1 1 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:32px;text-align:center}
+.state .glyph{font-size:40px;color:var(--warn)}
+.state h2{margin:0;font-size:20px;font-weight:600}
+.state p{margin:0;max-width:300px;color:var(--text-muted);font-size:14px}
+.state button{min-height:44px;padding:0 18px;border:1px solid var(--border-strong);border-radius:var(--m-radius);background:var(--surface-raised);color:var(--text-primary)}
+.dim{position:absolute;inset:0;background:rgba(0,0,0,.72);z-index:450}
+.foot-note{color:#8b90a0;font-size:12px;margin:8px 0 0;width:390px}
+@media(max-width:900px){.phone{width:100%;max-width:390px}}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Mobile shell — 390 × 844</h1>
+  <p class="lede">Static reference for <b>mobile-shell.md</b>. Topbar 52, rail 56, drawer ≤340,
+    sheets 72 dvh, 44 px targets. Dark and light, shipped chrome.</p>
+
+  <section class="sec">
+    <h2>1 · reader + rail</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose">
+          <h1>I2C bus notes</h1>
+          <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
+          <h2>Timing</h2>
+          <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
+          <div class="quote">The offset register is volatile.</div>
+        </div></div>
+        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+      </div>
+      <div class="phone light">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose">
+          <h1>I2C bus notes</h1>
+          <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
+          <h2>Timing</h2>
+          <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
+        </div></div>
+        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+      </div>
+    </div>
+    <p class="foot-note">Chip, back, title, hybrid, capture, more. Rail: Explorer, Pinned, Bookmarks, Recent, Search.</p>
+  </section>
+
+  <section class="sec">
+    <h2>2 · drawer + scrim</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
+        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="scrim"></div>
+        <div class="drawer">
+          <div class="dhead">Files<button class="close">×</button></div>
+          <div class="dbody">
+            <div class="drow"><span class="gi">📁</span>projects</div>
+            <div class="drow"><span class="gi">📄</span>README.md</div>
+            <div class="drow active"><span class="gi">📄</span>I2C bus notes.md</div>
+            <div class="drow"><span class="gi">📁</span>archive</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="foot-note">Scrim .45 z 400; drawer 340 max, z 410; focus into the pane, returns to the opener.</p>
+  </section>
+
+  <section class="sec">
+    <h2>3 · Home</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back" disabled>←</button><span class="title"></span><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="home">
+          <h2>Good evening</h2>
+          <p class="sub">Pick up where you left off.</p>
+          <div class="hrow"><span class="gi">▶</span>Resume · I2C bus notes</div>
+          <div class="hsep"></div>
+          <div class="hrow"><span class="gi">🔍</span>Search</div>
+          <div class="hrow"><span class="gi">🔖</span>Bookmarks</div>
+          <div class="hrow"><span class="gi">🕒</span>Recent</div>
+          <div class="hrow"><span class="gi">🗂</span>Browse notes</div>
+          <div class="hsep"></div>
+          <div class="hrow"><span class="gi">⚙</span>Settings</div>
+        </div>
+        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+      </div>
+      <div class="phone light">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back" disabled>←</button><span class="title"></span><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="home">
+          <h2>Good evening</h2>
+          <p class="sub">Pick up where you left off.</p>
+          <div class="hrow"><span class="gi">▶</span>Resume · I2C bus notes</div>
+          <div class="hsep"></div>
+          <div class="hrow"><span class="gi">🔍</span>Search</div>
+          <div class="hrow"><span class="gi">🔖</span>Bookmarks</div>
+          <div class="hrow"><span class="gi">🕒</span>Recent</div>
+          <div class="hrow"><span class="gi">🗂</span>Browse notes</div>
+          <div class="hsep"></div>
+          <div class="hrow"><span class="gi">⚙</span>Settings</div>
+        </div>
+        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>4 · capture sheet — empty, draft, error</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
+        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="shead">Quick capture<button class="close">×</button></div>
+          <div class="sbody"><textarea placeholder="Jot something down…"></textarea><div class="status-line"></div></div>
+          <div class="sfoot"><button class="sbtn primary" disabled>Send</button></div>
+        </div>
+      </div>
+      <div class="phone light">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
+        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="shead">Quick capture<button class="close">×</button></div>
+          <div class="sbody"><textarea>Check the pull-up on SDA — 4.7 k might be marginal at 400 kHz.</textarea><div class="status-line">Draft kept on this device.</div></div>
+          <div class="sfoot"><button class="sbtn primary">Send</button></div>
+        </div>
+      </div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
+        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="shead">Quick capture<button class="close">×</button></div>
+          <div class="sbody"><textarea>Check the pull-up on SDA — 4.7 k might be marginal at 400 kHz.</textarea><div class="status-line err">Couldn’t save to Inbox.md. The draft is kept.</div></div>
+          <div class="sfoot"><button class="sbtn primary">Send</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>5 · settings sheet</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
+        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="scrim"></div>
+        <div class="sheet">
+          <div class="shead">Settings<button class="close">×</button></div>
+          <div class="sbody">
+            <div class="srow"><b>Theme</b><span class="sseg"><span class="on">Dark</span><span>Light</span><span>System</span></span></div>
+            <div class="srow"><b>Text size</b><span class="sseg"><span>S</span><span class="on">M</span><span>L</span><span>XL</span></span></div>
+            <div class="srow"><b>Server</b><span style="color:var(--text-muted)">lab.local:8080</span></div>
+            <p style="color:var(--text-muted);font-size:13px;margin:0">Settings that need a keyboard are on the desktop.</p>
+            <div class="srow"><button class="sbtn danger">Sign out</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec">
+    <h2>6 · auth-locked and offline</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top" style="opacity:.25"><span class="chip">▦ Lab notebook</span><span class="title">I2C bus notes</span></div>
+        <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
+        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="dim"></div>
+      </div>
+      <div class="phone light">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><span class="title"></span></div>
+        <div class="state"><div class="glyph">⚠</div><h2>You’re offline</h2><p>The note is still here. Reconnect to save or reload.</p><button>Retry</button></div>
+        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+      </div>
+    </div>
+    <p class="foot-note">Auth-locked dims and disables the shell; offline shows a card with Retry and keeps the draft.</p>
+  </section>
+
+  <p class="foot-note">Static boards. Drawer, sheet and history behaviour is described in
+    <code>mobile-shell.md</code>; the shell query lives in <code>style.css</code>.</p>
+</div>
+<script>
+(function(){
+  var root=document.documentElement,state='theme-dark';
+  var b=document.createElement('button');b.textContent='Light';
+  b.style.cssText='position:fixed;top:12px;right:12px;z-index:9999;padding:6px 10px;border-radius:6px;border:1px solid #444;background:#222;color:#eee;cursor:pointer';
+  b.onclick=function(){state=state==='theme-dark'?'theme-light':'theme-dark';root.className=state;b.textContent=state==='theme-dark'?'Light':'Dark';};
+  document.body.appendChild(b);
+})();
+</script>
+</body>
+</html>

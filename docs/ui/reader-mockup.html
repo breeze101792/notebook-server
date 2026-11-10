@@ -1,0 +1,851 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reader — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A. Base values, then the
+      semantic aliases over them, in both themes. No alias points at
+      itself or at a token declared after it in the same block.
+   ================================================================== */
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --warn: #f3b454;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(124, 156, 255, .28);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+}
+
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --warn: #8a5a0b;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(47, 95, 208, .16);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+}
+
+.theme-dark, .theme-light { color: var(--text-primary); }
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-body: 1rem;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --focus-offset: 2px;
+
+  /* style.css:80 — the reader's list step. Not a foundation token; the
+     shipped value is kept here so the mockup and the app agree. */
+  --list-indent: 1.6em;
+}
+
+/* ==================================================================
+   2. PAGE CHROME — mockup only, not part of the spec.
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font: var(--fw-regular) var(--text-body)/var(--lh-normal) var(--font-ui);
+}
+.page { max-width: 1180px; margin: 0 auto; padding: var(--space-6) var(--space-5) var(--space-8); }
+.page > header { margin-bottom: var(--space-7); }
+.page h1 { margin: 0 0 var(--space-2); font-size: 1.15rem; font-weight: var(--fw-heading); }
+.page header p { margin: 0; max-width: calc(60 * var(--space-2)); color: var(--text-muted); font-size: var(--text-ui); }
+.page header p + p { margin-top: var(--space-2); }
+.page code, .key code { font-family: var(--font-mono); font-size: var(--text-xs); }
+.key { display: flex; flex-wrap: wrap; gap: var(--space-4); margin-top: var(--space-4); font-size: var(--text-sm); color: var(--text-muted); }
+.key b { color: var(--text-primary); font-weight: var(--fw-medium); }
+
+.sec-h {
+  margin: var(--space-8) 0 var(--space-3);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-regular);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.board-row { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; margin-bottom: var(--space-6); }
+.duo { display: flex; flex-wrap: wrap; gap: var(--space-5); align-items: flex-start; }
+.board {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--surface-page);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+}
+.board figcaption { margin-top: var(--space-3); max-width: 420px; font-size: var(--text-sm); color: var(--text-muted); line-height: var(--lh-snug); }
+.board figcaption strong { display: block; margin-bottom: var(--space-hair); color: var(--text-primary); font-weight: var(--fw-semibold); }
+.tpill {
+  display: inline-block;
+  margin-left: var(--space-1);
+  padding: 0 var(--space-1);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: 999px;
+  font-size: var(--text-2xs);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  vertical-align: 1px;
+}
+.ruler {
+  margin-bottom: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* Tab strip: context only. Owned by tab-bar.md §1. */
+.shell {
+  display: flex;
+  flex-direction: column;
+  /* A 1px outline, not a border: the page must measure exactly the column
+     width, and a border would subtract 2px from it. */
+  outline: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-page);
+}
+.tabstrip {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--stroke-2);
+  height: 34px;
+  flex: 0 0 auto;
+  padding: 0 var(--space-2) 0 6px;
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.tab {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  max-width: 190px;
+  padding: 0 var(--space-3);
+  border: var(--stroke-1) solid transparent;
+  border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  font-size: .93rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tab.is-active {
+  background: var(--surface-page);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+/* ==================================================================
+   3. THE READING SURFACE — the shipped rules, codified.
+      Every value below is style.css or a token. The only deltas are
+      the three exceptions in reader.md §5.4: ::selection, the search
+      highlight text colour, and the content-link focus ring.
+   ================================================================== */
+.viewer-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}
+.viewer-scroll.is-clipped { height: 720px; overflow: hidden; }
+
+.reader-page {
+  /* style.css:2396-2399 */
+  --viewer-tail: 48px;
+  min-height: 100%;
+  padding: 16px 40px var(--viewer-tail);
+  max-width: 100%;
+  /* style.css:146 — prose is 1rem/1.5 of the 14px root. The mockup sets
+     the root per board instead of scaling <html>. */
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  overflow-wrap: break-word; /* style.css:3137 */
+}
+
+/* headings — style.css:3142-3156 */
+.note h1, .note h2, .note h3, .note h4, .note h5, .note h6 {
+  margin: 1.4em 0 .5em;
+  font-weight: var(--fw-heading);
+  line-height: 1.25;
+}
+.note > :first-child { margin-top: 0; }
+.note h1 { font-size: 1.9em; border-bottom: 1px solid var(--border); padding-bottom: .2em; }
+.note h2 { font-size: 1.5em; }
+.note h3 { font-size: 1.25em; }
+
+/* blocks — style.css:3157-3190 */
+.note p { margin: .7em 0; }
+.note a { color: var(--accent); }
+.note a[data-wikilink] { text-decoration: underline; text-underline-offset: 2px; }
+.note ul, .note ol { padding-left: var(--list-indent); margin: .7em 0; }
+.note li > p:first-child { margin-top: 0; }
+.note li > p:last-child { margin-bottom: 0; }
+.note li > ul, .note li > ol { margin-top: .15em; margin-bottom: 0; }
+.note figure, .note dl, .note details { margin: .7em 0; }
+
+/* task lists — style.css:3198-3239 */
+.note li:has(> input[type="checkbox"], > p > input[type="checkbox"]) { list-style: none; }
+.note li > input[type="checkbox"],
+.note li > p > input[type="checkbox"] {
+  width: 1em;
+  height: 1em;
+  margin: 0 .53em 0 -1.53em;
+  vertical-align: middle;
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  border: 1px solid var(--text-muted);
+  border-radius: 3px;
+  background: transparent;
+}
+.note li > input[type="checkbox"]:checked,
+.note li > p > input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.note li > input[type="checkbox"]:checked::after,
+.note li > p > input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 32%;
+  top: 8%;
+  width: 30%;
+  height: 55%;
+  border: solid var(--accent-fg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* quote — style.css:3240-3256 */
+.note blockquote {
+  border-left: 3px solid var(--accent);
+  margin: .7em 0;
+  padding: .2em 1em;
+  color: var(--text-muted);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.note blockquote > :first-child { margin-top: 0; }
+.note blockquote > :last-child { margin-bottom: 0; }
+
+/* inline code — style.css:3257-3263 */
+.note code {
+  font-family: var(--font-mono);
+  background: var(--surface-well);
+  padding: .12em .4em;
+  border-radius: var(--radius-xs);
+  font-size: .9em;
+}
+
+/* rule — style.css:3764 */
+.note hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+
+/* search highlight — style.css:3777-3779, text colour per reader.md §5.4 E2 */
+.note mark.search-highlight {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+/* the three exceptions */
+.note a:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.note ::selection { background: var(--selection-bg); color: var(--selection-text); }
+.is-selected { background: var(--selection-bg); color: var(--selection-text); }
+
+/* Phone — style.css:7427-7444. All of it lives inside the one mode query. */
+.reader-page.is-phone {
+  width: 100%;
+  max-width: calc(680px + 2 * 20px);
+  margin-inline: auto;
+  --viewer-tail: 80px;
+  padding: 16px 20px var(--viewer-tail);
+  font-size: 16px;
+  line-height: 1.65;
+}
+.is-phone .note h1 { font-size: 1.7em; line-height: 1.2; margin: 0 0 .45em; padding-bottom: .2em; }
+.is-phone .note h2 { font-size: 1.4em; line-height: 1.25; }
+.is-phone .note h3 { font-size: 1.2em; line-height: 1.3; }
+.is-phone .note h4 { font-size: 1.05em; }
+.is-phone .note p { margin: .85em 0; }
+
+/* XL — the root is 18.2px, the page keeps its padding and measure. */
+.reader-page.is-xl { font-size: 18.2px; }
+
+/* ==================================================================
+   4. BOARD FURNITURE
+   ================================================================== */
+.w772 { width: 772px; }
+.w353 { width: 353px; }
+.w390 { width: 390px; }
+.w692 { width: 692px; }
+
+.mini-row { display: flex; flex-wrap: wrap; gap: var(--space-3); }
+.mini {
+  width: 250px;
+  min-height: 170px;
+  padding: var(--space-3);
+  background: var(--surface-page);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.mini .cap {
+  margin-bottom: var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.mini .body { font-size: 14px; line-height: var(--lh-normal); }
+.mini .blank {
+  height: 92px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.mini .hint { margin-top: var(--space-2); font-size: var(--text-sm); color: var(--text-muted); }
+
+.il-row {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.il-row:last-child { border-bottom: 0; }
+.il-label { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+.il-body { font-size: 14px; line-height: 1.5; }
+
+.spec { width: 300px; font-size: var(--text-sm); color: var(--text-muted); }
+.spec h3 { margin: 0 0 var(--space-2); font-size: var(--text-ui); font-weight: var(--fw-semibold); color: var(--text-primary); }
+.spec dl { display: grid; grid-template-columns: 1fr auto; gap: var(--space-hair) var(--space-3); margin: 0 0 var(--space-4); }
+.spec dt { font-family: var(--font-mono); font-size: var(--text-xs); }
+.spec dd { margin: 0; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary); text-align: right; }
+.spec p { margin: 0 0 var(--space-2); line-height: var(--lh-snug); }
+
+/* print board */
+.sheet {
+  width: 600px;
+  padding: 34px 36px;
+  background: #ffffff;
+  color: #1f2330;
+  border: var(--stroke-1) solid var(--border);
+  font-size: 16px;
+  line-height: 1.5;
+}
+.sheet h1, .sheet h2, .sheet h3, .sheet p, .sheet ul { font-family: var(--font-ui); }
+.sheet h1 { margin: 0 0 .5em; padding-bottom: .2em; border-bottom: 1px solid #d8dde4; font-size: 1.9em; font-weight: var(--fw-heading); line-height: 1.25; }
+.sheet h2 { margin: 1.4em 0 .5em; font-size: 1.5em; font-weight: var(--fw-heading); line-height: 1.25; }
+.sheet p { margin: .7em 0; }
+.sheet ul { margin: .7em 0; padding-left: 1.6em; }
+.sheet a { color: #2f5fd0; text-decoration: underline; }
+.sheet code { font-family: var(--font-mono); font-size: .9em; }
+.pagegap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-4) calc(-1 * var(--space-4));
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #5d6470;
+}
+.pagegap::before, .pagegap::after { content: ""; flex: 1 1 auto; border-top: 1px dashed #c8ced8; }
+.avoid {
+  margin: .7em 0;
+  padding: .2em 1em;
+  border-left: 3px solid #2f5fd0;
+  border-radius: 0 6px 6px 0;
+  background: #f0f2f5;
+  color: #3a4152;
+  font-size: 14px;
+}
+.legend { width: 330px; font-size: var(--text-sm); color: var(--text-muted); }
+.legend h3 { margin: 0 0 var(--space-2); font-size: var(--text-ui); font-weight: var(--fw-semibold); color: var(--text-primary); }
+.legend table { border-collapse: collapse; width: 100%; }
+.legend th, .legend td { padding: 5px 6px; border-bottom: var(--stroke-1) solid var(--border); text-align: left; vertical-align: top; font-weight: var(--fw-regular); }
+.legend th { font-size: var(--text-xs); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.legend code { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-primary); }
+</style>
+</head>
+<body class="theme-dark">
+<div class="page">
+
+<header>
+  <h1>Reader — the reading surface</h1>
+  <p>Shipped values from <code>static/css/style.css</code>, rendered at the real editor
+     column widths. Dark and light. One note throughout, plus an XL type board, the inline
+     states, the pane states, and the print contract.</p>
+  <p>The page is <code>#viewer-content.markdown-body</code> inside the only scroller,
+     <code>#viewer-scroll</code>. Padding is <code>16px 40px 48px</code>, there is no
+     reading max-width, and prose is <code>1rem/1.5</code> of a 14 px root.</p>
+  <p>Colour is the foundation token set. The one shipped delta is dark
+     <code>--fg-muted</code>, which is <code>#8b8d98</code> today and <code>#9799a4</code> in
+     <code>foundations.md</code> §3.6; the boards use the token. Selection, the search
+     highlight and the link focus ring show the three applied exceptions from
+     <code>reader.md</code> §5.4.</p>
+  <div class="key">
+    <span><b>1280</b> editor 772 · measure 692</span>
+    <span><b>861</b> editor 353 · measure 273</span>
+    <span><b>390</b> page 390 · measure 350 · 16 px / 1.65</span>
+    <span><b>XL</b> root 18.2 · measure 692</span>
+  </div>
+</header>
+
+<h2 class="sec-h">1280 · desktop, dark</h2>
+<div class="board-row">
+  <figure class="board theme-dark">
+    <div class="ruler">editor column 772 · page 772 · measure 692 · prose 14 / 21</div>
+    <div class="shell w772">
+      <div class="tabstrip">
+        <span class="tab is-active">bench-test.md</span>
+        <span class="tab">calibration.md</span>
+      </div>
+      <div class="viewer-scroll">
+        <div class="reader-page note">
+
+          <h1>Bench test: INA219 current sense</h1>
+          <p>The shunt sits on the 5&nbsp;V rail feeding the sensor node. <strong>Do not</strong>
+             trust the first reading: the part self-heats for about two seconds after
+             power-up, and <code>getCurrent_mA()</code> drifts until the die settles. See
+             <a href="#" data-wikilink="1">calibration</a> for the offset table, and the
+             <a href="#">TI datasheet</a> for the register map.</p>
+
+          <h2>Setup</h2>
+          <ul>
+            <li>Bench supply set to 5.00&nbsp;V, 500&nbsp;mA limit</li>
+            <li>Shunt: 0.1&nbsp;Ω, 1&nbsp;%
+              <ul>
+                <li>discard the first 20 samples</li>
+                <li>average the rest</li>
+              </ul>
+            </li>
+            <li>Logger: 100&nbsp;ms interval, 10&nbsp;min</li>
+          </ul>
+
+          <ol>
+            <li>Flash the <code>bench</code> build.</li>
+            <li>Short the load, zero the offset.</li>
+            <li>Connect the node and arm the logger.</li>
+          </ol>
+
+          <ul>
+            <li><input type="checkbox" checked disabled> Zero the offset</li>
+            <li><input type="checkbox" checked disabled> Log 10 minutes</li>
+            <li><input type="checkbox" disabled> Re-run at 85&nbsp;°C</li>
+          </ul>
+
+          <blockquote>
+            <p>The offset register is volatile. A reset returns it to zero, so the calibration
+               must be re-applied after every power cycle.</p>
+            <p>Do not write <code>CAL</code> while a conversion is in flight; the part latches
+               the previous value.</p>
+          </blockquote>
+
+          <h3>Measurements</h3>
+          <p>At 25&nbsp;°C the reading settles to <strong>48.9&nbsp;mA</strong>, within
+             0.4&nbsp;% of the Keithley. <em>Repeatability</em> was worse than accuracy: three
+             runs spread by 1.2&nbsp;mA, and the third drifted as the board warmed. The
+             <del>3.3&nbsp;V rail</del> 5&nbsp;V rail sagged to 4.87&nbsp;V under load.</p>
+
+          <hr>
+
+          <h2>Result</h2>
+          <p>The offset table in <a href="#" data-wikilink="1">calibration</a> holds. The
+             remaining error is thermal, not electrical — the search hit is
+             <mark class="search-highlight">shunt</mark> in the setup list, and the selected
+             sentence is <span class="is-selected">this one, to show the selection wash</span>.</p>
+          <p>The regulator is rated for 800&nbsp;mA, so the sag is the cable, not the part.</p>
+
+        </div>
+      </div>
+    </div>
+    <figcaption><strong>Reading surface at 1280 <span class="tpill">Dark</span></strong>
+      Page 772, gutter 40, measure 692, prose 14/21. Every block construct carries
+      <code>.7em</code> margins, so a toolbar toggle changes no neighbour. The tab strip is
+      context only; it is owned by <code>tab-bar.md</code>. The quote's two paragraphs keep
+      their internal gap and lose their edge margins.</figcaption>
+  </figure>
+</div>
+
+<h2 class="sec-h">861 · last desktop pixel, light</h2>
+<div class="board-row">
+  <figure class="board theme-light">
+    <div class="ruler">editor column 353 · page 353 · measure 273 · prose 14 / 21</div>
+    <div class="shell w353">
+      <div class="tabstrip">
+        <span class="tab is-active">bench-test.md</span>
+      </div>
+      <div class="viewer-scroll is-clipped">
+        <div class="reader-page note">
+
+          <h1>Bench test: INA219 current sense</h1>
+          <p>The shunt sits on the 5&nbsp;V rail feeding the sensor node. <strong>Do not</strong>
+             trust the first reading: the part self-heats for about two seconds after
+             power-up, and <code>getCurrent_mA()</code> drifts until the die settles. See
+             <a href="#" data-wikilink="1">calibration</a> for the offset table, and the
+             <a href="#">TI datasheet</a> for the register map.</p>
+
+          <h2>Setup</h2>
+          <ul>
+            <li>Bench supply set to 5.00&nbsp;V, 500&nbsp;mA limit</li>
+            <li>Shunt: 0.1&nbsp;Ω, 1&nbsp;%
+              <ul>
+                <li>discard the first 20 samples</li>
+                <li>average the rest</li>
+              </ul>
+            </li>
+            <li>Logger: 100&nbsp;ms interval, 10&nbsp;min</li>
+          </ul>
+
+          <ol>
+            <li>Flash the <code>bench</code> build.</li>
+            <li>Short the load, zero the offset.</li>
+            <li>Connect the node and arm the logger.</li>
+          </ol>
+
+          <ul>
+            <li><input type="checkbox" checked disabled> Zero the offset</li>
+            <li><input type="checkbox" checked disabled> Log 10 minutes</li>
+            <li><input type="checkbox" disabled> Re-run at 85&nbsp;°C</li>
+          </ul>
+
+          <blockquote>
+            <p>The offset register is volatile. A reset returns it to zero, so the calibration
+               must be re-applied after every power cycle.</p>
+            <p>Do not write <code>CAL</code> while a conversion is in flight; the part latches
+               the previous value.</p>
+          </blockquote>
+
+          <h3>Measurements</h3>
+          <p>At 25&nbsp;°C the reading settles to <strong>48.9&nbsp;mA</strong>, within
+             0.4&nbsp;% of the Keithley. <em>Repeatability</em> was worse than accuracy: three
+             runs spread by 1.2&nbsp;mA, and the third drifted as the board warmed.</p>
+
+          <hr>
+
+          <h2>Result</h2>
+          <p>The offset table in <a href="#" data-wikilink="1">calibration</a> holds. The
+             remaining error is thermal, not electrical — the search hit is
+             <mark class="search-highlight">shunt</mark> in the setup list.</p>
+
+        </div>
+      </div>
+    </div>
+    <figcaption><strong>Reading surface at 861 <span class="tpill">Light</span></strong>
+      The desktop shell at its last pixel. Same padding, same type, same rhythm; the measure
+      falls to 273 px because the 40 px gutter does not shrink above the phone switch. The
+      board is clipped at 720 px — the page itself scrolls.</figcaption>
+  </figure>
+</div>
+
+<h2 class="sec-h">390 · phone, dark</h2>
+<div class="board-row">
+  <figure class="board theme-dark">
+    <div class="ruler">page 390 · gutter 20 · measure 350 · prose 16 / 26.4</div>
+    <div class="viewer-scroll is-clipped w390" style="height:780px">
+      <div class="reader-page note is-phone">
+
+        <h1>Bench test: INA219 current sense</h1>
+        <p>The shunt sits on the 5&nbsp;V rail feeding the sensor node. <strong>Do not</strong>
+           trust the first reading: the part self-heats for about two seconds after power-up,
+           and <code>getCurrent_mA()</code> drifts until the die settles. See
+           <a href="#" data-wikilink="1">calibration</a> for the offset table.</p>
+
+        <h2>Setup</h2>
+        <ul>
+          <li>Bench supply set to 5.00&nbsp;V, 500&nbsp;mA limit</li>
+          <li>Shunt: 0.1&nbsp;Ω, 1&nbsp;%
+            <ul>
+              <li>discard the first 20 samples</li>
+              <li>average the rest</li>
+            </ul>
+          </li>
+          <li>Logger: 100&nbsp;ms interval, 10&nbsp;min</li>
+        </ul>
+
+        <ol>
+          <li>Flash the <code>bench</code> build.</li>
+          <li>Short the load, zero the offset.</li>
+          <li>Connect the node and arm the logger.</li>
+        </ol>
+
+        <ul>
+          <li><input type="checkbox" checked disabled> Zero the offset</li>
+          <li><input type="checkbox" checked disabled> Log 10 minutes</li>
+          <li><input type="checkbox" disabled> Re-run at 85&nbsp;°C</li>
+        </ul>
+
+        <blockquote>
+          <p>The offset register is volatile. A reset returns it to zero, so the calibration
+             must be re-applied after every power cycle.</p>
+        </blockquote>
+
+        <h3>Measurements</h3>
+        <p>At 25&nbsp;°C the reading settles to <strong>48.9&nbsp;mA</strong>, within
+           0.4&nbsp;% of the Keithley. <em>Repeatability</em> was worse than accuracy.</p>
+
+      </div>
+    </div>
+    <figcaption><strong>Reading surface at 390 <span class="tpill">Dark</span></strong>
+      No tab strip and no outline on the phone. Prose is 16 px at 1.65, the gutter is 20 px,
+      and the page caps at 680 + 2 × 20 = 720 and centres. Paragraphs are <code>.85em</code>
+      apart, wider than desktop; lists, quotes and inline code keep their desktop ratios.
+      The 80 px tail clears the fixed rail.</figcaption>
+  </figure>
+</div>
+
+<h2 class="sec-h">XL · root 18.2 px · desktop, light</h2>
+<div class="board-row">
+  <figure class="board theme-light">
+    <div class="duo">
+      <div>
+        <div class="ruler">page 772 · measure 692 · prose 18.2 / 27.3</div>
+        <div class="shell w772">
+          <div class="viewer-scroll is-clipped" style="height:520px">
+            <div class="reader-page note is-xl">
+              <h1>Bench test: current sense</h1>
+              <p>The shunt sits on the 5&nbsp;V rail. <strong>Do not</strong> trust the first
+                 reading: the part self-heats, and <code>getCurrent_mA()</code> drifts until the
+                 die settles.</p>
+              <h2>Setup</h2>
+              <ul>
+                <li>Bench supply at 5.00&nbsp;V</li>
+                <li>Shunt: 0.1&nbsp;Ω, 1&nbsp;%</li>
+              </ul>
+              <blockquote>
+                <p>The offset register is volatile.</p>
+              </blockquote>
+              <h3>Measurements</h3>
+              <p>At 25&nbsp;°C the reading settles to <strong>48.9&nbsp;mA</strong>.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="spec">
+        <h3>Computed at 1.3</h3>
+        <dl>
+          <dt>prose</dt><dd>18.2 / 27.3</dd>
+          <dt>h1</dt><dd>34.58 · 43.23</dd>
+          <dt>h1 rule + pad</dt><dd>1 + 6.92</dd>
+          <dt>h1 margin</dt><dd>48.41 / 17.29</dd>
+          <dt>h2</dt><dd>27.3 · 34.13</dd>
+          <dt>h3</dt><dd>22.75 · 28.44</dd>
+          <dt>p margin</dt><dd>12.74</dd>
+          <dt>list indent</dt><dd>29.12</dd>
+          <dt>quote pad</dt><dd>3.64 / 18.2</dd>
+          <dt>inline code</dt><dd>16.38 / 6.55</dd>
+          <dt>measure</dt><dd>692</dd>
+        </dl>
+        <p>The measure does not change. Only em lengths grow; the 40 px gutter and the 1 px
+           heading rule stay fixed. Nothing clips, because every size is em and the page has no
+           line cap.</p>
+        <p>At XL the phone page reaches 20.8 px prose on a 350 px measure.</p>
+      </div>
+    </div>
+    <figcaption><strong>XL type board <span class="tpill">Light</span></strong>
+      The same rules at <code>--font-scale: 1.3</code>. The board is clipped at 520 px to fit
+      the page; the note scrolls inside the real scroller.</figcaption>
+  </figure>
+</div>
+
+<h2 class="sec-h">Inline elements and states</h2>
+<div class="board-row">
+  <figure class="board theme-light">
+    <div class="ruler">each row is the shipped rule</div>
+    <div class="note" style="width:430px">
+      <div class="il-row"><span class="il-label">link</span>
+        <span class="il-body">See the <a href="#">TI datasheet</a> for the register map.</span></div>
+      <div class="il-row"><span class="il-label">wikilink</span>
+        <span class="il-body">See <a href="#" data-wikilink="1">calibration</a> for the offset table.</span></div>
+      <div class="il-row"><span class="il-label">link :focus</span>
+        <span class="il-body">See the <a href="#" style="outline:var(--focus-ring);outline-offset:var(--focus-offset)">TI datasheet</a> — exception E3.</span></div>
+      <div class="il-row"><span class="il-label">strong / em</span>
+        <span class="il-body"><strong>Do not</strong> trust it; <em>repeatability</em> was worse.</span></div>
+      <div class="il-row"><span class="il-label">del</span>
+        <span class="il-body">The <del>3.3 V rail</del> 5 V rail sagged.</span></div>
+      <div class="il-row"><span class="il-label">code</span>
+        <span class="il-body">Call <code>getCurrent_mA()</code> after the die settles.</span></div>
+      <div class="il-row"><span class="il-label">mark</span>
+        <span class="il-body">Raw HTML <mark>mark</mark> keeps the UA face; only the search mark is styled.</span></div>
+      <div class="il-row"><span class="il-label">search hit</span>
+        <span class="il-body">The <mark class="search-highlight">shunt</mark> sits on the rail. E2 fixes the dark text.</span></div>
+      <div class="il-row"><span class="il-label">selection</span>
+        <span class="il-body">The selected sentence is <span class="is-selected">this one, to show the wash</span>.</span></div>
+      <div class="il-row"><span class="il-label">footnote</span>
+        <span class="il-body">A footnote[^1] stays literal — no extension is loaded.</span></div>
+    </div>
+    <figcaption><strong>Inline set <span class="tpill">Light</span></strong>
+      Links rely on the UA underline; only the wikilink sets a 2 px offset. Selection is the
+      token pair (E1). The search mark paints <code>--accent</code> with
+      <code>--text-on-accent</code>, which is white in light and near-black in dark (E2).
+      Footnotes render as text: marked runs in GFM mode with no footnote extension.</figcaption>
+  </figure>
+
+  <figure class="board theme-dark">
+    <div class="mini-row">
+      <div class="mini">
+        <div class="cap">loading</div>
+        <div class="blank">page area · no content</div>
+        <div class="hint">A blank padded page. No spinner, no skeleton, no announcement.</div>
+      </div>
+      <div class="mini">
+        <div class="cap">render error</div>
+        <div class="body"><p style="margin:0">marked.js failed to load.</p></div>
+        <div class="hint">A plain paragraph in prose type, at the top of the page.</div>
+      </div>
+      <div class="mini">
+        <div class="cap">long unbroken word</div>
+        <div class="body" style="overflow-wrap:break-word"><p style="margin:0">…see notes/2026/bench-test-ina219-current-sense-calibration-table-rev-c.md for the table.</p></div>
+        <div class="hint">Wraps at the page edge. <code>break-word</code>, never a second scroller.</div>
+      </div>
+      <div class="mini">
+        <div class="cap">no headings</div>
+        <div class="body"><p style="margin:0">A note with no <code>#</code> line renders unchanged. The outline pane shows “No headings”.</p></div>
+        <div class="hint">The reading pane has no empty state of its own.</div>
+      </div>
+    </div>
+    <figcaption><strong>Pane states <span class="tpill">Dark</span></strong>
+      Loading, error and the long-token case are what the pane can actually show today. An
+      empty note is indistinguishable from loading; the welcome page replaces the pane and is
+      out of scope.</figcaption>
+  </figure>
+</div>
+
+<h2 class="sec-h">Print · the export contract</h2>
+<div class="board-row">
+  <figure class="board theme-light">
+    <div class="duo">
+      <div class="sheet">
+        <h1>Bench test: INA219 current sense</h1>
+        <p>The shunt sits on the 5 V rail feeding the sensor node. Do not trust the first
+           reading: the part self-heats for about two seconds after power-up.</p>
+        <h2>Setup</h2>
+        <ul>
+          <li>Bench supply set to 5.00 V, 500 mA limit</li>
+          <li>Shunt: 0.1 Ω, 1 %</li>
+        </ul>
+        <blockquote class="avoid">A quote or fence is never split across a sheet.</blockquote>
+        <div class="pagegap">page break before h1</div>
+        <h1 style="margin-top:0">Safety notes</h1>
+        <p>Print is always light, whatever the screen theme. Links print underlined, and an
+           external link prints its <code>href</code>.</p>
+      </div>
+      <div class="legend">
+        <h3>What a note prints as</h3>
+        <table>
+          <tr><th>Prints</th><td>Headings, paragraphs, lists, task lists, quotes, inline code, rules, links.</td></tr>
+          <tr><th>Hidden</th><td>Code copy buttons only (<code>style.css:3620-3623</code>). The export path hides its own chrome.</td></tr>
+          <tr><th>Breaks</th><td><code>h1</code> starts a sheet, except the first. <code>h2</code> and <code>h3</code> never end a sheet.</td></tr>
+          <tr><th>Kept whole</th><td><code>pre</code>, <code>code</code>, <code>blockquote</code>, tables, images, figures, math.</td></tr>
+          <tr><th>Type</th><td>No separate print scale. The screen rhythm, on white.</td></tr>
+        </table>
+        <p style="margin-top:var(--space-3)">The app's own page has one print rule: hide the
+           copy buttons. Printing the app therefore prints the shell and clips the note to one
+           viewport. Printing a note goes through the export path.</p>
+      </div>
+    </div>
+    <figcaption><strong>Print contract <span class="tpill">Light</span></strong>
+      Rules from <code>export.js printRules()</code>. A heading is never stranded at the foot
+      of a sheet, and a block is never cut in two. Direct browser print of the app is not a
+      supported reading surface.</figcaption>
+  </figure>
+</div>
+
+</div>
+</body>
+</html>

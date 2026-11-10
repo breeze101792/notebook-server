@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lightboxes — reference mockup</title>
+<style>
+/* ==================================================================
+   Tokens. Primitives are copied verbatim from foundations Appendix A.
+   Component tokens hold literals and alias nothing. Theme values are
+   the shipped stylesheet values; the one contrast fix is docs §10 P1,
+   not applied here.
+   ================================================================== */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --z-modal: 2000;
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-md: 16px;
+  --focus-offset: 2px;
+
+  /* Lightbox component tokens (docs §8.2). Literals only. */
+  --lightbox-scrim: rgba(0, 0, 0, .55);
+  --lightbox-blur: 8px;
+  --lightbox-pad-block: 60px;
+  --lightbox-pad-inline: 40px;
+  --lightbox-controls-z: 10;
+  --overlay-pill-pad-block: 6px;
+  --overlay-control-pill: rgba(0, 0, 0, .55);
+  --overlay-control-fg: #ffffff;
+  --overlay-control-border: rgba(255, 255, 255, .28);
+  --overlay-control-radius: 5px;
+  --overlay-control-pad-block: 3px;
+  --overlay-control-pad-inline: 9px;
+  --overlay-control-size: 1.05rem;
+  --overlay-control-line: 1.3;
+  --overlay-control-min: 28px;
+  --overlay-control-face: rgba(255, 255, 255, .15);
+  --overlay-control-border-hover: rgba(255, 255, 255, .5);
+  --overlay-control-face-active: rgba(255, 255, 255, .25);
+  --overlay-control-close-size: 1.2rem;
+  --overlay-control-close-pad-inline: 7px;
+  --overlay-control-pct-fg: #ffffff;
+  --overlay-control-pct-size: .82rem;
+  --overlay-control-pct-min: 3.2em;
+  --overlay-control-pct-tracking: .3px;
+
+  /* Mockup page chrome, not app tokens. */
+  --doc-canvas: #0f1014;
+  --doc-canvas-light: #eef1f5;
+  --doc-max: 1280px;
+  --doc-pad: 32px;
+}
+
+[data-theme="dark"] {
+  --surface-page: #1a1b1f;
+  --surface-panel: #22232a;
+  --surface-raised: #2a2b34;
+  --surface-well: #14151a;
+  --text-primary: #e6e6ea;
+  --text-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --warn: #f3b454;
+  --danger: #ff6b6b;
+  --ok: #5fd49a;
+}
+
+[data-theme="light"] {
+  --surface-page: #ffffff;
+  --surface-panel: #f6f7f9;
+  --surface-raised: #eceef2;
+  --surface-well: #f0f2f5;
+  --text-primary: #1f2330;
+  --text-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --warn: #8a5a0b;
+  --danger: #c0392b;
+  --ok: #16703f;
+}
+
+/* ==================================================================
+   Mockup page chrome
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  background: var(--doc-canvas);
+  color: #e6e6ea;
+  font: var(--text-body)/var(--lh-normal) var(--font-ui);
+}
+.page { max-width: var(--doc-max); margin: 0 auto; padding: var(--doc-pad); }
+.page-head { padding: var(--space-6) 0 var(--space-7); }
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: #8b8d98;
+}
+.page-head h1 { margin: 0 0 var(--space-3); font-size: 28px; line-height: var(--lh-tight); font-weight: var(--fw-heading); }
+.page-head .lede { margin: 0; max-width: 82ch; color: #b9bcc7; font-size: var(--text-ui-lg); line-height: var(--lh-prose); }
+.page-head code, .legacy code {
+  font-family: var(--font-mono);
+  font-size: .88em;
+  background: #22232a;
+  border: 1px solid #383a45;
+  border-radius: var(--radius-xs);
+  padding: 1px 4px;
+}
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+.legend span { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); color: #8b8d98; }
+.legend i { width: 8px; height: 8px; border-radius: var(--radius-circle); background: #7c9cff; display: inline-block; }
+.legend i.warn { background: #f3b454; }
+.legend i.ok { background: #5fd49a; }
+
+.sec { margin: 0 0 var(--space-8); }
+.sec > h2 { margin: 0 0 var(--space-2); font-size: 20px; line-height: var(--lh-tight); font-weight: var(--fw-semibold); color: #e6e6ea; }
+.sec > .lede { margin: 0 0 var(--space-4); max-width: 92ch; color: #a6a9b4; font-size: var(--text-ui); line-height: var(--lh-prose); }
+.sec > .lede code { font-family: var(--font-mono); font-size: .9em; color: #d6d8e0; }
+
+.board {
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+}
+.board + .board { margin-top: var(--space-4); }
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.board-head .dot { width: 6px; height: 6px; border-radius: var(--radius-circle); background: var(--accent); }
+.board-head .grow { flex: 1 1 auto; }
+.board-head .size { font-weight: var(--fw-regular); color: var(--text-muted); }
+.board--wide { width: 861px; max-width: 100%; }
+.board--phone { width: 390px; max-width: 100%; }
+
+.callout {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  color: #8b8d98;
+}
+.callout b { color: #b9bcc7; font-weight: var(--fw-semibold); }
+.callout code { font-family: var(--font-mono); font-size: .92em; color: #b9bcc7; }
+
+.section-light {
+  background: var(--doc-canvas-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7);
+  margin: 0 0 var(--space-8);
+}
+.section-light .sec > h2 { color: #1f2330; }
+.section-light .sec > .lede { color: #5d6470; }
+.section-light .board { border-color: #d8dde4; box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
+.section-light .board-head { background: #f6f7f9; border-bottom-color: #d8dde4; color: #5d6470; }
+.section-light .callout { color: #5d6470; }
+.section-light .callout b { color: #1f2330; }
+.section-light .callout code { color: #5d6470; }
+
+.demo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.state-label {
+  display: flex; align-items: center; gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: #8b8d98;
+}
+.state-label b { color: #b9bcc7; font-weight: var(--fw-semibold); letter-spacing: 0; text-transform: none; font-size: var(--text-sm); }
+
+/* ==================================================================
+   The mock reader behind the overlay. Context only.
+   ================================================================== */
+.mock-note {
+  position: absolute;
+  inset: 0;
+  padding: 18px 40px;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+}
+.mock-note h3 { margin: 0 0 var(--space-2); font-size: 1.5em; font-weight: var(--fw-heading); }
+.mock-note p { margin: .7em 0; max-width: 62ch; }
+.mock-note .muted { color: var(--text-muted); }
+.mock-note .mock-card {
+  margin-top: var(--space-4);
+  padding: 14px 16px;
+  background: var(--surface-panel);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+/* ==================================================================
+   The shipped overlay, tokenised exactly as docs §8.3.
+   In the app it is position:fixed, inset:0, z-index:var(--z-modal);
+   in a board it is absolute inside the stage, which is the only
+   difference. No other value changes.
+   ================================================================== */
+.stage { position: relative; height: 520px; overflow: hidden; background: var(--surface-page); }
+.stage--phone { height: 600px; }
+
+.mermaid-lightbox-overlay {
+  position: absolute;
+  inset: 0;
+  background: var(--lightbox-scrim);
+  backdrop-filter: blur(var(--lightbox-blur));
+  -webkit-backdrop-filter: blur(var(--lightbox-blur));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+}
+
+.mermaid-lightbox-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  width: 100%;
+  height: 100%;
+  padding: var(--lightbox-pad-block) var(--lightbox-pad-inline);
+}
+.mermaid-lightbox-body.svg-fit svg {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  display: block;
+}
+.mermaid-lightbox-body svg {
+  display: block;
+  transform-origin: center center;
+  cursor: grab;
+}
+.mermaid-lightbox-body svg.dragging { cursor: grabbing; }
+.mermaid-lightbox-body--clip { overflow: hidden; }
+
+.mermaid-lightbox-controls {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: flex;
+  gap: var(--space-1);
+  align-items: center;
+  padding: var(--overlay-pill-pad-block) var(--space-2);
+  background: var(--overlay-control-pill);
+  border-radius: var(--radius-md);
+  z-index: var(--lightbox-controls-z);
+  user-select: none;
+}
+.mlb-btn {
+  background: transparent;
+  color: var(--overlay-control-fg);
+  border: var(--stroke-1) solid var(--overlay-control-border);
+  border-radius: var(--overlay-control-radius);
+  padding: var(--overlay-control-pad-block) var(--overlay-control-pad-inline);
+  font-size: var(--overlay-control-size);
+  line-height: var(--overlay-control-line);
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--overlay-control-min);
+}
+.mlb-btn:hover {
+  background: var(--overlay-control-face);
+  border-color: var(--overlay-control-border-hover);
+}
+.mlb-btn:active { background: var(--overlay-control-face-active); }
+.mlb-close-btn {
+  margin-left: var(--space-hair);
+  font-size: var(--overlay-control-close-size);
+  padding: var(--overlay-control-pad-block) var(--overlay-control-close-pad-inline);
+}
+.mlb-zoom-pct {
+  color: var(--overlay-control-pct-fg);
+  font-size: var(--overlay-control-pct-size);
+  min-width: var(--overlay-control-pct-min);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: var(--overlay-control-pct-tracking);
+}
+/* E5, drawn statically on the focus board. Identical declaration. */
+.mlb-btn.is-focus,
+.mlb-btn:focus-visible {
+  outline: var(--stroke-2) solid var(--overlay-control-fg);
+  outline-offset: var(--focus-offset);
+}
+
+/* ==================================================================
+   Diagram artwork. Token-driven so the same markup works in both
+   themes; WaveDrom is fixed light ink because the library is.
+   ================================================================== */
+.d-node { fill: var(--surface-raised); stroke: var(--border-strong); }
+.d-node-accent { fill: var(--accent-soft); stroke: var(--accent); }
+.d-edge { stroke: var(--text-muted); fill: none; }
+.d-arrow { fill: var(--text-muted); }
+.d-text { fill: var(--text-primary); font-family: var(--font-ui); font-size: 13px; }
+.d-muted { fill: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+/* A light-theme library SVG is drawn for a white page: dark ink, not muted
+   grey. This is why it stands out less on the scrim — see docs §12 A8. */
+[data-theme="light"] .d-edge { stroke: var(--text-primary); }
+[data-theme="light"] .d-arrow { fill: var(--text-primary); }
+[data-theme="light"] .d-muted { fill: var(--text-primary); }
+.wd-bg { fill: #fff; }
+.wd-line { stroke: #333; fill: none; stroke-width: 1.6; }
+.wd-grid { stroke: #d8dde4; }
+.wd-text { fill: #333; font-family: var(--font-mono); font-size: 11px; }
+.wd-label { fill: #333; font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+
+/* ==================================================================
+   Measurement strip and the not-a-trigger context blocks.
+   ================================================================== */
+.spec {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: var(--space-6);
+  padding: var(--space-6);
+  align-items: start;
+}
+.spec-stage {
+  position: relative;
+  height: 120px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(90deg, #8c8c8c, #464646 55%, #101014);
+  overflow: hidden;
+}
+.spec-stage .mermaid-lightbox-controls { position: absolute; }
+.spec dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: var(--space-1) var(--space-3); font-size: var(--text-sm); }
+.spec dt { color: #8b8d98; }
+.spec dd { margin: 0; color: #d6d8e0; font-family: var(--font-mono); font-size: var(--text-xs); }
+.spec .note { grid-column: 1 / -1; margin: var(--space-2) 0 0; font-size: var(--text-sm); color: #8b8d98; }
+
+.fence {
+  position: relative;
+  margin: 0;
+  padding: 22px 16px 14px;
+  background: var(--surface-well);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: .88em;
+  color: var(--text-primary);
+}
+.fence-label {
+  position: absolute; top: 6px; left: 16px;
+  font: .72em/1.2 var(--font-mono);
+  color: var(--text-muted);
+}
+.fence-copy {
+  position: absolute; top: 1px; right: 10px;
+  font: .76rem/1 var(--font-ui);
+  padding: 4px 8px;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.error-box {
+  border: var(--stroke-1) solid var(--warn);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.error-head {
+  background: var(--warn);
+  color: var(--surface-page);
+  font-size: .86rem;
+  font-weight: var(--fw-semibold);
+  padding: 6px 12px;
+}
+.error-source {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: .85rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .page { padding: var(--space-4); }
+  .board--wide { width: 100%; }
+  .spec { grid-template-columns: 1fr; }
+  .demo-grid { grid-template-columns: 1fr; }
+  .mock-note { padding: 16px 20px; }
+  .section-light { padding: var(--space-4); }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="page-head">
+  <p class="eyebrow">Notebook · UI design · lightboxes</p>
+  <h1>Four viewers, one overlay</h1>
+  <p class="lede">The shipped full-screen viewer for Mermaid, WaveDrom, Graphviz and SVG —
+    codified, not redesigned. One scrim, one body, one five-item pill: zoom out, percentage,
+    zoom in, fit, close. The chrome does not change with the theme; only the diagram does.
+    Boards are 861 px desktop stages, except the 390 phone. The pill and every value are the
+    shipped ones; the one addition drawn is the focus ring, and it is labelled.</p>
+  <div class="legend">
+    <span><i></i> open, at fit or at a zoom level</span>
+    <span><i class="ok"></i> loading and error are not triggers</span>
+    <span><i class="warn"></i> proposals are not drawn here</span>
+    <span>Read with <code>lightboxes.md</code>.</span>
+  </div>
+</header>
+
+<!-- ================================================================
+     1. ANATOMY AND MEASUREMENTS
+     ================================================================ -->
+<section class="sec">
+  <h2>1 · Anatomy and measurements</h2>
+  <p class="lede">The pill at 1:1 over a grey-to-black ramp, so the two shipped contrast facts are
+    visible: the percentage is faint, the glyphs are not. Values below are computed at the 14 px
+    base.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Control pill — 1:1</span><span class="grow"></span><span class="size">≈190 × 42</span></div>
+    <div class="spec">
+      <div class="spec-stage">
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">Fit</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+      <dl>
+        <dt>overlay</dt><dd>fixed inset 0 · z 2000 (--z-modal)</dd>
+        <dt>scrim</dt><dd>rgba(0,0,0,.55) + blur 8px</dd>
+        <dt>body pad</dt><dd>60px 40px · overflow auto</dd>
+        <dt>pill</dt><dd>top/right 16 · gap 4 · pad 6 8 · r 8</dd>
+        <dt>button</dt><dd>min-w 28 · pad 3 9 · r 5 · 1.05rem</dd>
+        <dt>button height</dt><dd>≈27.1px · close ≈29.8px</dd>
+        <dt>pill face</dt><dd>rgba(0,0,0,.45)</dd>
+        <dt>percentage</dt><dd>.82rem · 3.2em · tabular</dd>
+      </dl>
+      <p class="note">White glyph on the pill over white = 3.36:1 (passes the 3:1 icon floor). The
+        75% percentage on the same composite = 2.60:1 (fails 4.5:1). Proposal P1 fixes it.</p>
+    </div>
+  </div>
+  <p class="callout"><b>One implementation, four instances.</b> The classes keep the
+    <code>mermaid-</code> prefix for all four; only ids differ. <code>docs/ui/lightboxes.md</code>
+    §1.1.</p>
+</section>
+
+<!-- ================================================================
+     2. MERMAID AT 100%
+     ================================================================ -->
+<section class="sec">
+  <h2>2 · Mermaid — 100%</h2>
+  <p class="lede">The common case: open at fit, press <code>+</code> once. The drawing leaves fit
+    at 100 %, is locked to its fitted box, and the label becomes a percentage. Panning starts on
+    the drawing, not on the blank body.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Mermaid lightbox</span><span class="grow"></span><span class="size">860 × 520</span></div>
+    <div class="stage">
+      <div class="mock-note">
+        <h3>Read path</h3>
+        <p>The note stays behind the scrim. Its text is dimmed and blurred, never removed, so
+          closing returns to the same scroll position.</p>
+        <p class="muted">Rendered fence → card → click → clone.</p>
+        <div class="mock-card">a diagram card in the reader</div>
+      </div>
+
+      <div class="mermaid-lightbox-overlay">
+        <div class="mermaid-lightbox-body">
+          <svg viewBox="0 0 560 320" width="520" height="297" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <defs>
+              <marker id="arr-a1" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path class="d-arrow" d="M0,0 L9,4.5 L0,9 z"></path>
+              </marker>
+            </defs>
+            <rect class="d-node" x="24" y="36" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="99" y="66" text-anchor="middle">fence</text>
+            <rect class="d-node" x="222" y="36" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="297" y="66" text-anchor="middle">render</text>
+            <polygon class="d-node-accent" points="474,28 544,61 474,94 404,61"></polygon>
+            <text class="d-text" x="474" y="66" text-anchor="middle">svg?</text>
+            <rect class="d-node" x="222" y="146" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="297" y="176" text-anchor="middle">clone</text>
+            <rect class="d-node-accent" x="222" y="246" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="297" y="276" text-anchor="middle">overlay</text>
+            <line class="d-edge" x1="174" y1="61" x2="216" y2="61" marker-end="url(#arr-a1)"></line>
+            <line class="d-edge" x1="372" y1="61" x2="398" y2="61" marker-end="url(#arr-a1)"></line>
+            <line class="d-edge" x1="474" y1="94" x2="474" y2="171" marker-end="url(#arr-a1)"></line>
+            <path class="d-edge" d="M474 171 H 378" marker-end="url(#arr-a1)"></path>
+            <line class="d-edge" x1="297" y1="196" x2="297" y2="240" marker-end="url(#arr-a1)"></line>
+            <text class="d-muted" x="482" y="124">yes</text>
+            <text class="d-muted" x="330" y="222">open</text>
+          </svg>
+        </div>
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">100%</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="callout">No header, no title, no footer. The close control is the fifth item.
+    <b>Click the blank body</b> to close; click the drawing and nothing happens.</p>
+</section>
+
+<!-- ================================================================
+     3. MERMAID AT 200%
+     ================================================================ -->
+<section class="sec">
+  <h2>3 · Mermaid — zoomed 200%</h2>
+  <p class="lede">Above 100 % the drawing is visually scaled about its centre and panned with a
+    drag. A drag that starts on the drawing pans; a drag that starts on the blank body closes.
+    <code>Ctrl</code>/<code>Cmd</code> + <code>+</code> does the same as the button.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Mermaid lightbox — 200%</span><span class="grow"></span><span class="size">860 × 520</span></div>
+    <div class="stage">
+      <div class="mock-note">
+        <h3>Read path</h3>
+        <p>The note stays behind the scrim. Its text is dimmed and blurred, never removed.</p>
+        <div class="mock-card">a diagram card in the reader</div>
+      </div>
+
+      <div class="mermaid-lightbox-overlay">
+        <div class="mermaid-lightbox-body mermaid-lightbox-body--clip">
+          <svg viewBox="0 0 560 320" width="520" height="297" preserveAspectRatio="xMidYMid meet"
+               style="transform: translate(-40px, 24px) scale(2);" aria-hidden="true">
+            <defs>
+              <marker id="arr-a2" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path class="d-arrow" d="M0,0 L9,4.5 L0,9 z"></path>
+              </marker>
+            </defs>
+            <rect class="d-node" x="24" y="36" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="99" y="66" text-anchor="middle">fence</text>
+            <rect class="d-node" x="222" y="36" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="297" y="66" text-anchor="middle">render</text>
+            <polygon class="d-node-accent" points="474,28 544,61 474,94 404,61"></polygon>
+            <text class="d-text" x="474" y="66" text-anchor="middle">svg?</text>
+            <rect class="d-node" x="222" y="146" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="297" y="176" text-anchor="middle">clone</text>
+            <rect class="d-node-accent" x="222" y="246" width="150" height="50" rx="8"></rect>
+            <text class="d-text" x="297" y="276" text-anchor="middle">overlay</text>
+            <line class="d-edge" x1="174" y1="61" x2="216" y2="61" marker-end="url(#arr-a2)"></line>
+            <line class="d-edge" x1="372" y1="61" x2="398" y2="61" marker-end="url(#arr-a2)"></line>
+            <line class="d-edge" x1="474" y1="94" x2="474" y2="171" marker-end="url(#arr-a2)"></line>
+            <path class="d-edge" d="M474 171 H 378" marker-end="url(#arr-a2)"></path>
+            <line class="d-edge" x1="297" y1="196" x2="297" y2="240" marker-end="url(#arr-a2)"></line>
+          </svg>
+        </div>
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">200%</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="callout"><b>This board clips</b> the scaled drawing so the page stays still; the
+    shipped body is <code>overflow: auto</code>, so the excess also becomes scrollable. The ceiling
+    is 500 %; pressing <code>+</code> there does nothing and the button never disables.</p>
+</section>
+
+<!-- ================================================================
+     4. FIT — A TALL DIAGRAM
+     ================================================================ -->
+<section class="sec">
+  <h2>4 · Fit — a tall diagram</h2>
+  <p class="lede">Fit is the open state and the <code>⊞</code> state. It caps width and height at
+    the body's content box and never upscales, so a small drawing sits at its intrinsic size and
+    the label still reads <code>Fit</code>.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Mermaid lightbox — fit</span><span class="grow"></span><span class="size">860 × 520</span></div>
+    <div class="stage">
+      <div class="mock-note">
+        <h3>Long.md</h3>
+        <p>A tall pipeline diagram. In the reader it is width-fitted and the note scrolls; the
+          lightbox is the detail view.</p>
+        <div class="mock-card">card</div>
+      </div>
+
+      <div class="mermaid-lightbox-overlay">
+        <div class="mermaid-lightbox-body svg-fit">
+          <svg viewBox="0 0 420 600" width="420" height="600" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <defs>
+              <marker id="arr-a3" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path class="d-arrow" d="M0,0 L9,4.5 L0,9 z"></path>
+              </marker>
+            </defs>
+            <rect class="d-node" x="60" y="20" width="300" height="130" rx="10"></rect>
+            <text class="d-text" x="210" y="94" text-anchor="middle" font-size="18">sample bus</text>
+            <rect class="d-node-accent" x="60" y="235" width="300" height="130" rx="10"></rect>
+            <text class="d-text" x="210" y="309" text-anchor="middle" font-size="18">filter</text>
+            <rect class="d-node" x="60" y="450" width="300" height="130" rx="10"></rect>
+            <text class="d-text" x="210" y="524" text-anchor="middle" font-size="18">report</text>
+            <line class="d-edge" x1="210" y1="150" x2="210" y2="229" marker-end="url(#arr-a3)"></line>
+            <line class="d-edge" x1="210" y1="365" x2="210" y2="444" marker-end="url(#arr-a3)"></line>
+          </svg>
+        </div>
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">Fit</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="callout"><b>The first zoom press from fit is 100 % from either button</b> — never 125 %
+    or 75 %. That is shipped and is asserted in <code>tests/dom/test_dom.js:4197</code>.</p>
+</section>
+
+<!-- ================================================================
+     5. WAVEDROM
+     ================================================================ -->
+<section class="sec">
+  <h2>5 · WaveDrom</h2>
+  <p class="lede">The same overlay. The artefact is a light-skin timing plot with its own white
+    background inside the SVG, so it is the one light drawing on a dark scrim. That white travels
+    with the clone; the card's white background does not.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>WaveDrom lightbox</span><span class="grow"></span><span class="size">860 × 520</span></div>
+    <div class="stage">
+      <div class="mock-note">
+        <h3>SPI timing</h3>
+        <p>Clock, chip select and one data lane, captured from the bench rig.</p>
+        <div class="mock-card">a white WaveDrom card in the reader</div>
+      </div>
+
+      <div class="mermaid-lightbox-overlay">
+        <div class="mermaid-lightbox-body">
+          <svg viewBox="0 0 640 220" width="640" height="220" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <rect class="wd-bg" x="0" y="0" width="640" height="220"></rect>
+            <line class="wd-grid" x1="70" y1="20" x2="70" y2="200"></line>
+            <line class="wd-grid" x1="590" y1="20" x2="590" y2="200"></line>
+            <text class="wd-label" x="16" y="58">clk</text>
+            <text class="wd-label" x="16" y="110">cs</text>
+            <text class="wd-label" x="16" y="162">mosi</text>
+            <path class="wd-line" d="M70 52 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20"></path>
+            <path class="wd-line" d="M70 96 h400 v20 h120"></path>
+            <path class="wd-line" d="M70 146 h24 v20 h40 v-20 h56 v20 h48 v-20 h64 v20 h40 v-20 h72 v20 h48 v-20 h64 v20 h24"></path>
+            <g class="wd-text">
+              <text x="76" y="80">0</text><text x="186" y="80">1</text><text x="296" y="80">0</text>
+              <text x="406" y="80">1</text><text x="516" y="80">0</text>
+              <text x="86" y="136">A5</text><text x="196" y="136">3C</text>
+              <text x="306" y="198">0F</text><text x="416" y="198">7E</text>
+            </g>
+            <text class="wd-text" x="70" y="214">t0</text>
+            <text class="wd-text" x="290" y="214">t1</text>
+            <text class="wd-text" x="510" y="214">t2</text>
+          </svg>
+        </div>
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">100%</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="callout">In an AI reply WaveDrom is not rendered at all, so there is no card and no
+    lightbox there (<code>content-blocks.md</code> §6.7).</p>
+</section>
+
+<!-- ================================================================
+     6. GRAPHVIZ
+     ================================================================ -->
+<section class="sec">
+  <h2>6 · Graphviz</h2>
+  <p class="lede">Same pill, same gestures. A wide graph is the case fit exists for: it lands
+    inside the 60/40 box and the label reads <code>Fit</code>.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Graphviz lightbox</span><span class="grow"></span><span class="size">860 × 520</span></div>
+    <div class="stage">
+      <div class="mock-note">
+        <h3>Boot graph</h3>
+        <p>DOT output from the firmware tree, rendered through the 2 MB WASM bundle.</p>
+        <div class="mock-card">a graph card in the reader</div>
+      </div>
+
+      <div class="mermaid-lightbox-overlay">
+        <div class="mermaid-lightbox-body svg-fit">
+          <svg viewBox="0 0 720 340" width="720" height="340" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <defs>
+              <marker id="arr-a4" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path class="d-arrow" d="M0,0 L9,4.5 L0,9 z"></path>
+              </marker>
+            </defs>
+            <rect class="d-node" x="24" y="18" width="170" height="56" rx="6"></rect>
+            <text class="d-text" x="109" y="51" text-anchor="middle">reset</text>
+            <rect class="d-node" x="274" y="18" width="170" height="56" rx="6"></rect>
+            <text class="d-text" x="359" y="51" text-anchor="middle">clock init</text>
+            <rect class="d-node" x="524" y="18" width="170" height="56" rx="6"></rect>
+            <text class="d-text" x="609" y="51" text-anchor="middle">gpio init</text>
+            <polygon class="d-node-accent" points="359,140 449,180 359,220 269,180"></polygon>
+            <text class="d-text" x="359" y="185" text-anchor="middle">probe</text>
+            <rect class="d-node" x="74" y="270" width="170" height="56" rx="6"></rect>
+            <text class="d-text" x="159" y="303" text-anchor="middle">sensor ok</text>
+            <rect class="d-node" x="474" y="270" width="170" height="56" rx="6"></rect>
+            <text class="d-text" x="559" y="303" text-anchor="middle">fault log</text>
+            <line class="d-edge" x1="194" y1="46" x2="268" y2="46" marker-end="url(#arr-a4)"></line>
+            <line class="d-edge" x1="444" y1="46" x2="518" y2="46" marker-end="url(#arr-a4)"></line>
+            <path class="d-edge" d="M609 74 V 106 H 359 V 134" marker-end="url(#arr-a4)"></path>
+            <path class="d-edge" d="M300 208 L 200 266" marker-end="url(#arr-a4)"></path>
+            <path class="d-edge" d="M418 208 L 518 266" marker-end="url(#arr-a4)"></path>
+            <text class="d-muted" x="306" y="250">ok</text>
+            <text class="d-muted" x="432" y="250">fail</text>
+          </svg>
+        </div>
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">Fit</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="callout">When the Graphviz bundle fails, the fence stays a code block and there is no
+    trigger, so this overlay cannot be opened for a failed graph.</p>
+</section>
+
+<!-- ================================================================
+     7. SVG
+     ================================================================ -->
+<section class="sec">
+  <h2>7 · SVG</h2>
+  <p class="lede">An authored inline SVG. Its explicit size is the artefact's size until fit
+    clamps it. It is the fourth container; the code path is identical.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>SVG lightbox</span><span class="grow"></span><span class="size">860 × 520</span></div>
+    <div class="stage">
+      <div class="mock-note">
+        <h3>Divider</h3>
+        <p>A schematic pasted as raw SVG into the note. It renders as authored and scales to the
+          measure.</p>
+        <div class="mock-card">an svg card in the reader</div>
+      </div>
+
+      <div class="mermaid-lightbox-overlay">
+        <div class="mermaid-lightbox-body">
+          <svg viewBox="0 0 620 300" width="620" height="300" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <line class="d-edge" x1="50" y1="90" x2="250" y2="90" stroke-width="2"></line>
+            <line class="d-edge" x1="370" y1="90" x2="570" y2="90" stroke-width="2"></line>
+            <line class="d-edge" x1="310" y1="150" x2="310" y2="230" stroke-width="2"></line>
+            <line class="d-edge" x1="250" y1="230" x2="370" y2="230" stroke-width="3"></line>
+            <line class="d-edge" x1="310" y1="230" x2="310" y2="264" stroke-width="2"></line>
+            <rect class="d-node" x="250" y="58" width="120" height="64" rx="4"></rect>
+            <text class="d-text" x="310" y="95" text-anchor="middle">10 kΩ</text>
+            <rect class="d-node-accent" x="270" y="188" width="80" height="42" rx="4"></rect>
+            <text class="d-text" x="310" y="214" text-anchor="middle">NTC</text>
+            <circle class="d-node" cx="310" cy="150" r="8"></circle>
+            <text class="d-muted" x="66" y="82">3V3</text>
+            <text class="d-muted" x="536" y="82">ADC0</text>
+            <text class="d-muted" x="322" y="146">PA1</text>
+            <text class="d-muted" x="322" y="256">GND</text>
+            <text class="d-muted" x="250" y="286">divider 1:1, 12-bit, 3.3 V ref</text>
+          </svg>
+        </div>
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">100%</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="callout">The clone strips inline styles, so nothing the sizing pass wrote can leak
+    in. The clone has no accessible name; exception E2 names the dialog, not the image.</p>
+</section>
+
+<!-- ================================================================
+     8. FOCUS — EXCEPTION E5
+     ================================================================ -->
+<section class="sec">
+  <h2>8 · Focus on a control</h2>
+  <p class="lede">No focus rule exists today, so a keyboard user cannot see the focused button.
+    Exception E5 adds a 2 px white outline at a 2 px offset: 3.36:1 in the worst case (pill over a
+    white diagram), 21:1 over a black one. It is the only visible pixel this document adds, and it
+    paints on <code>:focus-visible</code> only.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Pill — Zoom In focused</span><span class="grow"></span><span class="size">1:1</span></div>
+    <div class="spec">
+      <div class="spec-stage">
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">125%</span>
+          <button type="button" class="mlb-btn is-focus" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+      <dl>
+        <dt>outline</dt><dd>2px solid #ffffff</dd>
+        <dt>offset</dt><dd>2px</dd>
+        <dt>worst case</dt><dd>3.36:1 on #8c8c8c</dd>
+        <dt>Tab order</dt><dd>out → in → fit → close</dd>
+        <dt>percentage</dt><dd>not a Tab stop</dd>
+      </dl>
+      <p class="note">Exception E4 also moves focus to the close button on open, wraps Tab inside
+        the four controls, and returns focus to the opening card on close. No visual change beyond
+        this ring.</p>
+    </div>
+  </div>
+  <p class="callout"><b>Why white and not black:</b> <code>controls.md</code> proposes a black
+    ring. The pill composites to #8c8c8c over a white diagram and to #000 over a black one, so a
+    black ring vanishes on dark drawings. White clears 3:1 at both ends.</p>
+</section>
+
+<!-- ================================================================
+     9. NOT A TRIGGER — LOADING AND ERROR
+     ================================================================ -->
+<section class="sec">
+  <h2>9 · Loading and error — not triggers</h2>
+  <p class="lede">There is no loading, error or empty state inside the overlay, because those
+    states never produce a trigger. While a renderer runs, the fence is still a fence; when it
+    fails, the warn box is not one of the four container classes. Both are shown here as the
+    precondition, not as a lightbox.</p>
+
+  <div class="board board--wide" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Preconditions</span><span class="grow"></span><span class="size">two panels</span></div>
+    <div class="demo-grid" style="padding: var(--space-6); background: var(--surface-page);">
+      <div>
+        <p class="state-label"><i class="dot" style="width:6px;height:6px;border-radius:50%;background:var(--ok);display:inline-block;"></i><b>Loading</b> — the fence, click does nothing</p>
+        <pre class="fence"><span class="fence-label">mermaid</span>graph TD
+    A[fence] --&gt; B[render]
+    B --&gt; C{svg?}
+    C --&gt;|yes| D[clone]<button type="button" class="fence-copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        <p class="callout">The band is reserved in every fence, so the swap to a card never moves
+          the page. <code>content-blocks.md</code> §6.4.</p>
+      </div>
+      <div>
+        <p class="state-label"><i class="dot" style="width:6px;height:6px;border-radius:50%;background:var(--warn);display:inline-block;"></i><b>Error</b> — the warn box, click does nothing</p>
+        <div class="error-box">
+          <div class="error-head">Mermaid error: Parse error on line 2</div>
+          <pre class="error-source">graph TD
+    A[fence] --&gt; B(
+    B --&gt; C{svg?}</pre>
+        </div>
+        <p class="callout">The box has no <code>.mermaid-container</code> class, so the delegated
+          handler finds no container and returns. No overlay, no toast from here.</p>
+      </div>
+    </div>
+  </div>
+  <p class="callout"><b>The overlay is reachable only from a rendered card.</b> That is why it
+    needs no loading state and no error state of its own.</p>
+</section>
+
+<!-- ================================================================
+     10. PHONE — 390
+     ================================================================ -->
+<section class="sec">
+  <h2>10 · Phone — 390</h2>
+  <p class="lede">It opens. Nothing gates it: no viewport check in <code>lightbox.js</code>, no
+    phone rule for <code>.mermaid-lightbox-*</code>, and the delegated tap handler is the same
+    one. The chrome is unchanged, so the controls are ≈28 × 27 px and a zoomed diagram cannot be
+    panned or pinched.</p>
+
+  <div class="board board--phone" data-theme="dark">
+    <div class="board-head"><span class="dot"></span><span>Phone lightbox</span><span class="grow"></span><span class="size">390 × 600</span></div>
+    <div class="stage stage--phone">
+      <div class="mock-note" style="padding:16px 20px;">
+        <h3 style="font-size:16px;">Bench log</h3>
+        <p style="font-size:16px; line-height:1.65;">The rig ran six hours. The diagram is
+          width-fitted and the note scrolls.</p>
+        <div class="mock-card">card</div>
+      </div>
+
+      <div class="mermaid-lightbox-overlay">
+        <div class="mermaid-lightbox-body svg-fit">
+          <svg viewBox="0 0 300 200" width="300" height="200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+            <defs>
+              <marker id="arr-a5" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                <path class="d-arrow" d="M0,0 L9,4.5 L0,9 z"></path>
+              </marker>
+            </defs>
+            <rect class="d-node" x="24" y="22" width="112" height="46" rx="8"></rect>
+            <text class="d-text" x="80" y="50" text-anchor="middle">sample</text>
+            <rect class="d-node-accent" x="176" y="22" width="100" height="46" rx="8"></rect>
+            <text class="d-text" x="226" y="50" text-anchor="middle">store</text>
+            <rect class="d-node" x="24" y="126" width="252" height="46" rx="8"></rect>
+            <text class="d-text" x="150" y="154" text-anchor="middle">render</text>
+            <line class="d-edge" x1="136" y1="45" x2="170" y2="45" marker-end="url(#arr-a5)"></line>
+            <path class="d-edge" d="M226 68 V 96 H 80 V 120" marker-end="url(#arr-a5)"></path>
+          </svg>
+        </div>
+        <div class="mermaid-lightbox-controls">
+          <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+          <span class="mlb-zoom-pct">Fit</span>
+          <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+          <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+          <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="callout"><b>The pill keeps its desktop size.</b> 60/40 body padding leaves 310 px for
+    the artefact. Tapping works on all four buttons and a tap outside closes; there is no touch
+    pan, no pinch, and no keyboard fallback. Proposals P2 and P3 change this, not this pass.</p>
+</section>
+
+<!-- ================================================================
+     11. LIGHT
+     ================================================================ -->
+<div class="section-light">
+  <section class="sec">
+    <h2>11 · Light — the chrome does not change</h2>
+    <p class="lede">The overlay is theme-invariant: the same scrim, the same pill, the same white
+      text and the same percentage alpha. Only the artefact carries a theme. These boards are here
+      to prove that, not to show a second design.</p>
+
+    <div class="board board--wide" data-theme="light">
+      <div class="board-head"><span class="dot"></span><span>Mermaid lightbox — light</span><span class="grow"></span><span class="size">860 × 520</span></div>
+      <div class="stage">
+        <div class="mock-note">
+          <h3>Read path</h3>
+          <p>The note behind is light; the scrim still dims it. The pill and its text are
+            unchanged from the dark board.</p>
+          <div class="mock-card">a diagram card in the reader</div>
+        </div>
+
+        <div class="mermaid-lightbox-overlay">
+          <div class="mermaid-lightbox-body">
+            <svg viewBox="0 0 560 320" width="520" height="297" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <defs>
+                <marker id="arr-a6" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                  <path class="d-arrow" d="M0,0 L9,4.5 L0,9 z"></path>
+                </marker>
+              </defs>
+              <rect class="d-node" x="24" y="36" width="150" height="50" rx="8"></rect>
+              <text class="d-text" x="99" y="66" text-anchor="middle">fence</text>
+              <rect class="d-node" x="222" y="36" width="150" height="50" rx="8"></rect>
+              <text class="d-text" x="297" y="66" text-anchor="middle">render</text>
+              <polygon class="d-node-accent" points="474,28 544,61 474,94 404,61"></polygon>
+              <text class="d-text" x="474" y="66" text-anchor="middle">svg?</text>
+              <rect class="d-node" x="222" y="146" width="150" height="50" rx="8"></rect>
+              <text class="d-text" x="297" y="176" text-anchor="middle">clone</text>
+              <rect class="d-node-accent" x="222" y="246" width="150" height="50" rx="8"></rect>
+              <text class="d-text" x="297" y="276" text-anchor="middle">overlay</text>
+              <line class="d-edge" x1="174" y1="61" x2="216" y2="61" marker-end="url(#arr-a6)"></line>
+              <line class="d-edge" x1="372" y1="61" x2="398" y2="61" marker-end="url(#arr-a6)"></line>
+              <line class="d-edge" x1="474" y1="94" x2="474" y2="171" marker-end="url(#arr-a6)"></line>
+              <path class="d-edge" d="M474 171 H 378" marker-end="url(#arr-a6)"></path>
+              <line class="d-edge" x1="297" y1="196" x2="297" y2="240" marker-end="url(#arr-a6)"></line>
+            </svg>
+          </div>
+          <div class="mermaid-lightbox-controls">
+            <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+            <span class="mlb-zoom-pct">100%</span>
+            <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+            <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+            <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">The percentage is still 75 % white and still fails on a light drawing.
+      <b>P1</b> is a contrast fix, not a theme rule.</p>
+
+    <div class="board board--wide" data-theme="light" style="margin-top: var(--space-4);">
+      <div class="board-head"><span class="dot"></span><span>WaveDrom lightbox — light</span><span class="grow"></span><span class="size">860 × 520</span></div>
+      <div class="stage" style="height: 420px;">
+        <div class="mock-note">
+          <h3>SPI timing</h3>
+          <p>A white plot in a light note; the artefact is identical in both themes.</p>
+        </div>
+
+        <div class="mermaid-lightbox-overlay">
+          <div class="mermaid-lightbox-body">
+            <svg viewBox="0 0 640 220" width="640" height="220" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <rect class="wd-bg" x="0" y="0" width="640" height="220"></rect>
+              <text class="wd-label" x="16" y="58">clk</text>
+              <text class="wd-label" x="16" y="110">cs</text>
+              <text class="wd-label" x="16" y="162">mosi</text>
+              <path class="wd-line" d="M70 52 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20 v-20 h20 v20 h20"></path>
+              <path class="wd-line" d="M70 96 h400 v20 h120"></path>
+              <path class="wd-line" d="M70 146 h24 v20 h40 v-20 h56 v20 h48 v-20 h64 v20 h40 v-20 h72 v20 h48 v-20 h64 v20 h24"></path>
+              <g class="wd-text">
+                <text x="76" y="80">0</text><text x="186" y="80">1</text><text x="296" y="80">0</text>
+                <text x="406" y="80">1</text><text x="516" y="80">0</text>
+              </g>
+            </svg>
+          </div>
+          <div class="mermaid-lightbox-controls">
+            <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+            <span class="mlb-zoom-pct">Fit</span>
+            <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+            <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+            <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="board board--phone" data-theme="light" style="margin-top: var(--space-4);">
+      <div class="board-head"><span class="dot"></span><span>Phone lightbox — light</span><span class="grow"></span><span class="size">390 × 600</span></div>
+      <div class="stage stage--phone">
+        <div class="mock-note" style="padding:16px 20px;">
+          <h3 style="font-size:16px;">Bench log</h3>
+          <p style="font-size:16px; line-height:1.65;">Same overlay, same pill, same targets.</p>
+        </div>
+
+        <div class="mermaid-lightbox-overlay">
+          <div class="mermaid-lightbox-body svg-fit">
+            <svg viewBox="0 0 300 200" width="300" height="200" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <rect class="d-node" x="24" y="22" width="112" height="46" rx="8"></rect>
+              <text class="d-text" x="80" y="50" text-anchor="middle">sample</text>
+              <rect class="d-node-accent" x="176" y="22" width="100" height="46" rx="8"></rect>
+              <text class="d-text" x="226" y="50" text-anchor="middle">store</text>
+              <rect class="d-node" x="24" y="126" width="252" height="46" rx="8"></rect>
+              <text class="d-text" x="150" y="154" text-anchor="middle">render</text>
+            </svg>
+          </div>
+          <div class="mermaid-lightbox-controls">
+            <button type="button" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+            <span class="mlb-zoom-pct">Fit</span>
+            <button type="button" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+            <button type="button" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+            <button type="button" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout"><b>Nothing in this section is a second design.</b> It is the same six
+      rules, shown on a light page so the theme-invariance is visible.</p>
+  </section>
+</div>
+
+<footer class="legacy" style="color:#8b8d98; font-size: var(--text-sm); max-width: 90ch;">
+  <p>Values are the shipped ones from <code>static/css/style.css:3660-3759</code> and
+    <code>templates/index.html:1792-1848</code>. The only addition drawn here is E5, the focus
+    ring; the phone board shows the shipped 28 px controls as they are. Proposed changes — the
+    darker pill, the 44 px phone controls, touch pan — are in
+    <code>docs/ui/lightboxes.md</code> §10 and are not drawn.</p>
+</footer>
+
+</div>
+</body>
+</html>

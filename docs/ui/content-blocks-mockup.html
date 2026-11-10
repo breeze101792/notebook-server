@@ -1,0 +1,1627 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Content blocks — reference mockup</title>
+<style>
+/* ==================================================================
+   Tokens. Every value is a literal. No token aliases another token.
+   Theme values are the shipped stylesheet values; where foundations
+   §3.6 proposes a change, the shipped value is kept and the change is
+   in docs/ui/content-blocks.md §12.
+   ================================================================== */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-prose: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --dur-0: 100ms;
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 220ms;
+  --dur-4: 380ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: ease-out;
+  --ease-linear: linear;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+  --icon-xl: 22px;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  --z-inline: 2;
+  --z-popover: 1000;
+
+  /* Content-block component tokens (docs §10.2). Literals only. */
+  --content-block-gap: .7em;
+  --content-pre-pad-block: 14px;
+  --content-pre-pad-inline: 16px;
+  --content-pre-band: 22px;
+  --content-code-pad: 1em;
+  --content-code-size: .88em;
+  --content-code-line: 1.5;
+  --content-copy-size: .76rem;
+  --content-copy-pad-block: 4px;
+  --content-copy-pad-inline: 8px;
+  --content-copy-offset: 6px;
+  --content-band-copy-top: 1px;
+  --content-band-copy-right: 10px;
+  --content-label-size: .72em;
+  --content-label-line: 1.2;
+  --content-label-top: 6px;
+  --content-label-left: 16px;
+  --content-label-offset: 96px;
+  --content-cell-pad-block: 6px;
+  --content-cell-pad-inline: 10px;
+  --content-card-pad-block: 14px;
+  --content-card-pad-inline: 16px;
+  --content-error-head-size: .86rem;
+  --content-error-head-pad-block: 6px;
+  --content-error-head-pad-inline: 12px;
+  --content-source-size: .85rem;
+  --content-source-pad-block: 10px;
+  --content-source-pad-inline: 12px;
+  --content-source-line: 1.4;
+  --content-tv-toggle: 24px;
+  --content-tv-gap: 6px;
+  --content-tv-toolbar-pad: 2px;
+  --content-tv-toolbar-gap: 2px;
+  --content-tv-btn-size: .76rem;
+  --content-tv-btn-pad-block: 2px;
+  --content-tv-btn-pad-inline: 8px;
+  --content-tv-item-size: .8rem;
+  --content-tv-item-pad-block: 4px;
+  --content-tv-item-pad-inline: 8px;
+  --content-tv-pop-min: 180px;
+  --content-tv-pop-max: 320px;
+  --content-tv-pop-pad: 4px;
+  --content-tv-shadow: 0 6px 24px rgba(0, 0, 0, .35);
+  --content-tv-menu-icon: 16px;
+  --content-tv-menu-gap: 6px;
+  --content-tv-menu-radius: 3px;
+  --content-tv-menu-size: .7rem;
+  --content-tv-note-size: .74rem;
+  --content-tv-note-pad-block: 2px;
+  --content-tv-note-pad-inline: 8px;
+  --content-tv-z: 7;
+  --content-tv-pop-z: 8;
+  --content-html-default: 260px;
+  --content-html-min: 80px;
+  --content-list-indent: 1.6em;
+
+  /* Mockup page chrome, not app tokens. */
+  --doc-canvas: #0f1014;
+  --doc-canvas-light: #eef1f5;
+  --doc-max: 1280px;
+  --doc-pad: 32px;
+}
+
+[data-theme="dark"] {
+  --surface-page: #1a1b1f;
+  --surface-panel: #22232a;
+  --surface-raised: #2a2b34;
+  --surface-well: #14151a;
+  --text-primary: #e6e6ea;
+  --text-muted: #9799a4;
+  --text-on-accent: #14151a;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --warn: #f3b454;
+  --danger: #ff6b6b;
+  --ok: #5fd49a;
+  --focus-ring: 2px solid #7c9cff;
+
+  /* Vendored highlight.js — GitHub Dark. */
+  --hl-base: #c9d1d9;
+  --hl-keyword: #ff7b72;
+  --hl-string: #a5d6ff;
+  --hl-number: #79c0ff;
+  --hl-title: #d2a8ff;
+  --hl-builtin: #ffa657;
+  --hl-comment: #8b949e;
+}
+
+[data-theme="light"] {
+  --surface-page: #ffffff;
+  --surface-panel: #f6f7f9;
+  --surface-raised: #eceef2;
+  --surface-well: #f0f2f5;
+  --text-primary: #1f2330;
+  --text-muted: #5d6470;
+  --text-on-accent: #ffffff;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --warn: #8a5a0b;
+  --danger: #c0392b;
+  --ok: #16703f;
+  --focus-ring: 2px solid #2f5fd0;
+
+  /* Vendored highlight.js — GitHub light. */
+  --hl-base: #24292e;
+  --hl-keyword: #d73a49;
+  --hl-string: #032f62;
+  --hl-number: #005cc5;
+  --hl-title: #6f42c1;
+  --hl-builtin: #e36209;
+  --hl-comment: #6a737d;
+}
+
+/* ==================================================================
+   Mockup page chrome
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  background: var(--doc-canvas);
+  color: #e6e6ea;
+  font: var(--text-body)/var(--lh-normal) var(--font-ui);
+}
+.page { max-width: var(--doc-max); margin: 0 auto; padding: var(--doc-pad); }
+.page-head { padding: var(--space-6) 0 var(--space-7); }
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: #8b8d98;
+}
+.page-head h1 { margin: 0 0 var(--space-3); font-size: 28px; line-height: var(--lh-tight); font-weight: var(--fw-heading); }
+.page-head .lede { margin: 0; max-width: 76ch; color: #b9bcc7; font-size: var(--text-ui-lg); line-height: var(--lh-prose); }
+.page-head code { font-family: var(--font-mono); font-size: .88em; background: #22232a; border: 1px solid #383a45; border-radius: var(--radius-xs); padding: 1px 4px; }
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+.legend span { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); color: #8b8d98; }
+.legend i { width: 8px; height: 8px; border-radius: var(--radius-circle); background: #7c9cff; display: inline-block; }
+.legend i.warn { background: #f3b454; }
+.legend i.ok { background: #5fd49a; }
+
+.sec { margin: 0 0 var(--space-8); }
+.sec > h2 { margin: 0 0 var(--space-2); font-size: 20px; line-height: var(--lh-tight); font-weight: var(--fw-semibold); color: #e6e6ea; }
+.sec > .lede { margin: 0 0 var(--space-4); max-width: 90ch; color: #a6a9b4; font-size: var(--text-ui); line-height: var(--lh-prose); }
+.sec > .lede code { font-family: var(--font-mono); font-size: .9em; color: #d6d8e0; }
+
+.board {
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+}
+.board + .board { margin-top: var(--space-4); }
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.board-head .dot { width: 6px; height: 6px; border-radius: var(--radius-circle); background: var(--accent); }
+.board-head .grow { flex: 1 1 auto; }
+.board-head .size { font-weight: var(--fw-regular); color: var(--text-muted); }
+.board-body { padding: var(--space-6); }
+.board--861 { width: 861px; max-width: 100%; }
+.board--810 { width: 810px; max-width: 100%; }
+.board--phone { width: 390px; max-width: 100%; }
+
+.section-light {
+  background: var(--doc-canvas-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-7);
+  margin: 0 0 var(--space-8);
+}
+.section-light .sec > h2 { color: #1f2330; }
+.section-light .sec > .lede { color: #5d6470; }
+.section-light .board { border-color: #d8dde4; box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
+.section-light .board-head { background: #f6f7f9; border-bottom-color: #d8dde4; color: #5d6470; }
+.section-light .board-head .size { color: #5d6470; }
+.section-light .callout { color: #5d6470; }
+.section-light .callout code { color: #5d6470; }
+.section-light .state-label { color: #5d6470; }
+.section-light .state-label b { color: #1f2330; }
+
+.demo-stack { display: flex; flex-direction: column; gap: var(--space-6); }
+.demo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
+.demo-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.demo { min-width: 0; }
+.state-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: #8b8d98;
+}
+.state-label b { color: #b9bcc7; font-weight: var(--fw-semibold); letter-spacing: 0; text-transform: none; font-size: var(--text-sm); }
+.state-label code { text-transform: none; letter-spacing: 0; }
+.callout {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  color: #8b8d98;
+}
+.callout code { font-family: var(--font-mono); font-size: .92em; color: #b9bcc7; }
+.rule-note {
+  border-left: var(--stroke-3) solid #383a45;
+  padding: var(--space-1) 0 var(--space-1) var(--space-3);
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-sm);
+  color: #8b8d98;
+}
+
+/* ==================================================================
+   Reader prose (the blocks sit inside this)
+   ================================================================== */
+.reader {
+  color: var(--text-primary);
+  font-family: var(--font-prose);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  overflow-wrap: break-word;
+}
+.reader--861 { padding: 16px 40px 48px; }
+.reader--phone {
+  padding: 16px 20px calc(56px + 24px);
+  font-size: 16px;
+  line-height: var(--lh-prose);
+}
+.prose > :first-child { margin-top: 0; }
+.prose p { margin: var(--content-block-gap) 0; }
+.prose h1 {
+  margin: 1.4em 0 .5em;
+  padding-bottom: .2em;
+  font-size: 1.9em;
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-heading);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.prose h2 { margin: 1.4em 0 .5em; font-size: 1.5em; line-height: 1.25; font-weight: var(--fw-heading); }
+.prose h3 { margin: 1.4em 0 .5em; font-size: 1.25em; line-height: 1.3; font-weight: var(--fw-heading); }
+.prose a { color: var(--accent); text-underline-offset: 2px; }
+.prose ul, .prose ol { margin: var(--content-block-gap) 0; padding-left: var(--content-list-indent); }
+.prose li { margin: .15em 0; }
+.prose strong { font-weight: var(--fw-semibold); }
+.prose .muted { color: var(--text-muted); }
+.prose .literal {
+  font-family: var(--font-mono);
+  font-size: .9em;
+  background: var(--surface-well);
+  border-radius: var(--radius-xs);
+  padding: .12em .4em;
+}
+.reader--phone p { margin: .85em 0; }
+.reader--phone h1 { font-size: 1.7em; }
+.reader--phone h2 { font-size: 1.4em; }
+
+/* The phone shell is 390 px; the mode query is the viewport's, not the
+   board's, so the phone board carries the phone overrides explicitly. */
+.reader--phone .fence { padding: 12px 14px; font-size: 13px; }
+.reader--phone .fence.has-code { padding: 44px 14px 12px; }
+.reader--phone .fence[data-fence-lang]:not([data-fence-lang=""])::after {
+  top: 13px; left: 14px;
+}
+.reader--phone .copy {
+  top: 0; right: 0;
+  width: var(--control-h-touch); height: var(--control-h-touch);
+  padding: 0; opacity: 1; font-size: 12px;
+}
+.reader--phone .fence.has-code > .copy { top: 0; right: 0; }
+.reader--phone .copy--img { padding: 0; }
+.reader--phone .table-scroll { border-radius: var(--radius-md); }
+
+/* ==================================================================
+   Code fences
+   ================================================================== */
+.fence {
+  position: relative;
+  margin: var(--content-block-gap) 0;
+  padding: var(--content-pre-pad-block) var(--content-pre-pad-inline);
+  background: var(--surface-well);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
+}
+.fence.has-code {
+  padding-top: var(--content-pre-band);
+}
+.fence code {
+  display: block;
+  padding: var(--content-code-pad);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--content-code-size);
+  line-height: var(--content-code-line);
+  color: var(--hl-base);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
+}
+.fence[data-fence-lang]:not([data-fence-lang=""])::after {
+  content: attr(data-fence-lang);
+  position: absolute;
+  top: var(--content-label-top);
+  left: var(--content-label-left);
+  max-width: calc(100% - var(--content-label-offset));
+  font: var(--content-label-size)/var(--content-label-line) var(--font-mono);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+}
+.hl-kw { color: var(--hl-keyword); }
+.hl-str { color: var(--hl-string); }
+.hl-num { color: var(--hl-number); }
+.hl-title { color: var(--hl-title); }
+.hl-builtin { color: var(--hl-builtin); }
+.hl-com { color: var(--hl-comment); }
+
+.copy {
+  position: absolute;
+  top: var(--content-copy-offset);
+  right: var(--content-copy-offset);
+  z-index: var(--z-inline);
+  font-family: var(--font-ui);
+  font-size: var(--content-copy-size);
+  line-height: var(--lh-flat);
+  padding: var(--content-copy-pad-block) var(--content-copy-pad-inline);
+  border-radius: var(--radius-xs);
+  border: var(--stroke-1) solid var(--border);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-1) var(--ease-out),
+              background var(--dur-1) var(--ease-out),
+              color var(--dur-1) var(--ease-out);
+  user-select: none;
+}
+.fence.has-code > .copy {
+  top: var(--content-band-copy-top);
+  right: var(--content-band-copy-right);
+}
+.fence:hover > .copy,
+.fence:focus-within > .copy,
+.card:hover > .copy,
+.card:focus-within > .copy,
+.copy:focus,
+.copy:focus-visible,
+.copy.is-hover,
+.fence.is-hover > .copy,
+.card.is-hover > .copy { opacity: 1; }
+.copy:hover, .copy.is-hover { background: var(--accent-soft); color: var(--text-primary); }
+.copy.copied { color: var(--accent); border-color: var(--accent); }
+.copy--img {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-1);
+  line-height: 0;
+}
+.icon { width: var(--icon-md); height: var(--icon-md); display: block; }
+.icon * { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Error fence */
+.error {
+  margin: var(--content-block-gap) 0;
+  border: var(--stroke-1) solid var(--warn);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.error-head {
+  background: var(--warn);
+  color: var(--surface-page);
+  font-size: var(--content-error-head-size);
+  font-weight: var(--fw-semibold);
+  padding: var(--content-error-head-pad-block) var(--content-error-head-pad-inline);
+}
+.src {
+  position: relative;
+  margin: var(--content-block-gap) 0;
+  padding: var(--content-pre-pad-block) var(--content-pre-pad-inline);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: var(--content-source-size);
+  line-height: var(--content-source-line);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: clip;
+}
+
+/* ==================================================================
+   Tables
+   ================================================================== */
+.table-stage { position: relative; }
+.table-scroll {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: var(--content-block-gap) 0;
+  overscroll-behavior-x: contain;
+}
+.table-scroll th,
+.table-scroll td {
+  border: var(--stroke-1) solid var(--border);
+  padding: var(--content-cell-pad-block) var(--content-cell-pad-inline);
+  vertical-align: top;
+}
+.table-scroll thead th { font-weight: var(--fw-bold); background: transparent; }
+.table-scroll tbody tr:nth-child(odd) { background: var(--surface-panel); }
+.table-scroll tbody tr:nth-child(even) { background: var(--surface-page); }
+.table-scroll .num { text-align: right; font-variant-numeric: tabular-nums; }
+.table-scroll .mono { font-family: var(--font-mono); font-size: .94em; }
+.table-scroll thead th { cursor: pointer; }
+
+/* header menu icon */
+.head-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--content-tv-menu-icon);
+  height: var(--content-tv-menu-icon);
+  vertical-align: middle;
+  visibility: hidden;
+  margin-left: var(--content-tv-menu-gap);
+  padding: 0;
+  border-radius: var(--content-tv-menu-radius);
+  color: var(--text-muted);
+  font-size: var(--content-tv-menu-size);
+  line-height: var(--lh-flat);
+  cursor: pointer;
+}
+th:hover .head-menu,
+th:focus-within .head-menu,
+th.sorted .head-menu,
+th.is-open .head-menu { visibility: visible; }
+th .head-menu:hover,
+th.is-open .head-menu { background: var(--accent-soft); color: var(--text-primary); }
+th.sorted .head-menu { color: var(--accent); }
+th[aria-sort="ascending"] .head-menu { transform: rotate(180deg); }
+th[aria-sort="descending"] .head-menu { transform: rotate(0deg); }
+
+/* selection */
+.nb-ts-range { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* preview controls */
+.tv-controls {
+  position: absolute;
+  left: calc(-1 * (var(--content-tv-toggle) + var(--content-tv-gap)));
+  top: var(--space-2);
+  z-index: var(--content-tv-z);
+  display: flex;
+  align-items: center;
+  gap: var(--content-tv-gap);
+}
+.tv-toggle {
+  width: var(--content-tv-toggle);
+  height: var(--content-tv-toggle);
+  padding: 0;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--content-tv-item-size);
+  line-height: var(--lh-flat);
+  cursor: pointer;
+}
+.tv-toggle:hover { background: var(--accent-soft); color: var(--text-primary); }
+.tv-toggle:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.tv-toolbar {
+  display: flex;
+  gap: var(--content-tv-toolbar-gap);
+  padding: var(--content-tv-toolbar-pad);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--content-tv-shadow);
+}
+.tv-btn {
+  padding: var(--content-tv-btn-pad-block) var(--content-tv-btn-pad-inline);
+  border: var(--stroke-1) solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: var(--content-tv-btn-size);
+  line-height: var(--lh-normal);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tv-btn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.tv-btn:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.tv-pop {
+  position: absolute;
+  z-index: var(--content-tv-pop-z);
+  min-width: var(--content-tv-pop-min);
+  max-height: var(--content-tv-pop-max);
+  overflow: auto;
+  padding: var(--content-tv-pop-pad);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--content-tv-shadow);
+}
+.tv-pop--rows { top: 38px; left: calc(-1 * (var(--content-tv-toggle) + var(--content-tv-gap))); }
+.tv-pop--col { top: 34px; left: 288px; }
+.tv-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--content-tv-item-pad-block) var(--content-tv-item-pad-inline);
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--content-tv-item-size);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tv-item:hover { background: var(--accent-soft); }
+.tv-item:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }
+.tv-item.is-check input { margin: 0; accent-color: var(--accent); }
+.tv-item[role="menuitemradio"]::before {
+  content: "\2713";
+  color: var(--accent);
+  visibility: hidden;
+}
+.tv-item[role="menuitemradio"][aria-checked="true"]::before { visibility: visible; }
+.tv-empty { padding: var(--space-1) var(--space-2); color: var(--text-muted); font-size: var(--content-tv-item-size); }
+.tv-note {
+  position: absolute;
+  z-index: var(--content-tv-z);
+  padding: var(--content-tv-note-pad-block) var(--content-tv-note-pad-inline);
+  font-size: var(--content-tv-note-size);
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xs);
+  pointer-events: none;
+  white-space: nowrap;
+}
+tr.nb-tv-hide-row { display: none; }
+.nb-tv-hide-col { display: none; }
+
+/* ==================================================================
+   Figures and images
+   ================================================================== */
+.prose figure { margin: var(--content-block-gap) 0; }
+.prose figure img { max-width: 100%; }
+.prose figcaption { color: var(--text-primary); font-size: 1rem; line-height: var(--lh-normal); }
+.prose p > img { max-width: 100%; }
+.broken {
+  display: inline-block;
+  padding: var(--space-1) var(--space-2);
+  border: var(--stroke-1) dashed var(--border-strong);
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+/* ==================================================================
+   Math
+   ================================================================== */
+.katex-container {
+  position: relative;
+  margin: var(--content-block-gap) 0;
+  padding: var(--content-card-pad-block) var(--content-card-pad-inline);
+  background: var(--surface-panel);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.katex-display {
+  display: block;
+  margin: 0;
+  max-width: 100%;
+  text-align: center;
+  font-family: "Cambria Math", "Times New Roman", serif;
+  font-size: 1.21em;
+  line-height: 1.2;
+}
+.katex { display: inline-block; text-align: center; }
+.math { font-style: italic; }
+.math .op { font-style: normal; padding: 0 .12em; }
+.math .big { font-size: 1.55em; font-style: normal; vertical-align: -.08em; }
+.frac {
+  display: inline-flex;
+  flex-direction: column;
+  vertical-align: middle;
+  text-align: center;
+  font-size: .92em;
+  line-height: 1.05;
+  margin: 0 .12em;
+}
+.frac .num { border-bottom: 1px solid currentColor; padding: 0 .18em; }
+.frac .den { padding: 0 .18em; }
+.math sup { font-size: .7em; }
+.katex-display .copy { font-family: var(--font-ui); font-style: normal; }
+.katex-error {
+  margin: var(--content-block-gap) 0;
+  border: var(--stroke-1) solid var(--warn);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+/* ==================================================================
+   Diagram cards
+   ================================================================== */
+.card {
+  position: relative;
+  margin: var(--content-block-gap) 0;
+  padding: var(--content-card-pad-block) var(--content-card-pad-inline);
+  background: var(--surface-panel);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  text-align: center;
+  overflow: hidden;
+  cursor: zoom-in;
+}
+.card--wavedrom { background: #fff; }
+.card .figure { display: block; width: 100%; max-width: 100%; text-align: center; }
+.card svg.diagram { display: inline-block; max-width: 100%; height: auto; width: auto; }
+.card--svg svg.diagram { display: block; margin: 0 auto; }
+.card--math { text-align: left; cursor: default; }
+.card--html { padding: 0; cursor: default; }
+.card .copy { cursor: pointer; }
+
+.d-node { fill: var(--surface-raised); stroke: var(--border-strong); }
+.d-node-accent { fill: var(--accent-soft); stroke: var(--accent); }
+.d-edge { stroke: var(--text-muted); fill: none; }
+.d-arrow { fill: var(--text-muted); }
+.d-text { fill: var(--text-primary); font-family: var(--font-ui); font-size: 12px; }
+.d-muted { fill: var(--text-muted); font-family: var(--font-ui); font-size: 11px; }
+.d-wave { stroke: #333; fill: none; }
+.d-wave-text { fill: #333; font-family: var(--font-mono); font-size: 11px; }
+.d-grid { stroke: #d8dde4; }
+.d-badge { fill: var(--accent); }
+.d-badge-text { fill: var(--text-on-accent); font-family: var(--font-ui); font-size: 11px; font-weight: 600; }
+
+/* ==================================================================
+   Live HTML
+   ================================================================== */
+.html-frame {
+  display: block;
+  width: 100%;
+  border: 0;
+  background: #fff;
+  resize: vertical;
+  overflow: hidden;
+  min-height: var(--content-html-min);
+}
+.html-inner {
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #1f2330;
+  padding: 12px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+}
+.demo-card {
+  width: 260px;
+  padding: 16px;
+  border: 1px solid #d8dde4;
+  border-radius: 10px;
+  background: #fff;
+  text-align: center;
+}
+.demo-card h3 { margin: 0 0 6px; font-size: 15px; }
+.demo-card p { margin: 0 0 12px; color: #5d6470; font-size: 13px; }
+.demo-card button {
+  border: 1px solid #2f5fd0;
+  border-radius: 6px;
+  background: #2f5fd0;
+  color: #fff;
+  padding: 6px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+.demo-card .out { margin-top: 10px; font-variant-numeric: tabular-nums; color: #2f5fd0; }
+
+/* ==================================================================
+   Small screens for the mockup itself
+   ================================================================== */
+@media (max-width: 900px) {
+  .page { padding: var(--space-4); }
+  .board--861, .board--810 { width: 100%; }
+  .reader--861 { padding: 16px 20px 32px; }
+  .demo-grid, .demo-grid--3 { grid-template-columns: 1fr; }
+  .section-light { padding: var(--space-4); }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header class="page-head">
+  <p class="eyebrow">Notebook · UI design · content blocks</p>
+  <h1>Rendered content, codified</h1>
+  <p class="lede">The shipped look, not a redesign: code fences, tables, figures, math,
+    diagram cards and the <code>html-live</code> sandbox. Dark is the full set. Light
+    repeats the reader and the block set so every token pair is visible. Boards are the
+    a wide desktop reader and the phone (390). The real 861 viewport is narrower; the shell doc owns that width.</p>
+  <div class="legend">
+    <span><i></i> ready</span>
+    <span><i class="ok"></i> loading = the source fence</span>
+    <span><i class="warn"></i> error / unavailable</span>
+    <span>Annotations are outside the blocks.</span>
+  </div>
+</header>
+
+<!-- ================================================================
+     1. RHYTHM — wide desktop reader
+     ================================================================ -->
+<section class="sec">
+  <h2>1 · Block rhythm — wide desktop reader</h2>
+  <p class="lede">Every block carries the same <code>.7em</code> margin. The first child
+    drops its top margin; the last block keeps its bottom margin inside the 48 px reader
+    tail. Nothing here is a special case.</p>
+
+  <div class="board board--861">
+    <div class="board-head"><span class="dot"></span><span>Reader — mixed note</span><span class="grow"></span><span class="size">wide × auto</span></div>
+    <div class="reader reader--861 prose">
+
+      <h1>Bench log — 9 November</h1>
+      <p>The DS18B20 rig ran for six hours on the 3V3 rail. The sensor is the only device on
+        the bus, so the read path can skip the ROM search. The result is a signed 12-bit
+        value in sixteenths of a degree.</p>
+
+      <h2>Read path</h2>
+      <p>Convert, wait 750 ms, then read the nine-byte scratchpad. The power gate stays on
+        for the whole run.</p>
+
+      <pre class="fence has-code" data-fence-lang="c"><code><span class="hl-kw">static</span> <span class="hl-kw">int</span> <span class="hl-title">ds18b20_read</span>(<span class="hl-kw">int</span> bus, <span class="hl-kw">int16_t</span> *out_c)
+{
+    <span class="hl-kw">uint8_t</span> scratch[<span class="hl-num">9</span>];
+
+    <span class="hl-kw">if</span> (ow_reset(bus) != <span class="hl-num">0</span>)
+        <span class="hl-kw">return</span> -ENODEV;
+
+    ow_write_byte(bus, <span class="hl-num">0xCC</span>);      <span class="hl-com">/* skip ROM */</span>
+    ow_write_byte(bus, <span class="hl-num">0x44</span>);      <span class="hl-com">/* convert T */</span>
+    k_sleep(K_MSEC(<span class="hl-num">750</span>));
+
+    ow_reset(bus);
+    ow_write_byte(bus, <span class="hl-num">0xCC</span>);
+    ow_write_byte(bus, <span class="hl-num">0xBE</span>);      <span class="hl-com">/* read scratchpad */</span>
+    <span class="hl-kw">for</span> (<span class="hl-kw">int</span> i = <span class="hl-num">0</span>; i &lt; <span class="hl-num">9</span>; i++)
+        scratch[i] = ow_read_byte(bus);
+
+    *out_c = (<span class="hl-kw">int16_t</span>)(scratch[<span class="hl-num">0</span>] | (scratch[<span class="hl-num">1</span>] &lt;&lt; <span class="hl-num">8</span>)) / <span class="hl-num">16</span>;
+    <span class="hl-kw">return</span> <span class="hl-num">0</span>;
+}</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+
+      <p>The five runs below are the same rig after a re-flow. Sort and hide are review
+        state only; they never reach the note.</p>
+
+      <table class="table-scroll">
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Sensor</th>
+            <th class="num">Temp (°C)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">B-104</td><td>DS18B20</td><td class="num">21.4</td><td>pass</td></tr>
+          <tr><td class="mono">B-105</td><td>DS18B20</td><td class="num">21.2</td><td>pass</td></tr>
+          <tr><td class="mono">B-106</td><td>TMP117</td><td class="num">22.0</td><td>pass</td></tr>
+          <tr><td class="mono">B-107</td><td>TMP117</td><td class="num">22.6</td><td>drift</td></tr>
+          <tr><td class="mono">B-108</td><td>DS18B20</td><td class="num">21.1</td><td>pass</td></tr>
+        </tbody>
+      </table>
+
+      <figure>
+        <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MjAiIGhlaWdodD0iMjYwIiB2aWV3Qm94PSIwIDAgNzIwIDI2MCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJCZW5jaCB0ZW1wZXJhdHVyZSBvdmVyIHNpeCBob3VycyI+CjxyZWN0IHdpZHRoPSI3MjAiIGhlaWdodD0iMjYwIiBmaWxsPSIjZjZmN2Y5Ii8+CjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Q4ZGRlNCIgc3Ryb2tlLXdpZHRoPSIxIj4KPHBhdGggZD0iTTY0IDI0VjIxMkg2OTYiLz4KPHBhdGggZD0iTTY0IDE2NEg2OTYiLz48cGF0aCBkPSJNNjQgMTE2SDY5NiIvPjxwYXRoIGQ9Ik02NCA2OEg2OTYiLz4KPC9nPgo8ZyBmaWxsPSIjNWQ2NDcwIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIj4KPHRleHQgeD0iMTgiIHk9IjIxNiI+MTg8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjE2OCI+MjA8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjEyMCI+MjI8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjcyIj4yNDwvdGV4dD4KPHRleHQgeD0iNjAiIHk9IjIzNiI+MDk6MDA8L3RleHQ+PHRleHQgeD0iMjUwIiB5PSIyMzYiPjExOjAwPC90ZXh0Pjx0ZXh0IHg9IjQ0NCIgeT0iMjM2Ij4xMzowMDwvdGV4dD48dGV4dCB4PSI2MzYiIHk9IjIzNiI+MTU6MDA8L3RleHQ+Cjx0ZXh0IHg9IjY0IiB5PSIxNiIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzFmMjMzMCI+QmVuY2ggdGVtcGVyYXR1cmUsIGRlZyBDPC90ZXh0Pgo8L2c+Cjxwb2x5bGluZSBmaWxsPSJub25lIiBzdHJva2U9IiMyZjVmZDAiIHN0cm9rZS13aWR0aD0iMi41IiBwb2ludHM9IjY0LDE1MCAxMjAsMTQ2IDE3NiwxMzggMjMyLDEzMiAyODgsMTI4IDM0NCwxMjQgNDAwLDEyMCA0NTYsMTEyIDUxMiwxMDggNTY4LDEwNCA2MjQsMTAwIDY4MCw5NiIvPgo8cG9seWxpbmUgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYzk4MzFkIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1kYXNoYXJyYXk9IjUgNCIgcG9pbnRzPSI2NCwxNjAgMTIwLDE1OCAxNzYsMTUwIDIzMiwxNDQgMjg4LDE0MiAzNDQsMTQwIDQwMCwxMzggNDU2LDEzMCA1MTIsMTI2IDU2OCwxMjQgNjI0LDEyMCA2ODAsMTE4Ii8+CjxnIGZpbGw9IiMyZjVmZDAiPgo8Y2lyY2xlIGN4PSI2NCIgY3k9IjE1MCIgcj0iMyIvPjxjaXJjbGUgY3g9IjE3NiIgY3k9IjEzOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjI4OCIgY3k9IjEyOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjQwMCIgY3k9IjEyMCIgcj0iMyIvPjxjaXJjbGUgY3g9IjUxMiIgY3k9IjEwOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjYyNCIgY3k9IjEwMCIgcj0iMyIvPgo8L2c+CjxnIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM1ZDY0NzAiPgo8cmVjdCB4PSI0OTAiIHk9IjI4IiB3aWR0aD0iMTk2IiBoZWlnaHQ9IjIwIiBmaWxsPSIjZjZmN2Y5Ii8+CjxsaW5lIHgxPSI0OTgiIHkxPSIzOCIgeDI9IjUyMiIgeTI9IjM4IiBzdHJva2U9IiMyZjVmZDAiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHRleHQgeD0iNTI4IiB5PSI0MiI+c2Vuc29yIEE8L3RleHQ+CjxsaW5lIHgxPSI1OTAiIHkxPSIzOCIgeDI9IjYxNCIgeTI9IjM4IiBzdHJva2U9IiNjOTgzMWQiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWRhc2hhcnJheT0iNSA0Ii8+PHRleHQgeD0iNjIwIiB5PSI0MiI+c2Vuc29yIEI8L3RleHQ+CjwvZz4KPC9zdmc+"
+             alt="Line chart: sensor A rises from 19.4 to 23.2 degrees Celsius between 09:00 and 15:00; sensor B stays 0.4 degrees lower.">
+        <figcaption>Figure 1 — Bench temperature, 09:00–15:00. Sensor A is solid; sensor B
+          is dashed and tracks 0.4 °C lower.</figcaption>
+      </figure>
+
+      <p>The steady-state error of the reference divider is
+        $e_{ss} = 1/(1+K_p)$ — inline math is not rendered;
+        this is literal prose in the shipped reader.</p>
+
+      <div class="katex-container">
+        <span class="katex-display"><span class="katex math">
+          <span class="big">∫</span><sub>0</sub><sup>∞</sup>
+          e<sup>−x<sup>2</sup></sup> d<span class="op">x</span>
+          <span class="op">=</span>
+          <span class="frac"><span class="num">√π</span><span class="den">2</span></span>
+        </span></span>
+        <button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button>
+      </div>
+
+      <div class="card">
+        <div class="figure">
+          <svg class="diagram" viewBox="0 0 430 150" width="430" height="150" role="img" aria-label="Flowchart: boot to parse to render">
+            <defs>
+              <marker id="arrow-hero" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path class="d-arrow" d="M0 0 L10 5 L0 10 z"></path>
+              </marker>
+            </defs>
+            <rect class="d-node" x="8" y="48" width="96" height="42" rx="6"></rect>
+            <text class="d-text" x="56" y="74" text-anchor="middle">boot</text>
+            <rect class="d-node" x="160" y="48" width="96" height="42" rx="6"></rect>
+            <text class="d-text" x="208" y="74" text-anchor="middle">parse</text>
+            <rect class="d-node-accent" x="312" y="48" width="96" height="42" rx="6"></rect>
+            <text class="d-text" x="360" y="74" text-anchor="middle">render</text>
+            <line class="d-edge" x1="104" y1="69" x2="154" y2="69" marker-end="url(#arrow-hero)"></line>
+            <line class="d-edge" x1="256" y1="69" x2="306" y2="69" marker-end="url(#arrow-hero)"></line>
+            <text class="d-muted" x="215" y="30" text-anchor="middle">marked</text>
+            <text class="d-muted" x="215" y="122" text-anchor="middle">mermaid · wavedrom · dot · svg</text>
+          </svg>
+        </div>
+        <button type="button" class="copy copy--img" aria-label="Copy image" title="Copy image">
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"></rect><path d="M3 3h8v2M11 10v2H3V4"></path></svg>
+        </button>
+      </div>
+      <p class="callout">Mermaid card. The whole card is the lightbox trigger; the copy-image
+        button is the only child that does not open it.</p>
+
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     2. CODE FENCES
+     ================================================================ -->
+<section class="sec">
+  <h2>2 · Code fences — band, label, copy</h2>
+  <p class="lede">A fence reserves the 22 px band in every state, so a click never changes
+    its height. The label is generated text. The copy button is hidden at rest and revealed
+    by hover, focus-within, or its own focus.</p>
+
+  <div class="board board--810">
+    <div class="board-head"><span class="dot"></span><span>Code fence states</span><span class="grow"></span><span class="size">810 × auto</span></div>
+    <div class="board-body">
+      <div class="demo-stack">
+
+        <div class="demo">
+          <p class="state-label"><b>Rest</b> — copy is <code>opacity: 0</code>, still in the tab order</p>
+          <pre class="fence has-code" data-fence-lang="c"><code><span class="hl-kw">static</span> <span class="hl-kw">int</span> <span class="hl-title">ow_reset</span>(<span class="hl-kw">int</span> bus)
+{
+    <span class="hl-kw">return</span> gpio_pin_get_dt(&amp;bus_cfg);
+}
+
+<span class="hl-com">/* 4.7 kΩ pull-up, 3V3 */</span></code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Hover / focus</b> — copy visible in the band</p>
+          <pre class="fence has-code is-hover" data-fence-lang="c"><code><span class="hl-kw">static</span> <span class="hl-kw">int</span> <span class="hl-title">ow_reset</span>(<span class="hl-kw">int</span> bus)
+{
+    <span class="hl-kw">return</span> gpio_pin_get_dt(&amp;bus_cfg);
+}
+
+<span class="hl-com">/* 4.7 kΩ pull-up, 3V3 */</span></code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          <p class="callout">The button sits at <code>top: 1px; right: 10px</code> inside the
+            band, not over the first code line. Copy hover is an <code>--accent-soft</code> face.</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Long line</b> — wraps, no inner scrollbar</p>
+          <pre class="fence has-code" data-fence-lang="bash"><code>curl -sS -H <span class="hl-str">"Authorization: Bearer $TOKEN"</span> <span class="hl-str">"https://bench.local/api/runs?since=2026-11-01T00:00:00Z&amp;until=2026-11-09T23:59:59Z&amp;include=measurements,limits&amp;order=temp"</span> | jq <span class="hl-str">'.runs[] | {id, sensor, temp_c}'</span></code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          <p class="callout"><code>white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: clip</code>.
+            A 180-character token breaks at any character. The note is the only scroller.</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>No language</b> — band reserved, no generated label</p>
+          <pre class="fence has-code"><code>PA0   ── 1-Wire data   (4.7 kΩ to 3V3)
+PA1   ── sensor power gate
+GND   ── common
+3V3   ── rail, 80 mA budget</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          <p class="callout">Same 22 px band and the same copy position. An empty band is what
+            keeps a bare fence the same height as a labelled one.</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Error fence</b> — the plugin error box, not a code fence</p>
+          <div class="error">
+            <div class="error-head">Mermaid error: Parse error on line 3: expecting '-->'</div>
+            <pre class="src">flowchart LR
+  boot --&gt; parse
+  parse --&gt; rendr<button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          </div>
+          <p class="callout">No band and no language label: the source is a text-only
+            <code>&lt;pre&gt;</code>, so <code>pre:has(&gt; code)</code> does not match. The shared
+            copy button uses its base <code>top: 6px; right: 6px</code> and overlaps the first
+            source line (proposal P8).</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     3. TABLES
+     ================================================================ -->
+<section class="sec">
+  <h2>3 · Tables — sorted, hidden, selected, merged</h2>
+  <p class="lede">A table wider than the page pans inside its own scroller; header and body
+    pan together, and at this width none do. Preview controls are a 24 px icon in the left
+    gutter and a small toolbar; they are view-only and never enter the note.</p>
+
+  <div class="board board--861">
+    <div class="board-head"><span class="dot"></span><span>Table review states</span><span class="grow"></span><span class="size">wide × auto</span></div>
+    <div class="board-body">
+      <div class="demo-stack">
+
+        <div class="demo">
+          <p class="state-label"><b>Sorted + selection + column menu</b> — states combined for review</p>
+          <div class="table-stage">
+            <table class="table-scroll">
+              <thead>
+                <tr>
+                  <th>Run <span class="head-menu">▾</span></th>
+                  <th>Sensor <span class="head-menu">▾</span></th>
+                  <th class="num sorted" aria-sort="ascending">Temp (°C) <span class="head-menu">▾</span></th>
+                  <th class="is-open">Status <span class="head-menu">▾</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="mono">B-108</td><td class="nb-ts-range">DS18B20</td><td class="num nb-ts-range">21.1</td><td>pass</td></tr>
+                <tr><td class="mono">B-105</td><td class="nb-ts-range">DS18B20</td><td class="num nb-ts-range">21.2</td><td>pass</td></tr>
+                <tr><td class="mono">B-104</td><td>DS18B20</td><td class="num">21.4</td><td>pass</td></tr>
+                <tr><td class="mono">B-106</td><td>TMP117</td><td class="num">22.0</td><td>pass</td></tr>
+                <tr><td class="mono">B-107</td><td>TMP117</td><td class="num">22.6</td><td>drift</td></tr>
+              </tbody>
+            </table>
+            <div class="tv-pop tv-pop--col" role="menu" aria-label="Column menu">
+              <button type="button" class="tv-item" role="menuitemradio" aria-checked="false">Sort ascending</button>
+              <button type="button" class="tv-item" role="menuitemradio" aria-checked="false">Sort descending</button>
+              <button type="button" class="tv-item" role="menuitemradio" aria-checked="false">Clear sort</button>
+              <button type="button" class="tv-item" role="menuitemradio" aria-checked="false">Hide this column</button>
+            </div>
+          </div>
+          <p class="callout">One sorted column: <code>aria-sort="ascending"</code>, accent chevron
+            rotated 180°. The same glyph is the menu icon; there is no second arrow. The
+            selection uses <code>--accent-soft</code> plus a 1 px inset accent ring on every
+            cell, so internal grid lines are visible (proposal P10).</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Controls open + one hidden row</b></p>
+          <div class="table-stage" style="margin-top: 34px;">
+            <div class="tv-controls">
+              <button type="button" class="tv-toggle" aria-label="Close table controls" aria-expanded="true">✕</button>
+              <div class="tv-toolbar" role="toolbar" aria-label="Table controls">
+                <button type="button" class="tv-btn" aria-haspopup="true" aria-expanded="true">Rows</button>
+                <button type="button" class="tv-btn" aria-haspopup="true" aria-expanded="false">Columns</button>
+                <button type="button" class="tv-btn">Reset</button>
+              </div>
+            </div>
+            <table class="table-scroll">
+              <thead>
+                <tr>
+                  <th>Run <span class="head-menu" style="visibility: visible;">▾</span></th>
+                  <th>Sensor <span class="head-menu" style="visibility: visible;">▾</span></th>
+                  <th class="num">Temp (°C) <span class="head-menu" style="visibility: visible;">▾</span></th>
+                  <th>Status <span class="head-menu" style="visibility: visible;">▾</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td class="mono">B-104</td><td>DS18B20</td><td class="num">21.4</td><td>pass</td></tr>
+                <tr><td class="mono">B-105</td><td>DS18B20</td><td class="num">21.2</td><td>pass</td></tr>
+                <tr class="nb-tv-hide-row"><td class="mono">B-106</td><td>TMP117</td><td class="num">22.0</td><td>pass</td></tr>
+                <tr><td class="mono">B-107</td><td>TMP117</td><td class="num">22.6</td><td>drift</td></tr>
+                <tr><td class="mono">B-108</td><td>DS18B20</td><td class="num">21.1</td><td>pass</td></tr>
+              </tbody>
+            </table>
+            <div class="tv-pop tv-pop--rows" role="group" aria-label="Choose visible rows">
+              <label class="tv-item is-check"><input type="checkbox" checked><span>#1 — B-104</span></label>
+              <label class="tv-item is-check"><input type="checkbox" checked><span>#2 — B-105</span></label>
+              <label class="tv-item is-check"><input type="checkbox"><span>#3 — B-106</span></label>
+              <label class="tv-item is-check"><input type="checkbox" checked><span>#4 — B-107</span></label>
+              <label class="tv-item is-check"><input type="checkbox" checked><span>#5 — B-108</span></label>
+            </div>
+          </div>
+          <p class="callout">Hiding is class-based; no node is removed. The row is visually gone
+            and the chooser keeps its slot with an empty checkbox. The state is per file, per
+            table in <code>localStorage</code> and is torn down before hybrid editing.</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Merged cells</b> — no controls, one note</p>
+          <div class="table-stage">
+            <div class="tv-note" style="top: 2px; left: 8px;">Merged cells: table view controls are unavailable</div>
+            <table class="table-scroll" style="margin-top: 30px;">
+              <thead>
+                <tr><th>Channel</th><th class="num">Reading</th><th>Note</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>A</td><td class="num">3.29 V</td><td>nominal</td></tr>
+                <tr><td>B</td><td colspan="2">not fitted on this board</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="callout">The note is anchored to the table's top-left and covers the header.
+            The table still renders and pans; rectangle selection also refuses it.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     4. FIGURES AND MATH
+     ================================================================ -->
+<section class="sec">
+  <h2>4 · Figures and math</h2>
+  <p class="lede">Images are plain <code>&lt;img&gt;</code> with <code>max-width: 100%</code>.
+    A caption requires raw <code>&lt;figure&gt;</code> and is unstyled. Display math is a card;
+    inline math is not rendered.</p>
+
+  <div class="board board--810">
+    <div class="board-head"><span class="dot"></span><span>Figure and math states</span><span class="grow"></span><span class="size">810 × auto</span></div>
+    <div class="board-body">
+      <div class="demo-stack">
+
+        <div class="demo">
+          <p class="state-label"><b>Figure with caption</b> — raw HTML</p>
+          <figure>
+            <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MjAiIGhlaWdodD0iMjYwIiB2aWV3Qm94PSIwIDAgNzIwIDI2MCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJCZW5jaCB0ZW1wZXJhdHVyZSBvdmVyIHNpeCBob3VycyI+CjxyZWN0IHdpZHRoPSI3MjAiIGhlaWdodD0iMjYwIiBmaWxsPSIjZjZmN2Y5Ii8+CjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Q4ZGRlNCIgc3Ryb2tlLXdpZHRoPSIxIj4KPHBhdGggZD0iTTY0IDI0VjIxMkg2OTYiLz4KPHBhdGggZD0iTTY0IDE2NEg2OTYiLz48cGF0aCBkPSJNNjQgMTE2SDY5NiIvPjxwYXRoIGQ9Ik02NCA2OEg2OTYiLz4KPC9nPgo8ZyBmaWxsPSIjNWQ2NDcwIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIj4KPHRleHQgeD0iMTgiIHk9IjIxNiI+MTg8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjE2OCI+MjA8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjEyMCI+MjI8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjcyIj4yNDwvdGV4dD4KPHRleHQgeD0iNjAiIHk9IjIzNiI+MDk6MDA8L3RleHQ+PHRleHQgeD0iMjUwIiB5PSIyMzYiPjExOjAwPC90ZXh0Pjx0ZXh0IHg9IjQ0NCIgeT0iMjM2Ij4xMzowMDwvdGV4dD48dGV4dCB4PSI2MzYiIHk9IjIzNiI+MTU6MDA8L3RleHQ+Cjx0ZXh0IHg9IjY0IiB5PSIxNiIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzFmMjMzMCI+QmVuY2ggdGVtcGVyYXR1cmUsIGRlZyBDPC90ZXh0Pgo8L2c+Cjxwb2x5bGluZSBmaWxsPSJub25lIiBzdHJva2U9IiMyZjVmZDAiIHN0cm9rZS13aWR0aD0iMi41IiBwb2ludHM9IjY0LDE1MCAxMjAsMTQ2IDE3NiwxMzggMjMyLDEzMiAyODgsMTI4IDM0NCwxMjQgNDAwLDEyMCA0NTYsMTEyIDUxMiwxMDggNTY4LDEwNCA2MjQsMTAwIDY4MCw5NiIvPgo8cG9seWxpbmUgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYzk4MzFkIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1kYXNoYXJyYXk9IjUgNCIgcG9pbnRzPSI2NCwxNjAgMTIwLDE1OCAxNzYsMTUwIDIzMiwxNDQgMjg4LDE0MiAzNDQsMTQwIDQwMCwxMzggNDU2LDEzMCA1MTIsMTI2IDU2OCwxMjQgNjI0LDEyMCA2ODAsMTE4Ii8+CjxnIGZpbGw9IiMyZjVmZDAiPgo8Y2lyY2xlIGN4PSI2NCIgY3k9IjE1MCIgcj0iMyIvPjxjaXJjbGUgY3g9IjE3NiIgY3k9IjEzOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjI4OCIgY3k9IjEyOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjQwMCIgY3k9IjEyMCIgcj0iMyIvPjxjaXJjbGUgY3g9IjUxMiIgY3k9IjEwOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjYyNCIgY3k9IjEwMCIgcj0iMyIvPgo8L2c+CjxnIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM1ZDY0NzAiPgo8cmVjdCB4PSI0OTAiIHk9IjI4IiB3aWR0aD0iMTk2IiBoZWlnaHQ9IjIwIiBmaWxsPSIjZjZmN2Y5Ii8+CjxsaW5lIHgxPSI0OTgiIHkxPSIzOCIgeDI9IjUyMiIgeTI9IjM4IiBzdHJva2U9IiMyZjVmZDAiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHRleHQgeD0iNTI4IiB5PSI0MiI+c2Vuc29yIEE8L3RleHQ+CjxsaW5lIHgxPSI1OTAiIHkxPSIzOCIgeDI9IjYxNCIgeTI9IjM4IiBzdHJva2U9IiNjOTgzMWQiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWRhc2hhcnJheT0iNSA0Ii8+PHRleHQgeD0iNjIwIiB5PSI0MiI+c2Vuc29yIEI8L3RleHQ+CjwvZz4KPC9zdmc+"
+                 alt="Line chart: sensor A rises from 19.4 to 23.2 degrees Celsius between 09:00 and 15:00; sensor B stays 0.4 degrees lower.">
+            <figcaption>Figure 1 — Bench temperature, 09:00–15:00. Sensor A is solid; sensor B is dashed.</figcaption>
+          </figure>
+          <p class="callout"><code>figcaption</code> inherits body type: no muted colour, no
+            italic, no top margin. The image is an inline replaced element inside a paragraph;
+            a raw dimensioned image can distort because there is no <code>height: auto</code>
+            (proposal P4).</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Broken image</b> — the browser fallback</p>
+          <p><img src="data:image/png;base64,INVALID" alt="Temperature plot: image failed to load">
+            <span class="broken">alt text is the fallback</span></p>
+          <p class="callout">No app handler, no styled placeholder. The browser glyph plus the
+            author's <code>alt</code> is the shipped state.</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Display math</b> — centred card, copy source</p>
+          <div class="katex-container">
+            <span class="katex-display"><span class="katex math">
+              <span class="big">∫</span><sub>0</sub><sup>∞</sup>
+              e<sup>−x<sup>2</sup></sup> d<span class="op">x</span>
+              <span class="op">=</span>
+              <span class="frac"><span class="num">√π</span><span class="den">2</span></span>
+            </span></span>
+            <button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button>
+          </div>
+          <p class="callout">The card is <code>--bg-panel</code>, 14 × 16, radius 8, overflow
+            hidden. KaTeX output, not an image. The text button copies the original LaTeX.</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Wide math</b> — fitOne shrank the display, no scrollbar</p>
+          <div class="katex-container">
+            <span class="katex-display" style="font-size: 86%;"><span class="katex math">
+              <span class="op">∑</span><sub>i=1</sub><sup>n</sup>
+              <span class="frac"><span class="num">a<sub>i</sub><sup>2</sup> + b<sub>i</sub><sup>2</sup> + c<sub>i</sub><sup>2</sup></span><span class="den">√(x<sub>i</sub><sup>2</sup> + y<sub>i</sub><sup>2</sup> + z<sub>i</sub><sup>2</sup>)</span></span>
+              <span class="op">+</span>
+              <span class="op">∏</span><sub>k=1</sub><sup>m</sup>
+              <span class="op">(</span>1 + <span class="frac"><span class="num">1</span><span class="den">k</span></span><span class="op">)</span>
+            </span></span>
+            <button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button>
+          </div>
+          <p class="callout">At most two fit passes, 1 px epsilon, 0.99 safety. The card never
+            scrolls horizontally; the equation gets smaller instead.</p>
+        </div>
+
+        <div class="demo">
+          <p class="state-label"><b>Math parse error</b> — the shipped in-card span</p>
+          <div class="katex-container">
+            <span class="katex-error" style="color:#cc0000">\frac{1}{</span>
+            <button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button>
+          </div>
+          <p class="callout"><code>throwOnError: false</code> returns KaTeX's red source span.
+            The app's shared <code>.katex-error</code> rule paints the warn border around it.
+            There is no head and no source pane. Contrast is 2.66:1 in dark (A3) and 5.49:1
+            in light.</p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     5. DIAGRAM CARDS
+     ================================================================ -->
+<section class="sec">
+  <h2>5 · Diagram cards — ready, loading, error</h2>
+  <p class="lede">One card shell, four SVG types. Loading is always the source fence; the
+    card replaces it only on success. Error is a warn box with the source kept. WaveDrom is
+    the one white card in the dark theme.</p>
+
+  <div class="board board--861">
+    <div class="board-head"><span class="dot"></span><span>Diagram cards</span><span class="grow"></span><span class="size">wide × auto</span></div>
+    <div class="board-body">
+
+      <div class="demo">
+        <p class="state-label"><b>Ready — Mermaid</b> — whole card is the lightbox trigger</p>
+        <div class="card is-hover">
+          <div class="figure">
+            <svg class="diagram" viewBox="0 0 460 170" width="460" height="170" role="img" aria-label="Flowchart: draft to render to read">
+              <defs>
+                <marker id="arrow-mm" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path class="d-arrow" d="M0 0 L10 5 L0 10 z"></path>
+                </marker>
+              </defs>
+              <rect class="d-node" x="6" y="60" width="108" height="46" rx="6"></rect>
+              <text class="d-text" x="60" y="88" text-anchor="middle">draft.md</text>
+              <rect class="d-node" x="176" y="60" width="108" height="46" rx="6"></rect>
+              <text class="d-text" x="230" y="88" text-anchor="middle">render</text>
+              <rect class="d-node-accent" x="346" y="60" width="108" height="46" rx="6"></rect>
+              <text class="d-text" x="400" y="88" text-anchor="middle">read</text>
+              <line class="d-edge" x1="114" y1="83" x2="170" y2="83" marker-end="url(#arrow-mm)"></line>
+              <line class="d-edge" x1="284" y1="83" x2="340" y2="83" marker-end="url(#arrow-mm)"></line>
+              <text class="d-muted" x="230" y="34" text-anchor="middle">marked</text>
+              <text class="d-muted" x="230" y="140" text-anchor="middle">securityLevel: strict</text>
+            </svg>
+          </div>
+          <button type="button" class="copy copy--img" aria-label="Copy image" title="Copy image">
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"></rect><path d="M3 3h8v2M11 10v2H3V4"></path></svg>
+          </button>
+        </div>
+        <p class="callout">Padding 14 × 16, <code>--bg-panel</code>, 1 px border, radius 8,
+          <code>overflow: hidden</code>. The copy-image button is 24 × 24 and stops the click
+          from opening the lightbox. The card itself is focusable in the shipped code but has
+          no ring or Enter handler (A4; proposal E2/E3).</p>
+      </div>
+
+      <div class="state-label" style="margin-top: 32px;"><b>Four types × three states</b></div>
+      <div class="demo-grid demo-grid--3">
+
+        <!-- Mermaid ready -->
+        <div class="demo">
+          <p class="state-label"><b>mermaid · ready</b></p>
+          <div class="card" style="margin: 0;">
+            <div class="figure">
+              <svg class="diagram" viewBox="0 0 180 70" width="180" height="70" role="img" aria-label="Mermaid mini flowchart">
+                <rect class="d-node" x="4" y="18" width="60" height="28" rx="5"></rect>
+                <text class="d-text" x="34" y="36" text-anchor="middle">a</text>
+                <rect class="d-node-accent" x="110" y="18" width="66" height="28" rx="5"></rect>
+                <text class="d-text" x="143" y="36" text-anchor="middle">b</text>
+                <line class="d-edge" x1="64" y1="32" x2="104" y2="32" marker-end="url(#arrow-mm)"></line>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mermaid loading -->
+        <div class="demo">
+          <p class="state-label"><b>mermaid · loading</b></p>
+          <pre class="fence has-code" style="margin: 0;" data-fence-lang="mermaid"><code>flowchart LR
+  a --&gt; b</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        </div>
+
+        <!-- Mermaid error -->
+        <div class="demo">
+          <p class="state-label"><b>mermaid · error</b></p>
+          <div class="error" style="margin: 0;">
+            <div class="error-head">Mermaid error: Parse error on line 2</div>
+            <pre class="src">flowchart LR
+  a --&gt; b<button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          </div>
+        </div>
+
+        <!-- WaveDrom ready -->
+        <div class="demo">
+          <p class="state-label"><b>wavedrom · ready (white card)</b></p>
+          <div class="card card--wavedrom" style="margin: 0;">
+            <div class="figure">
+              <svg class="diagram" viewBox="0 0 180 70" width="180" height="70" role="img" aria-label="WaveDrom mini timing diagram">
+                <line class="d-grid" x1="4" y1="56" x2="176" y2="56"></line>
+                <polyline class="d-wave" points="6,20 22,20 22,34 38,34 38,20 54,20 54,34 70,34 70,20 86,20 86,34 102,34 102,20 118,20 118,34 134,34 134,20 150,20 150,34 166,34 166,20 174,20"></polyline>
+                <polyline class="d-wave" points="6,46 30,46 30,40 54,40 54,46 78,46 78,40 102,40 102,46 126,46 126,40 150,40 150,46 174,46"></polyline>
+                <text class="d-wave-text" x="4" y="16">clk</text>
+                <text class="d-wave-text" x="4" y="68">dat</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- WaveDrom loading -->
+        <div class="demo">
+          <p class="state-label"><b>wavedrom · loading</b></p>
+          <pre class="fence has-code" style="margin: 0;" data-fence-lang="wavedrom"><code>{signal: [
+  {name: 'clk', wave: 'p...'}
+]}</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        </div>
+
+        <!-- WaveDrom error -->
+        <div class="demo">
+          <p class="state-label"><b>wavedrom · error</b></p>
+          <div class="error" style="margin: 0;">
+            <div class="error-head">WaveDrom error: Unexpected token</div>
+            <pre class="src">{signal: [
+  {name: 'clk', wave: 'p...'<button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          </div>
+        </div>
+
+        <!-- DOT ready -->
+        <div class="demo">
+          <p class="state-label"><b>dot · ready</b></p>
+          <div class="card" style="margin: 0;">
+            <div class="figure">
+              <svg class="diagram" viewBox="0 0 180 70" width="180" height="70" role="img" aria-label="Graphviz mini graph">
+                <ellipse class="d-node" cx="38" cy="35" rx="26" ry="15"></ellipse>
+                <text class="d-text" x="38" y="39" text-anchor="middle">note</text>
+                <ellipse class="d-node" cx="138" cy="20" rx="26" ry="15"></ellipse>
+                <text class="d-text" x="138" y="24" text-anchor="middle">text</text>
+                <ellipse class="d-node-accent" cx="138" cy="54" rx="26" ry="15"></ellipse>
+                <text class="d-text" x="138" y="58" text-anchor="middle">render</text>
+                <line class="d-edge" x1="62" y1="30" x2="110" y2="23" marker-end="url(#arrow-mm)"></line>
+                <line class="d-edge" x1="62" y1="41" x2="110" y2="50" marker-end="url(#arrow-mm)"></line>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- DOT loading -->
+        <div class="demo">
+          <p class="state-label"><b>dot · loading</b></p>
+          <pre class="fence has-code" style="margin: 0;" data-fence-lang="dot"><code>digraph {
+  note -&gt; text
+  note -&gt; render
+}</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        </div>
+
+        <!-- DOT error -->
+        <div class="demo">
+          <p class="state-label"><b>dot · error</b></p>
+          <div class="error" style="margin: 0;">
+            <div class="error-head">Graphviz error: syntax error</div>
+            <pre class="src">digraph {
+  note -&gt; <button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          </div>
+        </div>
+
+        <!-- SVG ready -->
+        <div class="demo">
+          <p class="state-label"><b>svg · ready</b></p>
+          <div class="card card--svg" style="margin: 0;">
+            <div class="figure">
+              <svg class="diagram" viewBox="0 0 180 70" width="160" height="62" role="img" aria-label="Inline SVG badge">
+                <rect x="14" y="14" width="152" height="42" rx="8" fill="none" stroke="var(--accent)" stroke-width="1.5"></rect>
+                <circle cx="38" cy="35" r="9" class="d-badge"></circle>
+                <text class="d-badge-text" x="38" y="39" text-anchor="middle">1W</text>
+                <text class="d-text" x="112" y="39" text-anchor="middle">inline SVG</text>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <!-- SVG loading -->
+        <div class="demo">
+          <p class="state-label"><b>svg · loading</b> — synchronous, so none</p>
+          <pre class="fence has-code" style="margin: 0;" data-fence-lang="svg"><code>&lt;svg viewBox="0 0 120 40"&gt;
+  &lt;rect width="120" height="40"/&gt;
+&lt;/svg&gt;</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        </div>
+
+        <!-- SVG error -->
+        <div class="demo">
+          <p class="state-label"><b>svg · error</b></p>
+          <div class="error" style="margin: 0;">
+            <div class="error-head">SVG error: could not parse the block as SVG</div>
+            <pre class="src">&lt;svg viewBox="0 0 120 40"&gt;
+  &lt;rect width="120"<button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="demo" style="margin-top: 32px;">
+        <p class="state-label"><b>AI reply — untrusted</b> — WaveDrom is skipped</p>
+        <div style="max-width: 430px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface-panel); padding: var(--space-3);">
+          <p style="margin: 0 0 8px; font-size: var(--text-sm); color: var(--text-muted);">Assistant</p>
+          <p style="margin: 0 0 10px; font-size: .9rem;">The timing check is below. WaveDrom stays as source here because the panel treats model output as untrusted.</p>
+          <pre class="fence has-code" style="margin: 0;" data-fence-lang="wavedrom"><code>{signal: [
+  {name: 'clk', wave: 'p.....'},
+  {name: 'dat', wave: 'x.345x'}
+]}</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        </div>
+        <p class="callout"><code>renderAll(container, { untrusted: true })</code> skips every
+          descriptor with <code>untrustedSafe: false</code>. The note path still renders the
+          same fence as a card.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     6. HTML-LIVE
+     ================================================================ -->
+<section class="sec">
+  <h2>6 · `html-live` sandbox</h2>
+  <p class="lede">A card with no padding, holding one sandboxed iframe. The frame starts at
+    260 px, fits its content height, and can be dragged taller. There is no header, label or
+    error box.</p>
+
+  <div class="board board--810">
+    <div class="board-head"><span class="dot"></span><span>Live HTML preview</span><span class="grow"></span><span class="size">810 × auto</span></div>
+    <div class="board-body">
+      <div class="card card--html">
+        <iframe class="html-frame" sandbox="allow-scripts" title="HTML preview" style="height: var(--content-html-default);" srcdoc='<!DOCTYPE html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:12px;font-family:system-ui,sans-serif;overflow:hidden}body{display:flex;align-items:flex-start;justify-content:center}.demo-card{width:260px;padding:16px;border:1px solid #d8dde4;border-radius:10px;background:#fff;text-align:center;font:14px/1.45 system-ui,sans-serif;color:#1f2330}.demo-card h3{margin:0 0 6px;font-size:15px}.demo-card p{margin:0 0 12px;color:#5d6470;font-size:13px}.demo-card button{border:1px solid #2f5fd0;border-radius:6px;background:#2f5fd0;color:#fff;padding:6px 12px;font:inherit;cursor:pointer}.out{margin-top:10px;font-variant-numeric:tabular-nums;color:#2f5fd0}</style></head><body><div class="demo-card"><h3>Live HTML</h3><p>A self-contained demo. Scripts run; storage and the notebook API do not.</p><button id="b">Click me</button><div class="out" id="out">0 clicks</div></div><script>var n=0;document.getElementById("b").addEventListener("click",function(){n++;document.getElementById("out").textContent=n+" clicks";});</script></body></html>'>
+        </iframe>
+        <button type="button" class="copy copy--img is-hover" aria-label="Copy image" title="Copy image">
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"></rect><path d="M3 3h8v2M11 10v2H3V4"></path></svg>
+        </button>
+      </div>
+      <p class="callout">The frame is <code>sandbox="allow-scripts"</code> without
+        <code>allow-same-origin</code>: cookies, storage, same-origin fetch, forms, popups,
+        downloads, alerts and top-level navigation are blocked. The card is not a lightbox
+        trigger. The copy-image button rasterises the stored source.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     7. PHONE
+     ================================================================ -->
+<section class="sec">
+  <h2>7 · Phone reader — 390</h2>
+  <p class="lede">The same blocks at the 390 phone measure: 16 px prose, 20 px gutters,
+    44 px fence band and copy target. Preview table controls and rectangle selection are not
+    available; the table pans.</p>
+
+  <div class="board board--phone">
+    <div class="board-head"><span class="dot"></span><span>Phone reader</span><span class="grow"></span><span class="size">390 × auto</span></div>
+    <div class="reader reader--phone prose">
+
+      <h1>Bench log — 9 Nov</h1>
+      <p>The rig ran six hours. Sensor A is the DS18B20 on <span class="literal">PA0</span>;
+        sensor B is the TMP117 on the same power gate.</p>
+
+      <pre class="fence has-code" data-fence-lang="c"><code><span class="hl-kw">int16_t</span> temp;
+<span class="hl-kw">if</span> (ds18b20_read(bus, &amp;temp) != <span class="hl-num">0</span>)
+    <span class="hl-kw">return</span> -ENODEV;
+
+printk(<span class="hl-str">"temp: %d.%02d C\n"</span>, temp / <span class="hl-num">16</span>, (temp % <span class="hl-num">16</span>) * <span class="hl-num">100</span> / <span class="hl-num">16</span>);</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+
+      <p>Five runs, one drift. The table pans sideways; there is no table control row on the
+        phone.</p>
+
+      <table class="table-scroll">
+        <thead>
+          <tr><th>Run</th><th>Sensor</th><th class="num">Temp</th><th>Status</th><th>Note</th><th>Cal</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="mono">B-104</td><td>DS18B20</td><td class="num">21.4</td><td>pass</td><td>reference run</td><td class="mono">09:12</td></tr>
+          <tr><td class="mono">B-107</td><td>TMP117</td><td class="num">22.6</td><td>drift</td><td>after reflow</td><td class="mono">13:40</td></tr>
+        </tbody>
+      </table>
+
+      <div class="card">
+        <div class="figure">
+          <svg class="diagram" viewBox="0 0 300 120" width="300" height="120" role="img" aria-label="Mermaid mini flowchart for phone">
+            <rect class="d-node" x="4" y="42" width="88" height="40" rx="6"></rect>
+            <text class="d-text" x="48" y="67" text-anchor="middle">boot</text>
+            <rect class="d-node-accent" x="206" y="42" width="88" height="40" rx="6"></rect>
+            <text class="d-text" x="250" y="67" text-anchor="middle">render</text>
+            <line class="d-edge" x1="92" y1="62" x2="200" y2="62" marker-end="url(#arrow-mm)"></line>
+          </svg>
+        </div>
+        <button type="button" class="copy copy--img" aria-label="Copy image" title="Copy image">
+          <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"></rect><path d="M3 3h8v2M11 10v2H3V4"></path></svg>
+        </button>
+      </div>
+
+      <div class="katex-container">
+        <span class="katex-display" style="font-size: 92%;"><span class="katex math">
+          <span class="op">∑</span><sub>i=1</sub><sup>n</sup>
+          <span class="frac"><span class="num">a<sub>i</sub></span><span class="den">n</span></span>
+          <span class="op">=</span> 21.3 °C
+        </span></span>
+        <button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ================================================================
+     8. LIGHT
+     ================================================================ -->
+<div class="section-light" data-theme="light">
+  <section class="sec" style="margin-bottom: 0;">
+    <h2>8 · Light — the same blocks, no geometry change</h2>
+    <p class="lede">Themes change colour only. The band, copy position, cell padding, card
+      size, radii, and the 861 / 390 measures are identical. The two known light failures are
+      visible: the warn head and the syntax keyword.</p>
+
+    <div class="board board--861">
+      <div class="board-head"><span class="dot"></span><span>Reader — light</span><span class="grow"></span><span class="size">wide × auto</span></div>
+      <div class="reader reader--861 prose">
+
+        <h1>Bench log — 9 November</h1>
+        <p>The DS18B20 rig ran for six hours. Sensor A is the only device on the bus.</p>
+
+        <pre class="fence has-code" data-fence-lang="c"><code><span class="hl-kw">static</span> <span class="hl-kw">int</span> <span class="hl-title">ds18b20_read</span>(<span class="hl-kw">int</span> bus, <span class="hl-kw">int16_t</span> *out_c)
+{
+    <span class="hl-kw">uint8_t</span> scratch[<span class="hl-num">9</span>];
+
+    <span class="hl-kw">if</span> (ow_reset(bus) != <span class="hl-num">0</span>)
+        <span class="hl-kw">return</span> -ENODEV;
+
+    ow_write_byte(bus, <span class="hl-num">0xCC</span>);      <span class="hl-com">/* skip ROM */</span>
+    ow_write_byte(bus, <span class="hl-num">0x44</span>);      <span class="hl-com">/* convert T */</span>
+    <span class="hl-kw">return</span> <span class="hl-num">0</span>;
+}</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+
+        <div class="table-stage" style="margin-top: 26px;">
+          <div class="tv-controls">
+            <button type="button" class="tv-toggle" aria-label="Close table controls" aria-expanded="true">✕</button>
+            <div class="tv-toolbar" role="toolbar" aria-label="Table controls">
+              <button type="button" class="tv-btn">Rows</button>
+              <button type="button" class="tv-btn">Columns</button>
+              <button type="button" class="tv-btn">Reset</button>
+            </div>
+          </div>
+          <table class="table-scroll">
+            <thead>
+              <tr>
+                <th>Run <span class="head-menu" style="visibility: visible;">▾</span></th>
+                <th class="num sorted" aria-sort="ascending">Temp (°C) <span class="head-menu">▾</span></th>
+                <th>Status <span class="head-menu" style="visibility: visible;">▾</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="mono">B-108</td><td class="num nb-ts-range">21.1</td><td>pass</td></tr>
+              <tr><td class="mono">B-105</td><td class="num nb-ts-range">21.2</td><td>pass</td></tr>
+              <tr><td class="mono">B-104</td><td class="num">21.4</td><td>pass</td></tr>
+              <tr><td class="mono">B-107</td><td class="num">22.6</td><td>drift</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure>
+          <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI3MjAiIGhlaWdodD0iMjYwIiB2aWV3Qm94PSIwIDAgNzIwIDI2MCIgcm9sZT0iaW1nIiBhcmlhLWxhYmVsPSJCZW5jaCB0ZW1wZXJhdHVyZSBvdmVyIHNpeCBob3VycyI+CjxyZWN0IHdpZHRoPSI3MjAiIGhlaWdodD0iMjYwIiBmaWxsPSIjZjZmN2Y5Ii8+CjxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2Q4ZGRlNCIgc3Ryb2tlLXdpZHRoPSIxIj4KPHBhdGggZD0iTTY0IDI0VjIxMkg2OTYiLz4KPHBhdGggZD0iTTY0IDE2NEg2OTYiLz48cGF0aCBkPSJNNjQgMTE2SDY5NiIvPjxwYXRoIGQ9Ik02NCA2OEg2OTYiLz4KPC9nPgo8ZyBmaWxsPSIjNWQ2NDcwIiBmb250LWZhbWlseT0ic3lzdGVtLXVpLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjEyIj4KPHRleHQgeD0iMTgiIHk9IjIxNiI+MTg8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjE2OCI+MjA8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjEyMCI+MjI8L3RleHQ+PHRleHQgeD0iMTgiIHk9IjcyIj4yNDwvdGV4dD4KPHRleHQgeD0iNjAiIHk9IjIzNiI+MDk6MDA8L3RleHQ+PHRleHQgeD0iMjUwIiB5PSIyMzYiPjExOjAwPC90ZXh0Pjx0ZXh0IHg9IjQ0NCIgeT0iMjM2Ij4xMzowMDwvdGV4dD48dGV4dCB4PSI2MzYiIHk9IjIzNiI+MTU6MDA8L3RleHQ+Cjx0ZXh0IHg9IjY0IiB5PSIxNiIgZm9udC1zaXplPSIxMyIgZmlsbD0iIzFmMjMzMCI+QmVuY2ggdGVtcGVyYXR1cmUsIGRlZyBDPC90ZXh0Pgo8L2c+Cjxwb2x5bGluZSBmaWxsPSJub25lIiBzdHJva2U9IiMyZjVmZDAiIHN0cm9rZS13aWR0aD0iMi41IiBwb2ludHM9IjY0LDE1MCAxMjAsMTQ2IDE3NiwxMzggMjMyLDEzMiAyODgsMTI4IDM0NCwxMjQgNDAwLDEyMCA0NTYsMTEyIDUxMiwxMDggNTY4LDEwNCA2MjQsMTAwIDY4MCw5NiIvPgo8cG9seWxpbmUgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYzk4MzFkIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1kYXNoYXJyYXk9IjUgNCIgcG9pbnRzPSI2NCwxNjAgMTIwLDE1OCAxNzYsMTUwIDIzMiwxNDQgMjg4LDE0MiAzNDQsMTQwIDQwMCwxMzggNDU2LDEzMCA1MTIsMTI2IDU2OCwxMjQgNjI0LDEyMCA2ODAsMTE4Ii8+CjxnIGZpbGw9IiMyZjVmZDAiPgo8Y2lyY2xlIGN4PSI2NCIgY3k9IjE1MCIgcj0iMyIvPjxjaXJjbGUgY3g9IjE3NiIgY3k9IjEzOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjI4OCIgY3k9IjEyOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjQwMCIgY3k9IjEyMCIgcj0iMyIvPjxjaXJjbGUgY3g9IjUxMiIgY3k9IjEwOCIgcj0iMyIvPjxjaXJjbGUgY3g9IjYyNCIgY3k9IjEwMCIgcj0iMyIvPgo8L2c+CjxnIGZvbnQtZmFtaWx5PSJzeXN0ZW0tdWksIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMTIiIGZpbGw9IiM1ZDY0NzAiPgo8cmVjdCB4PSI0OTAiIHk9IjI4IiB3aWR0aD0iMTk2IiBoZWlnaHQ9IjIwIiBmaWxsPSIjZjZmN2Y5Ii8+CjxsaW5lIHgxPSI0OTgiIHkxPSIzOCIgeDI9IjUyMiIgeTI9IjM4IiBzdHJva2U9IiMyZjVmZDAiIHN0cm9rZS13aWR0aD0iMi41Ii8+PHRleHQgeD0iNTI4IiB5PSI0MiI+c2Vuc29yIEE8L3RleHQ+CjxsaW5lIHgxPSI1OTAiIHkxPSIzOCIgeDI9IjYxNCIgeTI9IjM4IiBzdHJva2U9IiNjOTgzMWQiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWRhc2hhcnJheT0iNSA0Ii8+PHRleHQgeD0iNjIwIiB5PSI0MiI+c2Vuc29yIEI8L3RleHQ+CjwvZz4KPC9zdmc+"
+               alt="Line chart: sensor A rises from 19.4 to 23.2 degrees Celsius between 09:00 and 15:00; sensor B stays 0.4 degrees lower.">
+          <figcaption>Figure 1 — Bench temperature, 09:00–15:00.</figcaption>
+        </figure>
+
+        <div class="katex-container">
+          <span class="katex-display"><span class="katex math">
+            <span class="big">∫</span><sub>0</sub><sup>∞</sup>
+            e<sup>−x<sup>2</sup></sup> d<span class="op">x</span>
+            <span class="op">=</span>
+            <span class="frac"><span class="num">√π</span><span class="den">2</span></span>
+          </span></span>
+          <button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button>
+        </div>
+
+        <div class="card">
+          <div class="figure">
+            <svg class="diagram" viewBox="0 0 460 150" width="430" height="140" role="img" aria-label="Flowchart: boot to parse to render">
+              <rect class="d-node" x="8" y="48" width="96" height="42" rx="6"></rect>
+              <text class="d-text" x="56" y="74" text-anchor="middle">boot</text>
+              <rect class="d-node" x="160" y="48" width="96" height="42" rx="6"></rect>
+              <text class="d-text" x="208" y="74" text-anchor="middle">parse</text>
+              <rect class="d-node-accent" x="312" y="48" width="96" height="42" rx="6"></rect>
+              <text class="d-text" x="360" y="74" text-anchor="middle">render</text>
+              <line class="d-edge" x1="104" y1="69" x2="154" y2="69" marker-end="url(#arrow-hero)"></line>
+              <line class="d-edge" x1="256" y1="69" x2="306" y2="69" marker-end="url(#arrow-hero)"></line>
+            </svg>
+          </div>
+          <button type="button" class="copy copy--img is-hover" aria-label="Copy image" title="Copy image">
+            <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"></rect><path d="M3 3h8v2M11 10v2H3V4"></path></svg>
+          </button>
+        </div>
+
+        <div class="error" style="margin-top: 26px;">
+          <div class="error-head">Mermaid error: Parse error on line 2</div>
+          <pre class="src">flowchart LR
+  boot --&gt; parse<button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        </div>
+        <p class="callout">Light warn head: white on <code>#c9831d</code> measures 3.11:1. The
+          foundations change to <code>#8a5a0b</code> fixes it; that change is proposal P1.</p>
+
+      </div>
+    </div>
+
+    <div class="board board--phone" style="margin-top: 16px;">
+      <div class="board-head"><span class="dot"></span><span>Phone — light</span><span class="grow"></span><span class="size">390 × auto</span></div>
+      <div class="reader reader--phone prose">
+        <h1>Bench log</h1>
+        <p>Six hours on the 3V3 rail. The table pans; there are no preview controls.</p>
+        <pre class="fence has-code" data-fence-lang="c"><code><span class="hl-kw">int16_t</span> temp;
+<span class="hl-kw">if</span> (ds18b20_read(bus, &amp;temp) != <span class="hl-num">0</span>)
+    <span class="hl-kw">return</span> -ENODEV;</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
+        <table class="table-scroll">
+          <thead><tr><th>Run</th><th>Sensor</th><th class="num">Temp</th><th>Status</th><th>Note</th><th>Cal</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">B-104</td><td>DS18B20</td><td class="num">21.4</td><td>pass</td><td>reference</td><td class="mono">09:12</td></tr>
+            <tr><td class="mono">B-107</td><td>TMP117</td><td class="num">22.6</td><td>drift</td><td>reflow</td><td class="mono">13:40</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<footer class="page-head" style="padding-bottom: 0;">
+  <p class="lede">Source of truth: <code>docs/ui/content-blocks.md</code>. This file is the
+    visual reference only; where the two differ, the document wins. The mockup makes no
+    network requests.</p>
+</footer>
+
+</div>
+</body>
+</html>

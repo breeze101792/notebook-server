@@ -152,8 +152,8 @@ implemented today.
 | `graph-2d.js` | 1138 | `NB.graph2d` | Original 2D neural renderer: force layout, pan/zoom, hover/selection, particles, edge pulses, glow. |
 | `graph-3d.js` | 2523 | `NB.graph3d` | 3D renderer: perspective orbit camera, canvas-2D projection, force physics, depth spread, hover/selection/filter states, loading/empty/error layers, optional particles. |
 | `graph.js` | 276 | `NB.graph` | `§graph` facade: tab/activity wiring, shared header chrome, 2D/3D mode switch, persisted `graphMode`, and the compatibility surface that delegates to the active renderer. |
-| `tabs.js` | 1663 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry, and the **session model** (named tab groups sharing the workspace's pins). A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](design/tab-equalization.md), [design/tab-close-animation.md](design/tab-close-animation.md), and [sessions.md](sessions.md)). |
-| `sessions.js` | 705 | `NB.sessions` | Sessions side-panel view: header, row list, row menu, New/Rename dialog, and the `Move to session` submenu's handlers. No tab data: reads `NB.tabs.getSessionList()` and writes only through `NB.tabs.*` (see [sessions.md](sessions.md) §12 and [ui/sessions.md](../ui/sessions.md)). |
+| `tabs.js` | 1663 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry, and the **session model** (named tab groups sharing the workspace's pins). A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](../archive/architecture-design/tab-equalization.md), [design/tab-close-animation.md](../archive/architecture-design/tab-close-animation.md), and [sessions.md](sessions.md)). |
+| `sessions.js` | 705 | `NB.sessions` | Sessions side-panel view: header, row list, row menu, New/Rename dialog, and the `Move to session` submenu's handlers. No tab data: reads `NB.tabs.getSessionList()` and writes only through `NB.tabs.*` (see [sessions.md](sessions.md) §12 and [ui/sessions.md](../archive/ui/sessions.md)). |
 | `windows.js` | 284 | `NB.windows` | Makes each settings modal a draggable/resizable floating window with a shared maximize/restore control (double-click the header, or the injected `.win-max` button; see [window-maximize.md](window-maximize.md)). Geometry in `localStorage` under `nb:windowGeometry`; the maximized state is a transient class, never persisted. |
 | `settings.js` | 1760 | `NB.settings` | Settings modal with seven tabs: General, Workspaces (rendered only when `boot.workspace_id` is set), Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 1086 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
@@ -369,7 +369,7 @@ same change.
 | View | What it shows |
 | --- | --- |
 | Explorer | File tree, the inline pinned/bookmark section, and the tree menu |
-| Sessions | The workspace's tab groups: rows switch, `+` creates, row menu renames/deletes ([sessions.md](sessions.md), [ui/sessions.md](../ui/sessions.md)) |
+| Sessions | The workspace's tab groups: rows switch, `+` creates, row menu renames/deletes ([sessions.md](sessions.md), [ui/sessions.md](../archive/ui/sessions.md)) |
 | Pinned | Pinned folder list |
 | Bookmarks | Bookmark list |
 | Recent | Fuzzy quick-open over recent files |
@@ -398,8 +398,8 @@ between the regions; the bar's own `2px` gap is the spacing. Sessions change
 which paths are in `#tab-list`, never the bar's structure.
 
 `NB.tabs` owns the width-freeze / release / ghost-close machinery described
-in [`design/tab-equalization.md`](design/tab-equalization.md) and
-[`design/tab-close-animation.md`](design/tab-close-animation.md). Two points
+in [`design/tab-equalization.md`](../archive/architecture-design/tab-equalization.md) and
+[`design/tab-close-animation.md`](../archive/architecture-design/tab-close-animation.md). Two points
 matter for the bar's structure: `realTabs()` is **bar-scoped**
 (`tabs.js`), so every width measurement spans both regions; and
 the release class lives on `#tab-bar` (`.tab-bar.nb-tab-equalizing .tab`,

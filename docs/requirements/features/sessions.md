@@ -705,7 +705,7 @@ feature.
    view, like the file browser and the bookmarks view: a `.panel-header` with the
    title and a `+`, one row per session, and the footnote "Pinned tabs are shared
    by every session." No chip, popover, or footer action exists in the tab bar
-   (`docs/ui/sessions.md`).
+   (`docs/archive/ui/sessions.md`).
 2. **Row content — shown.** Every row carries the active marker, the name, the
    unpinned tab count including `0`, a dirty dot when the session holds an
    unsaved buffer, and a `⋯` actions button.

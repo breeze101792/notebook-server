@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Graph view — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A plus the graph RGB set.
+   ================================================================== */
+:root,
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124,156,255,.18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: #14151a;
+  --code-bg: #14151a;
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --graph-bg: #0e1018;
+  --graph-node-rgb: 130 168 255;
+  --graph-edge-rgb: 124 156 255;
+  --graph-glow-rgb: 150 220 255;
+  --graph-warn-rgb: 243 180 84;
+  --graph-label-rgb: 230 234 245;
+  --graph-dim-rgb: 80 92 120;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-xs: .72rem; --text-sm: .8rem; --text-ui: .86rem; --text-ui-lg: .93rem;
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600; --fw-heading: 650;
+  --space-hair: 2px; --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 20px; --space-6: 24px;
+  --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px;
+  --radius-pill: 999px; --radius-circle: 50%;
+  --stroke-1: 1px; --stroke-2: 2px; --stroke-3: 3px;
+  --control-h-sm: 24px; --control-h-md: 30px; --control-h-body: 32px; --control-h-lg: 36px;
+  --icon-sm: 14px; --icon-md: 16px; --icon-lg: 17px;
+  --focus-ring: 2px solid var(--accent); --focus-offset: 2px; --focus-offset-inset: -2px;
+  --shadow-pop: 0 6px 24px rgba(0,0,0,.35);
+  --shadow-modal: 0 20px 60px rgba(0,0,0,.5);
+  --overlay-scrim: rgba(0,0,0,.5);
+  --z-inline: 2; --z-popover: 1000; --z-modal: 2000; --z-toast: 3000;
+  --lh-tight: 1.2; --lh-snug: 1.35; --lh-normal: 1.5; --lh-flat: 1;
+  --tracking-label: .08em;
+}
+.theme-light {
+  --bg: #ffffff; --bg-panel: #f6f7f9; --bg-elev: #eceef2;
+  --fg: #1f2330; --fg-muted: #5d6470; --accent: #2f5fd0;
+  --accent-soft: rgba(47,95,208,.12); --accent-fg: #ffffff;
+  --border: #d8dde4; --border-strong: #78828f;
+  --surface-well: #f0f2f5; --code-bg: #f0f2f5;
+  --graph-bg: #f4f6fb;
+  --graph-node-rgb: 60 110 230; --graph-edge-rgb: 80 130 230;
+  --graph-glow-rgb: 25 145 230; --graph-warn-rgb: 201 131 29;
+  --graph-label-rgb: 31 35 48; --graph-dim-rgb: 150 162 184;
+  --shadow-pop: 0 6px 24px rgba(0,0,0,.16);
+  --shadow-modal: 0 20px 60px rgba(0,0,0,.22);
+}
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body { margin: 0; background: #0b0c10; color: var(--text-primary); font: var(--fw-regular) var(--text-body, .86rem)/var(--lh-normal) var(--font-ui); padding: 28px; }
+.page { max-width: 1280px; margin: 0 auto; }
+h1 { font-size: 24px; margin: 0 0 6px; }
+.lede { color: #9aa0ad; margin: 0 0 20px; max-width: 70ch; }
+.sec { margin: 0 0 28px; }
+.sec h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #8b90a0; margin: 0 0 10px; font-weight: 600; }
+.note { color: #8b90a0; font-size: 12px; margin: 8px 0 0; }
+.board { width: 100%; border-radius: 12px; overflow: hidden; border: 1px solid #2c2f3a; background: var(--surface-page); }
+.view { display: flex; flex-direction: column; height: 430px; background: var(--surface-page); }
+.view.narrow { height: 360px; max-width: 720px; }
+
+/* ---- header ---- */
+.gv-header {
+  position: relative; z-index: var(--z-inline);
+  flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--space-2) var(--space-3);
+  min-height: 47px; padding: var(--space-2) var(--space-3);
+  background: color-mix(in oklab, var(--surface-panel) 86%, transparent);
+  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+  border-bottom: var(--stroke-1) solid color-mix(in oklab, var(--border) 70%, transparent);
+}
+.gv-header::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none;
+  opacity: .55;
+  background: linear-gradient(90deg, transparent 0%, color-mix(in oklab, var(--accent) 35%, transparent) 30%, color-mix(in oklab, var(--accent) 35%, transparent) 70%, transparent 100%);
+}
+.gv-heading { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.gv-title { display: inline-flex; align-items: center; gap: var(--space-1); font-size: .95rem; font-weight: var(--fw-heading); color: var(--text-primary); white-space: nowrap; }
+.gv-dot { width: 7px; height: 7px; border-radius: var(--radius-circle); background: var(--accent); box-shadow: 0 0 8px var(--accent), 0 0 14px color-mix(in oklab, var(--accent) 60%, transparent); }
+.gv-badge { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border-radius: var(--radius-xs); border: var(--stroke-1) solid color-mix(in oklab, var(--accent) 32%, transparent); background: var(--accent-soft); color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .1em; }
+.gv-summary { font-size: .78rem; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.gv-tools { display: flex; align-items: center; gap: 6px; margin-left: auto; min-width: 0; }
+.gv-mode { display: inline-flex; height: var(--control-h-md); border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.gv-mode button { min-width: 34px; padding: 0 9px; background: transparent; border: 0; color: var(--text-muted); font: var(--fw-semibold) .74rem/1 var(--font-ui); cursor: pointer; }
+.gv-mode button + button { border-left: var(--stroke-1) solid var(--border); }
+.gv-mode button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.gv-filter-wrap { position: relative; }
+.gv-filter-wrap svg { position: absolute; left: 8px; top: 50%; translate: 0 -50%; width: 13px; height: 13px; color: var(--text-muted); }
+.gv-filter { width: 160px; height: var(--control-h-md); padding: 0 8px 0 26px; border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md); background: var(--surface-well, var(--code-bg)); color: var(--text-primary); font: var(--fw-regular) .82rem/1 var(--font-ui); }
+.gv-depth { display: inline-flex; align-items: center; gap: 6px; height: var(--control-h-md); padding: 0 8px; border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md); color: var(--text-muted); }
+.gv-depth input { width: 58px; }
+.gv-depth output { width: 30px; font-size: 10px; color: var(--text-muted); }
+.gv-sep { width: 1px; height: 18px; background: var(--border); }
+.gv-btn { display: grid; place-items: center; width: var(--control-h-md); height: var(--control-h-md); padding: 0; border: 0; border-radius: var(--radius-md); background: transparent; color: var(--text-muted); cursor: pointer; }
+.gv-btn:hover, .gv-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--text-primary); }
+.gv-btn svg { width: 15px; height: 15px; }
+
+/* ---- canvas ---- */
+.gv-host { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; touch-action: none; user-select: none;
+  background: radial-gradient(120% 90% at 50% 45%, color-mix(in oklab, var(--graph-bg) 88%, var(--accent) 12%) 0%, var(--graph-bg) 62%); }
+.gv-host svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.gv-hint { position: absolute; top: 14px; left: 50%; translate: -50% 0; display: flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: var(--radius-pill); border: var(--stroke-1) solid var(--border); background: var(--surface-raised); color: var(--text-muted); font: var(--fw-medium) 11.5px/1 var(--font-ui); z-index: 12; white-space: nowrap; }
+.gv-hint b { font-weight: var(--fw-semibold); color: var(--text-primary); }
+.gv-chip { position: absolute; left: 50%; bottom: 20px; translate: -50% 0; z-index: 16; display: flex; align-items: center; gap: var(--space-2); padding: 8px 13px; border-radius: var(--radius-pill); border: var(--stroke-1) solid var(--border); background: var(--surface-raised); box-shadow: var(--shadow-pop); font-size: 12px; }
+.gv-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+.gv-chip-name { font-weight: var(--fw-semibold); color: var(--text-primary); }
+.gv-chip-meta { color: var(--text-muted); font-size: 11px; }
+.gv-chip button { width: 20px; height: 20px; border: 0; border-radius: 50%; background: transparent; color: var(--text-muted); cursor: pointer; }
+.gv-state { position: absolute; inset: 0; display: grid; place-items: center; z-index: 18; padding: 24px; background: color-mix(in oklab, var(--graph-bg) 70%, transparent); }
+.gv-card { width: min(340px, 90%); padding: 26px 28px 24px; border-radius: 14px; border: var(--stroke-1) solid var(--border); background: var(--surface-raised); box-shadow: var(--shadow-modal); text-align: center; }
+.gv-art { width: 68px; height: 68px; margin: 0 auto 14px; border-radius: 50%; border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent); background: radial-gradient(circle at 50% 50%, var(--accent-soft), transparent 70%); }
+.gv-card h3 { margin: 0 0 6px; font-size: 15px; font-weight: var(--fw-heading); color: var(--text-primary); }
+.gv-card p { margin: 0 0 14px; color: var(--text-muted); font-size: .86rem; line-height: 1.5; }
+.gv-card button { height: var(--control-h-md); padding: 0 var(--space-3); border: var(--stroke-1) solid var(--border-strong); border-radius: var(--radius-sm); background: var(--surface-panel); color: var(--text-primary); font: var(--fw-medium) var(--text-ui)/1 var(--font-ui); cursor: pointer; }
+.gv-notice { position: absolute; left: 50%; top: 14px; translate: -50% 0; z-index: 14; padding: 7px 12px; border-radius: var(--radius-pill); border: 1px solid color-mix(in oklab, rgb(var(--graph-warn-rgb)) 60%, transparent); background: color-mix(in oklab, rgb(var(--graph-warn-rgb)) 14%, var(--surface-raised)); color: var(--text-primary); font-size: 11px; }
+.gv-mode-2d .gv-depth, .gv-mode-2d .gv-sep, .gv-mode-2d .gv-hint, .gv-mode-2d .gv-chip { display: none; }
+.narrow .gv-header { gap: 6px 8px; }
+.narrow .gv-summary { max-width: 118px; overflow: hidden; text-overflow: ellipsis; }
+.narrow .gv-depth summary { display: none; }
+.foot { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid #2c2f3a; color: #8b90a0; font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>Graph view — §graph</h1>
+  <p class="lede">Static reference for <b>graph-view.md</b>. Header, canvases, hint, chip and state cards use the
+    shipped values; every colour is a foundation token or a <code>--graph-*</code> RGB triple.</p>
+
+  <section class="sec">
+    <h2>1 · 3D loading</h2>
+    <div class="board"><div class="view">
+      <header class="gv-header">
+        <div class="gv-heading"><span class="gv-title"><span class="gv-dot"></span>Graph <span class="gv-badge">3D</span></span><span class="gv-summary"></span></div>
+        <div class="gv-tools">
+          <div class="gv-mode" role="group" aria-label="Graph mode"><button aria-pressed="false">2D</button><button aria-pressed="true">3D</button></div>
+          <div class="gv-filter-wrap"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.7" cy="6.7" r="4.4"/><path d="M10 10l3.2 3.2"/></svg><input class="gv-filter" type="search" placeholder="Filter notes…" aria-label="Filter notes"></div>
+          <label class="gv-depth" title="Depth spread"><input type="range" min="0" max="100" value="100" aria-label="Depth spread"><output>100%</output></label>
+          <span class="gv-sep"></span>
+          <button class="gv-btn" aria-label="Start auto-orbit"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="8" cy="8" rx="5.6" ry="2.9" transform="rotate(-28 8 8)"/><circle cx="12.4" cy="5.2" r="1.35" fill="currentColor" stroke="none"/></svg></button>
+          <button class="gv-btn" aria-label="Reset camera and fit graph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"/></svg></button>
+          <button class="gv-btn" aria-label="Zoom in"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+          <button class="gv-btn" aria-label="Zoom out"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 8h9"/></svg></button>
+          <button class="gv-btn" aria-label="Refresh graph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12.8 6.1A5 5 0 1 0 13 9.6"/><path d="M13 3.2v3h-3"/></svg></button>
+        </div>
+      </header>
+      <div class="gv-host">
+        <div class="gv-state"><div class="gv-card"><div class="gv-art"></div><h3>Mapping your notebook…</h3><p>Reading links from your notes.</p></div></div>
+      </div>
+      <div class="foot"><span>Loading · constellation art · no action</span></div>
+    </div></div>
+  </section>
+
+  <section class="sec">
+    <h2>2 · 3D ready with a selected note</h2>
+    <div class="board"><div class="view">
+      <header class="gv-header">
+        <div class="gv-heading"><span class="gv-title"><span class="gv-dot"></span>Graph <span class="gv-badge">3D</span></span><span class="gv-summary">42 notes · 63 links</span></div>
+        <div class="gv-tools">
+          <div class="gv-mode"><button aria-pressed="false">2D</button><button aria-pressed="true">3D</button></div>
+          <div class="gv-filter-wrap"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.7" cy="6.7" r="4.4"/><path d="M10 10l3.2 3.2"/></svg><input class="gv-filter" type="search" placeholder="Filter notes…" aria-label="Filter notes"></div>
+          <label class="gv-depth"><input type="range" min="0" max="100" value="100" aria-label="Depth spread"><output>100%</output></label>
+          <span class="gv-sep"></span>
+          <button class="gv-btn" aria-label="Start auto-orbit"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="8" cy="8" rx="5.6" ry="2.9" transform="rotate(-28 8 8)"/><circle cx="12.4" cy="5.2" r="1.35" fill="currentColor" stroke="none"/></svg></button>
+          <button class="gv-btn" aria-label="Reset camera and fit graph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"/></svg></button>
+          <button class="gv-btn" aria-label="Zoom in"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+          <button class="gv-btn" aria-label="Zoom out"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 8h9"/></svg></button>
+          <button class="gv-btn" aria-label="Refresh graph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12.8 6.1A5 5 0 1 0 13 9.6"/><path d="M13 3.2v3h-3"/></svg></button>
+        </div>
+      </header>
+      <div class="gv-host">
+        <svg viewBox="0 0 900 300" preserveAspectRatio="none" aria-hidden="true">
+          <g stroke="rgb(var(--graph-edge-rgb))" stroke-opacity=".35">
+            <line x1="450" y1="150" x2="250" y2="70"/><line x1="450" y1="150" x2="640" y2="70"/>
+            <line x1="450" y1="150" x2="240" y2="230"/><line x1="450" y1="150" x2="660" y2="230"/>
+            <line x1="450" y1="150" x2="450" y2="40"/><line x1="250" y1="70" x2="130" y2="120"/>
+            <line x1="640" y1="70" x2="760" y2="130"/><line x1="240" y1="230" x2="120" y2="200"/>
+          </g>
+          <g fill="rgb(var(--graph-node-rgb))">
+            <circle cx="450" cy="150" r="15"/><circle cx="250" cy="70" r="10"/><circle cx="640" cy="70" r="10"/>
+            <circle cx="240" cy="230" r="10"/><circle cx="660" cy="230" r="10"/><circle cx="450" cy="40" r="8"/>
+            <circle cx="130" cy="120" r="7"/><circle cx="760" cy="130" r="7"/><circle cx="120" cy="200" r="7"/>
+          </g>
+          <circle cx="660" cy="230" r="13" fill="none" stroke="rgb(var(--graph-glow-rgb))" stroke-width="2"/>
+          <text x="674" y="234" fill="rgb(var(--graph-label-rgb))" font-size="11" font-family="var(--font-ui)">bench.md</text>
+        </svg>
+        <div class="gv-hint"><b>Drag</b> to orbit <span>·</span> <b>Scroll</b> to zoom <span>·</span> <b>Right-drag</b> to pan <span>·</span> <b>Double-click</b> a note to open</div>
+        <div class="gv-chip"><span class="gv-chip-dot"></span><span class="gv-chip-name">bench.md</span><span class="gv-chip-meta">3 links</span><button aria-label="Clear selection">×</button></div>
+      </div>
+      <div class="foot"><span>Ready · SR list 42 items · chip visible in 3D</span></div>
+    </div></div>
+  </section>
+
+  <section class="sec">
+    <h2>3 · 2D ready</h2>
+    <div class="board"><div class="view gv-mode-2d">
+      <header class="gv-header">
+        <div class="gv-heading"><span class="gv-title"><span class="gv-dot"></span>Graph <span class="gv-badge">2D</span></span><span class="gv-summary">42 notes · 63 links</span></div>
+        <div class="gv-tools">
+          <div class="gv-mode"><button aria-pressed="true">2D</button><button aria-pressed="false">3D</button></div>
+          <div class="gv-filter-wrap"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6.7" cy="6.7" r="4.4"/><path d="M10 10l3.2 3.2"/></svg><input class="gv-filter" type="search" placeholder="Filter notes…" aria-label="Filter notes"></div>
+          <button class="gv-btn" aria-label="Reset camera and fit graph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6V3h3M10 3h3v3M13 10v3h-3M6 13H3v-3"/></svg></button>
+          <button class="gv-btn" aria-label="Zoom in"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3.5v9M3.5 8h9"/></svg></button>
+          <button class="gv-btn" aria-label="Zoom out"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3.5 8h9"/></svg></button>
+          <button class="gv-btn" aria-label="Refresh graph"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12.8 6.1A5 5 0 1 0 13 9.6"/><path d="M13 3.2v3h-3"/></svg></button>
+        </div>
+      </header>
+      <div class="gv-host">
+        <svg viewBox="0 0 900 300" preserveAspectRatio="none" aria-hidden="true">
+          <g stroke="rgb(var(--graph-edge-rgb))" stroke-opacity=".28">
+            <line x1="180" y1="90" x2="380" y2="150"/><line x1="380" y1="150" x2="560" y2="80"/>
+            <line x1="380" y1="150" x2="600" y2="220"/><line x1="380" y1="150" x2="240" y2="230"/>
+            <line x1="560" y1="80" x2="740" y2="120"/><line x1="600" y1="220" x2="760" y2="240"/>
+          </g>
+          <g fill="rgb(var(--graph-node-rgb))">
+            <circle cx="180" cy="90" r="9"/><circle cx="380" cy="150" r="13"/><circle cx="560" cy="80" r="8"/>
+            <circle cx="600" cy="220" r="8"/><circle cx="240" cy="230" r="7"/><circle cx="740" cy="120" r="7"/>
+            <circle cx="760" cy="240" r="7"/>
+          </g>
+        </svg>
+      </div>
+      <div class="foot"><span>2D · depth, orbit, separator, hint and chip hidden</span></div>
+    </div></div>
+  </section>
+
+  <section class="sec">
+    <h2>4 · Empty</h2>
+    <div class="board"><div class="view">
+      <header class="gv-header">
+        <div class="gv-heading"><span class="gv-title"><span class="gv-dot"></span>Graph <span class="gv-badge">3D</span></span><span class="gv-summary">0 notes · 0 links</span></div>
+        <div class="gv-tools"><div class="gv-mode"><button aria-pressed="false">2D</button><button aria-pressed="true">3D</button></div><button class="gv-btn" aria-label="Refresh graph">↻</button></div>
+      </header>
+      <div class="gv-host"><div class="gv-state"><div class="gv-card"><div class="gv-art"></div><h3>No notes yet</h3><p>Add a note and its links will appear here.</p><button>Refresh</button></div></div></div>
+      <div class="foot"><span>Empty · one card · Refresh</span></div>
+    </div></div>
+  </section>
+
+  <section class="sec">
+    <h2>5 · Error</h2>
+    <div class="board"><div class="view">
+      <header class="gv-header">
+        <div class="gv-heading"><span class="gv-title"><span class="gv-dot"></span>Graph <span class="gv-badge">3D</span></span><span class="gv-summary"></span></div>
+        <div class="gv-tools"><div class="gv-mode"><button aria-pressed="false">2D</button><button aria-pressed="true">3D</button></div><button class="gv-btn" aria-label="Refresh graph">↻</button></div>
+      </header>
+      <div class="gv-host"><div class="gv-state"><div class="gv-card"><div class="gv-art"></div><h3>Couldn’t load the graph</h3><p>The server did not answer. Your notes are unchanged.</p><button>Refresh</button></div></div></div>
+      <div class="foot"><span>Error · server message · Refresh</span></div>
+    </div></div>
+  </section>
+
+  <section class="sec">
+    <h2>6 · Large graph · flat layout notice</h2>
+    <div class="board"><div class="view">
+      <header class="gv-header">
+        <div class="gv-heading"><span class="gv-title"><span class="gv-dot"></span>Graph <span class="gv-badge">3D</span></span><span class="gv-summary">1,612 notes · 4,208 links</span></div>
+        <div class="gv-tools"><div class="gv-mode"><button aria-pressed="false">2D</button><button aria-pressed="true">3D</button></div><button class="gv-btn" aria-label="Refresh graph">↻</button></div>
+      </header>
+      <div class="gv-host"><div class="gv-notice">Large notebook — showing a flat overview for speed.</div>
+        <svg viewBox="0 0 900 300" preserveAspectRatio="none" aria-hidden="true"><g fill="rgb(var(--graph-node-rgb))"></g></svg>
+      </div>
+      <div class="foot"><span>Flat layout above 1,500 nodes</span></div>
+    </div></div>
+  </section>
+
+  <section class="sec">
+    <h2>7 · 720 narrow</h2>
+    <div class="board"><div class="view narrow">
+      <header class="gv-header">
+        <div class="gv-heading"><span class="gv-title"><span class="gv-dot"></span>Graph <span class="gv-badge">3D</span></span><span class="gv-summary">1,612 notes</span></div>
+        <div class="gv-tools"><div class="gv-mode"><button aria-pressed="false">2D</button><button aria-pressed="true">3D</button></div><div class="gv-filter-wrap"><input class="gv-filter" type="search" placeholder="Filter notes…" aria-label="Filter notes"></div><button class="gv-btn" aria-label="Fit">⛶</button><button class="gv-btn" aria-label="Refresh">↻</button></div>
+      </header>
+      <div class="gv-host"><div class="gv-hint">Drag to orbit · Pinch to zoom · Two-finger drag to pan</div></div>
+      <div class="foot"><span>Depth hidden · hint wraps · title .9rem</span></div>
+    </div></div>
+  </section>
+
+  <p class="note">Boards are static. The graph renderers, tiers and camera maths are described in
+    <code>docs/architecture/frontend.md</code>; this mockup fixes the chrome around them.</p>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var state = 'theme-dark';
+  var btn = document.createElement('button');
+  btn.textContent = 'Light';
+  btn.style.cssText = 'position:fixed;top:12px;right:12px;z-index:9999;padding:6px 10px;border-radius:6px;border:1px solid #444;background:#222;color:#eee;cursor:pointer';
+  btn.onclick = function () {
+    state = state === 'theme-dark' ? 'theme-light' : 'theme-dark';
+    root.className = state;
+    btn.textContent = state === 'theme-dark' ? 'Light' : 'Dark';
+  };
+  document.body.appendChild(btn);
+})();
+</script>
+</body>
+</html>

@@ -43,8 +43,8 @@ Start here depending on the job:
 | [`testing/`](testing/README.md) | [`testing/README.md`](testing/README.md) | The test strategy, the backend suite, and the frontend DOM/browser suites. |
 | [`operations/`](operations/README.md) | [`operations/README.md`](operations/README.md) | Repo layout, build/toolchain, vendoring, and the change checklists. |
 | [`product/`](product/mobile.md) | [`product/mobile.md`](product/mobile.md) | Shipped feature definitions: behavior, edge cases, acceptance criteria. |
-| [`design/`](design/settings-modal.md) | [`design/settings-modal.md`](design/settings-modal.md) | UI design handoffs and reference mockups for shipped features. |
-| [`ui/`](ui/edit-window-guide.md) | [`ui/edit-window-guide.md`](ui/edit-window-guide.md) | Design handoffs for the shared edit window, the workspace picker, the Sessions view, and the top-bar session picker. |
+| [`archive/`](archive/README.md) | [`archive/README.md`](archive/README.md) | Frozen old design records, kept for history. Not maintained and not part of the current design. |
+| [`ui/`](ui/foundations.md) | [`ui/foundations.md`](ui/foundations.md) | The current UI design set: foundations, controls, shell frame, tab strip, side-panel views, Search, and the AI panel. |
 | [`research/`](research/mobile-support.md) | [`research/mobile-support.md`](research/mobile-support.md) | Dated fact packs: browsers, libraries, protocols, and device constraints. |
 
 ## Architecture
@@ -67,10 +67,6 @@ Start here depending on the job:
 | [`architecture/mermaid-designer-coverage.md`](architecture/mermaid-designer-coverage.md) | The add-sidebar coverage per Mermaid diagram type. |
 | [`architecture/mobile.md`](architecture/mobile.md) | The mobile v1 implementation record: mode signal, bottom rail, drawer, persistence gate, capture request, and the test plan. |
 | [`architecture/bugfix-preview-overflow-tabs-focus.md`](architecture/bugfix-preview-overflow-tabs-focus.md) | Shipped structural fixes for preview overflow, modal focus, and tab-strip scroll. |
-| [`architecture/design/`](architecture/design/tab-equalization.md) | Sub-design notes that belong to the architecture of one widget: tab equalization, tab-close animation, and the Mermaid designer UI handoff. |
-| [`architecture/design/tab-equalization.md`](architecture/design/tab-equalization.md) | Tab-bar width re-equalization. Mockup: [`architecture/design/tab-equalize-mockup.html`](architecture/design/tab-equalize-mockup.html). |
-| [`architecture/design/tab-close-animation.md`](architecture/design/tab-close-animation.md) | Tab close animation. |
-| [`architecture/design/mermaid-designer-ui.md`](architecture/design/mermaid-designer-ui.md) | Mermaid designer UI handoff. Mockup: [`architecture/design/mermaid-designer-mockup.html`](architecture/design/mermaid-designer-mockup.html). |
 
 ## Contracts
 
@@ -99,7 +95,7 @@ Start here depending on the job:
 | [`product/table-editor-selection.md`](product/table-editor-selection.md) | Range selection and clipboard for the table editor: gestures, copy/cut/paste/clear, the TSV + HTML contract, grid growth, accessibility, AC19–AC44. |
 | [`product/mermaid-chart-editing.md`](product/mermaid-chart-editing.md) | Mermaid chart editing: what the visual editor must offer over typing the fence. |
 | [`product/dot-wavedrom-design-window.md`](product/dot-wavedrom-design-window.md) | Graphviz and WaveDrom design windows: entry points, scope, and Apply behavior. |
-| [`product/search-options.md`](product/search-options.md) | Side-panel Search options; the shipped control set is in `design/search-panel-advanced.md`. |
+| [`product/search-options.md`](product/search-options.md) | Side-panel Search options; the shipped control set is in `archive/design/search-panel-advanced.md`. |
 | [`product/search-gaps.md`](product/search-gaps.md) | Search gap analysis with the open gaps marked. |
 | [`product/hybrid-shortcuts.md`](product/hybrid-shortcuts.md) | Hybrid editing shortcuts; the behavior contract is `architecture/hybrid-editing.md`. |
 | [`product/hybrid-block-marker-backspace.md`](product/hybrid-block-marker-backspace.md) | Removing a block marker at the content start. |
@@ -108,33 +104,38 @@ Start here depending on the job:
 
 ## Design handoffs
 
-Each `.md` has a sibling `.html` mockup where one exists.
+The current UI design set. Each `.md` has a sibling `.html` mockup; open the mockup
+directly in a browser.
 
 | Guide | Covers |
 | --- | --- |
-| [`design/settings-modal.md`](design/settings-modal.md) | Settings modal: seven tabs, layout, and states. |
-| [`design/mobile-shell.md`](design/mobile-shell.md) | Mobile shell: breakpoints, anatomy, component states, tokens, and the file-by-file change list. |
-| [`design/viewer-scroll-container.md`](design/viewer-scroll-container.md) | The shipped split of the preview into a scroll container and a page: wallpaper host per mode, scroller ownership, retarget map, and acceptance criteria. |
-| [`design/table-editor.md`](design/table-editor.md) | Table editor: shell, grid, toolbar, sort, blocked state, keyboard, tokens, and responsive rules. |
-| [`design/table-editor-selection.md`](design/table-editor-selection.md) | Selection and clipboard: the wash and edge treatment, the clipboard toolbar group, status strings, and the blocked state. |
-| [`design/mermaid-editor.md`](design/mermaid-editor.md) | Mermaid editor: the edit UI redesign. |
-| [`design/dot-wavedrom-editor.md`](design/dot-wavedrom-editor.md) | Graphviz and WaveDrom windows: edit UI. |
-| [`design/graph-3d.md`](design/graph-3d.md) | Graph 3D renderer and its controls. |
-| [`design/ai-composer-redesign.md`](design/ai-composer-redesign.md) | AI composer: attachments, controls, and layout. |
-| [`design/ai-chat-message-area.md`](design/ai-chat-message-area.md) | AI chat message area: turn controls. |
-| [`design/edit-bar-arrangement.md`](design/edit-bar-arrangement.md) | Edit-bar control order and grouping. |
-| [`design/search-panel.md`](design/search-panel.md) | Side-panel Search: options and one-result-per-file. |
-| [`design/search-panel-advanced.md`](design/search-panel-advanced.md) | Side-panel Search: the shipped Advanced disclosure. |
-| [`design/search-panel-clear.md`](design/search-panel-clear.md) | Side-panel Search: the clear control. |
-| [`design/search-panel-controls.md`](design/search-panel-controls.md) | Side-panel Search: the labelled filter stack (superseded by Advanced). |
-| [`design/bugfix-preview-overflow-tabs-focus.md`](design/bugfix-preview-overflow-tabs-focus.md) | The visual fix for preview overflow, focus, and tab visibility. |
-| [`ui/edit-window-guide.md`](ui/edit-window-guide.md) | The shared hybrid edit-window playbook: header, action bar, commit footer, the history contract, responsive and accessibility rules, and the checklist for adding a window. |
-| [`ui/edit-window.md`](ui/edit-window.md) | The measured spec for the same shell: tokens, ids, bar slots, states, and the implementation deltas. Mockup: [`ui/edit-window-mockup.html`](ui/edit-window-mockup.html). |
-| [`ui/workspaces.md`](ui/workspaces.md) | Workspace picker: the bar, picker, add/rename dialog, Settings list, code-keyed error table, keyboard rules, and the shipped CSS. Mockup: [`ui/workspaces-mockup.html`](ui/workspaces-mockup.html). |
-| [`ui/sessions.md`](ui/sessions.md) | Sessions side-panel view: activity-bar placement, header and rows, row menu, tab-menu item, name dialog, copy, keyboard/ARIA, and the CSS to add. Mockup: [`ui/sessions-mockup.html`](ui/sessions-mockup.html). |
-| [`ui/topbar-session.md`](ui/topbar-session.md) | The top-bar session picker: placement after the workspace chip, the trigger and popover markup, CSS, the `sessions.js` picker, states, ARIA and acceptance criteria. Mockup: [`ui/topbar-session-mockup.html`](ui/topbar-session-mockup.html). |
-| [`ui/workspace-placement-mockup.html`](ui/workspace-placement-mockup.html) | Workspace placement mockup. |
-| [`ui/code-block-chip.md`](ui/code-block-chip.md) | Code fence header (E1): the padding that caused click growth, the chosen quiet top band carrying the language and the copy button, exact CSS, authored-language capture, the vendored-theme caveat, phone sizes, measured heights, and what to verify. Mockup: [`ui/code-block-chip-mockup.html`](ui/code-block-chip-mockup.html). |
+| [`ui/guidelines.md`](ui/guidelines.md) | The rulebook for the whole design set: document format, control ladder, token scoping, ownership, geometry canon, exceptions, mockup rules and review checklist. |
+| [`ui/foundations.md`](ui/foundations.md) | The token layer every screen references: principles, colour with contrast ratios, type, space, shape, elevation, z-bands, motion, breakpoints, iconography, accessibility, and the implementation contract. Mockup: [`ui/foundations-mockup.html`](ui/foundations-mockup.html). |
+| [`ui/controls.md`](ui/controls.md) | The component layer: inventory and verdict, 16 components with anatomy, states, markup, ARIA, keyboard contract, state matrix, phone rules, acceptance criteria, and migration order. Mockup: [`ui/controls-mockup.html`](ui/controls-mockup.html). |
+| [`ui/shell-frame.md`](ui/shell-frame.md) | The shell frame: grid, topbar, activity rail, side-panel frame, outline pane, phone conversion, keyboard and ARIA. Mockup: [`ui/shell-frame-mockup.html`](ui/shell-frame-mockup.html). |
+| [`ui/tab-bar.md`](ui/tab-bar.md) | The file tab strip: structure, anatomy, equal-width algorithm, overflow, states, drag, close animation, ARIA, and phone. Mockup: [`ui/tab-bar-mockup.html`](ui/tab-bar-mockup.html). |
+| [`ui/side-panel-views.md`](ui/side-panel-views.md) | Explorer, Pinned, Bookmarks and Recent, plus the shared view conventions: headers, rows, top-section modes, menus, states, keyboard and phone. Mockup: [`ui/side-panel-views-mockup.html`](ui/side-panel-views-mockup.html). |
+| [`ui/sessions.md`](ui/sessions.md) | The Sessions view: header, rows, counts, dirty dot, row menu, cap, read-only, keyboard and phone. Mockup: [`ui/sessions-mockup.html`](ui/sessions-mockup.html). |
+| [`ui/search-view.md`](ui/search-view.md) | The Search view: query row, options, Advanced filters, result listbox, every state, copy, ARIA and phone. Mockup: [`ui/search-view-mockup.html`](ui/search-view-mockup.html). |
+| [`ui/ai-panel.md`](ui/ai-panel.md) | The AI view: header, provider, messages, tool trace, edit cards and diffs, composer, attachments and states. Mockup: [`ui/ai-panel-mockup.html`](ui/ai-panel-mockup.html). |
+| [`ui/reader.md`](ui/reader.md) | The reading surface: page, type scale, block rhythm, inline elements, selection, states, accessibility, phone and print. Mockup: [`ui/reader-mockup.html`](ui/reader-mockup.html). |
+| [`ui/content-blocks.md`](ui/content-blocks.md) | Code fences, tables, figures, math, diagram cards and html-live: anatomy, states, actions, tokens and proposals. Mockup: [`ui/content-blocks-mockup.html`](ui/content-blocks-mockup.html). |
+| [`ui/edit-window.md`](ui/edit-window.md) | The shared edit-window chrome: header, action bar, footer, geometry, maximize, history, focus and responsive. Mockup: [`ui/edit-window-mockup.html`](ui/edit-window-mockup.html). |
+| [`ui/table-editor.md`](ui/table-editor.md) | The table editor: grid, selection, clipboard, toolbar, blocked state, history, Apply and phone. Mockup: [`ui/table-editor-mockup.html`](ui/table-editor-mockup.html). |
+| [`ui/diagram-designers.md`](ui/diagram-designers.md) | The Mermaid and Graphviz/WaveDrom designers: stage, sidebar, inspector, states, Apply and phone. Mockup: [`ui/diagram-designers-mockup.html`](ui/diagram-designers-mockup.html). |
+| [`ui/settings-modal.md`](ui/settings-modal.md) | Settings and its seven tabs: nav, rows, forms, lists, auth states, keyboard and phone. Mockup: [`ui/settings-modal-mockup.html`](ui/settings-modal-mockup.html). |
+| [`ui/dialogs.md`](ui/dialogs.md) | Auth, workspace, session, export and the shared dialog frame: validation, states and phone. Mockup: [`ui/dialogs-mockup.html`](ui/dialogs-mockup.html). |
+| [`ui/lightboxes.md`](ui/lightboxes.md) | The four full-screen viewers: open/close, controls, gestures, states, keyboard and phone. Mockup: [`ui/lightboxes-mockup.html`](ui/lightboxes-mockup.html). |
+| [`ui/source-editor.md`](ui/source-editor.md) | Markdown source mode: edit bar, CodeMirror surface, split preview, save/dirty, draft bar and phone. Mockup: [`ui/source-editor-mockup.html`](ui/source-editor-mockup.html). |
+| [`ui/hybrid-mode.md`](ui/hybrid-mode.md) | WYSIWYG mode: page state, block chrome, grips, overlays, code chip, save and conflict. Mockup: [`ui/hybrid-mode-mockup.html`](ui/hybrid-mode-mockup.html). |
+| [`ui/graph-view.md`](ui/graph-view.md) | The `§graph` tab: header, controls, canvases, gestures, states, keyboard and phone. Mockup: [`ui/graph-view-mockup.html`](ui/graph-view-mockup.html). |
+| [`ui/mobile-shell.md`](ui/mobile-shell.md) | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history and states. Mockup: [`ui/mobile-shell-mockup.html`](ui/mobile-shell-mockup.html). |
+| [`ui/welcome.md`](ui/welcome.md) | Welcome, no tabs, empty/no workspace, load failure, offline and first run. Mockup: [`ui/welcome-mockup.html`](ui/welcome-mockup.html). |
+
+Old design records — the previous per-feature handoffs (`settings-modal`, `mobile-shell`,
+`table-editor`, `search-panel*`, the AI composer, the edit windows, Sessions, the workspace
+picker, the tab animations) — are frozen under [`archive/`](archive/README.md). They are
+history and source material, not current specs.
 
 ## Research
 

@@ -1,0 +1,2103 @@
+<!doctype html>
+<html lang="en" class="theme-dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings modal — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A, copied verbatim.
+      Dark and light are the same names on two scopes, so a light board
+      can sit inside a dark page. The only additions are the shipped
+      component-local --stg-* numbers from settings-modal.md §10.1 and
+      --switch-knob from controls.md §1.2. No alias of an alias.
+   ================================================================== */
+
+:root,
+.theme-dark {
+  /* ---- base (dark) ---- */
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(124, 156, 255, .28);
+
+  /* ---- semantic (dark) ---- */
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+
+  /* ---- elevation (dark) ---- */
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .35);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .35);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .45);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .5);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .3);
+
+  /* ---- component (controls.md §1.2) ---- */
+  --switch-knob: var(--fg);
+}
+
+.theme-light {
+  /* ---- base (light) ---- */
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(47, 95, 208, .16);
+
+  /* ---- semantic (light) ---- */
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+
+  /* ---- elevation (light) ---- */
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .16);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .18);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .2);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .22);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .14);
+
+  /* ---- component (controls.md §1.2) ---- */
+  --switch-knob: var(--accent-fg);
+}
+
+/* ---- primitives (theme-independent) ---- */
+:root {
+  --font-scale: 1;
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-prose: var(--font-ui);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --z-inline: 2;
+  --z-sheet: 600;
+  --z-modal: 2000;
+
+  --dur-0: 100ms;
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 220ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: ease-out;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+  --icon-xl: 22px;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+  --opacity-disabled: .45;
+
+  /* ---- shipped Settings component numbers (style.css:1396-1415, :1932) ---- */
+  --stg-nav-w: 180px;
+  --stg-label-w: 132px;
+  --stg-space-1: 4px;
+  --stg-space-2: 6px;
+  --stg-space-3: 8px;
+  --stg-space-4: 12px;
+  --stg-space-5: 16px;
+  --stg-space-6: 24px;
+  --stg-field-pad-y: 6px;
+  --stg-field-pad-x: 10px;
+  --stg-btn-pad-y: 6px;
+  --stg-btn-pad-x: 14px;
+}
+
+
+/* Mockup substitution: the shipped nav icons are emoji (settings-modal.md §12 P1).
+   This machine has no emoji font, so the mockup draws the same marks on the
+   16 grid at 14 px, monochrome, in the same 1.4em column. */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.nav-icon svg { width: 14px; height: 14px; display: block; margin: 0 auto; }
+.tag-icon { width: 11px; height: 11px; display: inline-block; vertical-align: -1px; }
+.inline-icon { width: 1em; height: 1em; display: inline-block; vertical-align: -.12em; }
+a { color: var(--accent); }
+
+* { box-sizing: border-box; }
+
+html { font-size: calc(14px * var(--font-scale, 1)); }
+
+body {
+  margin: 0;
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+}
+
+code { font-family: var(--font-mono); font-size: .92em; }
+kbd { font-family: var(--font-mono); }
+
+/* ==================================================================
+   2. DOCUMENT CHROME
+   ================================================================== */
+
+.page-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-6) var(--space-5);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.page-head h1 { margin: 0; font-size: 28px; font-weight: var(--fw-semibold); letter-spacing: -.01em; line-height: 1.1; }
+.page-head .lede { margin: var(--space-2) 0 0; max-width: 92ch; color: var(--text-muted); font-size: var(--text-ui-lg); }
+
+.sec { max-width: 1460px; margin: 0 auto; padding: var(--space-6) var(--space-6) 0; }
+.sec > h2 {
+  margin: 0 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-sm)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.sec > .lede { margin: 0 0 var(--space-5); max-width: 104ch; color: var(--text-muted); font-size: var(--text-ui); }
+.notes { margin: var(--space-3) 0 0; padding-left: var(--space-5); color: var(--text-muted); font-size: var(--text-sm); max-width: 108ch; }
+.notes li { margin: var(--space-1) 0; }
+.notes strong { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.board {
+  width: max-content; max-width: 100%;
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface-page);
+}
+.board + .board { margin-top: var(--space-5); }
+.board-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+  font: var(--fw-semibold) var(--text-2xs)/1 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.board-head .dot { width: 6px; height: 6px; border-radius: var(--radius-circle); background: var(--accent); }
+.board-head .grow { flex: 1 1 auto; }
+.board-head .size { font-weight: var(--fw-regular); text-transform: none; letter-spacing: 0; }
+.pair { display: flex; flex-wrap: wrap; gap: var(--space-5); }
+
+.stage { position: relative; overflow: hidden; background: var(--surface-page); color: var(--text-primary); }
+.stage--900 { width: 1280px; height: 900px; }
+.stage--760 { width: 1280px; height: 760px; }
+.stage--640 { width: 1280px; height: 640px; }
+.stage--620 { width: 1280px; height: 620px; }
+.stage--960 { width: 1280px; height: 960px; }
+.stage--1000 { width: 1280px; height: 1000px; }
+.stage--1160 { width: 1280px; height: 1160px; }
+.stage--1660 { width: 1280px; height: 1660px; }
+.stage--phone { width: 390px; height: 780px; }
+.stage--measure { width: 390px; height: 320px; }
+.stage--spec { width: 660px; height: 1240px; padding: var(--space-4); overflow: auto; background: var(--surface-panel); }
+
+/* ==================================================================
+   3. SETTINGS — shipped values, foundation tokens.
+      Every rule cites static/css/style.css in settings-modal.md §1-§5.
+   ================================================================== */
+
+.settings-overlay {
+  position: absolute; inset: 0;
+  background: var(--overlay-scrim);
+  z-index: var(--z-modal);
+}
+
+.settings-modal {
+  position: absolute; left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  width: 75%;
+  height: 85%;
+  max-width: 96%; max-height: 92%;
+  display: flex; flex-direction: column;
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+
+/* ---- header ---- */
+.settings-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-2);
+  padding: 14px 18px;
+  border-bottom: var(--stroke-1) solid var(--border);
+  flex-shrink: 0;
+  cursor: move;
+  touch-action: none;   /* exception E9: not on the box */
+}
+.settings-header h2 {
+  margin: 0;
+  font-size: 1.14rem; font-weight: var(--fw-semibold); letter-spacing: .3px;
+}
+.settings-header-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.icon-btn {
+  background: none; border: none;
+  color: var(--text-muted);
+  font: inherit; font-size: 1.3rem; line-height: 1; padding: 4px 8px;
+  border-radius: var(--radius-sm); cursor: pointer;
+}
+.icon-btn:hover, .icon-btn.is-hover { color: var(--text-primary); background: var(--accent-soft); }
+.icon-btn svg { display: block; }
+
+/* ---- body, nav, sections ---- */
+.settings-body { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }
+
+.settings-nav {
+  flex: 0 0 var(--stg-nav-w);
+  display: flex; flex-direction: column; gap: var(--space-hair);
+  padding: var(--stg-space-3) var(--stg-space-2);
+  background: var(--surface-page);
+  border-right: var(--stroke-1) solid var(--border);
+  overflow-y: auto;
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: var(--stg-space-3);
+  min-height: var(--control-h-md);
+  padding: var(--space-1) var(--space-2);
+  background: transparent; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font: inherit; font-size: var(--text-ui);
+  text-align: left; white-space: nowrap; cursor: pointer;
+  user-select: none;
+}
+.settings-nav-item:hover, .settings-nav-item.is-hover { background: var(--accent-soft); color: var(--text-primary); }
+.settings-nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+  box-shadow: inset var(--stroke-2) 0 0 var(--accent);
+}
+.nav-icon { display: inline-block; min-width: 1.4em; text-align: center; flex: 0 0 auto; line-height: 1; }
+
+.settings-sections { flex: 1 1 auto; min-width: 0; overflow-y: auto; padding: var(--stg-space-1) 18px 18px; }
+.settings-section { padding: 14px 0; border-bottom: var(--stroke-1) solid var(--border); }
+.settings-section:last-child { border-bottom: none; }
+
+.settings-section h3, .settings-subheading {
+  margin: 0 0 var(--stg-space-3);
+  font-size: .76rem; font-weight: var(--fw-semibold);
+  text-transform: uppercase; letter-spacing: .8px;
+  color: var(--text-muted);
+}
+.settings-form-title {
+  margin: var(--stg-space-6) 0 var(--stg-space-3);
+  padding-top: var(--stg-space-5);
+  border-top: var(--stroke-1) solid var(--border);
+  font-size: .74rem; font-weight: var(--fw-semibold);
+  text-transform: uppercase; letter-spacing: .7px;
+  color: var(--text-muted);
+}
+.settings-help { margin: 0 0 10px; color: var(--text-muted); font-size: .86rem; line-height: 1.5; }
+.settings-note { margin-top: var(--stg-space-1); font-size: .86rem; color: var(--text-muted); }
+.settings-hint { font-size: .78rem; color: var(--text-muted); }
+
+/* ---- rows ---- */
+.settings-row {
+  display: flex; align-items: center; gap: var(--stg-space-4);
+  padding: var(--stg-space-2) 0;
+  min-width: 0;
+}
+.settings-label { flex: 0 0 var(--stg-label-w); min-width: 0; color: var(--text-muted); font-size: var(--text-ui-lg); }
+.settings-control { flex: 1 1 auto; min-width: 0; display: flex; flex-wrap: wrap; gap: var(--stg-space-2); }
+.settings-row-column { flex-direction: column; align-items: stretch; gap: 0; }
+.settings-row-column .settings-label { flex: 0 0 auto; margin-bottom: var(--stg-space-1); }
+.settings-form-actions {
+  display: flex; justify-content: flex-end; align-items: center;
+  gap: var(--stg-space-3); padding: var(--stg-space-2) 0;
+}
+.settings-value { color: var(--text-primary); font-size: var(--text-ui-lg); }
+
+/* ---- fields ---- */
+.settings-modal .auth-input,
+.settings-modal .settings-text-input,
+.settings-modal textarea,
+.settings-modal select,
+.spec .settings-text-input {
+  background: var(--surface-well); color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  height: var(--control-h-lg);
+  padding: var(--space-1) var(--space-2);
+  font-family: inherit; font-size: var(--text-ui);
+  outline: none; min-width: 0; max-width: none; flex: 1 1 auto;
+}
+.settings-modal .auth-input:focus,
+.settings-modal .settings-text-input:focus,
+.settings-modal textarea:focus,
+.settings-modal select:focus,
+.settings-modal .auth-input.is-focus,
+.settings-modal .settings-text-input.is-focus,
+.settings-modal textarea.is-focus,
+.settings-modal select.is-focus,
+.spec .settings-text-input.is-focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+  outline: none;
+}
+.settings-modal .auth-input:disabled,
+.settings-modal .settings-text-input:disabled,
+.settings-modal select:disabled,
+.settings-modal textarea:disabled,
+.spec .settings-text-input:disabled { opacity: .55; cursor: not-allowed; }
+.settings-modal .settings-auth-input { max-width: 260px; }
+.settings-modal .settings-number-input { flex: 0 0 90px; text-align: right; }
+.settings-modal .settings-vimrc-area {
+  flex: 0 0 auto; width: 100%;
+  font-family: var(--font-mono); font-size: .86rem; line-height: 1.45;
+  padding: var(--space-2) 10px; resize: vertical;
+}
+.settings-vimrc { flex-direction: column; align-items: stretch; gap: var(--stg-space-2); }
+.settings-vimrc .settings-label { flex: 0 0 auto; }
+.settings-vimrc-actions { display: flex; align-items: center; gap: 10px; }
+
+/* ---- buttons ---- */
+.settings-action {
+  background: var(--surface-raised); color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border-strong); border-radius: var(--radius-sm);
+  height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  font-family: inherit; font-size: var(--text-ui); line-height: var(--lh-flat);
+  cursor: pointer; white-space: nowrap;
+}
+.settings-action:hover:not(:disabled), .settings-action.is-hover {
+  background: var(--accent-soft); border-color: var(--accent);
+}
+.settings-action--primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); font-weight: var(--fw-semibold); }
+.settings-action--primary:hover:not(:disabled), .settings-action--primary.is-hover {
+  background: var(--accent); border-color: var(--accent);
+  box-shadow: 0 0 0 var(--stroke-3) var(--accent-soft);
+  filter: none;
+}
+.settings-action:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; background: var(--surface-raised); border-color: var(--border); }
+
+.settings-ai-test, .settings-ai-edit, .shortcut-change, .shortcut-reset, .ws-btn {
+  background: transparent; border-color: transparent;
+  color: var(--text-muted); padding: 4px 10px; font-size: .85rem;
+}
+.settings-ai-edit { color: var(--accent); }
+.settings-ai-test:hover:not(:disabled), .settings-ai-edit:hover:not(:disabled),
+.shortcut-change:hover:not(:disabled), .shortcut-reset:hover:not(:disabled), .ws-btn:hover:not(:disabled) {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--accent);
+}
+.settings-ai-remove, .settings-token-revoke, .settings-auth-danger, .ws-btn--danger {
+  background: transparent; border-color: transparent; color: var(--danger);
+}
+.settings-ai-remove:hover:not(:disabled), .settings-token-revoke:hover:not(:disabled),
+.settings-auth-danger:hover:not(:disabled), .ws-btn--danger:hover:not(:disabled) {
+  background: var(--danger-soft); border-color: var(--danger);
+}
+
+/* ---- switch (every checkbox inside Settings) ---- */
+.settings-modal input[type="checkbox"],
+.spec input[type="checkbox"] {
+  appearance: none; -webkit-appearance: none;
+  position: relative;
+  width: 36px; height: 20px;
+  margin: 0 0 0 auto;
+  flex: 0 0 auto;
+  border-radius: var(--radius-pill);
+  border: var(--stroke-1) solid var(--border-strong);
+  background: var(--surface-well);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.settings-modal input[type="checkbox"]::after,
+.spec input[type="checkbox"]::after {
+  content: "";
+  position: absolute; top: 1px; left: 1px;
+  width: 16px; height: 16px; border-radius: var(--radius-circle);
+  background: var(--switch-knob);
+  transition: transform var(--dur-1) var(--ease-out);
+}
+.settings-modal input[type="checkbox"]:checked,
+.spec input[type="checkbox"]:checked { background: var(--accent); }
+.settings-modal input[type="checkbox"]:checked::after,
+.spec input[type="checkbox"]:checked::after { transform: translateX(16px); }
+.settings-modal input[type="checkbox"]:disabled,
+.spec input[type="checkbox"]:disabled { opacity: var(--opacity-disabled); cursor: not-allowed; }
+
+/* ---- radio chips: the shipped eight groups share one look ---- */
+[data-chips] { display: flex; flex-wrap: wrap; gap: var(--stg-space-2); }
+[data-chips] label {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: var(--text-ui);
+  cursor: pointer;
+  transition: background var(--dur-1) ease, border-color var(--dur-1) ease, color var(--dur-1) ease;
+}
+[data-chips] label:hover, [data-chips] label.is-hover { border-color: var(--accent); color: var(--text-primary); }
+[data-chips] label:has(input:checked) {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: var(--fw-semibold);
+}
+[data-chips] input { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+[data-chips] label.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* ---- card rows: provider + token ---- */
+.settings-ai-row, .settings-token-row {
+  display: flex; align-items: center; gap: var(--stg-space-3);
+  padding: var(--stg-space-3) var(--stg-space-4);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  margin: 0 0 var(--stg-space-2);
+}
+.settings-ai-row .settings-label, .settings-token-row .settings-label {
+  flex: 1 1 auto; min-width: 0;
+  color: var(--text-primary); font-weight: var(--fw-semibold);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.settings-token-meta { display: inline-flex; align-items: center; gap: var(--stg-space-2); flex-wrap: wrap; min-width: 0; }
+.settings-token-role, .settings-token-created { font-size: .78rem; color: var(--text-muted); }
+
+/* ---- status, tag ---- */
+.stg-status, .settings-watch-status {
+  display: inline-flex; align-items: center; gap: var(--stg-space-2);
+  font-size: .82rem; font-weight: var(--fw-semibold); color: var(--text-primary);
+}
+.stg-status::before, .settings-watch-status::before {
+  content: ""; width: 8px; height: 8px; border-radius: var(--radius-circle);
+  flex: 0 0 auto; background: var(--text-muted);
+}
+.settings-watch-status::before { background: currentColor; }
+.stg-status--ok { color: var(--ok); }
+.stg-status--ok::before { background: var(--ok); }
+.stg-status--warn { color: var(--warn); }
+.stg-status--warn::before { background: var(--warn); }
+.stg-status--danger { color: var(--danger); }
+.stg-status--danger::before { background: var(--danger); }
+.stg-status--accent { color: var(--accent); }
+.stg-status--accent::before { background: var(--accent); }
+.settings-watch-status.watch-on { color: var(--ok); }
+.settings-watch-status.watch-off { color: var(--warn); }
+
+.stg-tag {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 1px 8px;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: .68rem; font-weight: var(--fw-bold);
+  letter-spacing: .5px; text-transform: uppercase; white-space: nowrap;
+}
+.stg-tag--accent { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.stg-tag--ok { color: var(--ok); border-color: var(--ok); }
+.stg-tag--danger { color: var(--danger); border-color: var(--danger); }
+
+/* ---- vimrc status, error ---- */
+.settings-vimrc-status { font-size: .82rem; }
+.settings-vimrc-status.ok { color: var(--ok); }
+.settings-vimrc-status.error { color: var(--warn); }
+.auth-error { color: var(--danger); font-size: .89rem; min-height: 18px; margin: 2px 0 4px; }
+.settings-mono {
+  font-family: var(--font-mono); font-size: .86rem;
+  background: var(--surface-raised); padding: 3px 8px; border-radius: var(--radius-xs);
+  word-break: break-all; user-select: text;
+}
+
+/* ---- focus: the shipped catch-all (1 px offset) ---- */
+.settings-modal :focus-visible,
+.settings-modal .is-focus,
+.spec .is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.settings-modal input[type="checkbox"].is-focus,
+.spec input[type="checkbox"].is-focus { outline: var(--focus-ring); outline-offset: 2px; }
+
+/* ---- workspaces ---- */
+.ws-list { display: flex; flex-direction: column; gap: var(--stg-space-2); margin: 2px 0 10px; }
+.ws-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: var(--space-2) 10px;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.ws-row.is-active { box-shadow: inset var(--stroke-2) 0 0 var(--accent); }
+.ws-row-main {
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  flex: 1 1 auto; min-width: 0;
+  margin: -4px -6px; padding: 4px 6px;
+  background: none; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-primary); font: inherit; text-align: left; cursor: pointer;
+}
+.ws-row-main:hover { background: var(--accent-soft); }
+.ws-row-main[aria-current="page"] { cursor: default; }
+.ws-row-main[aria-current="page"]:hover { background: none; }
+.ws-row-main:disabled { cursor: default; color: var(--text-muted); }
+.ws-row-main:disabled:hover { background: none; }
+.ws-row-check { flex: 0 0 14px; width: 14px; text-align: center; font-size: .8rem; line-height: 1.7; color: var(--accent); }
+.ws-row-text { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.ws-row-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: .95rem; font-weight: var(--fw-semibold); }
+.ws-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-row-path { font-family: var(--font-mono); font-size: .8rem; line-height: 1.45; color: var(--text-muted); overflow-wrap: anywhere; }
+.ws-row-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.ws-badge {
+  flex: 0 0 auto; padding: 1px 7px;
+  border-radius: var(--radius-pill);
+  font-size: .72rem; font-weight: var(--fw-semibold); letter-spacing: .02em;
+  background: transparent; border: var(--stroke-1) solid var(--accent); color: var(--accent);
+}
+.ws-badge--default { border-color: var(--border); color: var(--text-muted); }
+.ws-badge--warn { border-color: var(--warn); color: var(--warn); }
+.ws-add { width: 100%; background: transparent; border-style: dashed; color: var(--text-muted); }
+.ws-add-row { padding: 0; }
+
+/* ---- shortcuts ---- */
+.shortcuts-list { display: flex; flex-direction: column; gap: var(--stg-space-2); margin: var(--stg-space-1) 0 14px; }
+.shortcut-row {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--stg-space-4);
+  padding: 10px 12px;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+.shortcut-label { flex: 1 1 auto; min-width: 0; color: var(--text-primary); font-size: .95rem; }
+.shortcut-binding-wrap { display: flex; align-items: center; gap: var(--space-2); flex: 0 0 auto; }
+.shortcut-binding {
+  font: .9rem/1 var(--font-mono);
+  padding: 3px 8px;
+  border: var(--stroke-1) solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  min-width: 70px; text-align: center; display: inline-block;
+}
+.shortcut-binding-capturing { border-color: var(--accent); background: var(--accent-soft); color: var(--text-primary); }
+.shortcut-row-static { padding: 6px 12px; background: transparent; border-style: dashed; }
+.shortcut-row-static .shortcut-binding { min-width: 0; }
+.shortcuts-footer {
+  margin-top: var(--stg-space-1);
+  border-top: var(--stroke-1) solid var(--border);
+  padding-top: 12px;
+  justify-content: flex-end;
+}
+.shortcuts-footer .settings-label { display: none; }
+
+/* ---- ACP read-only panel ---- */
+.settings-ai-acp-row, .settings-ai-acp-info {
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--stg-space-4);
+  margin: var(--stg-space-2) 0 var(--stg-space-3);
+}
+.settings-ai-acp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--stg-space-3); margin: 0 0 var(--stg-space-3);
+}
+.settings-ai-acp-title {
+  margin: 0; font-size: .74rem; font-weight: var(--fw-semibold);
+  text-transform: uppercase; letter-spacing: .7px; color: var(--text-muted);
+}
+.settings-ai-acp-profile {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--stg-space-2);
+  padding: var(--stg-space-3);
+  border: var(--stroke-1) solid var(--border);
+  border-left: var(--stroke-2) solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-page);
+  margin: 0 0 var(--stg-space-3);
+}
+.settings-ai-acp-profile-name { font-weight: var(--fw-semibold); font-size: var(--text-ui-lg); color: var(--text-primary); }
+.settings-ai-acp-profile-meta { flex: 1 1 100%; font-size: .78rem; color: var(--text-muted); }
+.settings-ai-acp-agents { display: flex; flex-direction: column; gap: var(--stg-space-2); }
+.settings-ai-acp-agent {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--stg-space-2) var(--stg-space-3);
+  padding: var(--stg-space-2) var(--stg-space-3);
+  border-radius: var(--radius-sm);
+}
+.settings-ai-acp-agent[data-selected="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset var(--stroke-2) 0 0 var(--accent);
+}
+.settings-ai-acp-agent-name { flex: 0 0 auto; font-weight: var(--fw-semibold); font-size: var(--text-ui-lg); color: var(--text-primary); }
+.settings-ai-acp-agent-status { flex: 0 0 auto; }
+.settings-ai-acp-key { margin-left: auto; font-family: var(--font-mono); font-size: .76rem; color: var(--text-muted); }
+.settings-ai-acp-hint { flex: 1 1 100%; font-family: var(--font-mono); font-size: .74rem; color: var(--warn); overflow-wrap: anywhere; }
+.settings-ai-acp-note { margin: var(--stg-space-3) 0 0; }
+
+/* ---- footer + grip ---- */
+.settings-footer {
+  display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: 12px 18px;
+  border-top: var(--stroke-1) solid var(--border);
+  background: var(--surface-panel);
+  flex-shrink: 0;
+}
+.resize-grip {
+  position: absolute; right: 2px; bottom: 2px;
+  width: 18px; height: 18px; z-index: 5;
+  cursor: nwse-resize;
+  border-radius: 0 0 10px 0;
+  touch-action: none;   /* exception E9 */
+}
+.resize-grip::after {
+  content: "";
+  position: absolute; right: 4px; bottom: 4px;
+  width: 10px; height: 10px;
+  border-right: var(--stroke-2) solid var(--text-muted);
+  border-bottom: var(--stroke-2) solid var(--text-muted);
+  opacity: .55;
+  border-bottom-right-radius: 2px;
+}
+
+/* ==================================================================
+   4. PHONE SHEET — shipped values (style.css:7593-7742)
+   ================================================================== */
+
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  z-index: var(--z-sheet);
+  display: flex; flex-direction: column;
+  max-height: min(72dvh, 560px);
+  background: var(--surface-panel);
+  border-top: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  padding: 0 0 12px;
+  box-shadow: var(--shadow-sheet);
+}
+.sheet-grabber { width: 36px; height: 4px; flex: 0 0 4px; margin: var(--space-2) auto var(--space-1); border-radius: 2px; background: var(--border); }
+.sheet-head { flex: 0 0 52px; display: flex; align-items: center; padding: 0 6px 0 var(--space-4); }
+.sheet-head h2 { flex: 1 1 auto; margin: 0; font-size: 16px; font-weight: var(--fw-semibold); }
+.sheet-close {
+  width: var(--control-h-touch); height: var(--control-h-touch);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: var(--radius-md);
+  color: var(--text-primary); font-size: 20px; line-height: 1; cursor: pointer;
+}
+.sheet-body { padding: 0 var(--space-4) var(--space-2); overflow-y: auto; overscroll-behavior: contain; }
+.sheet-row {
+  display: flex; align-items: center; gap: var(--stg-space-4);
+  min-height: 52px; border-bottom: var(--stroke-1) solid var(--border); flex-wrap: wrap;
+}
+.sheet-label { flex: 1 1 auto; font-size: 15px; }
+.sheet-seg { display: inline-flex; border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md); overflow: hidden; }
+.sheet-seg button {
+  min-height: var(--control-h-touch); padding: 0 var(--space-3);
+  background: none; border: 0; border-right: var(--stroke-1) solid var(--border);
+  color: var(--text-primary); font: 13px/1 inherit; cursor: pointer;
+}
+.sheet-seg button:last-child { border-right: 0; }
+.sheet-seg button.on { background: var(--accent); color: var(--text-on-accent); }
+.sheet-note { margin: 10px 0 14px; font-size: 12px; color: var(--text-muted); }
+.sheet-server { display: inline-flex; align-items: center; gap: var(--stg-space-2); max-width: 100%; color: var(--text-muted); font: 12px/1.4 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sheet-signout {
+  width: 100%; min-height: var(--control-h-touch);
+  border: var(--stroke-1) solid var(--danger); border-radius: 10px;
+  background: none; color: var(--danger); font: 600 15px/1 inherit; cursor: pointer;
+  margin-top: var(--space-1);
+}
+.status-dot { width: 8px; height: 8px; border-radius: var(--radius-circle); background: var(--ok); display: inline-block; }
+
+/* ==================================================================
+   5. SPECIMEN STRIP
+   ================================================================== */
+
+.spec { display: flex; flex-direction: column; gap: var(--space-4); }
+.spec-group { border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md); background: var(--surface-page); padding: var(--space-3); }
+.spec-group > h3 { margin: 0 0 var(--space-2); font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted); }
+.spec-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; }
+.spec-cap { font-size: var(--text-xs); color: var(--text-muted); min-width: 74px; font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+
+<svg class="icon-sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-gear" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.5v1.8M8 12.7v1.8M1.5 8h1.8M12.7 8h1.8M3.4 3.4l1.3 1.3M11.3 11.3l1.3 1.3M12.6 3.4l-1.3 1.3M4.7 11.3l-1.3 1.3"/></g></symbol>
+    <symbol id="i-book" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h4.2v9H2.5zM9.3 3.5h4.2v9H9.3z"/><path d="M6.7 3.5v9"/></g></symbol>
+    <symbol id="i-palette" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.3a5.7 5.7 0 1 0 0 11.4c1 0 1.3-.8.8-1.6-.6-.9 0-2 1.1-2h1.3c.8 0 1.4-.6 1.4-1.4A5.7 5.7 0 0 0 8 2.3Z"/><path d="M5.6 6.1h.01M8 4.8h.01M10.4 6.1h.01"/></g></symbol>
+    <symbol id="i-keyboard" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="4.5" width="13" height="7" rx="1.5"/><path d="M4.2 7h.01M6.5 7h.01M8.8 7h.01M11.1 7h.01M4.6 9.5h6.8"/></g></symbol>
+    <symbol id="i-lock" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.2"/><path d="M5.6 7V5.5a2.4 2.4 0 0 1 4.8 0V7"/></g></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4Z"/></g></symbol>
+    <symbol id="i-info" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 7.2v4M8 5.2h.01"/></g></symbol>
+  </defs>
+</svg>
+
+<header class="page-head theme-dark">
+  <div>
+    <p class="eyebrow">Notebook · docs/ui · mockup</p>
+    <h1>Settings modal — seven tabs</h1>
+    <p class="lede">The shipped Settings surface, codified. Dark and light boards use the foundation
+      tokens only. Every size, colour and space is the shipped value. Proposals live in
+      <code>settings-modal.md</code> §12 and are not drawn here.</p>
+  </div>
+</header>
+
+<main>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>1 · General — dark</h2>
+  <p class="lede">Site title in the focus state, file-watching status as a dot plus a word, the VIM
+    script with its explicit Save and success line. Nav: General active.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>General · 1280 × 1000 · medium preset (960 × 850)<span class="grow"></span><span class="size">dark</span></div>
+    <div class="stage stage--1000 theme-dark">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b1-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b1-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item active" role="tab" id="b1-tab-general" aria-selected="true" aria-controls="b1-general"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" id="b1-tab-workspaces" aria-selected="false" aria-controls="b1-workspaces" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" id="b1-tab-appearance" aria-selected="false" aria-controls="b1-appearance" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" id="b1-tab-shortcuts" aria-selected="false" aria-controls="b1-shortcuts" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item" role="tab" id="b1-tab-security" aria-selected="false" aria-controls="b1-security" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" id="b1-tab-ai" aria-selected="false" aria-controls="b1-ai" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" id="b1-tab-about" aria-selected="false" aria-controls="b1-about" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section" id="b1-general" role="tabpanel" aria-labelledby="b1-tab-general">
+                <h3>Site</h3>
+                <div class="settings-row">
+                  <label class="settings-label" for="b1-site-title">Site title</label>
+                  <input id="b1-site-title" class="settings-text-input is-focus" type="text" value="Lab notebook" maxlength="60" spellcheck="false">
+                </div>
+
+                <h3>File watching</h3>
+                <p class="settings-help">Get notified when files in your notebook are changed by another program (vim, a sync tool, a different browser tab, etc.). Detection runs by default using a 5-second poll. Click <em>Enable</em> below to upgrade to the native folder observer, which is push-based and uses no network -- the browser will ask for permission to read your notebook folder.</p>
+                <div class="settings-row">
+                  <span class="settings-label">Status</span>
+                  <span class="settings-value settings-watch-status watch-on" role="status">Polling (5s)</span>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label">Native observer</span>
+                  <button class="settings-action" type="button">Enable</button>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b1-autosave">Autosave (WYSIWYG)</label>
+                  <input type="checkbox" id="b1-autosave" checked>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b1-delay">Autosave delay (s)</label>
+                  <input id="b1-delay" class="settings-text-input settings-number-input" type="number" min="1" max="300" step="1" value="5" inputmode="numeric">
+                </div>
+
+                <h3>Keyboard</h3>
+                <p class="settings-help">Enable VIM-style keybindings. When on, the sidebar, outline, and editor act as three vim "windows" (Ctrl+W to cycle). Inside the editor itself, CodeMirror 6's vim mode gives you full VIM (normal/insert, motions, text objects, <code>:w</code> to save, <code>:q</code> to exit, etc.). Press <kbd>?</kbd> from the shell for the full keymap.</p>
+                <div class="settings-row">
+                  <label class="settings-label" for="b1-vim">VIM mode</label>
+                  <input type="checkbox" id="b1-vim">
+                </div>
+                <div class="settings-row settings-vimrc">
+                  <label class="settings-label" for="b1-vimrc">VIM initial script</label>
+                  <textarea id="b1-vimrc" class="settings-vimrc-area" rows="8" spellcheck="false" placeholder="# One binding per line. Examples:&#10;# nmap j gj&#10;# imap jj <Esc>&#10;# unmap <leader>w"></textarea>
+                  <div class="settings-vimrc-actions">
+                    <button class="settings-action settings-action--primary" type="button">Save</button>
+                    <span class="settings-vimrc-status ok" role="status">Saved (3 bindings applied)</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>2 · Appearance — light</h2>
+  <p class="lede">Three Interface controls, the two Modal size groups, and the four wallpaper
+    groups. Chips show rest, checked and focus; switches show off and on.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Appearance · 1280 × 960 · light<span class="grow"></span><span class="size">three group titles with hairlines</span></div>
+    <div class="stage stage--960 theme-light">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b2-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b2-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Appearance</h3>
+
+                <div class="settings-form-title">Interface</div>
+                <div class="settings-row">
+                  <span class="settings-label">Theme</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Theme">
+                    <label><input type="radio" name="b2-theme" value="auto"> Auto</label>
+                    <label><input type="radio" name="b2-theme" value="dark"> Dark</label>
+                    <label class="is-focus"><input type="radio" name="b2-theme" value="light" checked> Light</label>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label">Font size</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Font size">
+                    <label><input type="radio" name="b2-size" value="small"> S</label>
+                    <label><input type="radio" name="b2-size" value="medium" checked> M</label>
+                    <label><input type="radio" name="b2-size" value="large"> L</label>
+                    <label><input type="radio" name="b2-size" value="xlarge"> XL</label>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b2-topbar">Hide top bar</label>
+                  <input type="checkbox" id="b2-topbar">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b2-particles">Graph background particles</label>
+                  <input type="checkbox" id="b2-particles" checked>
+                </div>
+
+                <div class="settings-form-title">Modal size</div>
+                <div class="settings-row">
+                  <span class="settings-label">Settings modal width</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Settings modal width">
+                    <label><input type="radio" name="b2-mw" value="compact"> Compact</label>
+                    <label><input type="radio" name="b2-mw" value="medium" checked> Medium</label>
+                    <label><input type="radio" name="b2-mw" value="wide"> Wide</label>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label">Settings modal height</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Settings modal height">
+                    <label><input type="radio" name="b2-mh" value="compact"> Compact</label>
+                    <label><input type="radio" name="b2-mh" value="medium" checked> Medium</label>
+                    <label><input type="radio" name="b2-mh" value="wide"> Wide</label>
+                  </div>
+                </div>
+
+                <div class="settings-form-title">Wallpaper</div>
+                <div class="settings-row">
+                  <span class="settings-label">Wallpaper</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Wallpaper">
+                    <label><input type="radio" name="b2-wp" value="none"> None</label>
+                    <label><input type="radio" name="b2-wp" value="lines"> Lines</label>
+                    <label><input type="radio" name="b2-wp" value="grid" checked> Grid</label>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label">Wallpaper scroll</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Wallpaper scroll behavior">
+                    <label><input type="radio" name="b2-ws" value="scroll"> Scroll with content</label>
+                    <label><input type="radio" name="b2-ws" value="fixed" checked> Fixed in viewport</label>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label">Wallpaper color</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Wallpaper color">
+                    <label><input type="radio" name="b2-wc" value="neutral"> Neutral</label>
+                    <label class="is-hover"><input type="radio" name="b2-wc" value="blue" checked> Blue</label>
+                    <label><input type="radio" name="b2-wc" value="green"> Green</label>
+                    <label><input type="radio" name="b2-wc" value="purple"> Purple</label>
+                    <label><input type="radio" name="b2-wc" value="amber"> Amber</label>
+                  </div>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label">Wallpaper intensity</span>
+                  <div class="settings-control" data-chips role="radiogroup" aria-label="Wallpaper intensity">
+                    <label><input type="radio" name="b2-wi" value="subtle"> Subtle</label>
+                    <label><input type="radio" name="b2-wi" value="medium" checked> Medium</label>
+                    <label><input type="radio" name="b2-wi" value="bold"> Bold</label>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>3 · Workspaces — two rows</h2>
+  <p class="lede">Active + default, and a second workspace whose folder is missing. Badges are
+    outline pills; Remove is disabled with a reason in <code>title</code>; Add is admin-only and
+    dashed.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Workspaces · 1280 × 760 · dark<span class="grow"></span><span class="size">list row anatomy</span></div>
+    <div class="stage stage--760 theme-dark">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b3-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b3-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Workspaces</h3>
+                <p class="settings-help">Each workspace is a folder of notes on this machine. Add one per project; the server remembers which one you are in for this session.</p>
+
+                <div class="ws-list" role="list">
+                  <div class="ws-row is-active" role="listitem">
+                    <button class="ws-row-main" type="button" aria-current="page">
+                      <span class="ws-row-check" aria-hidden="true">✓</span>
+                      <span class="ws-row-text">
+                        <span class="ws-row-name">
+                          <span class="ws-row-label">Lab notebook</span>
+                          <span class="ws-badge">Active</span>
+                          <span class="ws-badge ws-badge--default">Default</span>
+                        </span>
+                        <span class="ws-row-path">/home/shaun/notes</span>
+                      </span>
+                    </button>
+                    <div class="ws-row-actions">
+                      <button class="settings-action ws-btn" type="button">Rename</button>
+                      <button class="settings-action ws-btn ws-btn--danger" type="button" disabled title="The default workspace can't be removed.">Remove</button>
+                    </div>
+                  </div>
+
+                  <div class="ws-row" role="listitem">
+                    <button class="ws-row-main" type="button" disabled title="Folder not found: /srv/notes/archive">
+                      <span class="ws-row-check" aria-hidden="true"></span>
+                      <span class="ws-row-text">
+                        <span class="ws-row-name">
+                          <span class="ws-row-label">Archive</span>
+                          <span class="ws-badge ws-badge--warn">Not found</span>
+                        </span>
+                        <span class="ws-row-path">/srv/notes/archive</span>
+                      </span>
+                    </button>
+                    <div class="ws-row-actions">
+                      <button class="settings-action ws-btn" type="button">Rename</button>
+                      <button class="settings-action ws-btn ws-btn--danger" type="button">Remove</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-row ws-add-row">
+                  <button class="settings-action ws-add" type="button">+ Add workspace…</button>
+                </div>
+                <p class="settings-note">Switching reloads the page. Removing a workspace never deletes its notes.</p>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>4 · Shortcuts — light</h2>
+  <p class="lede">Nine configurable rows, one in the capture state, the reset-all footer, then the
+    fixed hybrid reference table. Static rows are dashed and carry no actions.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Shortcuts · 1280 × 1160 · light<span class="grow"></span><span class="size">the fixed reference rows follow the nine</span></div>
+    <div class="stage stage--1160 theme-light">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b4-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b4-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Shortcuts</h3>
+                <p class="settings-help">Customize the app's keyboard shortcuts. These bindings are active when VIM mode is off; VIM's own keymap is documented in the <kbd>?</kbd> :help overlay and is configured separately under VIM mode.</p>
+
+                <div class="shortcuts-list" role="list">
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Save current file</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+S</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Open search</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">/</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Previous tab</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Alt+H</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Next tab</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding shortcut-binding-capturing">Press a key… (Esc to cancel)</kbd><button class="settings-action shortcut-change" type="button">Cancel</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Toggle edit mode</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+E</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Toggle hybrid (WYSIWYG) mode</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+Shift+E</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Cycle sidebar / editor / outline</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+W</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button">Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Toggle top bar</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+Shift+T</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                  <div class="shortcut-row" role="listitem">
+                    <span class="shortcut-label">Open Settings</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+Comma</kbd><button class="settings-action shortcut-change" type="button">Change…</button><button class="settings-action shortcut-reset" type="button" hidden>Reset</button></span>
+                  </div>
+                </div>
+
+                <div class="settings-row shortcuts-footer">
+                  <span class="settings-label"></span>
+                  <button class="settings-action" type="button">Reset all to defaults</button>
+                </div>
+
+                <h3 class="settings-subheading">Hybrid editor (WYSIWYG) shortcuts</h3>
+                <p class="settings-help">Available while editing in hybrid mode. These bindings are fixed (not remappable) and only act on text inside the editor.</p>
+                <div class="shortcuts-list" role="list">
+                  <div class="shortcut-row shortcut-row-static" role="listitem">
+                    <span class="shortcut-label">Bold (toggle selection)</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+B</kbd></span>
+                  </div>
+                  <div class="shortcut-row shortcut-row-static" role="listitem">
+                    <span class="shortcut-label">Italic (toggle selection)</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Ctrl+I</kbd></span>
+                  </div>
+                  <div class="shortcut-row shortcut-row-static" role="listitem">
+                    <span class="shortcut-label">Move row up / down (in table)</span>
+                    <span class="shortcut-binding-wrap"><kbd class="shortcut-binding">Alt+Up</kbd> / <kbd class="shortcut-binding">Alt+Down</kbd></span>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>5 · Security — admin</h2>
+  <p class="lede">Admin password set: the change form, the remove reveal, the viewer block and its
+    match rule. Save is disabled until current + new + confirm agree.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Security · admin · 1280 × 1000 · dark<span class="grow"></span><span class="size">passwords</span></div>
+    <div class="stage stage--1000 theme-dark">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b5-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b5-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Passwords</h3>
+                <p class="settings-help">Change the admin password, or remove it to disable auth.</p>
+                <div class="settings-note">Admin password: <span>Set</span></div>
+
+                <div class="settings-auth-admin-form">
+                  <div class="settings-row">
+                    <label class="settings-label" for="b5-cur">Current password</label>
+                    <input id="b5-cur" class="auth-input settings-auth-input" type="password" autocomplete="current-password" placeholder="Enter the current password">
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="b5-new">New password</label>
+                    <input id="b5-new" class="auth-input settings-auth-input" type="password" autocomplete="new-password" placeholder="At least 6 characters">
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="b5-conf">Confirm new password</label>
+                    <input id="b5-conf" class="auth-input settings-auth-input" type="password" autocomplete="new-password" placeholder="Type the new password again">
+                  </div>
+                  <div class="settings-form-actions">
+                    <button class="settings-action" type="button" disabled>Save</button>
+                    <button class="settings-action" type="button">Cancel</button>
+                  </div>
+                </div>
+
+                <div class="settings-row">
+                  <button class="settings-action" type="button">Remove admin password</button>
+                </div>
+
+                <div class="settings-note">Viewer password: <span>Set (clear it via the toggle, or set a new one)</span></div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b5-viewer">Require a password to read</label>
+                  <input type="checkbox" id="b5-viewer" checked>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b5-vpw">Viewer password</label>
+                  <input id="b5-vpw" class="auth-input settings-auth-input" type="password" autocomplete="new-password" placeholder="Enter new password">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b5-vcf">Confirm viewer password</label>
+                  <input id="b5-vcf" class="auth-input settings-auth-input" type="password" autocomplete="new-password" placeholder="Type the viewer password again">
+                </div>
+                <div class="settings-form-actions">
+                  <button class="settings-action" type="button">Remove</button>
+                  <button class="settings-action" type="button" disabled>Save</button>
+                </div>
+                <div class="auth-error settings-auth-error" role="alert" hidden></div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>6 · Security — API tokens, light</h2>
+  <p class="lede">Count above the list, three card rows with role and date, the create form, and the
+    one-time issued box. Revoke is a danger ghost.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Security · API tokens · 1280 × 900 · light<span class="grow"></span><span class="size">token list</span></div>
+    <div class="stage stage--900 theme-light">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b6-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b6-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>API tokens</h3>
+                <p class="settings-help">Bearer tokens let agents and scripts call the API without a browser session. See the agent guide at /agent.md.</p>
+                <div class="settings-note">API tokens: <span>3</span></div>
+
+                <div id="b6-tokens" role="list">
+                  <div class="settings-row settings-token-row" role="listitem">
+                    <span class="settings-label">opencode</span>
+                    <span class="settings-token-meta">
+                      <code class="settings-token-role">admin</code>
+                      <span class="settings-token-created">2026-10-02</span>
+                      <button class="settings-action settings-token-revoke" type="button">Revoke</button>
+                    </span>
+                  </div>
+                  <div class="settings-row settings-token-row" role="listitem">
+                    <span class="settings-label">build-bot</span>
+                    <span class="settings-token-meta">
+                      <code class="settings-token-role">viewer</code>
+                      <span class="settings-token-created">2026-09-18</span>
+                      <button class="settings-action settings-token-revoke" type="button">Revoke</button>
+                    </span>
+                  </div>
+                  <div class="settings-row settings-token-row" role="listitem">
+                    <span class="settings-label">nightly-export</span>
+                    <span class="settings-token-meta">
+                      <code class="settings-token-role">viewer</code>
+                      <span class="settings-token-created">2026-08-30</span>
+                      <button class="settings-action settings-token-revoke" type="button">Revoke</button>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="settings-row">
+                  <label class="settings-label" for="b6-name">New token name</label>
+                  <input id="b6-name" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="e.g. opencode">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b6-role">Role</label>
+                  <select id="b6-role">
+                    <option>viewer — read only</option>
+                    <option>admin — read + write</option>
+                  </select>
+                </div>
+                <div class="settings-form-actions">
+                  <button class="settings-action settings-action--primary" type="button" disabled>Create token</button>
+                </div>
+
+                <div class="settings-auth-admin-form">
+                  <div class="settings-note">Token created — copy it now, it will not be shown again:</div>
+                  <code class="settings-value settings-mono">nbtk_7f3a9c1e5b2d8a40c6e1f9b3d7a2c5e8</code>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>7 · Security — viewer</h2>
+  <p class="lede">Every password control is disabled or hidden. The change form stays in place,
+    cleared and inert; the remove reveal and the viewer actions are gone; tokens are disabled and
+    the help asks for an admin.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Security · viewer · 1280 × 900 · light<span class="grow"></span><span class="size">admin gates off</span></div>
+    <div class="stage stage--900 theme-light">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b7-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b7-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Passwords</h3>
+                <p class="settings-help">Sign in as admin to change passwords.</p>
+                <div class="settings-note">Admin password: <span>Set</span></div>
+
+                <div class="settings-auth-admin-form">
+                  <div class="settings-row">
+                    <label class="settings-label" for="b7-cur">Current password</label>
+                    <input id="b7-cur" class="auth-input settings-auth-input" type="password" placeholder="Enter the current password" disabled>
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="b7-new">New password</label>
+                    <input id="b7-new" class="auth-input settings-auth-input" type="password" placeholder="At least 6 characters" disabled>
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="b7-conf">Confirm new password</label>
+                    <input id="b7-conf" class="auth-input settings-auth-input" type="password" placeholder="Type the new password again" disabled>
+                  </div>
+                  <div class="settings-form-actions">
+                    <button class="settings-action" type="button" disabled>Save</button>
+                  </div>
+                </div>
+
+                <div class="settings-note">Viewer password: <span>Set (clear it via the toggle, or set a new one)</span></div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b7-viewer">Require a password to read</label>
+                  <input type="checkbox" id="b7-viewer" checked disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b7-vpw">Viewer password</label>
+                  <input id="b7-vpw" class="auth-input settings-auth-input" type="password" placeholder="Enter new password">
+                </div>
+
+                <h3>API tokens</h3>
+                <p class="settings-help">Sign in as admin to manage API tokens.</p>
+                <div class="settings-note">API tokens: <span>—</span></div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b7-name">New token name</label>
+                  <input id="b7-name" class="auth-input settings-auth-input" type="text" placeholder="e.g. opencode" disabled>
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b7-role">Role</label>
+                  <select id="b7-role" disabled>
+                    <option>viewer — read only</option>
+                    <option>admin — read + write</option>
+                  </select>
+                </div>
+                <div class="settings-form-actions">
+                  <button class="settings-action settings-action--primary" type="button" disabled>Create token</button>
+                </div>
+                <div class="auth-error settings-auth-error" role="alert" hidden></div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>8 · AI — two providers and the ACP panel</h2>
+  <p class="lede">Two OpenAI-compatible rows (one default), then the read-only ACP block with the
+    profile and the detected agents, then the add/edit form, the global instructions and the web
+    search URL.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>AI · 1280 × 1660 · dark<span class="grow"></span><span class="size">providers + ACP + prompt + search</span></div>
+    <div class="stage stage--1660 theme-dark">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b8-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b8-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>AI assistant</h3>
+                <p class="settings-help">Providers for the AI assistant in the left activity bar (<svg class="inline-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg>). Any OpenAI-compatible /v1/chat/completions endpoint works. API keys are stored server-side and never sent to the browser.</p>
+                <div class="settings-note" role="status">Providers: <span>2</span></div>
+
+                <div id="b8-ai-list" role="list">
+                  <div class="settings-row settings-ai-row" role="listitem">
+                    <span class="settings-label">openai</span>
+                    <span class="settings-token-meta">
+                      <span class="stg-tag stg-tag--accent">Default</span>
+                      <code class="settings-token-role">gpt-4o-mini</code>
+                      <span class="settings-token-created">key stored</span>
+                      <button class="settings-action settings-ai-test" type="button">Test</button>
+                      <button class="settings-action settings-ai-edit" type="button">Edit</button>
+                      <button class="settings-action settings-ai-remove" type="button">Remove</button>
+                    </span>
+                  </div>
+                  <div class="settings-row settings-ai-row" role="listitem">
+                    <span class="settings-label">ollama-lan</span>
+                    <span class="settings-token-meta">
+                      <button class="settings-action settings-ai-default" type="button">Make default</button>
+                      <code class="settings-token-role">llama3</code>
+                      <span class="settings-token-created">no key</span>
+                      <button class="settings-action settings-ai-test" type="button">Test</button>
+                      <button class="settings-action settings-ai-edit" type="button">Edit</button>
+                      <button class="settings-action settings-ai-remove" type="button">Remove</button>
+                    </span>
+                  </div>
+                </div>
+
+                <div class="settings-ai-acp-row">
+                  <div class="settings-ai-acp-head">
+                    <span class="settings-ai-acp-title">ACP agents</span>
+                    <span class="stg-tag" title="Configured by editing config/acp.json on the server"><svg class="tag-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg> Read-only</span>
+                  </div>
+                  <p class="settings-help">Local coding agents the assistant can drive over the Agent Client Protocol. <code>config/acp.json</code> may hold several profiles and is edited on the server (not editable here).</p>
+
+                  <div class="settings-ai-acp-profile">
+                    <span class="settings-ai-acp-profile-name">opencode</span>
+                    <span class="stg-tag stg-tag--accent">Default</span>
+                    <span class="settings-ai-acp-profile-meta">allowlist key <code class="settings-ai-acp-key">opencode</code></span>
+                    <span class="settings-ai-acp-profile-meta">agent model <code class="settings-token-role">ollama/qwen3.8:latest</code></span>
+                  </div>
+
+                  <span class="settings-ai-acp-title">Detected agents</span>
+                  <div class="settings-ai-acp-agents">
+                    <div class="settings-ai-acp-agent" data-selected="true">
+                      <span class="settings-ai-acp-agent-name">opencode</span>
+                      <span class="settings-ai-acp-agent-status stg-status stg-status--ok">Installed</span>
+                      <code class="settings-ai-acp-key">opencode</code>
+                    </div>
+                    <div class="settings-ai-acp-agent">
+                      <span class="settings-ai-acp-agent-name">claude</span>
+                      <span class="settings-ai-acp-agent-status stg-status">Not installed</span>
+                      <code class="settings-ai-acp-key">claude</code>
+                    </div>
+                    <div class="settings-ai-acp-agent">
+                      <span class="settings-ai-acp-agent-name">codex</span>
+                      <span class="settings-ai-acp-agent-status stg-status stg-status--warn">Adapter missing</span>
+                      <code class="settings-ai-acp-key">codex</code>
+                      <span class="settings-ai-acp-hint">codex is installed but its ACP adapter was not found on PATH.</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-form-title">Add a provider</div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b8-name">Profile name</label>
+                  <input id="b8-name" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="e.g. openai or ollama-lan">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b8-url">Base URL</label>
+                  <input id="b8-url" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="https://api.openai.com  (a trailing /v1 is optional)">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b8-model">Model</label>
+                  <input id="b8-model" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="e.g. gpt-4o-mini or llama3">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b8-key">API key</label>
+                  <input id="b8-key" class="auth-input settings-auth-input" type="password" autocomplete="off" placeholder="Empty = keep stored key (when editing)">
+                </div>
+                <div class="settings-form-actions">
+                  <button class="settings-action settings-action--primary" type="button" disabled>Add provider</button>
+                </div>
+
+                <div class="settings-form-title">Assistant instructions</div>
+                <div class="settings-row settings-row-column">
+                  <label class="settings-label" for="b8-prompt">Assistant instructions (all providers)</label>
+                  <textarea id="b8-prompt" class="auth-input settings-auth-input" rows="4" autocomplete="off" placeholder="Extra instructions for the AI assistant, e.g. “Always answer in Traditional Chinese. Prefer concise bullet points.“"></textarea>
+                  <span class="settings-hint">Appended to the assistant's instructions regardless of provider. The built-in tool rules always win.</span>
+                </div>
+                <div class="settings-form-actions">
+                  <span class="settings-hint" role="status">Saved</span>
+                  <button class="settings-action settings-action--primary" type="button" disabled>Save prompt</button>
+                </div>
+
+                <div class="settings-form-title">Web search</div>
+                <div class="settings-row settings-row-column">
+                  <label class="settings-label" for="b8-searxng">SearXNG instance URL</label>
+                  <input id="b8-searxng" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="https://searxng.example.com  (optional; blank = built-in fallback)">
+                  <span class="settings-hint">Lets the assistant search the web. Leave blank to use the built-in fallback (queries leave this machine).</span>
+                </div>
+                <div class="settings-form-actions">
+                  <span class="settings-hint" role="status" hidden></span>
+                  <button class="settings-action settings-action--primary" type="button" disabled>Save search URL</button>
+                </div>
+                <div class="auth-error settings-auth-error" role="alert" hidden></div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>9 · AI — empty list</h2>
+  <p class="lede">No provider, no ACP profile, no detected agent. Count 0, no rows, no invented
+    copy: the add form is the next action.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>AI · empty · 1280 × 760 · dark<span class="grow"></span><span class="size">empty list</span></div>
+    <div class="stage stage--760 theme-dark">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b9-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b9-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>AI assistant</h3>
+                <p class="settings-help">Providers for the AI assistant in the left activity bar (<svg class="inline-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg>). Any OpenAI-compatible /v1/chat/completions endpoint works. API keys are stored server-side and never sent to the browser.</p>
+                <div class="settings-note" role="status">Providers: <span>0</span></div>
+                <div id="b9-ai-list" role="list"></div>
+
+                <div class="settings-form-title">Add a provider</div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b9-name">Profile name</label>
+                  <input id="b9-name" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="e.g. openai or ollama-lan">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b9-url">Base URL</label>
+                  <input id="b9-url" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="https://api.openai.com  (a trailing /v1 is optional)">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b9-model">Model</label>
+                  <input id="b9-model" class="auth-input settings-auth-input" type="text" autocomplete="off" placeholder="e.g. gpt-4o-mini or llama3">
+                </div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b9-key">API key</label>
+                  <input id="b9-key" class="auth-input settings-auth-input" type="password" autocomplete="off" placeholder="Empty = keep stored key (when editing)">
+                </div>
+                <div class="settings-form-actions">
+                  <button class="settings-action settings-action--primary" type="button" disabled>Add provider</button>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>10 · About — light</h2>
+  <p class="lede">Two read-only rows. Paths are mono, break anywhere, and never widen the modal.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>About · 1280 × 620 · light<span class="grow"></span><span class="size">read-only</span></div>
+    <div class="stage stage--620 theme-light">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b10-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b10-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>About</h3>
+                <div class="settings-row">
+                  <span class="settings-label">Data folder</span>
+                  <code class="settings-value settings-mono">/home/shaun/projects/webapp/notebook-server/notebook</code>
+                </div>
+                <div class="settings-row">
+                  <span class="settings-label">Config folder</span>
+                  <code class="settings-value settings-mono">/home/shaun/projects/webapp/notebook-server/config</code>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>11 · Validation error</h2>
+  <p class="lede">A mismatched confirmation keeps both fields, disables Save, and shows the danger
+    line under the form actions. The error block is <code>role="alert"</code> and reserves its
+    height.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Security · error · 1280 × 900 · dark<span class="grow"></span><span class="size">role="alert"</span></div>
+    <div class="stage stage--900 theme-dark">
+      <div class="settings-overlay">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b11-title" tabindex="-1">
+          <div class="settings-header">
+            <h2 id="b11-title">Settings</h2>
+            <div class="settings-header-actions">
+              <button class="icon-btn" type="button" aria-label="Maximize" title="Maximize">
+                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg>
+              </button>
+              <button class="icon-btn" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="settings-body">
+            <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+              <button class="settings-nav-item active" role="tab" aria-selected="true"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+              <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+            </nav>
+            <div class="settings-sections">
+              <section class="settings-section">
+                <h3>Passwords</h3>
+                <p class="settings-help">Set an admin password to require a password for writing.</p>
+                <div class="settings-note">Admin password: <span>Not set</span></div>
+
+                <div class="settings-auth-admin-form">
+                  <div class="settings-row">
+                    <label class="settings-label" for="b11-new">New password</label>
+                    <input id="b11-new" class="auth-input settings-auth-input" type="password" autocomplete="new-password" placeholder="At least 6 characters" value="correct-horse">
+                  </div>
+                  <div class="settings-row">
+                    <label class="settings-label" for="b11-conf">Confirm new password</label>
+                    <input id="b11-conf" class="auth-input settings-auth-input" type="password" autocomplete="new-password" placeholder="Type the new password again" value="correct-hors" aria-invalid="true" aria-describedby="b11-error">
+                  </div>
+                  <div class="settings-form-actions">
+                    <button class="settings-action" type="button" disabled>Save</button>
+                  </div>
+                </div>
+
+                <div class="settings-note">Viewer password: <span>Not set</span></div>
+                <div class="settings-row">
+                  <label class="settings-label" for="b11-viewer">Require a password to read</label>
+                  <input type="checkbox" id="b11-viewer" disabled>
+                </div>
+                  <div id="b11-error" class="auth-error settings-auth-error" role="alert">New password and confirmation must match</div>
+              </section>
+            </div>
+          </div>
+          <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
+          <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>12 · Phone — the settings sheet, 390</h2>
+  <p class="lede">The shipped phone surface. Theme and text size are segmented buttons; the note
+    says the values are server-wide; Sign out appears only with auth on. 44 px controls, 16 px
+    title.</p>
+
+  <div class="pair">
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>390 × 780 · sheet<span class="grow"></span><span class="size">dark</span></div>
+      <div class="stage stage--phone theme-dark">
+        <div class="settings-overlay"></div>
+        <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="b12-title">
+          <div class="sheet-grabber" aria-hidden="true"></div>
+          <div class="sheet-head">
+            <h2 id="b12-title">Settings</h2>
+            <button class="sheet-close" type="button" aria-label="Close settings">×</button>
+          </div>
+          <div class="sheet-body">
+            <div class="sheet-row">
+              <span class="sheet-label">Theme</span>
+              <div class="sheet-seg" role="group">
+                <button type="button">Auto</button>
+                <button type="button" class="on" aria-pressed="true">Dark</button>
+                <button type="button">Light</button>
+              </div>
+            </div>
+            <div class="sheet-row">
+              <span class="sheet-label">Text size</span>
+              <div class="sheet-seg" role="group">
+                <button type="button">S</button>
+                <button type="button" class="on" aria-pressed="true">M</button>
+                <button type="button">L</button>
+                <button type="button">XL</button>
+              </div>
+            </div>
+            <div class="sheet-row">
+              <span class="sheet-label">Server</span>
+              <span class="sheet-server"><span class="status-dot" aria-hidden="true"></span><span>192.168.1.20:5000 · Online</span></span>
+            </div>
+            <p class="sheet-note">Theme and text size are saved on this server and apply to every device.</p>
+            <button class="sheet-signout" type="button">Sign out</button>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>390 · the modal, measured<span class="grow"></span><span class="size">292 px · not reachable</span></div>
+      <div class="stage stage--measure theme-light">
+        <div class="settings-overlay">
+          <div class="settings-modal" style="width:292px;height:272px" role="dialog" aria-modal="true" aria-labelledby="b13-title" tabindex="-1">
+            <div class="settings-header" style="padding:10px 12px">
+              <h2 id="b13-title" style="font-size:1rem">Settings</h2>
+              <div class="settings-header-actions">
+                <button class="icon-btn" type="button" aria-label="Close" title="Close" style="font-size:1rem;padding:2px 4px">×</button>
+              </div>
+            </div>
+            <div class="settings-body">
+              <nav class="settings-nav" role="tablist" aria-orientation="vertical" aria-label="Settings sections" style="flex:0 0 180px">
+                <button class="settings-nav-item active" role="tab" aria-selected="true" style="font-size:.72rem;padding:4px 6px"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button>
+                <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1" style="font-size:.72rem;padding:4px 6px"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-book"/></svg></span>Workspaces</button>
+                <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1" style="font-size:.72rem;padding:4px 6px"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-palette"/></svg></span>Appearance</button>
+                <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1" style="font-size:.72rem;padding:4px 6px"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-keyboard"/></svg></span>Shortcuts</button>
+                <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1" style="font-size:.72rem;padding:4px 6px"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg></span>Security</button>
+                <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1" style="font-size:.72rem;padding:4px 6px"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-sparkle"/></svg></span>AI</button>
+                <button class="settings-nav-item" role="tab" aria-selected="false" tabindex="-1" style="font-size:.72rem;padding:4px 6px"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-info"/></svg></span>About</button>
+              </nav>
+              <div class="settings-sections" style="padding:2px 8px 8px">
+                <section class="settings-section" style="padding:6px 0">
+                  <h3 style="font-size:.6rem;margin-bottom:4px">Site</h3>
+                  <div class="settings-row" style="padding:2px 0;gap:4px">
+                    <span class="settings-label" style="flex:0 0 44px;font-size:.62rem">Site title</span>
+                    <input class="settings-text-input" type="text" value="Lab" style="font-size:.62rem;padding:2px 4px" tabindex="-1">
+                  </div>
+                  <p class="settings-help" style="font-size:.6rem;margin:0">Get notified when files in your notebook are changed…</p>
+                </section>
+              </div>
+            </div>
+            <div class="settings-footer" style="padding:6px 8px"><button class="settings-action" type="button" style="font-size:.62rem;padding:2px 6px" tabindex="-1">Close</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Measured.</strong> At 390 the initial modal is <code>min(75vw, 96vw)</code> = 292 px; the fixed 180 px nav leaves 112 px for the sections. No media query changes it.</li>
+    <li><strong>Why it is not reachable.</strong> The rail's Settings action is hidden in the phone shell (<code>style.css:7199-7204</code>); Settings is reached from Home and from the note menu, and both open the sheet.</li>
+    <li>The nav-as-a-strip change is proposal P2 and is deliberately not drawn.</li>
+  </ul>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>13 · Control states</h2>
+  <p class="lede">Each specimen is the shipped control in its shipped state: nav rest / hover /
+    active / focus, switch off / on / focus / disabled, field rest / focus / disabled, button
+    variants and the danger ghost, chip rest / checked / focus, badge, status, kbd, card row.</p>
+
+  <div class="pair">
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>Specimens<span class="grow"></span><span class="size">dark</span></div>
+      <div class="stage stage--spec theme-dark">
+        <div class="spec">
+          <div class="spec-group">
+            <h3>Nav item</h3>
+            <div class="spec-line"><span class="spec-cap">rest</span><button class="settings-nav-item" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><button class="settings-nav-item is-hover" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+            <div class="spec-line"><span class="spec-cap">active</span><button class="settings-nav-item active" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><button class="settings-nav-item is-focus" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Switch</h3>
+            <div class="spec-line"><span class="spec-cap">off</span><input type="checkbox" tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">on</span><input type="checkbox" checked tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><input type="checkbox" class="is-focus" checked tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">disabled</span><input type="checkbox" disabled tabindex="-1"></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Field</h3>
+            <div class="spec-line"><span class="spec-cap">rest</span><input class="settings-text-input" type="text" placeholder="Notebook" tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><input class="settings-text-input is-focus" type="text" value="Lab notebook" tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">disabled</span><input class="settings-text-input" type="text" value="Notebook" disabled tabindex="-1"></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Button</h3>
+            <div class="spec-line"><span class="spec-cap">base</span><button class="settings-action" type="button">Cancel</button></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><button class="settings-action is-hover" type="button">Cancel</button></div>
+            <div class="spec-line"><span class="spec-cap">primary</span><button class="settings-action settings-action--primary" type="button">Save</button></div>
+            <div class="spec-line"><span class="spec-cap">ghost</span><button class="settings-action settings-ai-edit" type="button">Edit</button></div>
+            <div class="spec-line"><span class="spec-cap">danger</span><button class="settings-action settings-ai-remove" type="button">Remove</button></div>
+            <div class="spec-line"><span class="spec-cap">disabled</span><button class="settings-action" type="button" disabled>Save</button></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Chip</h3>
+            <div class="spec-line" data-chips>
+              <label><input type="radio" name="s1" value="a"> Auto</label>
+              <label><input type="radio" name="s1" value="b" checked> Dark</label>
+              <label class="is-focus"><input type="radio" name="s1" value="c"> Light</label>
+            </div>
+            <div class="spec-line" data-chips>
+              <label class="is-hover"><input type="radio" name="s2" value="a"> Hover</label>
+            </div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Badge, status, kbd</h3>
+            <div class="spec-line"><span class="spec-cap">badge</span><span class="ws-badge">Active</span><span class="ws-badge ws-badge--default">Default</span><span class="ws-badge ws-badge--warn">Not found</span></div>
+            <div class="spec-line"><span class="spec-cap">tag</span><span class="stg-tag stg-tag--accent">Default</span><span class="stg-tag"><svg class="tag-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg> Read-only</span></div>
+            <div class="spec-line"><span class="spec-cap">status</span><span class="stg-status stg-status--ok">Installed</span><span class="stg-status stg-status--warn">Adapter missing</span><span class="stg-status">Not installed</span></div>
+            <div class="spec-line"><span class="spec-cap">kbd</span><kbd class="shortcut-binding">Ctrl+S</kbd><kbd class="shortcut-binding shortcut-binding-capturing">Press a key… (Esc to cancel)</kbd></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Card row</h3>
+            <div class="settings-row settings-token-row">
+              <span class="settings-label">opencode</span>
+              <span class="settings-token-meta">
+                <code class="settings-token-role">admin</code>
+                <span class="settings-token-created">2026-10-02</span>
+                <button class="settings-action settings-token-revoke" type="button">Revoke</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>Specimens<span class="grow"></span><span class="size">light</span></div>
+      <div class="stage stage--spec theme-light">
+        <div class="spec">
+          <div class="spec-group">
+            <h3>Nav item</h3>
+            <div class="spec-line"><span class="spec-cap">rest</span><button class="settings-nav-item" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><button class="settings-nav-item is-hover" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+            <div class="spec-line"><span class="spec-cap">active</span><button class="settings-nav-item active" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><button class="settings-nav-item is-focus" type="button"><span class="nav-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-gear"/></svg></span>General</button></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Switch</h3>
+            <div class="spec-line"><span class="spec-cap">off</span><input type="checkbox" tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">on</span><input type="checkbox" checked tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><input type="checkbox" class="is-focus" checked tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">disabled</span><input type="checkbox" disabled tabindex="-1"></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Field</h3>
+            <div class="spec-line"><span class="spec-cap">rest</span><input class="settings-text-input" type="text" placeholder="Notebook" tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><input class="settings-text-input is-focus" type="text" value="Lab notebook" tabindex="-1"></div>
+            <div class="spec-line"><span class="spec-cap">disabled</span><input class="settings-text-input" type="text" value="Notebook" disabled tabindex="-1"></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Button</h3>
+            <div class="spec-line"><span class="spec-cap">base</span><button class="settings-action" type="button">Cancel</button></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><button class="settings-action is-hover" type="button">Cancel</button></div>
+            <div class="spec-line"><span class="spec-cap">primary</span><button class="settings-action settings-action--primary" type="button">Save</button></div>
+            <div class="spec-line"><span class="spec-cap">ghost</span><button class="settings-action settings-ai-edit" type="button">Edit</button></div>
+            <div class="spec-line"><span class="spec-cap">danger</span><button class="settings-action settings-ai-remove" type="button">Remove</button></div>
+            <div class="spec-line"><span class="spec-cap">disabled</span><button class="settings-action" type="button" disabled>Save</button></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Chip</h3>
+            <div class="spec-line" data-chips>
+              <label><input type="radio" name="l1" value="a"> Auto</label>
+              <label><input type="radio" name="l1" value="b" checked> Dark</label>
+              <label class="is-focus"><input type="radio" name="l1" value="c"> Light</label>
+            </div>
+            <div class="spec-line" data-chips>
+              <label class="is-hover"><input type="radio" name="l2" value="a"> Hover</label>
+            </div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Badge, status, kbd</h3>
+            <div class="spec-line"><span class="spec-cap">badge</span><span class="ws-badge">Active</span><span class="ws-badge ws-badge--default">Default</span><span class="ws-badge ws-badge--warn">Not found</span></div>
+            <div class="spec-line"><span class="spec-cap">tag</span><span class="stg-tag stg-tag--accent">Default</span><span class="stg-tag"><svg class="tag-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-lock"/></svg> Read-only</span></div>
+            <div class="spec-line"><span class="spec-cap">status</span><span class="stg-status stg-status--ok">Installed</span><span class="stg-status stg-status--warn">Adapter missing</span><span class="stg-status">Not installed</span></div>
+            <div class="spec-line"><span class="spec-cap">kbd</span><kbd class="shortcut-binding">Ctrl+S</kbd><kbd class="shortcut-binding shortcut-binding-capturing">Press a key… (Esc to cancel)</kbd></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Card row</h3>
+            <div class="settings-row settings-token-row">
+              <span class="settings-label">opencode</span>
+              <span class="settings-token-meta">
+                <code class="settings-token-role">admin</code>
+                <span class="settings-token-created">2026-10-02</span>
+                <button class="settings-action settings-token-revoke" type="button">Revoke</button>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Focus.</strong> The ring is <code>2px solid --accent</code> at a 1 px offset; the switch uses 2 px. Fields replace the ring with an accent border and a 3 px wash.</li>
+    <li><strong>Nav glyphs.</strong> The shipped surface uses emoji — gear, books, palette, keyboard, lock, sparkle, info. This machine has no emoji font, so every board draws the same seven marks on the 16 grid at 14 px in <code>currentColor</code> — same 1.4em column, same colour, same size. The source remains the emoji; sprite replacement is proposal P1. The same applies to the lock in <code>Read-only</code> and the sparkle in the AI help sentence.</li>
+    <li><strong>Density.</strong> The 30 px field and the 1.27:1 border are shipped values, not targets. Proposals P3 and P4 cover them.</li>
+  </ul>
+</section>
+
+</main>
+
+<footer class="sec" style="padding-bottom: var(--space-7)">
+  <p class="notes" style="max-width: none">Self-contained. No network, no build step, no script.
+    Tokens: foundations Appendix A. Component values: settings-modal.md §1–§5, §10.1. Open beside
+    <code>settings-modal.md</code>; the document wins where they differ.</p>
+</footer>
+
+</body>
+</html>

@@ -7,7 +7,7 @@ date: 2026-10-20.
 Inputs (both read in full):
 
 - `docs/product/dot-wavedrom-design-window.md` — normative **behavior**.
-- `docs/design/dot-wavedrom-editor.md` + mockup — normative **UI/layout**.
+- `docs/archive/design/dot-wavedrom-editor.md` + mockup — normative **UI/layout**.
 - `docs/architecture/mermaid-designer.md` + `static/js/mermaid-designer.js` —
   the write-back contract this feature mirrors.
 

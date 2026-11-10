@@ -1,0 +1,908 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Foundations — token reference</title>
+<style>
+/* ==================================================================
+   Primitives — identical names to docs/ui/foundations.md §5–§10.
+   ================================================================== */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-prose: var(--font-ui);
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --dur-0: 100ms;
+  --dur-1: 120ms;
+  --dur-2: 180ms;
+  --dur-3: 220ms;
+  --dur-4: 380ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --ease-out: ease-out;
+  --ease-linear: linear;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  --z-popover: 1000;
+  --z-modal: 2000;
+  --z-sheet: 600;
+  --z-toast: 3000;
+  --z-drawer: 410;
+  --z-chrome: 100;
+}
+
+/* ==================================================================
+   Theme sets. Base + semantic + shadow, exactly as §3 and §5.4.
+   The page itself uses the dark set; each pane re-declares its own.
+   ================================================================== */
+[data-theme="dark"] {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --border-strong: #7b8194;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(124, 156, 255, .28);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .35);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .35);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .45);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .5);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .3);
+  --shadow-none: none;
+}
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --border-strong: #78828f;
+  --scrim: rgba(0, 0, 0, .5);
+  --selection: rgba(47, 95, 208, .16);
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+  --overlay-scrim: var(--scrim);
+  --selection-bg: var(--selection);
+  --selection-text: var(--fg);
+
+  --shadow-pop: 0 6px 24px rgba(0, 0, 0, .16);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, .18);
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .2);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .22);
+  --shadow-toast: 0 4px 12px rgba(0, 0, 0, .14);
+  --shadow-none: none;
+}
+
+/* ==================================================================
+   Page frame
+   ================================================================== */
+* { box-sizing: border-box; }
+html { background: var(--code-bg); }
+body {
+  margin: 0;
+  padding: 0 0 72px;
+  background: var(--code-bg);
+  color: var(--fg);
+  font: var(--fw-regular) var(--text-body)/var(--lh-normal) var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+.doc-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-7) var(--space-6);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.doc-head h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -.01em;
+  line-height: 1.1;
+}
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.lede { margin: var(--space-2) 0 0; max-width: 62ch; color: var(--fg-muted); font-size: var(--text-ui-lg); }
+.lede code { font-family: var(--font-mono); font-size: .92em; color: var(--fg); }
+
+.viewswitch { display: inline-flex; padding: var(--space-hair); gap: var(--space-hair); border: var(--stroke-1) solid var(--border); border-radius: var(--radius-sm); background: var(--bg-panel); }
+.viewswitch button {
+  appearance: none;
+  height: 28px;
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--fg-muted);
+  font: var(--fw-medium) var(--text-ui)/1 var(--font-ui);
+  cursor: pointer;
+}
+.viewswitch button[aria-pressed="true"] { background: var(--bg-elev); color: var(--fg); box-shadow: inset 0 0 0 1px var(--border); }
+.viewswitch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-7) 0;
+  align-items: start;
+}
+#panes[data-view="dark"] .pane[data-theme="light"],
+#panes[data-view="light"] .pane[data-theme="dark"] { display: none; }
+#panes[data-view="dark"],
+#panes[data-view="light"] { grid-template-columns: 1fr; }
+#panes[data-view="dark"] .pane,
+#panes[data-view="light"] .pane { max-width: 900px; }
+
+.pane {
+  background: var(--surface-page);
+  color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  font-size: var(--text-ui-lg);
+}
+.pane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-6);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.pane-head h2 { margin: 0; font: var(--fw-semibold) var(--text-ui)/1.2 var(--font-mono); letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted); }
+.pane-head .count { font: var(--fw-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-muted); }
+
+.sec { padding: var(--space-6); border-bottom: var(--stroke-1) solid var(--border); }
+.sec:last-child { border-bottom: 0; }
+.sec > h3 {
+  margin: 0 0 var(--space-4);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.sec p.note { margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--text-muted); }
+
+/* colour */
+.stack { display: grid; gap: var(--space-hair); margin-bottom: var(--space-4); }
+.stack div { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-3) var(--space-3); border-radius: var(--radius-xs); font: var(--fw-medium) var(--text-sm)/1 var(--font-mono); }
+.rows { display: grid; gap: var(--space-hair); }
+.row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 74px 62px;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--surface-panel);
+}
+.row .chip { width: 26px; height: 26px; border-radius: var(--radius-xs); box-shadow: inset 0 0 0 1px var(--border); }
+.row .name { font: var(--fw-regular) var(--text-xs)/1.2 var(--font-mono); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .hex { font: var(--fw-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-muted); }
+.row .ratio { font: var(--fw-medium) var(--text-xs)/1 var(--font-mono); text-align: right; }
+.pass { color: var(--ok); }
+.warned { color: var(--warn); }
+.failed { color: var(--danger); }
+.row .swatch-on { font: var(--fw-regular) var(--text-xs)/1 var(--font-mono); color: var(--text-muted); grid-column: 2 / -1; }
+
+.sample-line { padding: var(--space-3); margin-top: var(--space-3); border-radius: var(--radius-sm); background: var(--surface-raised); font-size: var(--text-ui-lg); }
+
+/* type */
+.specimen { display: grid; gap: var(--space-2); }
+.spec {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr) 68px;
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.spec:last-child { border-bottom: 0; }
+.spec .label { font: var(--fw-regular) var(--text-2xs)/1.3 var(--font-mono); color: var(--text-muted); }
+.spec .label b { display: block; color: var(--text-primary); font-weight: var(--fw-medium); font-size: var(--text-xs); }
+.spec .ex { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.spec .px { font: var(--fw-regular) var(--text-2xs)/1.3 var(--font-mono); color: var(--text-muted); text-align: right; }
+
+/* spacing */
+.ruler { display: grid; gap: var(--space-2); }
+.ruler div { display: flex; align-items: center; gap: var(--space-3); }
+.ruler .bar { height: 10px; background: var(--accent); border-radius: 1px; opacity: .85; }
+.ruler .lab { font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+.ruler .val { font: var(--fw-medium) var(--text-2xs)/1 var(--font-mono); color: var(--text-primary); min-width: 34px; text-align: right; }
+
+/* shape */
+.radii { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-3); }
+.radii figure { margin: 0; display: grid; gap: var(--space-2); justify-items: start; }
+.radii .box { width: 100%; height: 44px; background: var(--surface-raised); border: var(--stroke-1) solid var(--border); }
+.radii figcaption { font: var(--fw-regular) var(--text-2xs)/1.3 var(--font-mono); color: var(--text-muted); }
+.radii figcaption b { color: var(--text-primary); font-weight: var(--fw-medium); }
+
+/* elevation */
+.elev { display: grid; gap: var(--space-3); }
+.elev figure { margin: 0; display: grid; gap: var(--space-2); }
+.elev .card { height: 46px; border-radius: var(--radius-md); background: var(--surface-raised); border: var(--stroke-1) solid var(--border); }
+.elev figcaption { display: flex; justify-content: space-between; gap: var(--space-3); font: var(--fw-regular) var(--text-2xs)/1.3 var(--font-mono); color: var(--text-muted); }
+.elev figcaption b { color: var(--text-primary); font-weight: var(--fw-medium); }
+
+/* icons */
+.icon-grid-demo { display: flex; align-items: center; gap: var(--space-5); margin-bottom: var(--space-4); }
+.grid16 {
+  width: 64px; height: 64px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  background:
+    repeating-linear-gradient(to right, var(--border) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(to bottom, var(--border) 0 1px, transparent 1px 4px),
+    var(--surface-well);
+  color: var(--text-primary);
+}
+.grid16-note { font: var(--fw-regular) var(--text-2xs)/1.35 var(--font-mono); color: var(--text-muted); }
+.icon-sizes { display: grid; gap: var(--space-2); }
+.icon-sizes div { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2); border-radius: var(--radius-xs); background: var(--surface-panel); }
+.icon-sizes .glyphs { display: flex; align-items: center; gap: var(--space-3); color: var(--text-primary); }
+.icon-sizes span { font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-muted); }
+.icon-sizes .tok { margin-left: auto; color: var(--text-primary); }
+
+/* focus */
+.demo-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.demo-btn {
+  appearance: none;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-4);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: var(--fw-medium) var(--text-ui-lg)/1 var(--font-ui);
+  cursor: pointer;
+}
+.demo-btn:hover { background: var(--accent-soft); }
+.demo-btn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.demo-btn.force { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.demo-input {
+  height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font: var(--fw-regular) var(--text-ui-lg)/1 var(--font-ui);
+  min-width: 150px;
+}
+.demo-input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.demo-input::placeholder { color: var(--text-muted); }
+.linepair { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+.linepair div { display: flex; align-items: center; gap: var(--space-3); font: var(--fw-regular) var(--text-2xs)/1.3 var(--font-mono); color: var(--text-muted); }
+.linepair .swatch { width: 120px; height: 26px; border-radius: var(--radius-xs); background: var(--surface-panel); }
+
+/* ===================================================================
+   Below the panes: motion and breakpoints (theme-neutral)
+   =================================================================== */
+.doc-foot { padding: var(--space-7) var(--space-7) 0; }
+.doc-foot h2 { margin: 0 0 var(--space-2); font-size: 20px; font-weight: var(--fw-semibold); }
+.doc-foot p { margin: 0 0 var(--space-5); max-width: 70ch; color: var(--fg-muted); font-size: var(--text-ui-lg); }
+.motion { display: grid; gap: var(--space-3); max-width: 760px; }
+.motion-row {
+  display: grid;
+  grid-template-columns: 130px 1fr 90px;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+.motion-row .lab { font: var(--fw-regular) var(--text-xs)/1.3 var(--font-mono); color: var(--fg-muted); }
+.motion-row .lab b { display: block; color: var(--fg); font-weight: var(--fw-medium); font-size: var(--text-sm); }
+.track { position: relative; height: 28px; border-radius: var(--radius-xs); background: var(--bg-panel); overflow: hidden; }
+.puck { position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: var(--radius-xs); background: var(--accent); }
+.motion-row[data-dur="1"] .puck { transition: transform var(--dur-1) var(--ease-standard); }
+.motion-row[data-dur="3"] .puck { transition: transform var(--dur-3) var(--ease-standard); }
+.motion-row[data-dur="4"] .puck { transition: transform var(--dur-4) var(--ease-standard); }
+.motion-row.run .puck { transform: translateX(calc(100cqw - 25px)); }
+.track { container-type: inline-size; }
+.motion-row button {
+  appearance: none;
+  height: 26px;
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--bg-elev);
+  color: var(--fg);
+  font: var(--fw-medium) var(--text-xs)/1 var(--font-ui);
+  cursor: pointer;
+}
+.motion-row button:hover { background: var(--border); }
+
+.breakpoints { margin-top: var(--space-6); }
+.bp-track { position: relative; height: 60px; max-width: 1000px; border-radius: var(--radius-md); border: var(--stroke-1) solid var(--border); background: linear-gradient(var(--bg-panel), var(--bg)); }
+.bp-track::before {
+  content: "";
+  position: absolute; left: 0; right: 0; top: 40px; height: 2px;
+  background: linear-gradient(to right, var(--accent) 0 52.8%, var(--border-strong) 52.8% 100%);
+}
+.bp { position: absolute; top: 16px; transform: translateX(-50%); display: grid; justify-items: center; gap: 4px; }
+.bp i { display: block; width: 2px; height: 18px; background: var(--border-strong); }
+.bp.mode i { height: 26px; background: var(--accent); }
+.bp b { font: var(--fw-medium) var(--text-2xs)/1 var(--font-mono); color: var(--fg); }
+.bp-ends { display: flex; justify-content: space-between; max-width: 1000px; margin-top: var(--space-2); font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono); color: var(--fg-muted); }
+.bp-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-6); max-width: 1000px; margin: var(--space-4) 0 0; padding: 0; list-style: none; }
+.bp-list li { display: flex; gap: var(--space-3); align-items: baseline; font: var(--fw-regular) var(--text-sm)/1.4 var(--font-ui); color: var(--fg-muted); }
+.bp-list b { font: var(--fw-medium) var(--text-xs)/1 var(--font-mono); color: var(--fg); min-width: 34px; }
+.bp-list li.mode b { color: var(--accent); }
+.bp-legend { display: flex; gap: var(--space-4); margin-top: var(--space-3); font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono); color: var(--fg-muted); }
+.bp-legend span { display: inline-flex; align-items: center; gap: var(--space-2); }
+.bp-legend i { width: 14px; height: 2px; background: var(--border-strong); }
+.bp-legend .mode i { background: var(--accent); }
+
+.foot-note { padding: var(--space-6) var(--space-7) 0; font-size: var(--text-sm); color: var(--fg-muted); border-top: var(--stroke-1) solid var(--border); margin-top: var(--space-6); }
+
+@media (max-width: 1100px) {
+  #panes { grid-template-columns: 1fr; padding: var(--space-4) var(--space-4) 0; }
+  .doc-head, .doc-foot, .foot-note { padding-left: var(--space-4); padding-right: var(--space-4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .puck { transition: none !important; }
+}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-folder" viewBox="0 0 16 16">
+      <path id="p" d="M2 4.6A1.6 1.6 0 0 1 3.6 3h2.7l1.5 1.7h4.6A1.6 1.6 0 0 1 14 6.3v5.1A1.6 1.6 0 0 1 12.4 13H3.6A1.6 1.6 0 0 1 2 11.4z"/>
+    </symbol>
+    <symbol id="i-file" viewBox="0 0 16 16">
+      <path d="M4.2 2.2h4.4L12 5.6v8.2a1 1 0 0 1-1 1H4.2a1 1 0 0 1-1-1V3.2a1 1 0 0 1 1-1z"/>
+      <path d="M8.6 2.2v3.4H12"/>
+    </symbol>
+    <symbol id="i-search" viewBox="0 0 16 16">
+      <circle cx="7" cy="7" r="4.2"/>
+      <path d="M10.2 10.2 13.6 13.6"/>
+    </symbol>
+    <symbol id="i-settings" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="2.3"/>
+      <path d="M8 1.9v2M8 12.1v2M1.9 8h2M12.1 8h2M3.7 3.7l1.4 1.4M10.9 10.9l1.4 1.4M12.3 3.7l-1.4 1.4M5.1 10.9l-1.4 1.4"/>
+    </symbol>
+    <symbol id="i-graph" viewBox="0 0 16 16">
+      <circle cx="3.4" cy="4.2" r="1.5"/>
+      <circle cx="12.4" cy="5.8" r="1.5"/>
+      <circle cx="7.6" cy="12.4" r="1.5"/>
+      <path d="M4.8 4.7l6.2 1M4.4 5.4l2.6 5.6M11.8 7.1l-3.4 4"/>
+    </symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="M10 3 5 8l5 5"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 16 16"><path d="M6 3l5 5-5 5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16">
+      <circle cx="8" cy="3.4" r="1.1" fill="currentColor" stroke="none"/>
+      <circle cx="8" cy="8" r="1.1" fill="currentColor" stroke="none"/>
+      <circle cx="8" cy="12.6" r="1.1" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 16 16">
+      <path d="M8 14s4.4-4.5 4.4-7.9A4.4 4.4 0 0 0 3.6 6.1C3.6 9.5 8 14 8 14z"/>
+      <circle cx="8" cy="6" r="1.4"/>
+    </symbol>
+    <symbol id="i-refresh" viewBox="0 0 16 16">
+      <path d="M13.2 8a5.2 5.2 0 1 1-1.6-3.7"/>
+      <path d="M13.2 2.6v2.6h-2.6"/>
+    </symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.4 6.4 12 13 4.6"/></symbol>
+    <symbol id="i-warning" viewBox="0 0 16 16">
+      <path d="M8 2.4 14.2 13H1.8z"/>
+      <path d="M8 6.2v3.2"/>
+      <circle cx="8" cy="11.4" r=".75" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-eye" viewBox="0 0 16 16">
+      <path d="M1.8 8S4.5 3.6 8 3.6 14.2 8 14.2 8 11.5 12.4 8 12.4 1.8 8 1.8 8z"/>
+      <circle cx="8" cy="8" r="1.9"/>
+    </symbol>
+    <symbol id="i-link" viewBox="0 0 16 16">
+      <path d="M6.6 9.4 9.4 6.6"/>
+      <path d="M7.3 4.9l1-1a2.6 2.6 0 0 1 3.7 3.7l-1 1"/>
+      <path d="M8.7 11.1l-1 1a2.6 2.6 0 0 1-3.7-3.7l1-1"/>
+    </symbol>
+    <symbol id="i-image" viewBox="0 0 16 16">
+      <rect x="2" y="3" width="12" height="10" rx="1.5"/>
+      <circle cx="5.6" cy="6.4" r="1"/>
+      <path d="M3 11.4 6.3 8.6l2.6 2.3 2-1.6 2.9 2.1"/>
+    </symbol>
+    <symbol id="i-smile" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="5.4"/>
+      <circle cx="6" cy="6.6" r=".7" fill="currentColor" stroke="none"/>
+      <circle cx="10" cy="6.6" r=".7" fill="currentColor" stroke="none"/>
+      <path d="M5.7 9.4a3 3 0 0 0 4.6 0"/>
+    </symbol>
+    <symbol id="i-undo" viewBox="0 0 16 16">
+      <path d="M5.6 4 3 6.6 5.6 9.2"/>
+      <path d="M3 6.6h6a3.4 3.4 0 0 1 0 6.8H6.8"/>
+    </symbol>
+    <symbol id="i-redo" viewBox="0 0 16 16">
+      <path d="M10.4 4 13 6.6l-2.6 2.6"/>
+      <path d="M13 6.6H7a3.4 3.4 0 0 0 0 6.8h2.2"/>
+    </symbol>
+    <symbol id="i-list" viewBox="0 0 16 16">
+      <path d="M6 4h7M6 8h7M6 12h7"/>
+      <circle cx="3.2" cy="4" r=".8" fill="currentColor" stroke="none"/>
+      <circle cx="3.2" cy="8" r=".8" fill="currentColor" stroke="none"/>
+      <circle cx="3.2" cy="12" r=".8" fill="currentColor" stroke="none"/>
+    </symbol>
+    <symbol id="i-sparkle" viewBox="0 0 16 16">
+      <path d="M8 2.4 9.3 6.7 13.6 8 9.3 9.3 8 13.6 6.7 9.3 2.4 8 6.7 6.7z"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="doc-head">
+  <div>
+    <p class="eyebrow">Design system · v1</p>
+    <h1>Foundations</h1>
+    <p class="lede">Tokens, type, space, shape, elevation, icons, focus. The normative
+      spec is <code>docs/ui/foundations.md</code>; this page illustrates it.</p>
+  </div>
+  <div class="viewswitch" role="group" aria-label="Preview mode">
+    <button type="button" data-view="side" aria-pressed="true">Side by side</button>
+    <button type="button" data-view="dark" aria-pressed="false">Dark</button>
+    <button type="button" data-view="light" aria-pressed="false">Light</button>
+  </div>
+</header>
+
+<main id="panes" data-view="side"></main>
+
+<section class="doc-foot">
+  <h2>Motion</h2>
+  <p>Three of the five duration tokens, on the standard curve. With
+    <code>prefers-reduced-motion: reduce</code> every puck jumps to its end position.
+    Nothing here exceeds 400 ms.</p>
+  <div class="motion" id="motion"></div>
+
+  <div class="breakpoints">
+    <h2 style="margin-top:var(--space-7)">Breakpoints</h2>
+    <p>One mode switch at 860 px (or a coarse pointer up to 1023 px). Everything else
+      refines a single component.</p>
+    <div class="bp-track" id="bptrack"></div>
+    <div class="bp-ends"><span>390</span><span>1280</span></div>
+    <div class="bp-legend">
+      <span class="mode"><i></i>Mode switch</span>
+      <span><i></i>Component refinement</span>
+    </div>
+    <ul class="bp-list" id="bplist"></ul>
+  </div>
+</section>
+
+<p class="foot-note">Dark and light are rendered with the same markup. Where this page
+  and <code>docs/ui/foundations.md</code> differ, the document wins. Where the document
+  and <code>static/css/style.css</code> differ today, the stylesheet wins.</p>
+
+<script>
+/* ------------------------------------------------------------------ */
+/* Ratio                                                                 */
+/* ------------------------------------------------------------------ */
+function chan(v) {
+  v /= 255;
+  return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+function lum(hex) {
+  const h = hex.replace("#", "");
+  return 0.2126 * chan(parseInt(h.slice(0, 2), 16)) +
+         0.7152 * chan(parseInt(h.slice(2, 4), 16)) +
+         0.0722 * chan(parseInt(h.slice(4, 6), 16));
+}
+function ratio(a, b) {
+  const la = lum(a), lb = lum(b);
+  const hi = Math.max(la, lb), lo = Math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+function fmt(n) { return n.toFixed(2) + ":1"; }
+
+/* ------------------------------------------------------------------ */
+/* Theme data — mirrors the token table in §3                          */
+/* ------------------------------------------------------------------ */
+const THEME = {
+  dark: {
+    bg: "#1a1b1f", panel: "#22232a", raised: "#2a2b34", well: "#14151a",
+    fg: "#e6e6ea", muted: "#9799a4", accent: "#7c9cff",
+    accentSoft: "rgba(124,156,255,.18)", accentFg: "#14151a",
+    border: "#383a45", borderStrong: "#7b8194",
+    danger: "#ff6b6b", ok: "#5fd49a", warn: "#f3b454",
+    scrim: "rgba(0,0,0,.5)", selection: "rgba(124,156,255,.28)"
+  },
+  light: {
+    bg: "#ffffff", panel: "#f6f7f9", raised: "#eceef2", well: "#f0f2f5",
+    fg: "#1f2330", muted: "#5d6470", accent: "#2f5fd0",
+    accentSoft: "rgba(47,95,208,.12)", accentFg: "#ffffff",
+    border: "#d8dde4", borderStrong: "#78828f",
+    danger: "#c0392b", ok: "#16703f", warn: "#8a5a0b",
+    scrim: "rgba(0,0,0,.5)", selection: "rgba(47,95,208,.16)"
+  }
+};
+
+const SIZES = [
+  ["--text-2xs", "9px", "9px", "9px", "600 / 1.2", "Badge 3"],
+  ["--text-xs", ".72rem", "10.1px", "13.1px", "600 / 1.2", "SECTION LABEL"],
+  ["--text-sm", ".8rem", "11.2px", "14.6px", "400 / 1.35", "Meta and hints"],
+  ["--text-ui", ".86rem", "12.0px", "15.6px", "400 / 1.4", "Dense chrome"],
+  ["--text-ui-lg", ".93rem", "13.0px", "16.9px", "400 / 1.4", "Topbar and tabs"],
+  ["--text-body", "1rem", "14px", "18.2px", "400 / 1.5", "The note is the page"],
+  ["--text-lg", "1.15rem", "16.1px", "20.9px", "600 / 1.25", "Dialog title"]
+];
+const SIZE_CSS = [
+  "var(--text-2xs)", "var(--text-xs)", "var(--text-sm)", "var(--text-ui)",
+  "var(--text-ui-lg)", "var(--text-body)", "var(--text-lg)"
+];
+const WEIGHT_CSS = ["600", "600", "400", "400", "400", "400", "600"];
+
+const SPACES = [
+  ["--space-hair", "2px"], ["--space-1", "4px"], ["--space-2", "8px"],
+  ["--space-3", "12px"], ["--space-4", "16px"], ["--space-5", "20px"],
+  ["--space-6", "24px"], ["--space-7", "32px"], ["--space-8", "48px"]
+];
+
+const RADII = [
+  ["--radius-xs", "4px", "var(--radius-xs)"],
+  ["--radius-sm", "6px", "var(--radius-sm)"],
+  ["--radius-md", "8px", "var(--radius-md)"],
+  ["--radius-lg", "12px", "var(--radius-lg)"],
+  ["--radius-xl", "16px", "var(--radius-xl)"],
+  ["--radius-pill", "999px", "var(--radius-pill)"]
+];
+
+const SHADOWS = [
+  ["--shadow-pop", "variable", "z 200 / 1000"],
+  ["--shadow-float", "variable", "local 2–8"],
+  ["--shadow-sheet", "variable", "z 410 / 600"],
+  ["--shadow-modal", "variable", "z 2000 / 2100"],
+  ["--shadow-toast", "variable", "z 3000"]
+];
+
+const ICONS = ["folder", "file", "search", "settings", "graph", "pin",
+  "refresh", "close", "check", "warning", "eye", "link", "image", "smile",
+  "undo", "redo", "list", "sparkle"];
+
+function svg(name, size) {
+  return '<svg width="' + size + '" height="' + size + '" aria-hidden="true" ' +
+    'focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" ' +
+    'stroke-linecap="round" stroke-linejoin="round" style="display:block">' +
+    '<use href="#i-' + name + '"/></svg>';
+}
+
+/* ------------------------------------------------------------------ */
+/* Pane sections                                                       */
+/* ------------------------------------------------------------------ */
+function surfaceRows(t) {
+  const rows = [
+    ["--surface-page", t.bg, "Reader, page"],
+    ["--surface-panel", t.panel, "Topbar, panels, tab bar"],
+    ["--surface-raised", t.raised, "Tabs, menus, toolbars"],
+    ["--surface-well", t.well, "Code blocks, inputs"]
+  ];
+  const stack = rows.map((r, i) =>
+    '<div style="background:' + r[1] + ';color:' +
+      (i === 0 ? t.fg : t.fg) + ';box-shadow:inset 0 0 0 1px ' + t.border + '">' +
+      '<span>' + r[0] + '</span><span style="color:' + t.muted + '">' + r[2] + '</span></div>'
+  ).join("");
+  const list = rows.map(r =>
+    '<div class="row"><span class="chip" style="background:' + r[1] + '"></span>' +
+    '<span class="name">' + r[0] + '</span>' +
+    '<span class="hex">' + r[1] + '</span>' +
+    '<span class="ratio" style="color:var(--text-muted)">—</span></div>'
+  ).join("");
+  return '<div class="sec"><h3>Surfaces</h3><div class="stack">' + stack +
+    '</div><div class="rows">' + list + '</div></div>';
+}
+
+function textRows(t) {
+  const surf = t.raised;
+  const rows = [
+    ["--text-primary", t.fg, "Body and headings", "The note is the page."],
+    ["--text-muted", t.muted, "Meta, labels, hints", "Saved 2 minutes ago"],
+    ["--text-on-accent", t.accentFg, "On an accent fill", "Primary"]
+  ];
+  const list = rows.map(r => {
+    const onAccent = r[0] === "--text-on-accent";
+    const base = onAccent ? t.accent : surf;
+    const rr = ratio(r[1], base);
+    const cls = rr >= 4.5 ? "pass" : rr >= 3 ? "warned" : "failed";
+    return '<div class="row"><span class="chip" style="background:' + (onAccent ? t.accent : r[1]) +
+      ';box-shadow:inset 0 0 0 1px ' + t.border + '"></span>' +
+      '<span class="name">' + r[0] + '</span>' +
+      '<span class="hex">' + r[1] + '</span>' +
+      '<span class="ratio ' + cls + '">' + fmt(rr) + '</span>' +
+      '<span class="swatch-on" style="color:' + (onAccent ? t.accentFg : r[1]) +
+      ';background:' + base + ';padding:4px 8px;border-radius:4px">' + r[3] + '</span></div>';
+  }).join("");
+  return '<div class="sec"><h3>Text</h3><div class="rows">' + list + '</div>' +
+    '<p class="note">Ratio measured against <code>--surface-raised</code>, the darkest ' +
+    'background that carries body text. ' + fmt(ratio(t.fg, t.raised)) +
+    ' primary, ' + fmt(ratio(t.muted, t.raised)) + ' muted.</p></div>';
+}
+
+function accentRows(t) {
+  const items = [
+    ["--accent", t.accent, t.panel, "Link, fill, ring"],
+    ["--danger", t.danger, t.panel, "Error"],
+    ["--ok", t.ok, t.panel, "Online, saved"],
+    ["--warn", t.warn, t.panel, "Caution"]
+  ];
+  const list = items.map(r => {
+    const rr = ratio(r[1], r[2]);
+    const cls = rr >= 4.5 ? "pass" : rr >= 3 ? "warned" : "failed";
+    return '<div class="row"><span class="chip" style="background:' + r[1] + '"></span>' +
+      '<span class="name">' + r[0] + '</span>' +
+      '<span class="hex">' + r[1] + '</span>' +
+      '<span class="ratio ' + cls + '">' + fmt(rr) + '</span></div>';
+  }).join("");
+  const chips = '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">' +
+    '<span style="background:' + t.accent + ';color:' + t.accentFg +
+    ';padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600">Primary</span>' +
+    '<span style="background:' + t.accentSoft + ';color:' + t.fg +
+    ';padding:6px 12px;border-radius:6px;font-size:12px">Selected wash</span>' +
+    '<span style="border:1px solid ' + t.border + ';color:' + t.muted +
+    ';padding:6px 12px;border-radius:6px;font-size:12px">Secondary</span></div>';
+  return '<div class="sec"><h3>Accent and status</h3><div class="rows">' + list +
+    '</div>' + chips + '<p class="note">Ratios measured against <code>--surface-panel</code>.</p></div>';
+}
+
+function lineRows(t) {
+  return '<div class="sec"><h3>Lines, overlay, selection</h3>' +
+    '<div class="linepair">' +
+    '<div><span class="swatch" style="box-shadow:inset 0 0 0 1px ' + t.border +
+    '"></span><span>--border &nbsp;' + t.border + ' &nbsp;decorative</span></div>' +
+    '<div><span class="swatch" style="box-shadow:inset 0 0 0 1px ' + t.borderStrong +
+    '"></span><span>--border-strong &nbsp;' + t.borderStrong + ' &nbsp;control boundary, ' +
+    fmt(ratio(t.borderStrong, t.panel)) + ' on panel</span></div>' +
+    '<div><span class="swatch" style="background:' + t.selection +
+    '"></span><span>--selection-bg &nbsp;' + t.selection + '</span></div>' +
+    '<div><span class="swatch" style="background:' + t.scrim +
+    '"></span><span>--overlay-scrim &nbsp;' + t.scrim + '</span></div>' +
+    '</div><p class="note">Select this line to see the wash: ' +
+    '<span style="background:' + t.selection + '">the quick brown fox</span>. ' +
+    '<code>--border</code> never outlines a control.</p></div>';
+}
+
+function typeSection() {
+  const rows = SIZES.map((s, i) =>
+    '<div class="spec"><span class="label"><b>' + s[0] + '</b>' + s[4] + '</span>' +
+    '<span class="ex" style="font-family:var(--font-ui);font-size:' + SIZE_CSS[i] +
+    ';font-weight:' + WEIGHT_CSS[i] + ';line-height:1.2">' + s[5] + '</span>' +
+    '<span class="px">' + s[2] + ' / ' + s[3] + '</span></div>'
+  ).join("");
+  return '<div class="sec"><h3>Type</h3><div class="specimen">' + rows + '</div>' +
+    '<p class="note">px at <code>--font-scale: 1</code> / <code>1.3</code>. ' +
+    '<code>--text-2xs</code> is fixed; the rest scale with the root size.</p></div>';
+}
+
+function spaceSection() {
+  const rows = SPACES.map(s =>
+    '<div><span class="val">' + s[1] + '</span>' +
+    '<span class="bar" style="width:' + s[1] + '"></span>' +
+    '<span class="lab">' + s[0] + '</span></div>'
+  ).join("");
+  return '<div class="sec"><h3>Space</h3><div class="ruler">' + rows + '</div>' +
+    '<p class="note">4 px grid. 2 px is the only sub-rung: the gap inside one icon group.</p></div>';
+}
+
+function shapeSection() {
+  const rows = RADII.map(r =>
+    '<figure><div class="box" style="border-radius:' + r[2] + '"></div>' +
+    '<figcaption><b>' + r[0] + '</b> ' + r[1] + '</figcaption></figure>'
+  ).join("");
+  return '<div class="sec"><h3>Radii</h3><div class="radii">' + rows + '</div>' +
+    '<p class="note">Stroke: 1 px hairline, 2 px ring and indicator, 3 px selection bar.</p></div>';
+}
+
+function elevSection() {
+  const rows = SHADOWS.map(s =>
+    '<figure><div class="card" style="box-shadow:' + s[0] + '"></div>' +
+    '<figcaption><span><b>' + s[0] + '</b></span><span>' + s[2] + '</span></figcaption></figure>'
+  ).join("");
+  return '<div class="sec"><h3>Elevation</h3><div class="elev">' + rows + '</div>' +
+    '<p class="note">Content and chrome carry no shadow. Shadow rises with the band.</p></div>';
+}
+
+function anatomy() {
+  return '<svg width="64" height="64" viewBox="0 0 16 16" aria-hidden="true" ' +
+    'focusable="false" fill="none" stroke="currentColor" stroke-width="0.375" ' +
+    'stroke-linecap="round" stroke-linejoin="round" style="display:block">' +
+    '<use href="#i-graph"/></svg>';
+}
+
+function iconSection() {
+  const sizes = [
+    ["--icon-sm", "14px", 14],
+    ["--icon-md", "16px", 16],
+    ["--icon-lg", "17px", 17]
+  ];
+  const rows = sizes.map(s => {
+    const glyphs = ICONS.slice(0, 8).map(n => svg(n, s[2])).join("");
+    return '<div><span class="glyphs" style="gap:8px">' + glyphs + '</span>' +
+      '<span class="tok">' + s[0] + ' · ' + s[1] + '</span></div>';
+  }).join("");
+  return '<div class="sec"><h3>Icons</h3>' +
+    '<div class="icon-grid-demo"><div class="grid16">' + anatomy() + '</div>' +
+    '<p class="grid16-note">16 × 16 viewBox at 4×<br>grid 4 px per unit<br>' +
+    '1.5 stroke at 1×<br>currentColor · 1–15 live area</p></div>' +
+    '<div class="icon-sizes">' + rows + '</div></div>';
+}
+
+function focusSection(t) {
+  return '<div class="sec"><h3>Focus</h3>' +
+    '<div class="demo-row">' +
+    '<button type="button" class="demo-btn">Tab to me</button>' +
+    '<button type="button" class="demo-btn force">Ring shown</button>' +
+    '<input class="demo-input" placeholder="Field outline">' +
+    '</div>' +
+    '<p class="note">2 px <code>--accent</code>, offset 2 px. ' +
+    'Ring ' + fmt(ratio(t.accent, t.bg)) + ' on page, ' +
+    fmt(ratio(t.accent, t.panel)) + ' on panel.</p></div>';
+}
+
+/* ------------------------------------------------------------------ */
+/* Render                                                              */
+/* ------------------------------------------------------------------ */
+function pane(themeName) {
+  const t = THEME[themeName];
+  return '<section class="pane" data-theme="' + themeName + '">' +
+    '<div class="pane-head"><h2>' + themeName + '</h2>' +
+    '<span class="count">' + t.bg + ' / ' + t.fg + '</span></div>' +
+    surfaceRows(t) + textRows(t) + accentRows(t) + lineRows(t) +
+    typeSection() + spaceSection() + shapeSection() + elevSection() +
+    iconSection() + focusSection(t) +
+    '</section>';
+}
+
+document.getElementById("panes").innerHTML = pane("dark") + pane("light");
+
+/* view switch */
+const panes = document.getElementById("panes");
+document.querySelectorAll(".viewswitch button").forEach(function (b) {
+  b.addEventListener("click", function () {
+    panes.dataset.view = b.dataset.view;
+    document.querySelectorAll(".viewswitch button").forEach(function (o) {
+      o.setAttribute("aria-pressed", String(o === b));
+    });
+  });
+});
+
+/* motion */
+const MODES = [["1", "--dur-1", "120ms"], ["3", "--dur-3", "220ms"], ["4", "--dur-4", "380ms"]];
+document.getElementById("motion").innerHTML = MODES.map(function (m) {
+  return '<div class="motion-row" data-dur="' + m[0] + '">' +
+    '<span class="lab"><b>' + m[1] + '</b>' + m[2] + ' · --ease-standard</span>' +
+    '<span class="track"><span class="puck"></span></span>' +
+    '<button type="button">Play</button></div>';
+}).join("");
+
+document.querySelectorAll(".motion-row button").forEach(function (b) {
+  b.addEventListener("click", function () {
+    const row = b.closest(".motion-row");
+    row.classList.toggle("run");
+  });
+});
+
+/* breakpoint ruler */
+const BPS = [
+  [390, "390", "phone ref", false],
+  [520, "520", "table editor", false],
+  [720, "720", "designer", false],
+  [820, "820", "graph wrap", false],
+  [860, "860", "mode switch", true],
+  [960, "960", "designer compact", false],
+  [1023, "1023", "coarse mode", true],
+  [1280, "1280", "desktop ref", false]
+];
+const track = document.getElementById("bptrack");
+track.innerHTML = BPS.map(function (b) {
+  const pct = ((b[0] - 390) / (1280 - 390)) * 100;
+  return '<span class="bp' + (b[3] ? " mode" : "") + '" style="left:' + pct + '%">' +
+    "<b>" + b[1] + "</b><i></i></span>";
+}).join("");
+
+document.getElementById("bplist").innerHTML = BPS.map(function (b) {
+  return '<li' + (b[3] ? ' class="mode"' : "") + '><b>' + b[1] + "</b><span>" +
+    b[2] + "</span></li>";
+}).join("");
+</script>
+</body>
+</html>

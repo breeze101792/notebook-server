@@ -1,0 +1,2242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diagram designers — reference mockup</title>
+<style>
+/* ==================================================================
+   Tokens. Every value is a literal: no token aliases another token and
+   no reference chain forms a cycle. Foundation values are the shipped
+   stylesheet values; designer values are the shipped component tokens
+   (static/css/style.css:6138-6169). Exceptions E1-E5 from
+   docs/ui/diagram-designers.md §8.4 are applied; proposals are not.
+   ================================================================== */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-prose: 1.65;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+
+  /* Designer component tokens (shipped literals). */
+  --designer-sidebar-w: 236px;
+  --designer-inspector-w: 296px;
+  --designer-field-h: 32px;
+  --designer-modal-w: 1320px;
+  --designer-modal-h: 85vh;
+  --designer-grid-size: 24px;
+
+  /* Mockup page chrome, not app tokens. */
+  --doc-canvas: #0f1014;
+  --doc-max: 1400px;
+  --doc-pad: 32px;
+}
+
+[data-theme="dark"] {
+  --surface-page: #1a1b1f;
+  --surface-panel: #22232a;
+  --surface-raised: #2a2b34;
+  --surface-well: #14151a;
+  --text-primary: #e6e6ea;
+  --text-muted: #9799a4;
+  --text-on-accent: #14151a;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --ok: #5fd49a;
+  --warn: #f3b454;
+  --selection-bg: rgba(124, 156, 255, .18);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .5);
+  --shadow-hint: 0 6px 18px rgba(0, 0, 0, .25);
+  --shadow-sheet: 0 -6px 18px rgba(0, 0, 0, .22);
+
+  --designer-canvas-bg: #14151a;
+  --designer-grid: rgba(124, 156, 255, .12);
+
+  /* Canvas art. Exempt from UI tokens: it depicts the rendered diagram. */
+  --art-fill: #2a2b34;
+  --art-stroke: #7b8194;
+  --art-text: #e6e6ea;
+  --art-edge: #9799a4;
+}
+
+[data-theme="light"] {
+  --surface-page: #ffffff;
+  --surface-panel: #f6f7f9;
+  --surface-raised: #eceef2;
+  --surface-well: #f0f2f5;
+  --text-primary: #1f2330;
+  --text-muted: #5d6470;
+  --text-on-accent: #ffffff;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --ok: #16703f;
+  --warn: #8a5a0b;
+  --selection-bg: rgba(47, 95, 208, .12);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .22);
+  --shadow-hint: 0 6px 18px rgba(0, 0, 0, .25);
+  --shadow-sheet: 0 -6px 18px rgba(0, 0, 0, .22);
+
+  --designer-canvas-bg: #f7f8fb;
+  --designer-grid: rgba(47, 95, 208, .14);
+
+  --art-fill: #eceef2;
+  --art-stroke: #78828f;
+  --art-text: #1f2330;
+  --art-edge: #5d6470;
+}
+
+/* ==================================================================
+   Mockup page chrome
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  background: var(--doc-canvas);
+  color: #e6e6ea;
+  font: var(--text-body)/var(--lh-normal) var(--font-ui);
+}
+.page { max-width: var(--doc-max); margin: 0 auto; padding: var(--doc-pad); }
+.page-head { padding: var(--space-6) 0 var(--space-7); }
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: #8b8d98;
+}
+.page-head h1 {
+  margin: 0 0 var(--space-3);
+  font-size: 28px;
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-heading);
+}
+.page-head .lede {
+  margin: 0;
+  max-width: 82ch;
+  color: #b9bcc7;
+  font-size: var(--text-ui-lg);
+  line-height: var(--lh-prose);
+}
+.page-head code, .sec code {
+  font-family: var(--font-mono);
+  font-size: .88em;
+  background: #22232a;
+  border: 1px solid #383a45;
+  border-radius: var(--radius-xs);
+  padding: 1px 4px;
+}
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-4); }
+.legend span { display: inline-flex; align-items: center; gap: var(--space-1); font-size: var(--text-sm); color: #8b8d98; }
+.legend i { width: 8px; height: 8px; border-radius: var(--radius-circle); background: #7c9cff; display: inline-block; }
+.legend i.light { background: #f6f7f9; border: 1px solid #78828f; }
+.legend i.warn { background: #f3b454; }
+
+.sec { margin: 0 0 var(--space-8); }
+.sec > h2 {
+  margin: 0 0 var(--space-2);
+  font-size: 20px;
+  line-height: var(--lh-tight);
+  font-weight: var(--fw-semibold);
+  color: #e6e6ea;
+}
+.sec > .lede {
+  margin: 0 0 var(--space-4);
+  max-width: 92ch;
+  color: #a6a9b4;
+  font-size: var(--text-ui);
+  line-height: var(--lh-prose);
+}
+
+.board {
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+}
+.board + .board { margin-top: var(--space-4); }
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+.board-head .dot { width: 6px; height: 6px; border-radius: var(--radius-circle); background: var(--accent); }
+.board-head .grow { flex: 1 1 auto; }
+.board-head .size { font-weight: var(--fw-regular); color: var(--text-muted); }
+.board-body { padding: var(--space-6); overflow-x: auto; }
+.screen {
+  position: relative;
+  height: 980px;
+  margin: 0 auto;
+  overflow: hidden;
+  background: var(--surface-page);
+}
+.screen--1280 { width: 1280px; }
+.screen--1024 { width: 1024px; }
+.screen--720 { width: 720px; }
+.screen--390 { width: 390px; }
+
+/* ==================================================================
+   Shared edit-window shell (chrome is quoted, not redesigned)
+   ================================================================== */
+.modal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-panel);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  overflow: hidden;
+}
+.head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 65px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.heading { flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; gap: 10px; overflow: hidden; }
+.heading h2 {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.14rem;
+  font-weight: 600;
+  letter-spacing: .3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.badge {
+  flex: 0 0 auto;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--text-muted);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px 9px;
+}
+.winbtn {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 1.35rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.icon { width: 16px; height: 16px; display: block; }
+.icon-lg { width: 17px; height: 17px; display: block; }
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 57px;
+  padding: 6px 12px;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.history { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; }
+.bar-btn {
+  width: 44px; height: 44px; padding: 0;
+  border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text-muted);
+  display: inline-flex; align-items: center; justify-content: center;
+  cursor: pointer;
+}
+.bar-btn:disabled { opacity: .4; cursor: not-allowed; }
+.seam { flex: 0 0 auto; width: 1px; height: 24px; background: var(--border); }
+.bar-actions {
+  flex: 1 1 auto; min-width: 0; display: flex; gap: 8px;
+  overflow-x: auto; overflow-y: hidden; white-space: nowrap;
+}
+.bar-actions::-webkit-scrollbar { display: none; }
+.toolgroup { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.bar-sep { flex: 0 0 auto; width: 1px; height: 20px; background: var(--border); margin: 0 8px; }
+.iconbtn {
+  width: 32px; height: 32px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.iconbtn.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.chip {
+  height: 32px; padding: 0 10px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-primary);
+  font: inherit; font-size: .8rem; line-height: 1.2;
+  display: inline-flex; align-items: center; justify-content: center;
+  white-space: nowrap; flex: 0 0 auto; cursor: pointer;
+}
+.chip:disabled { opacity: .45; cursor: not-allowed; }
+.chip.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; box-shadow: inset 0 0 0 1px var(--accent); }
+
+.body { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
+.foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  min-height: 69px; padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.foot .status {
+  margin-right: auto; flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .82rem; line-height: 1.3; color: var(--text-muted);
+}
+.foot .status.ok { color: var(--ok); }
+.foot .status.error { color: var(--warn); }
+.action {
+  min-height: 44px; padding: 0 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit; font-size: .93rem;
+  cursor: pointer; flex: 0 0 auto;
+}
+.action.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+
+/* ==================================================================
+   Sidebar, add form, shape grid, chart
+   ================================================================== */
+.sidebar {
+  flex: 0 0 var(--designer-sidebar-w);
+  width: var(--designer-sidebar-w);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px 8px;
+  background: var(--surface-raised);
+  border-right: 1px solid var(--border);
+}
+.sidebar::-webkit-scrollbar { width: 8px; }
+.sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+.section { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.s-title {
+  margin: 0;
+  font-size: .72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--text-muted);
+}
+.tabs {
+  display: flex; gap: 2px; padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-page);
+  min-width: 0;
+}
+.tab {
+  flex: 1 1 0; min-width: 0; padding: 5px 4px;
+  border: 0; border-radius: 4px;
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: .78rem; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: pointer;
+}
+.tab.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.form { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.frow { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.flabel { font-size: .76rem; line-height: 1.2; color: var(--text-muted); }
+.field {
+  width: 100%; height: var(--designer-field-h); min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font: inherit; font-size: .84rem;
+}
+.select {
+  width: 100%; height: var(--designer-field-h); min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-well);
+  color: var(--text-primary);
+  font: inherit; font-size: .84rem;
+}
+.commit {
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 10px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit; font-size: .82rem; font-weight: 600; line-height: 1.2;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  cursor: pointer;
+}
+.commit:disabled { opacity: .5; cursor: not-allowed; }
+.divider { flex: 0 0 auto; height: 1px; background: var(--border); }
+.shapes { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; min-width: 0; }
+.inspector .shapes { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.shape {
+  appearance: none;
+  min-width: 0; min-height: 36px;
+  padding: 5px 3px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-page);
+  color: var(--text-primary);
+  font: inherit; text-align: center; cursor: pointer;
+}
+.inspector .shape { min-height: 38px; }
+.shape.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.shape .caption {
+  font-size: .68rem; line-height: 1.1; color: var(--text-muted);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.shape.on .caption { color: var(--accent); font-weight: 600; }
+.dir { display: flex; flex-wrap: wrap; gap: 4px; }
+.dchip { position: relative; display: inline-flex; }
+.dchip input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.dchip span {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; height: 26px; padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-page);
+  color: var(--text-muted);
+  font-size: .72rem; line-height: 1;
+  cursor: pointer;
+}
+.dchip input:checked + span {
+  background: var(--accent-soft); border-color: var(--accent);
+  color: var(--accent); font-weight: 600;
+}
+
+/* ==================================================================
+   Stage and canvas
+   ================================================================== */
+.stage { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; overflow: hidden; }
+.modal.dw .stage { display: flex; flex-direction: row; }
+.canvas {
+  position: absolute; inset: 0;
+  background-color: var(--designer-canvas-bg);
+  background-image: radial-gradient(circle, var(--designer-grid) 1px, transparent 1px);
+  background-size: var(--designer-grid-size) var(--designer-grid-size);
+  background-position: center;
+  overflow: hidden;
+}
+.art { display: block; width: 100%; height: 100%; }
+.art .node rect, .art .node path, .art .node circle, .art .node ellipse {
+  fill: var(--art-fill); stroke: var(--art-stroke); stroke-width: 1.5;
+}
+.art .node text, .art .label {
+  fill: var(--art-text); font: 500 13px var(--font-ui); text-anchor: middle;
+}
+.art .node.sel rect, .art .node.sel path, .art .node.sel circle { stroke: var(--accent); stroke-width: 2; }
+.art .halo { fill: none; stroke: var(--accent); stroke-width: 7; opacity: .28; }
+.art .edge { fill: none; stroke: var(--art-edge); stroke-width: 1.5; }
+.art .edge.dashed { stroke-dasharray: 5 4; }
+.art .edge.sel { stroke: var(--accent); stroke-width: 2.5; }
+.art .arrow { fill: var(--art-edge); }
+.art .arrow.sel { fill: var(--accent); }
+.art .gantt-bar { fill: var(--accent-soft); stroke: var(--accent); }
+.edge-label {
+  fill: var(--text-muted); font: 400 11px var(--font-ui); text-anchor: middle;
+  paint-order: stroke; stroke: var(--designer-canvas-bg); stroke-width: 4px;
+}
+.hint {
+  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
+  z-index: 2; max-width: calc(100% - 32px); margin: 0; padding: 6px 12px;
+  font-size: .82rem; color: var(--text-muted); text-align: center;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-hint);
+  pointer-events: none;
+}
+
+/* ==================================================================
+   Inspector
+   ================================================================== */
+.inspector {
+  flex: 0 0 var(--designer-inspector-w);
+  width: var(--designer-inspector-w);
+  min-width: 0;
+  display: flex; flex-direction: column;
+  background: var(--surface-raised);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+.insp-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  min-height: 48px; padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.glyph {
+  flex: 0 0 auto; width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface-page); color: var(--accent);
+  font-size: .78rem; font-weight: 700;
+}
+.titles { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.kind {
+  margin: 0; font-size: .92rem; font-weight: 600; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.meta {
+  font-size: .72rem; line-height: 1.2; color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.clear {
+  flex: 0 0 auto; min-height: 26px; padding: 3px 7px;
+  border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: 1rem; line-height: 1; cursor: pointer;
+}
+.insp-body {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.insp-body::-webkit-scrollbar { width: 8px; }
+.insp-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+.group {
+  display: flex; flex-direction: column; gap: 6px;
+  padding-top: 10px; border-top: 1px solid var(--border); min-width: 0;
+}
+.group:first-child { padding-top: 0; border-top: 0; }
+.gtitle {
+  margin: 0 0 2px; font-size: .7rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted);
+}
+.btn {
+  appearance: none;
+  min-height: 30px; padding: 5px 10px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font: inherit; font-size: .82rem; line-height: 1.2;
+  cursor: pointer; text-align: center;
+}
+.btn.block { width: 100%; }
+.btn.danger {
+  width: 100%; justify-content: flex-start;
+  background: transparent; border-color: transparent; color: var(--danger);
+}
+.consequence { margin: 0; font-size: .73rem; line-height: 1.35; color: var(--text-muted); }
+.color-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.color-row input[type="color"] {
+  width: 46px; height: var(--designer-field-h); padding: 2px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-well);
+}
+.ghost {
+  min-height: 26px; padding: 2px 7px;
+  border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: .74rem; cursor: pointer;
+}
+.rest { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 8px 8px; text-align: center; }
+.rest-glyph { font-size: 1.4rem; line-height: 1; color: var(--text-muted); }
+.rest-title { margin: 0; font-size: .9rem; font-weight: 600; color: var(--text-primary); }
+.rest-copy { margin: 0; max-width: 34ch; font-size: .78rem; line-height: 1.4; color: var(--text-muted); }
+
+/* ==================================================================
+   States (full-stage overlays) and alert banner
+   ================================================================== */
+.alert {
+  position: absolute; top: 10px; left: 10px; right: 10px; z-index: 5;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger);
+  color: var(--text-primary);
+  font-size: .8rem; line-height: 1.35;
+}
+.alert .msg { flex: 1 1 auto; min-width: 0; }
+.alert .dismiss {
+  flex: 0 0 auto; border: 0; background: transparent;
+  color: inherit; font: inherit; font-size: 1rem; line-height: 1;
+  padding: 0 2px; cursor: pointer; border-radius: 3px;
+}
+.state {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 32px; text-align: center;
+  background: var(--designer-canvas-bg);
+}
+.state-icon { font-size: 1.6rem; line-height: 1; color: var(--text-muted); }
+.state-title { margin: 0; font-size: 1rem; font-weight: 600; color: var(--text-primary); }
+.state-title.warn { color: var(--warn); }
+.state-msg { margin: 0; max-width: 46ch; font-size: .9rem; color: var(--text-muted); }
+.state-actions { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; justify-content: center; }
+.state-action {
+  background: var(--surface-raised); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px 14px; font: inherit; font-size: .93rem; cursor: pointer;
+}
+.error-detail {
+  max-width: 60ch; max-height: 9em; overflow: auto; text-align: left;
+  margin: 0; padding: 10px 12px; white-space: pre-wrap;
+  font: .82rem/1.4 var(--font-mono);
+  color: var(--text-primary); background: var(--surface-well);
+  border: 1px solid var(--border); border-radius: 6px;
+}
+.spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 3px solid var(--border); border-top-color: var(--accent);
+}
+.crop {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--designer-canvas-bg);
+}
+.crop .stage-inner { position: relative; height: 330px; }
+.crop-label {
+  padding: 6px 10px; font-size: var(--text-xs); color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: var(--tracking-label);
+  background: var(--surface-panel); border-bottom: 1px solid var(--border);
+}
+.crops { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-4); }
+@media (max-width: 1100px) { .crops { grid-template-columns: 1fr; } }
+
+/* ==================================================================
+   Graphviz / WaveDrom stage
+   ================================================================== */
+.dw-stage-main { position: relative; flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.dw-scroll {
+  position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  width: 100%; height: 100%;
+  padding: 18px; overflow-x: auto; overflow-y: hidden;
+}
+.card {
+  position: relative; margin: auto;
+  max-width: 90%; max-height: 78%;
+  padding: 14px 16px;
+  background: var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+.card.white { background: #ffffff; }
+.card > svg { display: block; max-width: 100%; max-height: 100%; }
+.dw-overlay { position: absolute; inset: 0; pointer-events: none; }
+.dw-hit {
+  position: absolute; padding: 0; margin: 0;
+  border: 0; background: transparent; cursor: pointer;
+  pointer-events: auto; border-radius: 8px;
+}
+.dw-hit.sel { box-shadow: 0 0 0 2px var(--accent); }
+.sel-badge {
+  position: absolute; left: 2px; top: -18px;
+  padding: 0 7px; height: 18px; line-height: 16px;
+  font-size: .64rem; font-weight: 600; letter-spacing: .4px;
+  text-transform: uppercase; color: var(--accent);
+  background: var(--surface-raised); border: 1px solid var(--accent);
+  border-radius: var(--radius-pill); white-space: nowrap;
+}
+.ruler {
+  display: flex; gap: 2px; align-items: center;
+  flex: 0 0 auto; width: fit-content; max-width: 100%;
+  margin: 0 0 8px; overflow: visible; padding-bottom: 2px;
+}
+.slice {
+  flex: 0 0 55px; width: 55px; height: 30px;
+  min-width: 24px; min-height: 30px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface-panel); color: var(--text-muted);
+  font: inherit; font-size: .64rem; cursor: pointer;
+}
+.slice.on { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.wave-wrap { position: relative; }
+.wave-band {
+  position: absolute; left: 0; right: 0;
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+  pointer-events: none;
+}
+.band {
+  position: absolute; z-index: 1;
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  border-right: 1px solid var(--accent);
+  pointer-events: none;
+}
+.wave-track {
+  display: flex; gap: 2px; align-items: flex-end;
+  width: 100%; overflow-x: auto; overflow-y: hidden;
+  padding: 14px 0 4px;
+}
+.cell {
+  position: relative; flex: 0 0 24px; width: 24px; height: 34px;
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: flex-end; gap: 2px;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface-panel);
+  cursor: pointer;
+}
+.cell.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--accent-soft); }
+.cell-period { border-left: 1px solid var(--border); margin-left: 2px; }
+.cell-slice { position: absolute; top: 1px; left: 2px; font-size: .5rem; line-height: 1; color: var(--text-muted); }
+.cell-char { font: .68rem var(--font-mono); line-height: 1; padding-bottom: 3px; }
+.cell-glyph { width: 12px; height: 8px; display: block; color: var(--text-muted); }
+.glyph-high { border-top: 2px solid var(--text-primary); }
+.glyph-low { border-bottom: 2px solid var(--text-primary); }
+.glyph-clock { border-left: 2px solid var(--text-primary); border-bottom: 1px solid var(--text-primary); }
+.glyph-data { background: var(--accent-soft); border: 1px solid var(--accent); }
+.glyph-gap { background: repeating-linear-gradient(90deg, var(--border) 0 2px, transparent 2px 4px); }
+.glyph-extend { border-top: 1px dotted var(--text-primary); }
+.glyph-unknown { background: repeating-linear-gradient(45deg, var(--border) 0 1px, transparent 1px 3px); }
+.glyph-palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 6px; }
+.glyph-btn {
+  min-height: 28px; border: 1px solid var(--border); border-radius: 4px;
+  background: var(--surface-panel); color: var(--text-primary);
+  font: .72rem var(--font-mono); cursor: pointer;
+}
+.readout { margin: 4px 0 0; font-size: .72rem; color: var(--text-muted); }
+.mono { font-family: var(--font-mono); }
+.data-row { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 4px; }
+.data-index { color: var(--text-muted); font-size: .68rem; text-align: right; }
+.data-preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .74rem; }
+.shape-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+.shape-btn {
+  min-height: 34px; padding: 4px 3px;
+  border: 1px solid var(--border); border-radius: 5px;
+  background: var(--surface-panel); color: var(--text-primary);
+  font: inherit; font-size: .72rem; cursor: pointer;
+}
+.shape-btn.on { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ==================================================================
+   Compact layouts (the 720 strip and the 390 sheet)
+   ================================================================== */
+.modal.is-compact .body { flex-direction: column; }
+.modal.is-compact .sidebar {
+  flex: 0 0 auto;
+  width: 100%;
+  max-height: 313px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  overflow-y: auto;
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+}
+.modal.is-compact .sidebar .section { flex: 0 0 auto; flex-direction: row; align-items: flex-start; gap: 12px; }
+.modal.is-compact .sidebar .section--add { flex-direction: column; align-items: stretch; min-width: 210px; max-width: 380px; }
+.modal.is-compact .form { gap: 6px; }
+.modal.is-compact .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 8px; }
+.modal.is-compact .frow--shapes { grid-column: 1 / -1; }
+.modal.is-compact .shapes { grid-template-columns: repeat(7, minmax(38px, 1fr)); }
+.modal.is-compact .shape { min-height: 40px; }
+.modal.is-compact .stage { flex: 1 1 0; min-height: 180px; }
+.modal.is-compact .inspector {
+  flex: 0 1 auto;
+  width: 100%;
+  max-height: 55%;
+  height: auto;
+  border-left: 0;
+  border-top: 1px solid var(--border);
+  min-height: 44px;
+}
+.grabber-btn {
+  display: none;
+  flex: 0 0 auto; align-items: center; gap: 8px;
+  width: 100%; height: 44px; padding: 0 12px;
+  border: 0; border-bottom: 1px solid var(--border);
+  background: var(--surface-raised); color: var(--text-primary);
+  font: inherit; text-align: left; cursor: pointer;
+}
+.modal.is-compact .grabber-btn { display: flex; }
+.grabber-bar { flex: 0 0 auto; width: 26px; height: 4px; border-radius: var(--radius-pill); background: var(--border); }
+.grabber-label { flex: 1 1 auto; min-width: 0; font-size: .8rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grabber-chev { flex: 0 0 auto; color: var(--text-muted); }
+.modal.is-compact .inspector.collapsed { flex: 0 0 44px; max-height: 44px; }
+.modal.is-compact .inspector.collapsed .grabber-chev { transform: rotate(180deg); }
+.modal.is-compact .inspector.collapsed .insp-head,
+.modal.is-compact .inspector.collapsed .insp-body { display: none; }
+
+/* DW compact: sidebar gone, stage column, sheet */
+.modal.dw.is-compact .sidebar { display: none; }
+.modal.dw.is-compact .stage { flex: 1 1 auto; min-height: 45%; display: flex; flex-direction: column; }
+.modal.dw.is-compact .dw-stage-main { flex: 1 1 auto; min-height: 45%; }
+.modal.dw.is-compact .card { max-width: 100%; max-height: 70%; }
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 3;
+  display: flex; flex-direction: column;
+  max-height: 55%; min-height: 120px;
+  background: var(--surface-panel);
+  border-top: 1px solid var(--border);
+  box-shadow: var(--shadow-sheet);
+}
+.sheet-head {
+  flex: 0 0 36px; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+}
+.sheet-grabber { width: 38px; height: 4px; border-radius: var(--radius-pill); background: var(--border); margin: 0 auto; }
+.sheet-close {
+  width: 26px; height: 26px; padding: 0;
+  border: 0; border-radius: 4px; background: transparent;
+  color: var(--text-muted); font: inherit; font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.sheet-body {
+  flex: 1 1 auto; overflow-y: auto; padding: 10px 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+@media (max-width: 720px) {
+  .modal .foot { flex-wrap: wrap; row-gap: 6px; }
+  .modal .foot .status { flex: 1 1 100%; margin: 0; white-space: normal; }
+}
+.modal:not(.dw).is-compact .section--add .s-title,
+.modal:not(.dw).is-compact .section--chart .s-title { display: none; }
+
+/* Palette family: the shipped single add button (style.css:6386-6396). */
+.palette-note { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.add-btn {
+  width: 100%;
+  padding: 8px 10px;
+  display: inline-flex; align-items: center; justify-content: flex-start; gap: 6px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: inherit; font-size: .82rem;
+  cursor: pointer;
+}
+.add-btn:hover { background: var(--accent); color: var(--accent-fg); }
+
+/* Add-signal mini track: the shipped .dw-mini-track (style.css:6738-6745). */
+.mini-wrap { width: 100%; overflow: hidden; }
+.mini-track { display: flex; gap: 2px; align-items: flex-end; padding: 10px 0 2px; }
+:where(button, input, select, textarea, [tabindex]):focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+.canvas:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+</style>
+</head>
+<body>
+
+<!-- One sprite for chrome glyphs and the 14 Mermaid shapes. -->
+<svg class="sprite" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 16 16"><path d="M4 6h5a4 4 0 0 1 4 4v2M6.4 3.6 4 6l2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 16 16"><path d="M12 6H7a4 4 0 0 0-4 4v2M9.6 3.6 12 6l-2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    <symbol id="i-select" viewBox="0 0 16 16"><path d="M4 2.5V13l2.7-2.7 1.9 4 2-.9-1.9-3.9h3.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+    <symbol id="i-connect" viewBox="0 0 16 16"><path d="M3 13 12.5 3.5M8 3.5h4.5v4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+    <symbol id="i-max" viewBox="0 0 16 16"><path d="M3 6V3h3M13 10v3h-3M10 3h3v3M6 13H3v-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+
+    <symbol id="s-rect" viewBox="0 0 16 16"><rect x="2.5" y="4.5" width="11" height="7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-round" viewBox="0 0 16 16"><rect x="2.5" y="4.5" width="11" height="7" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-stadium" viewBox="0 0 16 16"><rect x="2.5" y="4.5" width="11" height="7" rx="3.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-subroutine" viewBox="0 0 16 16"><rect x="2.5" y="4.5" width="11" height="7" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M4.8 4.5v7M11.2 4.5v7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-cylinder" viewBox="0 0 16 16"><path d="M2.5 5.5v5a5.5 1.5 0 0 0 11 0v-5" fill="none" stroke="currentColor" stroke-width="1.5"/><ellipse cx="8" cy="5.5" rx="5.5" ry="1.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-circle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="4.7" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-doublecircle" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.2" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-diamond" viewBox="0 0 16 16"><path d="M8 3l6 5-6 5-6-5z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-hexagon" viewBox="0 0 16 16"><path d="M5.5 4.5h5l3 3.5-3 3.5h-5l-3-3.5z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-lean_r" viewBox="0 0 16 16"><path d="M5.5 4.5h8l-3 7h-8z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-lean_l" viewBox="0 0 16 16"><path d="M2.5 4.5h8l3 7h-8z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-trap_t" viewBox="0 0 16 16"><path d="M2.5 4.5h11l-2.5 7h-6z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-trap_b" viewBox="0 0 16 16"><path d="M5.5 4.5h5l3 7h-11z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+    <symbol id="s-odd" viewBox="0 0 16 16"><path d="M2.5 8l3-3.5h8v7h-8z" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
+  </defs>
+</svg>
+
+<main class="page">
+  <header class="page-head">
+    <p class="eyebrow">UI reference · diagram designers · sixth pass</p>
+    <h1>Two design windows, codified</h1>
+    <p class="lede">
+      The shipped bodies of the Mermaid visual designer and the Graphviz / WaveDrom design
+      window. Geometry, type and colour are the shipped values. The shared header, action bar,
+      footer and focus trap are quoted, not redesigned. The only additions are the seven
+      accessibility and consistency exceptions in <code>diagram-designers.md</code> §8.4.
+    </p>
+    <div class="legend">
+      <span><i></i>shipped geometry</span>
+      <span><i class="light"></i>light theme</span>
+      <span><i class="warn"></i>error and read-only</span>
+      <span>canvas art is illustrative; the vendor draws the real diagram</span>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       1. Mermaid designer, dark, flowchart with a node selected
+       ============================================================ -->
+  <section class="sec">
+    <h2>Mermaid designer — ready</h2>
+    <p class="lede">
+      Flowchart at 1280. The sidebar is the Add form plus Chart; the inspector names the
+      selected node. The window is 96vw × 85vh, so at this 1280 × 980 screen it is
+      1229 × 833. Body height is 642 after the 65 px header, 57 px bar and 69 px footer.
+    </p>
+
+    <div class="board" data-theme="dark">
+      <div class="board-head">
+        <span class="dot"></span><span>1280 × 980 · dark</span>
+        <span class="grow"></span>
+        <span class="size">window 1229 × 833 · flowchart · Edge selected</span>
+      </div>
+      <div class="board-body">
+        <div class="screen screen--1280">
+          <div class="modal" style="width:1229px;height:833px">
+            <div class="head">
+              <div class="heading"><h2>Design diagram</h2><span class="badge">flowchart</span></div>
+              <button class="winbtn" type="button" aria-label="Maximize"><svg class="icon-lg"><use href="#i-max"/></svg></button>
+              <button class="winbtn" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="bar">
+              <div class="history">
+                <button class="bar-btn" type="button" aria-label="Undo (Ctrl+Z)" disabled><svg class="icon-lg"><use href="#i-undo"/></svg></button>
+                <button class="bar-btn" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg class="icon-lg"><use href="#i-redo"/></svg></button>
+              </div>
+              <span class="seam" aria-hidden="true"></span>
+              <div class="bar-actions">
+                <div class="toolgroup" role="group" aria-label="Canvas mode">
+                  <button class="iconbtn on" type="button" aria-pressed="true" aria-label="Select tool" title="Select tool"><svg class="icon"><use href="#i-select"/></svg></button>
+                  <button class="iconbtn" type="button" aria-pressed="false" aria-label="Connect tool" title="Connect tool — or Alt+drag from a node"><svg class="icon"><use href="#i-connect"/></svg></button>
+                </div>
+                <span class="bar-sep" aria-hidden="true"></span>
+                <div class="toolgroup" role="group" aria-label="Add and chart">
+                  <button class="chip" type="button">Add</button>
+                  <button class="chip" type="button">Chart</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <aside class="sidebar" aria-labelledby="add-title">
+                <div class="section section--add">
+                  <h3 class="s-title" id="add-title">Add</h3>
+                  <div class="tabs" role="tablist" aria-label="Add an element">
+                    <button class="tab on" type="button" role="tab" aria-selected="true">Node</button>
+                    <button class="tab" type="button" role="tab" aria-selected="false">Edge</button>
+                  </div>
+                  <form class="form" role="tabpanel" aria-labelledby="add-title" novalidate>
+                    <div class="fields">
+                      <div class="frow frow--shapes">
+                        <span class="flabel">Shape</span>
+                        <div class="shapes">
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add rectangle node"><svg class="icon"><use href="#s-rect"/></svg><span class="caption">Rect</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add rounded rectangle node"><svg class="icon"><use href="#s-round"/></svg><span class="caption">Round</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add stadium node"><svg class="icon"><use href="#s-stadium"/></svg><span class="caption">Stadium</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add subroutine node"><svg class="icon"><use href="#s-subroutine"/></svg><span class="caption">Subrtn</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add cylinder node"><svg class="icon"><use href="#s-cylinder"/></svg><span class="caption">Cylinder</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add circle node"><svg class="icon"><use href="#s-circle"/></svg><span class="caption">Circle</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add double circle node"><svg class="icon"><use href="#s-doublecircle"/></svg><span class="caption">Double</span></button>
+                          <button class="shape on" type="button" aria-pressed="true" aria-label="Add diamond node"><svg class="icon"><use href="#s-diamond"/></svg><span class="caption">Decision</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add hexagon node"><svg class="icon"><use href="#s-hexagon"/></svg><span class="caption">Hexagon</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add lean-right node"><svg class="icon"><use href="#s-lean_r"/></svg><span class="caption">Lean R</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add lean-left node"><svg class="icon"><use href="#s-lean_l"/></svg><span class="caption">Lean L</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add trapezoid-top node"><svg class="icon"><use href="#s-trap_t"/></svg><span class="caption">Trap T</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add trapezoid-bottom node"><svg class="icon"><use href="#s-trap_b"/></svg><span class="caption">Trap B</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add asymmetric node"><svg class="icon"><use href="#s-odd"/></svg><span class="caption">Odd</span></button>
+                        </div>
+                      </div>
+                      <div class="frow">
+                        <label class="flabel" for="mq-add-label">Label</label>
+                        <input class="field" id="mq-add-label" value="Review" placeholder="Start">
+                      </div>
+                    </div>
+                    <button class="commit" type="submit">Add node</button>
+                  </form>
+                </div>
+
+                <div class="divider" aria-hidden="true"></div>
+
+                <div class="section section--chart">
+                  <h3 class="s-title">Chart</h3>
+                  <div class="dir" role="radiogroup" aria-label="Flowchart direction">
+                    <label class="dchip"><input type="radio" name="mq-dir" checked><span>TD</span></label>
+                    <label class="dchip"><input type="radio" name="mq-dir"><span>TB</span></label>
+                    <label class="dchip"><input type="radio" name="mq-dir"><span>BT</span></label>
+                    <label class="dchip"><input type="radio" name="mq-dir"><span>LR</span></label>
+                    <label class="dchip"><input type="radio" name="mq-dir"><span>RL</span></label>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="stage">
+                <div class="canvas">
+                  <svg class="art" viewBox="0 0 697 642" aria-hidden="true">
+                    <defs>
+                      <marker id="mq-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                        <path class="arrow" d="M0 0 8 4 0 8z"/>
+                      </marker>
+                      <marker id="mq-arrow-sel" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                        <path class="arrow sel" d="M0 0 8 4 0 8z"/>
+                      </marker>
+                    </defs><g transform="translate(0,40)">
+
+                    <path class="edge" d="M300 116 V150" marker-end="url(#mq-arrow)"/>
+                    <path class="edge sel" d="M300 270 V330" marker-end="url(#mq-arrow-sel)"/>
+                    <path class="edge" d="M300 376 V440" marker-end="url(#mq-arrow)"/>
+                    <path class="edge dashed" d="M190 210 H110 V93 H210" marker-end="url(#mq-arrow)"/>
+                    <text class="edge-label" x="300" y="303">approved</text>
+                    <text class="edge-label" x="118" y="170">changes</text>
+
+                    <g class="node">
+                      <rect x="210" y="70" width="180" height="46"/>
+                      <text x="300" y="98">Draft</text>
+                    </g>
+
+                    <g class="node sel">
+                      <path d="M300 150 410 210 300 270 190 210Z"/>
+                      <text x="300" y="215">Review</text>
+                    </g>
+
+                    <g class="node">
+                      <rect x="210" y="330" width="180" height="46"/>
+                      <text x="300" y="358">Publish</text>
+                    </g>
+
+                    <g class="node">
+                      <rect x="240" y="440" width="120" height="44" rx="22"/>
+                      <text x="300" y="467">Done</text>
+                    </g>
+                  </g></svg>
+                </div>
+                <p class="hint">Select a node or edge to edit it · use Add to create one</p>
+              </div>
+
+              <aside class="inspector" aria-labelledby="mq-insp-kind">
+                <div class="insp-head">
+                  <span class="glyph" aria-hidden="true">E</span>
+                  <div class="titles">
+                    <h4 class="kind" id="mq-insp-kind">Edge</h4>
+                    <span class="meta">review → publish</span>
+                  </div>
+                  <button class="clear" type="button" aria-label="Clear selection">×</button>
+                </div>
+                <div class="insp-body">
+                  <section class="group">
+                    <h5 class="gtitle">Label</h5>
+                    <div class="frow">
+                      <label class="flabel" for="mq-edge-label">Label</label>
+                      <input class="field" id="mq-edge-label" value="approved">
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Line</h5>
+                    <div class="frow">
+                      <label class="flabel" for="mq-edge-line">Line</label>
+                      <select class="select" id="mq-edge-line"><option>Solid</option><option>Dotted</option><option>Thick</option></select>
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Arrows</h5>
+                    <div class="frow">
+                      <label class="flabel" for="mq-edge-arrow">Arrows</label>
+                      <select class="select" id="mq-edge-arrow"><option selected>Arrow</option><option>No arrow</option><option>Double</option><option>Cross</option><option>Double cross</option><option>Dot</option><option>Double dot</option></select>
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Color</h5>
+                    <div class="frow">
+                      <label class="flabel" for="mq-edge-stroke">Stroke</label>
+                      <div class="color-row"><input type="color" id="mq-edge-stroke" value="#7c9cff"><button class="ghost" type="button">Clear</button></div>
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Actions</h5>
+                    <button class="btn block" type="button">Reverse direction</button>
+                    <button class="btn danger" type="button">Delete edge</button>
+                    <p class="consequence">Undo restores the edge.</p>
+                  </section>
+                </div>
+              </aside>
+            </div>
+
+            <div class="foot">
+              <span class="status ok" role="status" aria-live="polite">Ready</span>
+              <button class="action" type="button">Cancel</button>
+              <button class="action primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       2. Mermaid designer, light
+       ============================================================ -->
+  <section class="sec">
+    <h2>Mermaid designer — light</h2>
+    <p class="lede">
+      Same geometry, same state. Only the theme tokens change: the raised sidebar, the dot grid,
+      the node fills and the edge ink. The header, bar and footer use the light chrome surfaces.
+    </p>
+
+    <div class="board" data-theme="light">
+      <div class="board-head">
+        <span class="dot"></span><span>1280 × 980 · light</span>
+        <span class="grow"></span>
+        <span class="size">window 1229 × 833 · flowchart · Edge selected</span>
+      </div>
+      <div class="board-body">
+        <div class="screen screen--1280">
+          <div class="modal" style="width:1229px;height:833px">
+            <div class="head">
+              <div class="heading"><h2>Design diagram</h2><span class="badge">flowchart</span></div>
+              <button class="winbtn" type="button" aria-label="Maximize"><svg class="icon-lg"><use href="#i-max"/></svg></button>
+              <button class="winbtn" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="bar">
+              <div class="history">
+                <button class="bar-btn" type="button" aria-label="Undo (Ctrl+Z)" disabled><svg class="icon-lg"><use href="#i-undo"/></svg></button>
+                <button class="bar-btn" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg class="icon-lg"><use href="#i-redo"/></svg></button>
+              </div>
+              <span class="seam" aria-hidden="true"></span>
+              <div class="bar-actions">
+                <div class="toolgroup" role="group" aria-label="Canvas mode">
+                  <button class="iconbtn on" type="button" aria-pressed="true" aria-label="Select tool" title="Select tool"><svg class="icon"><use href="#i-select"/></svg></button>
+                  <button class="iconbtn" type="button" aria-pressed="false" aria-label="Connect tool" title="Connect tool — or Alt+drag from a node"><svg class="icon"><use href="#i-connect"/></svg></button>
+                </div>
+                <span class="bar-sep" aria-hidden="true"></span>
+                <div class="toolgroup" role="group" aria-label="Add and chart">
+                  <button class="chip" type="button">Add</button>
+                  <button class="chip" type="button">Chart</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <aside class="sidebar" aria-labelledby="l-add-title">
+                <div class="section section--add">
+                  <h3 class="s-title" id="l-add-title">Add</h3>
+                  <div class="tabs" role="tablist" aria-label="Add an element">
+                    <button class="tab on" type="button" role="tab" aria-selected="true">Node</button>
+                    <button class="tab" type="button" role="tab" aria-selected="false">Edge</button>
+                  </div>
+                  <form class="form" role="tabpanel" aria-labelledby="l-add-title" novalidate>
+                    <div class="fields">
+                      <div class="frow frow--shapes">
+                        <span class="flabel">Shape</span>
+                        <div class="shapes">
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add rectangle node"><svg class="icon"><use href="#s-rect"/></svg><span class="caption">Rect</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add rounded rectangle node"><svg class="icon"><use href="#s-round"/></svg><span class="caption">Round</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add stadium node"><svg class="icon"><use href="#s-stadium"/></svg><span class="caption">Stadium</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add subroutine node"><svg class="icon"><use href="#s-subroutine"/></svg><span class="caption">Subrtn</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add cylinder node"><svg class="icon"><use href="#s-cylinder"/></svg><span class="caption">Cylinder</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add circle node"><svg class="icon"><use href="#s-circle"/></svg><span class="caption">Circle</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add double circle node"><svg class="icon"><use href="#s-doublecircle"/></svg><span class="caption">Double</span></button>
+                          <button class="shape on" type="button" aria-pressed="true" aria-label="Add diamond node"><svg class="icon"><use href="#s-diamond"/></svg><span class="caption">Decision</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add hexagon node"><svg class="icon"><use href="#s-hexagon"/></svg><span class="caption">Hexagon</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add lean-right node"><svg class="icon"><use href="#s-lean_r"/></svg><span class="caption">Lean R</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add lean-left node"><svg class="icon"><use href="#s-lean_l"/></svg><span class="caption">Lean L</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add trapezoid-top node"><svg class="icon"><use href="#s-trap_t"/></svg><span class="caption">Trap T</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add trapezoid-bottom node"><svg class="icon"><use href="#s-trap_b"/></svg><span class="caption">Trap B</span></button>
+                          <button class="shape" type="button" aria-pressed="false" aria-label="Add asymmetric node"><svg class="icon"><use href="#s-odd"/></svg><span class="caption">Odd</span></button>
+                        </div>
+                      </div>
+                      <div class="frow">
+                        <label class="flabel" for="l-add-label">Label</label>
+                        <input class="field" id="l-add-label" value="Review" placeholder="Start">
+                      </div>
+                    </div>
+                    <button class="commit" type="submit">Add node</button>
+                  </form>
+                </div>
+
+                <div class="divider" aria-hidden="true"></div>
+
+                <div class="section section--chart">
+                  <h3 class="s-title">Chart</h3>
+                  <div class="dir" role="radiogroup" aria-label="Flowchart direction">
+                    <label class="dchip"><input type="radio" name="l-dir" checked><span>TD</span></label>
+                    <label class="dchip"><input type="radio" name="l-dir"><span>TB</span></label>
+                    <label class="dchip"><input type="radio" name="l-dir"><span>BT</span></label>
+                    <label class="dchip"><input type="radio" name="l-dir"><span>LR</span></label>
+                    <label class="dchip"><input type="radio" name="l-dir"><span>RL</span></label>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="stage">
+                <div class="canvas">
+                  <svg class="art" viewBox="0 0 697 642" aria-hidden="true">
+                    <defs>
+                      <marker id="l-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                        <path class="arrow" d="M0 0 8 4 0 8z"/>
+                      </marker>
+                      <marker id="l-arrow-sel" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+                        <path class="arrow sel" d="M0 0 8 4 0 8z"/>
+                      </marker>
+                    </defs><g transform="translate(0,40)">
+
+                    <path class="edge" d="M300 116 V150" marker-end="url(#l-arrow)"/>
+                    <path class="edge sel" d="M300 270 V330" marker-end="url(#l-arrow-sel)"/>
+                    <path class="edge" d="M300 376 V440" marker-end="url(#l-arrow)"/>
+                    <path class="edge dashed" d="M190 210 H110 V93 H210" marker-end="url(#l-arrow)"/>
+                    <text class="edge-label" x="300" y="303">approved</text>
+                    <text class="edge-label" x="118" y="170">changes</text>
+
+                    <g class="node"><rect x="210" y="70" width="180" height="46"/><text x="300" y="98">Draft</text></g>
+                    <g class="node"><path d="M300 150 410 210 300 270 190 210Z"/><text x="300" y="215">Review</text></g>
+                    <g class="node"><rect x="210" y="330" width="180" height="46"/><text x="300" y="358">Publish</text></g>
+                    <g class="node"><rect x="240" y="440" width="120" height="44" rx="22"/><text x="300" y="467">Done</text></g>
+                  </g></svg>
+                </div>
+                <p class="hint">Select a node or edge to edit it · use Add to create one</p>
+              </div>
+
+              <aside class="inspector" aria-labelledby="l-insp-kind">
+                <div class="insp-head">
+                  <span class="glyph" aria-hidden="true">E</span>
+                  <div class="titles">
+                    <h4 class="kind" id="l-insp-kind">Edge</h4>
+                    <span class="meta">review → publish</span>
+                  </div>
+                  <button class="clear" type="button" aria-label="Clear selection">×</button>
+                </div>
+                <div class="insp-body">
+                  <section class="group">
+                    <h5 class="gtitle">Label</h5>
+                    <div class="frow">
+                      <label class="flabel" for="l-edge-label">Label</label>
+                      <input class="field" id="l-edge-label" value="approved">
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Line</h5>
+                    <div class="frow">
+                      <label class="flabel" for="l-edge-line">Line</label>
+                      <select class="select" id="l-edge-line"><option>Solid</option><option>Dotted</option><option>Thick</option></select>
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Arrows</h5>
+                    <div class="frow">
+                      <label class="flabel" for="l-edge-arrow">Arrows</label>
+                      <select class="select" id="l-edge-arrow"><option selected>Arrow</option><option>No arrow</option><option>Double</option><option>Cross</option><option>Double cross</option><option>Dot</option><option>Double dot</option></select>
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Color</h5>
+                    <div class="frow">
+                      <label class="flabel" for="l-edge-stroke">Stroke</label>
+                      <div class="color-row"><input type="color" id="l-edge-stroke" value="#2f5fd0"><button class="ghost" type="button">Clear</button></div>
+                    </div>
+                  </section>
+
+                  <section class="group">
+                    <h5 class="gtitle">Actions</h5>
+                    <button class="btn block" type="button">Reverse direction</button>
+                    <button class="btn danger" type="button">Delete edge</button>
+                    <p class="consequence">Undo restores the edge.</p>
+                  </section>
+                </div>
+              </aside>
+            </div>
+
+            <div class="foot">
+              <span class="status ok" role="status" aria-live="polite">Ready</span>
+              <button class="action" type="button">Cancel</button>
+              <button class="action primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       3. Mermaid palette family (gantt), 1024, dark
+       ============================================================ -->
+  <section class="sec">
+    <h2>Mermaid designer — palette family</h2>
+    <p class="lede">
+      A non-scoped family. The sidebar keeps the single palette button and there is no inspector,
+      so the stage takes the width the inspector would have used. Window 983 × 833 at a
+      1024 × 980 screen; stage 747.
+    </p>
+
+    <div class="board" data-theme="dark">
+      <div class="board-head">
+        <span class="dot"></span><span>1024 × 980 · dark</span>
+        <span class="grow"></span>
+        <span class="size">window 983 × 833 · gantt · no inspector</span>
+      </div>
+      <div class="board-body">
+        <div class="screen screen--1024">
+          <div class="modal" style="width:983px;height:833px">
+            <div class="head">
+              <div class="heading"><h2>Design diagram</h2><span class="badge">gantt</span></div>
+              <button class="winbtn" type="button" aria-label="Maximize"><svg class="icon-lg"><use href="#i-max"/></svg></button>
+              <button class="winbtn" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="bar">
+              <div class="history">
+                <button class="bar-btn" type="button" aria-label="Undo (Ctrl+Z)"><svg class="icon-lg"><use href="#i-undo"/></svg></button>
+                <button class="bar-btn" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg class="icon-lg"><use href="#i-redo"/></svg></button>
+              </div>
+              <span class="seam" aria-hidden="true"></span>
+              <div class="bar-actions">
+                <div class="toolgroup" role="group" aria-label="Canvas mode">
+                  <button class="iconbtn on" type="button" aria-pressed="true" aria-label="Select tool" title="Select tool"><svg class="icon"><use href="#i-select"/></svg></button>
+                </div>
+                <span class="bar-sep" aria-hidden="true"></span>
+                <div class="toolgroup" role="group" aria-label="Add and chart">
+                  <button class="chip" type="button">Add</button>
+                  <button class="chip" type="button" disabled>Chart</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <aside class="sidebar" aria-labelledby="p-add-title">
+                <div class="section section--add">
+                  <h3 class="s-title" id="p-add-title">Add</h3>
+                  <div class="palette-note">
+                    <button class="add-btn" type="button"><svg class="icon"><use href="#i-plus"/></svg>Add task</button>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="stage">
+                <div class="canvas">
+                  <svg class="art" viewBox="0 0 747 642" aria-hidden="true">
+                    <g transform="translate(0,50)">
+                    <text class="label" x="80" y="92" style="text-anchor:start;font-size:16px;font-weight:600">Release plan</text>
+                    <path class="edge" d="M80 116 H700" opacity=".5"/>
+                    <g class="edge" opacity=".22">
+                      <path d="M250 116 V480"/>
+                      <path d="M350 116 V480"/>
+                      <path d="M470 116 V480"/>
+                      <path d="M600 116 V480"/>
+                    </g>
+                    <g class="edge" opacity=".18">
+                      <path d="M80 205 H700"/>
+                      <path d="M80 295 H700"/>
+                      <path d="M80 385 H700"/>
+                      <path d="M80 475 H700"/>
+                    </g>
+
+                    <text class="label" x="80" y="165" style="text-anchor:start;font-size:11px">Design</text>
+                    <text class="label" x="80" y="255" style="text-anchor:start;font-size:11px">Build</text>
+                    <text class="label" x="80" y="345" style="text-anchor:start;font-size:11px">Test</text>
+                    <text class="label" x="80" y="435" style="text-anchor:start;font-size:11px">Ship</text>
+
+                    <rect class="gantt-bar" x="250" y="148" width="140" height="24" rx="4"/>
+                    <rect class="gantt-bar" x="350" y="238" width="190" height="24" rx="4"/>
+                    <rect class="gantt-bar" x="470" y="328" width="140" height="24" rx="4"/>
+                    <rect class="gantt-bar" x="600" y="418" width="100" height="24" rx="4"/>
+
+                    <text class="label" x="320" y="165" style="font-size:11px">Draft</text>
+                    <text class="label" x="445" y="255" style="font-size:11px">Implement</text>
+                    <text class="label" x="540" y="345" style="font-size:11px">Verify</text>
+                    <text class="label" x="650" y="435" style="font-size:11px">Publish</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            <div class="foot">
+              <span class="status" role="status" aria-live="polite">Unsaved changes</span>
+              <button class="action" type="button">Cancel</button>
+              <button class="action primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       4. Stage states, dark
+       ============================================================ -->
+  <section class="sec">
+    <h2>Stage states</h2>
+    <p class="lede">
+      Three crops of the stage at 660 × 330. Left: open-time parse or render failure — the only
+      error shape Mermaid uses. Middle: an Apply validation failure keeps the canvas and raises
+      the non-blocking banner. Right: the Graphviz / WaveDrom read-only state, which has its own
+      element and one action. The Mermaid “Preview only” markup is not shown because the shipped
+      code never reveals it.
+    </p>
+
+    <div class="board" data-theme="dark">
+      <div class="board-head">
+        <span class="dot"></span><span>stage crops · dark</span>
+        <span class="grow"></span>
+        <span class="size">≈420 × 330 each · exact state markup</span>
+      </div>
+      <div class="board-body">
+        <div class="crops">
+          <div class="crop">
+            <div class="crop-label">Open error · Mermaid</div>
+            <div class="stage-inner">
+              <div class="state">
+                <span class="state-icon" aria-hidden="true">⚠</span>
+                <h3 class="state-title warn">Couldn’t open this diagram</h3>
+                <p class="state-msg">The diagram failed to render.</p>
+                <pre class="error-detail">Parse error on line 4:
+... A[Start] --> B{Decision
+----------------------^
+Expecting 'SEMI', got 'INVALID'</pre>
+                <div class="state-actions">
+                  <button class="state-action" type="button">Retry</button>
+                  <button class="state-action" type="button">Edit source instead</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="crop">
+            <div class="crop-label">Apply failure · banner over ready</div>
+            <div class="stage-inner">
+              <div class="canvas" style="background-color:var(--designer-canvas-bg)">
+                <svg class="art" viewBox="0 0 660 330" aria-hidden="true">
+                  <g class="node"><rect x="250" y="110" width="160" height="42"/><text x="330" y="136">Draft</text></g>
+                  <g class="node"><rect x="250" y="210" width="160" height="42"/><text x="330" y="236">Publish</text></g>
+                  <path class="edge" d="M330 152 V210" marker-end="url(#st-arrow)"/>
+                </svg>
+              </div>
+              <div class="alert" role="alert">
+                <span class="msg">Couldn’t apply — the diagram is not valid. Parse error on line 6: Expecting 'EOF', got '}'</span>
+                <button class="dismiss" type="button" aria-label="Dismiss error">×</button>
+              </div>
+              <p class="hint">Select a node or edge to edit it · use Add to create one</p>
+            </div>
+          </div>
+
+          <div class="crop">
+            <div class="crop-label">Read-only · WaveDrom</div>
+            <div class="stage-inner">
+              <div class="state">
+                <span class="state-icon" aria-hidden="true">◌</span>
+                <h3 class="state-title">Read-only diagram</h3>
+                <p class="state-msg">This waveform uses analog bricks.</p>
+                <div class="state-actions">
+                  <button class="state-action" type="button">Edit source instead</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <svg width="0" height="0" aria-hidden="true"><defs>
+          <marker id="st-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto">
+            <path d="M0 0 8 4 0 8z" fill="#9799a4"/>
+          </marker>
+        </defs></svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       5. Mermaid compact, 720
+       ============================================================ -->
+  <section class="sec">
+    <h2>Mermaid designer — 720 compact</h2>
+    <p class="lede">
+      At 960 and below the body stacks. The sidebar becomes a horizontal strip above the stage;
+      the add fields reflow to two columns and the shape grid to seven. The inspector is a
+      44 px grabber when collapsed. The window is 691 × 833 at a 720 × 980 screen; the footer
+      wraps at 720.
+    </p>
+
+    <div class="board" data-theme="dark">
+      <div class="board-head">
+        <span class="dot"></span><span>720 × 980 · dark · compact</span>
+        <span class="grow"></span>
+        <span class="size">window 691 × 833 · inspector collapsed</span>
+      </div>
+      <div class="board-body">
+        <div class="screen screen--720">
+          <div class="modal is-compact" style="width:691px;height:833px">
+            <div class="head">
+              <div class="heading"><h2>Design diagram</h2><span class="badge">flowchart</span></div>
+              <button class="winbtn" type="button" aria-label="Maximize"><svg class="icon-lg"><use href="#i-max"/></svg></button>
+              <button class="winbtn" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="bar">
+              <div class="history">
+                <button class="bar-btn" type="button" aria-label="Undo (Ctrl+Z)" disabled><svg class="icon-lg"><use href="#i-undo"/></svg></button>
+                <button class="bar-btn" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg class="icon-lg"><use href="#i-redo"/></svg></button>
+              </div>
+              <span class="seam" aria-hidden="true"></span>
+              <div class="bar-actions">
+                <div class="toolgroup" role="group" aria-label="Canvas mode">
+                  <button class="iconbtn on" type="button" aria-pressed="true" aria-label="Select tool"><svg class="icon"><use href="#i-select"/></svg></button>
+                  <button class="iconbtn" type="button" aria-pressed="false" aria-label="Connect tool"><svg class="icon"><use href="#i-connect"/></svg></button>
+                </div>
+                <span class="bar-sep" aria-hidden="true"></span>
+                <div class="toolgroup" role="group" aria-label="Add and chart">
+                  <button class="chip" type="button">Add</button>
+                  <button class="chip" type="button">Chart</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <aside class="sidebar" aria-labelledby="c-add-title">
+                <div class="section section--add">
+                  <h3 class="s-title" id="c-add-title">Add</h3>
+                  <div class="tabs" role="tablist" aria-label="Add an element">
+                    <button class="tab on" type="button" role="tab" aria-selected="true">Node</button>
+                    <button class="tab" type="button" role="tab" aria-selected="false">Edge</button>
+                  </div>
+                  <form class="form" role="tabpanel" aria-labelledby="c-add-title" novalidate>
+                    <div class="fields">
+                      <div class="frow frow--shapes">
+                        <span class="flabel">Shape</span>
+                        <div class="shapes">
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-rect"/></svg><span class="caption">Rect</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-round"/></svg><span class="caption">Round</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-stadium"/></svg><span class="caption">Stadium</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-subroutine"/></svg><span class="caption">Subrtn</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-cylinder"/></svg><span class="caption">Cylinder</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-circle"/></svg><span class="caption">Circle</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-doublecircle"/></svg><span class="caption">Double</span></button>
+                          <button class="shape on" type="button" aria-pressed="true"><svg class="icon"><use href="#s-diamond"/></svg><span class="caption">Decision</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-hexagon"/></svg><span class="caption">Hexagon</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-lean_r"/></svg><span class="caption">Lean R</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-lean_l"/></svg><span class="caption">Lean L</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-trap_t"/></svg><span class="caption">Trap T</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-trap_b"/></svg><span class="caption">Trap B</span></button>
+                          <button class="shape" type="button" aria-pressed="false"><svg class="icon"><use href="#s-odd"/></svg><span class="caption">Odd</span></button>
+                        </div>
+                      </div>
+                      <div class="frow">
+                        <label class="flabel" for="c-add-label">Label</label>
+                        <input class="field" id="c-add-label" value="Review">
+                      </div>
+                    </div>
+                    <button class="commit" type="submit">Add node</button>
+                  </form>
+                </div>
+
+                <div class="divider" aria-hidden="true"></div>
+
+                <div class="section section--chart">
+                  <h3 class="s-title">Chart</h3>
+                  <div class="dir" role="radiogroup" aria-label="Flowchart direction">
+                    <label class="dchip"><input type="radio" name="c-dir" checked><span>TD</span></label>
+                    <label class="dchip"><input type="radio" name="c-dir"><span>TB</span></label>
+                    <label class="dchip"><input type="radio" name="c-dir"><span>BT</span></label>
+                    <label class="dchip"><input type="radio" name="c-dir"><span>LR</span></label>
+                    <label class="dchip"><input type="radio" name="c-dir"><span>RL</span></label>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="stage">
+                <div class="canvas">
+                  <svg class="art" viewBox="0 0 691 360" aria-hidden="true">
+                    <defs>
+                      <marker id="c-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto">
+                        <path class="arrow" d="M0 0 8 4 0 8z"/>
+                      </marker>
+                    </defs>
+                    <path class="edge" d="M345 64 V110" marker-end="url(#c-arrow)"/>
+                    <path class="edge" d="M345 202 V250" marker-end="url(#c-arrow)"/>
+                    <g class="node"><rect x="255" y="26" width="180" height="38"/><text x="345" y="50">Draft</text></g>
+                    <g class="node sel"><rect x="255" y="110" width="180" height="92" rx="6"/><text x="345" y="162">Review</text></g>
+                    <g class="node"><rect x="255" y="250" width="180" height="38"/><text x="345" y="274">Publish</text></g>
+                  </svg>
+                </div>
+              </div>
+
+              <aside class="inspector collapsed" aria-labelledby="c-insp-kind">
+                <button class="grabber-btn" type="button" aria-expanded="false">
+                  <span class="grabber-bar" aria-hidden="true"></span>
+                  <span class="grabber-label">Node · review</span>
+                  <span class="grabber-chev" aria-hidden="true">⌄</span>
+                </button>
+                <div class="insp-head">
+                  <span class="glyph" aria-hidden="true">N</span>
+                  <div class="titles">
+                    <h4 class="kind" id="c-insp-kind">Node</h4>
+                    <span class="meta">review</span>
+                  </div>
+                  <button class="clear" type="button" aria-label="Clear selection">×</button>
+                </div>
+                <div class="insp-body">
+                  <section class="group">
+                    <h5 class="gtitle">Label</h5>
+                    <div class="frow"><label class="flabel">Label</label><input class="field" value="Review"></div>
+                  </section>
+                </div>
+              </aside>
+            </div>
+
+            <div class="foot">
+              <span class="status ok" role="status" aria-live="polite">Ready</span>
+              <button class="action" type="button">Cancel</button>
+              <button class="action primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       6. Graphviz design window, light
+       ============================================================ -->
+  <section class="sec">
+    <h2>Graphviz design window — light</h2>
+    <p class="lede">
+      The Graphviz card keeps the note block's panel face, so the light board is the honest
+      environment for Graphviz's black ink. The stage carries an HTML selection ring and a
+      “Node” pill; the SVG is untouched. Window 1229 × 833 at 1280 × 980.
+    </p>
+
+    <div class="board" data-theme="light">
+      <div class="board-head">
+        <span class="dot"></span><span>1280 × 980 · light</span>
+        <span class="grow"></span>
+        <span class="size">window 1229 × 833 · Graphviz · Node selected</span>
+      </div>
+      <div class="board-body">
+        <div class="screen screen--1280">
+          <div class="modal dw" style="width:1229px;height:833px">
+            <div class="head">
+              <div class="heading"><h2>Design graph</h2><span class="badge">Graphviz</span></div>
+              <button class="winbtn" type="button" aria-label="Maximize"><svg class="icon-lg"><use href="#i-max"/></svg></button>
+              <button class="winbtn" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="bar">
+              <div class="history">
+                <button class="bar-btn" type="button" aria-label="Undo (Ctrl+Z)" disabled><svg class="icon-lg"><use href="#i-undo"/></svg></button>
+                <button class="bar-btn" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg class="icon-lg"><use href="#i-redo"/></svg></button>
+              </div>
+              <span class="seam" aria-hidden="true"></span>
+              <div class="bar-actions">
+                <div class="toolgroup" role="group" aria-label="Build">
+                  <button class="chip" type="button">Add</button>
+                  <button class="chip" type="button">Chart</button>
+                  <button class="chip" type="button">Source</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <aside class="sidebar" aria-labelledby="g-add-title">
+                <div class="section section--add">
+                  <h3 class="s-title" id="g-add-title">Add</h3>
+                  <div class="tabs" role="tablist" aria-label="Add an element">
+                    <button class="tab on" type="button" role="tab" aria-selected="true">Node</button>
+                    <button class="tab" type="button" role="tab" aria-selected="false">Edge</button>
+                  </div>
+                  <form class="form" role="tabpanel" aria-labelledby="g-add-title" novalidate>
+                    <div class="fields">
+                      <div class="frow">
+                        <label class="flabel" for="g-add-id">ID</label>
+                        <input class="field" id="g-add-id" placeholder="auto: n1">
+                      </div>
+                      <div class="frow">
+                        <label class="flabel" for="g-add-label">Label</label>
+                        <input class="field" id="g-add-label" value="Flask app">
+                      </div>
+                      <div class="frow">
+                        <span class="flabel">Shape</span>
+                        <div class="shape-grid" role="radiogroup" aria-label="Shape">
+                          <button class="shape-btn on" type="button" aria-pressed="true">Box</button>
+                          <button class="shape-btn" type="button" aria-pressed="false">Ellipse</button>
+                          <button class="shape-btn" type="button" aria-pressed="false">Circle</button>
+                          <button class="shape-btn" type="button" aria-pressed="false">Diamond</button>
+                          <button class="shape-btn" type="button" aria-pressed="false">Hexagon</button>
+                          <button class="shape-btn" type="button" aria-pressed="false">Cylinder</button>
+                          <button class="shape-btn" type="button" aria-pressed="false">Note</button>
+                          <button class="shape-btn" type="button" aria-pressed="false">Plain</button>
+                        </div>
+                      </div>
+                      <div class="frow">
+                        <label class="flabel" for="g-add-style">Style</label>
+                        <select class="select" id="g-add-style"><option>Default</option><option>Filled</option><option>Rounded</option><option>Filled + rounded</option><option>Dashed</option><option>Dotted</option></select>
+                      </div>
+                    </div>
+                    <button class="commit" type="submit">Add node</button>
+                  </form>
+                </div>
+
+                <div class="divider" aria-hidden="true"></div>
+
+                <div class="section section--chart">
+                  <h3 class="s-title">Chart</h3>
+                  <div class="chips" role="radiogroup" aria-label="Graph direction">
+                    <label class="dchip"><input type="radio" name="g-dir" checked><span>Default</span></label>
+                    <label class="dchip"><input type="radio" name="g-dir"><span>TB</span></label>
+                    <label class="dchip"><input type="radio" name="g-dir"><span>LR</span></label>
+                    <label class="dchip"><input type="radio" name="g-dir"><span>BT</span></label>
+                    <label class="dchip"><input type="radio" name="g-dir"><span>RL</span></label>
+                  </div>
+                </div>
+              </aside>
+
+              <div class="stage">
+                <div class="dw-stage-main">
+                  <div class="dw-scroll">
+                    <div class="card" style="width:592px">
+                      <svg viewBox="0 0 560 320" width="560" height="320" aria-hidden="true">
+                        <defs>
+                          <marker id="g-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto">
+                            <path d="M0 0 8 4 0 8z" fill="#1f2330"/>
+                          </marker>
+                        </defs>
+                        <g fill="none" stroke="#1f2330" stroke-width="1.4">
+                          <path d="M180 82 H212" marker-end="url(#g-arrow)"/>
+                          <path d="M380 82 H422" marker-end="url(#g-arrow)"/>
+                          <path d="M300 114 V203" marker-end="url(#g-arrow)"/>
+                          <path d="M180 232 H236 V114 H260" marker-end="url(#g-arrow)"/>
+                        </g>
+
+                        <g fill="#ffffff" stroke="#1f2330" stroke-width="1.4">
+                          <rect x="40" y="60" width="140" height="44"/>
+                          <ellipse cx="300" cy="82" rx="80" ry="32"/>
+                          <path d="M430 52 v44 a50 12 0 0 0 100 0 v-44"/>
+                          <ellipse cx="480" cy="52" rx="50" ry="12"/>
+                          <ellipse cx="300" cy="235" rx="80" ry="32"/>
+                          <rect x="40" y="210" width="140" height="44"/>
+                        </g>
+                        <g fill="#1f2330" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="13" text-anchor="middle">
+                          <text x="110" y="87">Flask app</text>
+                          <text x="300" y="87">/api/*</text>
+                          <text x="480" y="57">SQLite</text>
+                          <text x="300" y="240">worker</text>
+                          <text x="110" y="237">Browser</text>
+                        </g>
+                        <g fill="#1f2330" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="11" text-anchor="middle">
+                          <text x="196" y="72">serve</text>
+                          <text x="401" y="72">query</text>
+                          <text x="312" y="166">jobs</text>
+                        </g>
+                      </svg>
+                      <div class="dw-overlay">
+                        <button class="dw-hit sel" type="button" aria-label="Node flask, Flask app, selected" style="left:54px;top:72px;width:144px;height:48px">
+                          <span class="sel-badge">Node</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="inspector" aria-labelledby="g-insp-kind">
+                <div class="insp-head">
+                  <span class="glyph" aria-hidden="true">N</span>
+                  <div class="titles">
+                    <h4 class="kind" id="g-insp-kind">Node</h4>
+                    <span class="meta">flask · Flask app</span>
+                  </div>
+                  <button class="clear" type="button" aria-label="Clear selection">×</button>
+                </div>
+                <div class="insp-body">
+                  <div class="group">
+                    <div class="frow">
+                      <label class="flabel" for="g-node-label">Label</label>
+                      <input class="field" id="g-node-label" value="Flask app">
+                    </div>
+                  </div>
+                  <div class="group">
+                    <div class="frow">
+                      <span class="flabel">Shape</span>
+                      <div class="shape-grid" role="radiogroup" aria-label="Shape">
+                        <button class="shape-btn on" type="button" aria-pressed="true">Box</button>
+                        <button class="shape-btn" type="button" aria-pressed="false">Ellipse</button>
+                        <button class="shape-btn" type="button" aria-pressed="false">Circle</button>
+                        <button class="shape-btn" type="button" aria-pressed="false">Diamond</button>
+                        <button class="shape-btn" type="button" aria-pressed="false">Hexagon</button>
+                        <button class="shape-btn" type="button" aria-pressed="false">Cylinder</button>
+                        <button class="shape-btn" type="button" aria-pressed="false">Note</button>
+                        <button class="shape-btn" type="button" aria-pressed="false">Plain</button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="group">
+                    <div class="frow">
+                      <label class="flabel" for="g-node-style">Style</label>
+                      <select class="select" id="g-node-style"><option>Default</option><option>Filled</option><option>Rounded</option><option>Filled + rounded</option><option>Dashed</option><option>Dotted</option></select>
+                    </div>
+                  </div>
+                  <div class="group">
+                    <h5 class="gtitle">Actions</h5>
+                    <button class="btn block" type="button">Add edge from this node</button>
+                    <button class="btn danger" type="button">Delete node</button>
+                    <p class="consequence">Its edges are removed too. Undo restores.</p>
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <div class="foot">
+              <span class="status ok" role="status" aria-live="polite">Ready</span>
+              <button class="action" type="button">Cancel</button>
+              <button class="action primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       7. WaveDrom design window, dark, slice 3 selected
+       ============================================================ -->
+  <section class="sec">
+    <h2>WaveDrom design window — slice selected</h2>
+    <p class="lede">
+      The white card, the slice ruler above it and the translucent band over slice 3. The
+      inspector is the signal editor: wave text, the character track, the glyph palette, period
+      and data labels. Window 1229 × 833 at 1280 × 980.
+    </p>
+
+    <div class="board" data-theme="dark">
+      <div class="board-head">
+        <span class="dot"></span><span>1280 × 980 · dark</span>
+        <span class="grow"></span>
+        <span class="size">window 1229 × 833 · WaveDrom · Signal selected · slice 3</span>
+      </div>
+      <div class="board-body">
+        <div class="screen screen--1280">
+          <div class="modal dw" style="width:1229px;height:833px">
+            <div class="head">
+              <div class="heading"><h2>Design timing</h2><span class="badge">WaveDrom</span></div>
+              <button class="winbtn" type="button" aria-label="Maximize"><svg class="icon-lg"><use href="#i-max"/></svg></button>
+              <button class="winbtn" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="bar">
+              <div class="history">
+                <button class="bar-btn" type="button" aria-label="Undo (Ctrl+Z)"><svg class="icon-lg"><use href="#i-undo"/></svg></button>
+                <button class="bar-btn" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg class="icon-lg"><use href="#i-redo"/></svg></button>
+              </div>
+              <span class="seam" aria-hidden="true"></span>
+              <div class="bar-actions">
+                <div class="toolgroup" role="group" aria-label="Build">
+                  <button class="chip" type="button">Add</button>
+                  <button class="chip" type="button">Chart</button>
+                  <button class="chip" type="button">Source</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <aside class="sidebar" aria-labelledby="w-add-title">
+                <div class="section section--add">
+                  <h3 class="s-title" id="w-add-title">Add signal</h3>
+                  <form class="form" novalidate>
+                    <div class="fields">
+                      <div class="frow">
+                        <label class="flabel" for="w-add-name">Name</label>
+                        <input class="field" id="w-add-name" placeholder="clk">
+                      </div>
+                      <div class="frow">
+                        <label class="flabel" for="w-add-wave">Wave</label>
+                        <input class="field mono" id="w-add-wave" placeholder="p.....|...">
+                      </div>
+                      <div class="frow">
+                        <label class="flabel" for="w-add-period">Period</label>
+                        <input class="field" id="w-add-period" type="number" min="1" max="16" step="1" value="2">
+                      </div>
+                      <div class="mini-wrap">
+                        <div class="mini-track" aria-hidden="true">
+                          <div class="cell"><span class="cell-glyph glyph-clock"></span><span class="cell-char">p</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-gap"></span><span class="cell-char">|</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                          <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                        </div>
+                      </div>
+                    </div>
+                    <button class="commit" type="submit">Add signal</button>
+                  </form>
+                </div>
+
+                <div class="divider" aria-hidden="true"></div>
+
+                <div class="section section--chart">
+                  <h3 class="s-title">Chart</h3>
+                  <div class="frow">
+                    <label class="flabel" for="w-hscale">Time scale</label>
+                    <select class="select" id="w-hscale"><option>1</option><option>2</option><option>3</option><option selected>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select>
+                  </div>
+                  <p class="consequence" style="font-size:.73rem;color:var(--text-muted);margin:0">Head/foot text, groups, and arcs stay in the source.</p>
+                </div>
+              </aside>
+
+              <div class="stage">
+                <div class="dw-stage-main">
+                  <div class="dw-scroll">
+                    <div class="wave-wrap" style="width:592px">
+                      <div class="ruler" role="listbox" aria-label="Time slices" aria-orientation="horizontal" style="margin-left:86px">
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:88px;flex-basis:88px">1</button>
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:88px;flex-basis:88px">2</button>
+                        <button class="slice on" type="button" role="option" aria-selected="true" style="width:88px;flex-basis:88px">3</button>
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:88px;flex-basis:88px">4</button>
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:88px;flex-basis:88px">5</button>
+                      </div>
+
+                      <div class="card white" style="width:592px;max-width:none;max-height:none">
+                        <svg viewBox="0 0 560 320" width="560" height="320" aria-hidden="true">
+                          <g stroke="#d8dde4" stroke-width="1">
+                            <path d="M70 24 V300"/>
+                            <path d="M158 24 V300"/>
+                            <path d="M246 24 V300"/>
+                            <path d="M334 24 V300"/>
+                            <path d="M422 24 V300"/>
+                            <path d="M510 24 V300"/>
+                            <path d="M70 300 H510"/>
+                          </g>
+                          <g fill="#1f2330" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11">
+                            <text x="10" y="86">clk</text>
+                            <text x="10" y="168">data</text>
+                            <text x="10" y="250">valid</text>
+                          </g>
+                          <path d="M70 96 H92 V64 H114 V96 H136 V64 H158 V96 H180 V64 H202 V96 H224 V64 H246 V96 H268 V64 H290 V96 H312 V64 H334 V96 H356 V64 H378 V96 H400 V64 H422 V96 H444 V64 H466 V96 H488 V64 H510" fill="none" stroke="#1f2330" stroke-width="1.6"/>
+                          <path d="M70 184 H158 V132 H246 V184 H334 V132 H422 V184 H510" fill="none" stroke="#1f2330" stroke-width="1.6"/>
+                          <path d="M70 268 H510" fill="none" stroke="#1f2330" stroke-width="1.6"/>
+                          <g fill="#1f2330" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" font-size="10" text-anchor="middle">
+                            <text x="114" y="126">head</text>
+                            <text x="202" y="178">body</text>
+                            <text x="290" y="126">tail</text>
+                            <text x="378" y="178">ack</text>
+                          </g>
+                        </svg>
+                        <span class="wave-band" style="top:126px;height:84px" aria-hidden="true"></span>
+                      </div>
+
+                      <div class="band" style="left:266px;top:38px;width:88px;height:348px" aria-hidden="true"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="inspector" aria-labelledby="w-insp-kind">
+                <div class="insp-head">
+                  <span class="glyph" aria-hidden="true">S</span>
+                  <div class="titles">
+                    <h4 class="kind" id="w-insp-kind">Signal</h4>
+                    <span class="meta">data · 5 slices · slice 3</span>
+                  </div>
+                  <button class="clear" type="button" aria-label="Clear selection">×</button>
+                </div>
+                <div class="insp-body">
+                  <div class="frow">
+                    <label class="flabel" for="w-name">Name</label>
+                    <input class="field" id="w-name" value="data">
+                  </div>
+                  <div class="frow">
+                    <label class="flabel" for="w-wave">Wave</label>
+                    <input class="field mono" id="w-wave" value="x.345x|=.x">
+                  </div>
+
+                  <div class="wave-track" role="listbox" aria-label="Wave characters">
+                    <div class="cell"><span class="cell-slice">1</span><span class="cell-glyph glyph-unknown"></span><span class="cell-char">x</span></div>
+                    <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                    <div class="cell cell-period"><span class="cell-slice">2</span><span class="cell-glyph glyph-data"></span><span class="cell-char">3</span></div>
+                    <div class="cell"><span class="cell-glyph glyph-data"></span><span class="cell-char">4</span></div>
+                    <div class="cell cell-period on"><span class="cell-slice">3</span><span class="cell-glyph glyph-data"></span><span class="cell-char">5</span></div>
+                    <div class="cell"><span class="cell-glyph glyph-unknown"></span><span class="cell-char">x</span></div>
+                    <div class="cell cell-period"><span class="cell-slice">4</span><span class="cell-glyph glyph-gap"></span><span class="cell-char">|</span></div>
+                    <div class="cell"><span class="cell-glyph glyph-data"></span><span class="cell-char">=</span></div>
+                    <div class="cell cell-period"><span class="cell-slice">5</span><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                    <div class="cell"><span class="cell-glyph glyph-unknown"></span><span class="cell-char">x</span></div>
+                  </div>
+                  <p class="readout">Cell 5 · data label “tail” · data 5</p>
+
+                  <div class="glyph-palette" role="group" aria-label="Wave glyph palette">
+                    <button class="glyph-btn" type="button">0</button>
+                    <button class="glyph-btn" type="button">1</button>
+                    <button class="glyph-btn" type="button">x</button>
+                    <button class="glyph-btn" type="button">z</button>
+                    <button class="glyph-btn" type="button">=</button>
+                    <button class="glyph-btn" type="button">2</button>
+                    <button class="glyph-btn" type="button">3</button>
+                    <button class="glyph-btn" type="button">4</button>
+                    <button class="glyph-btn" type="button">5</button>
+                    <button class="glyph-btn" type="button">.</button>
+                    <button class="glyph-btn" type="button">p</button>
+                    <button class="glyph-btn" type="button">n</button>
+                    <button class="glyph-btn" type="button">|</button>
+                  </div>
+
+                  <div class="frow">
+                    <label class="flabel" for="w-period">Period</label>
+                    <input class="field" id="w-period" type="number" min="1" max="16" step="1" value="2">
+                  </div>
+
+                  <div class="group">
+                    <h5 class="gtitle">Data labels</h5>
+                    <div class="data-row"><span class="data-index">1</span><span class="data-preview">head</span><button class="ghost" type="button">Select</button></div>
+                    <div class="data-row"><span class="data-index">2</span><span class="data-preview">body</span><button class="ghost" type="button">Select</button></div>
+                    <div class="data-row"><span class="data-index">3</span><span class="data-preview">tail</span><button class="ghost" type="button">Select</button></div>
+                  </div>
+
+                  <div class="group">
+                    <h5 class="gtitle">Actions</h5>
+                    <button class="btn block" type="button">Move up</button>
+                    <button class="btn block" type="button">Move down</button>
+                    <button class="btn danger" type="button">Delete signal</button>
+                    <p class="consequence">Its labels are removed too. Undo restores.</p>
+                  </div>
+                </div>
+              </aside>
+            </div>
+
+            <div class="foot">
+              <span class="status" role="status" aria-live="polite">Unsaved changes</span>
+              <button class="action" type="button">Cancel</button>
+              <button class="action primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       8. WaveDrom compact, 390, build sheet open
+       ============================================================ -->
+  <section class="sec">
+    <h2>WaveDrom designer — 390 compact sheet</h2>
+    <p class="lede">
+      The phone-width window. The sidebar is removed; Add, Chart and Source are bar chips. Add
+      opens a sheet over the stage, and it holds the live add section, not a copy. The inspector
+      is hidden while the sheet is open. Window 374 × 833 at a 390 × 980 screen.
+    </p>
+
+    <div class="board" data-theme="dark">
+      <div class="board-head">
+        <span class="dot"></span><span>390 × 980 · dark · compact</span>
+        <span class="grow"></span>
+        <span class="size">window 374 × 833 · Add sheet open</span>
+      </div>
+      <div class="board-body" style="display:flex;justify-content:center">
+        <div class="screen screen--390">
+          <div class="modal dw is-compact" style="width:374px;height:833px">
+            <div class="head">
+              <div class="heading"><h2>Design timing</h2><span class="badge">WaveDrom</span></div>
+              <button class="winbtn" type="button" aria-label="Maximize"><svg class="icon-lg"><use href="#i-max"/></svg></button>
+              <button class="winbtn" type="button" aria-label="Close">×</button>
+            </div>
+            <div class="bar">
+              <div class="history">
+                <button class="bar-btn" type="button" aria-label="Undo (Ctrl+Z)" disabled><svg class="icon-lg"><use href="#i-undo"/></svg></button>
+                <button class="bar-btn" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg class="icon-lg"><use href="#i-redo"/></svg></button>
+              </div>
+              <span class="seam" aria-hidden="true"></span>
+              <div class="bar-actions">
+                <div class="toolgroup" role="group" aria-label="Build">
+                  <button class="chip on" type="button">Add</button>
+                  <button class="chip" type="button">Chart</button>
+                  <button class="chip" type="button">Source</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="body">
+              <div class="stage">
+                <div class="dw-stage-main">
+                  <div class="dw-scroll" style="padding:12px">
+                    <div class="wave-wrap" style="width:100%">
+                      <div class="ruler" role="listbox" aria-label="Time slices" aria-orientation="horizontal" style="margin-left:46px">
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:48px;flex-basis:48px">1</button>
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:48px;flex-basis:48px">2</button>
+                        <button class="slice on" type="button" role="option" aria-selected="true" style="width:48px;flex-basis:48px">3</button>
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:48px;flex-basis:48px">4</button>
+                        <button class="slice" type="button" role="option" aria-selected="false" style="width:48px;flex-basis:48px">5</button>
+                      </div>
+                      <div class="card white" style="width:100%">
+                        <svg viewBox="0 0 560 320" width="100%" aria-hidden="true">
+                          <g stroke="#d8dde4" stroke-width="1">
+                            <path d="M70 24 V300"/><path d="M158 24 V300"/><path d="M246 24 V300"/>
+                            <path d="M334 24 V300"/><path d="M422 24 V300"/><path d="M510 24 V300"/>
+                            <path d="M70 300 H510"/>
+                          </g>
+                          <g fill="#1f2330" font-family="ui-monospace, Menlo, Consolas, monospace" font-size="11">
+                            <text x="10" y="86">clk</text><text x="10" y="168">data</text><text x="10" y="250">valid</text>
+                          </g>
+                          <path d="M70 96 H92 V64 H114 V96 H136 V64 H158 V96 H180 V64 H202 V96 H224 V64 H246 V96 H268 V64 H290 V96 H312 V64 H334 V96 H356 V64 H378 V96 H400 V64 H422 V96 H444 V64 H466 V96 H488 V64 H510" fill="none" stroke="#1f2330" stroke-width="1.6"/>
+                          <path d="M70 184 H158 V132 H246 V184 H334 V132 H422 V184 H510" fill="none" stroke="#1f2330" stroke-width="1.6"/>
+                          <path d="M70 268 H510" fill="none" stroke="#1f2330" stroke-width="1.6"/>
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sheet" role="dialog" aria-modal="false" aria-label="Build sheet">
+                  <div class="sheet-head">
+                    <span class="sheet-grabber" aria-hidden="true"></span>
+                    <button class="sheet-close" type="button" aria-label="Close sheet">×</button>
+                  </div>
+                  <div class="sheet-body">
+                    <div class="section section--add">
+                      <h3 class="s-title">Add signal</h3>
+                      <form class="form" novalidate>
+                        <div class="fields">
+                          <div class="frow">
+                            <label class="flabel" for="t-name">Name</label>
+                            <input class="field" id="t-name" placeholder="clk">
+                          </div>
+                          <div class="frow">
+                            <label class="flabel" for="t-wave">Wave</label>
+                            <input class="field mono" id="t-wave" placeholder="p.....|...">
+                          </div>
+                          <div class="frow">
+                            <label class="flabel" for="t-period">Period</label>
+                            <input class="field" id="t-period" type="number" min="1" max="16" step="1" value="1">
+                          </div>
+                          <div class="frow">
+                            <span class="flabel">Preview</span>
+                            <div class="mini-wrap">
+                              <div class="mini-track" aria-hidden="true">
+                                <div class="cell"><span class="cell-glyph glyph-clock"></span><span class="cell-char">p</span></div>
+                                <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                                <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                                <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                                <div class="cell"><span class="cell-glyph glyph-extend"></span><span class="cell-char">.</span></div>
+                                <div class="cell"><span class="cell-glyph glyph-gap"></span><span class="cell-char">|</span></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                        <button class="commit" type="submit">Add signal</button>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="foot">
+              <span class="status ok" role="status" aria-live="polite">Ready</span>
+              <button class="action" type="button">Cancel</button>
+              <button class="action primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- APPEND -->
+</main>
+</body>
+</html>
