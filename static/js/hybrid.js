@@ -6960,6 +6960,11 @@
     viewerEl.classList.add("hybrid-active");
     topbar.classList.add("editing");
     hybridBtn.classList.add("active");
+    hybridBtn.setAttribute("aria-pressed", "true");
+    hybridBtn.setAttribute("aria-label", "Exit WYSIWYG mode");
+    viewerContentEl.setAttribute("role", "textbox");
+    viewerContentEl.setAttribute("aria-multiline", "true");
+    viewerContentEl.setAttribute("aria-label", "Note content editor");
 
     // Show the edit bar (without entering CM6 edit mode). The "hybrid"
     // context keeps the bar visible even when VIM mode is on (vim governs
@@ -7089,6 +7094,11 @@
     viewerEl.classList.remove("hybrid-active");
     topbar.classList.remove("editing");
     hybridBtn.classList.remove("active");
+    hybridBtn.setAttribute("aria-pressed", "false");
+    hybridBtn.setAttribute("aria-label", "WYSIWYG edit mode");
+    viewerContentEl.removeAttribute("role");
+    viewerContentEl.removeAttribute("aria-multiline");
+    viewerContentEl.removeAttribute("aria-label");
 
     // Restore edit bar state.
     if (NB.editbar) NB.editbar.hide();

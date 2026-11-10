@@ -212,6 +212,11 @@
 
   function showLayerUi(kind) {
     document.body.classList.toggle("drawer-open", kind === "drawer");
+    if (kind === "drawer" && shell.sidePanel) {
+      shell.sidePanel.setAttribute("role", "dialog");
+      shell.sidePanel.setAttribute("aria-modal", "true");
+      shell.sidePanel.setAttribute("aria-label", "Side panel");
+    }
     document.body.classList.toggle("capture-open", kind === "capture");
     document.body.classList.toggle("settings-open", kind === "settings");
     document.body.classList.toggle("edit-open", kind === "edit");
@@ -229,6 +234,11 @@
     document.body.classList.remove(
       "drawer-open", "capture-open", "settings-open", "edit-open");
     delete document.body.dataset.drawerView;
+    if (shell.sidePanel) {
+      shell.sidePanel.removeAttribute("role");
+      shell.sidePanel.removeAttribute("aria-modal");
+      shell.sidePanel.removeAttribute("aria-label");
+    }
     if (kind === "capture") {
       const sheet = shell.captureSheet;
       if (sheet) sheet.hidden = true;
@@ -1132,7 +1142,25 @@
   }
 
   function onKeydown(e) {
-    if (e.key !== "Escape" || !isOn()) return;
+    if (!isOn()) return;
+    if (e.key === "Tab" && layer && layer !== "edit") {
+      const box = layer === "drawer" ? shell.sidePanel
+        : layer === "capture" ? shell.captureSheet
+        : shell.settings;
+      if (!box) return;
+      const items = Array.from(box.querySelectorAll(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )).filter((el) => el.offsetParent !== null);
+      if (!items.length) return;
+      const first = items[0], last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault(); last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault(); first.focus();
+      }
+      return;
+    }
+    if (e.key !== "Escape") return;
     const menu = shell.menu;
     if (menu && !menu.hidden) return;   // menu.js owns Esc for its own menu
     closeTopLayer();

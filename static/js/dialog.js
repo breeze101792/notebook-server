@@ -33,6 +33,7 @@
 
   function inertNode(el) {
     if (!el || el.nodeType !== 1 || el === active.overlay) return;
+    if (el.classList && el.classList.contains("toast")) return;  // live region stays audible
     if (el.inert) return;               // already inert for another owner
     el.inert = true;
     inerted.add(el);

@@ -417,6 +417,10 @@
               </ul>
             </div>
           </div>
+          <div id="viewer-error" class="viewer-error" role="alert" hidden>
+            <p id="viewer-error-msg" class="viewer-error-msg">Couldn’t open the note.</p>
+            <button type="button" id="viewer-error-retry" class="welcome-action">Retry</button>
+          </div>
           <!-- Phone Home: the no-note / first-run landing. Built by
                mobile.js; hidden on desktop (and while a note is open). -->
           <div id="mobile-home" class="mobile-home" hidden></div>
@@ -1786,66 +1790,22 @@
 
     <div id="mobile-state" hidden></div>
 
-  <!-- Mermaid lightbox overlay: borderless full-screen backdrop with zoom
-       controls. The SVG is cloned into #mermaid-lightbox-body on click;
-       the toolbar floats over the top-right corner. -->
-  <div id="mermaid-lightbox" class="mermaid-lightbox-overlay" hidden>
-    <div class="mermaid-lightbox-body" id="mermaid-lightbox-body"></div>
-    <div class="mermaid-lightbox-controls">
-      <button id="mlb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
-      <span class="mlb-zoom-pct" id="mlb-zoom-pct">100%</span>
-      <button id="mlb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
-      <button id="mlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
-      <button id="mlb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
+  <!-- One template for the four full-screen viewers. lightbox.js clones it
+       and assigns the ids each caller expects. -->
+  <template id="lightbox-template">
+    <div class="mermaid-lightbox-overlay" hidden>
+      <div class="mermaid-lightbox-body"></div>
+      <div class="mermaid-lightbox-controls">
+        <button class="mlb-btn" data-lb="zoom-out" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
+        <span class="mlb-zoom-pct">100%</span>
+        <button class="mlb-btn" data-lb="zoom-in" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
+        <button class="mlb-btn" data-lb="fit" title="Fit to Page" aria-label="Fit to Page">⊞</button>
+        <button class="mlb-btn mlb-close-btn" data-lb="close" title="Close (Esc)" aria-label="Close">×</button>
+      </div>
     </div>
-  </div>
+  </template>
 
-  <!-- WaveDrom lightbox overlay: same click-to-inspect + zoom behaviour
-       as the mermaid lightbox, but for rendered ```wavedrom timing
-       diagrams. Reuses the generic .mermaid-lightbox-* / .mlb-* CSS
-       classes; only the element ids differ so the two overlays are
-       independent. -->
-  <div id="wavedrom-lightbox" class="mermaid-lightbox-overlay" hidden>
-    <div class="mermaid-lightbox-body" id="wavedrom-lightbox-body"></div>
-    <div class="mermaid-lightbox-controls">
-      <button id="wdlb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
-      <span class="mlb-zoom-pct" id="wdlb-zoom-pct">100%</span>
-      <button id="wdlb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
-      <button id="wdlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
-      <button id="wdlb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
-    </div>
-  </div>
 
-  <!-- Graphviz lightbox overlay: same click-to-inspect + zoom behaviour
-       as the mermaid/wavedrom lightboxes, but for rendered ```dot
-       diagrams. Reuses the generic .mermaid-lightbox-* / .mlb-* CSS
-       classes; only the element ids differ so the overlays are
-       independent. -->
-  <div id="viz-lightbox" class="mermaid-lightbox-overlay" hidden>
-    <div class="mermaid-lightbox-body" id="viz-lightbox-body"></div>
-    <div class="mermaid-lightbox-controls">
-      <button id="vizlb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
-      <span class="mlb-zoom-pct" id="vizlb-zoom-pct">100%</span>
-      <button id="vizlb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
-      <button id="vizlb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
-      <button id="vizlb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
-    </div>
-  </div>
-
-  <!-- SVG lightbox overlay: same click-to-inspect + zoom behaviour as
-       the mermaid/wavedrom/graphviz lightboxes, but for rendered
-       ```svg blocks. Reuses the generic .mermaid-lightbox-* / .mlb-*
-       CSS classes; only the element ids differ. -->
-  <div id="svg-lightbox" class="mermaid-lightbox-overlay" hidden>
-    <div class="mermaid-lightbox-body" id="svg-lightbox-body"></div>
-    <div class="mermaid-lightbox-controls">
-      <button id="svglb-zoom-out" class="mlb-btn" title="Zoom Out (Ctrl+−)" aria-label="Zoom Out">−</button>
-      <span class="mlb-zoom-pct" id="svglb-zoom-pct">100%</span>
-      <button id="svglb-zoom-in" class="mlb-btn" title="Zoom In (Ctrl++)" aria-label="Zoom In">+</button>
-      <button id="svglb-fit" class="mlb-btn" title="Fit to Page" aria-label="Fit to Page">⊞</button>
-      <button id="svglb-close" class="mlb-btn mlb-close-btn" title="Close (Esc)" aria-label="Close">×</button>
-    </div>
-  </div>
 
   <!-- Vendored libs + app modules, all deferred. defer keeps execution
        order (so window.marked / window.TurndownService are set before the

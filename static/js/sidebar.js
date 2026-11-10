@@ -8,6 +8,11 @@
   window.NB = window.NB || {};
 
   const treeEl = document.getElementById("file-tree");
+  if (treeEl) {
+    treeEl.setAttribute("role", "tree");
+    treeEl.setAttribute("aria-label", "Files");
+    treeEl.setAttribute("aria-multiselectable", "true");
+  }
   const sidebarEl = document.getElementById("sidebar");
   const SVG_NS = "http://www.w3.org/2000/svg";
   // Tree icons are inline SVGs referencing the hidden <symbol> sprite in
@@ -138,6 +143,16 @@
     row.className = "tree-row";
     row.dataset.path = node.path;
     row.draggable = !isPhone();
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", String(isRoot ? 1 : ancestors.length + 2));
+    if (node.type === "dir") {
+      row.setAttribute("aria-expanded", String(!collapsed.has(node.path)));
+    }
+    if (selectedPaths.has(node.path) || node.path === selectedPath) {
+      row.setAttribute("aria-selected", "true");
+    } else {
+      row.setAttribute("aria-selected", "false");
+    }
     if (selectedPaths.has(node.path)) row.classList.add("multi-selected");
     row.appendChild(renderGuide(ancestors, isLast, isRoot));
     // Phone-only row action button (CSS-hidden on desktop). It reuses the
@@ -425,6 +440,20 @@
     const row = treeEl.querySelector('.tree-row[data-path="' +
       cssEscape(path) + '"]');
     if (row) row.classList.add("selected");
+    syncTreeAria();
+  }
+
+  /* Keep one roving Tab stop in the tree and mirror the active row. */
+  function syncTreeAria() {
+    if (!treeEl) return;
+    const rows = Array.from(treeEl.querySelectorAll(".tree-row"));
+    rows.forEach((r) => {
+      r.setAttribute("aria-selected",
+        String(r.classList.contains("selected") || r.classList.contains("multi-selected")));
+    });
+    if (!rows.length) return;
+    const target = rows.find((r) => r.dataset.path === selectedPath) || rows[0];
+    rows.forEach((r) => { r.tabIndex = r === target ? 0 : -1; });
   }
 
   // Clicking the empty tree area (not a row or its guide) drops the
@@ -606,6 +635,8 @@
 
     const list = document.createElement("div");
     list.className = "pinned-view-list";
+    list.setAttribute("role", "tree");
+    list.setAttribute("aria-label", "Pinned folders");
     host.appendChild(list);
     pinnedViewListEl = list;
 
@@ -640,6 +671,10 @@
     row.className = "pin-row";
     row.dataset.path = path;
     row.draggable = true;
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", "1");
+    row.setAttribute("aria-expanded", String(pinExpanded.has(path)));
+    row.tabIndex = 0;
     row.appendChild(renderGuide([], true, true));
     const icon = iconEl(pinExpanded.has(path) ? DIR_ICON_OPEN : DIR_ICON);
     const name = document.createElement("span");
@@ -659,6 +694,12 @@
     pin.addEventListener("dragstart", (e) => e.preventDefault());
     row.append(icon, name, pin);
     row.addEventListener("click", () => togglePinExpand(path));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        togglePinExpand(path);
+      }
+    });
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (isPhone()) return;
@@ -692,6 +733,12 @@
     const row = document.createElement("div");
     row.className = "pin-child";
     row.dataset.path = node.path;
+    row.setAttribute("role", "treeitem");
+    row.setAttribute("aria-level", String(ancestors.length + 2));
+    if (node.type === "dir") {
+      row.setAttribute("aria-expanded", String(pinExpanded.has(node.path)));
+    }
+    row.tabIndex = 0;
     row.appendChild(renderGuide(ancestors, isLast, false));
     if (node.type === "dir") {
       const expanded = pinExpanded.has(node.path);
@@ -702,6 +749,12 @@
       name.title = node.path;
       row.append(icon, name);
       row.addEventListener("click", () => togglePinExpand(node.path));
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          togglePinExpand(node.path);
+        }
+      });
     } else {
       const icon = iconEl(fileIconId(node.name));
       const name = document.createElement("span");
@@ -711,6 +764,12 @@
       row.append(icon, name);
       if (node.path === selectedPath) row.classList.add("selected");
       row.addEventListener("click", () => openFile(node.path));
+      row.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          openFile(node.path);
+        }
+      });
     }
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -1369,6 +1428,7 @@
         selectionAnchor = null;
       }
       render(treeCache);
+      syncTreeAria();
       // The Pinned section lives above the tree; refresh it after render
       // so its rows reflect the tree we just built.
       renderPins();

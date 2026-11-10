@@ -676,9 +676,33 @@
   /* --- wiring -------------------------------------------------------- */
   function wire() {
     // sidebar -> tabs (open / activate)
+    const openErrorEl = document.getElementById("viewer-error");
+    const openErrorMsg = document.getElementById("viewer-error-msg");
+    const openErrorRetry = document.getElementById("viewer-error-retry");
+    let failedOpenPath = null;
+    function hideOpenError() {
+      if (openErrorEl) openErrorEl.hidden = true;
+      failedOpenPath = null;
+    }
+    function showOpenError(path, err) {
+      failedOpenPath = path;
+      if (openErrorMsg) {
+        openErrorMsg.textContent = "Couldn’t open “" + path + "”. " +
+          (err && err.message ? err.message : "The file may have been moved or deleted.");
+      }
+      if (openErrorEl) openErrorEl.hidden = false;
+    }
+    if (openErrorRetry) openErrorRetry.addEventListener("click", () => {
+      if (failedOpenPath) NB.evt.emit("file:open-request", failedOpenPath);
+    });
+    NB.evt.on("file:open", hideOpenError);
     NB.evt.on("file:open-request", async (path) => {
-      try { await NB.tabs.open(path); }
-      catch (e) { alert("Could not open: " + e.message); }
+      try {
+        await NB.tabs.open(path);
+        hideOpenError();
+      } catch (e) {
+        showOpenError(path, e);
+      }
     });
 
     // any file shown -> update recents + tree highlight (fired by viewer.activate)

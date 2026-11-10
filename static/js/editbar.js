@@ -1069,5 +1069,37 @@
    * work even when the vim keymap is active). We don't need a
    * keydown listener here anymore. */
 
+  /* Menus: one roving focus walk. A menu is role=menu; its buttons are
+   * menuitems; opening focuses the first; arrows/Home/End move; Esc closes
+   * and returns focus to the trigger. */
+  function wireMenu(menu) {
+    if (!menu) return;
+    menu.setAttribute("role", "menu");
+    menu.querySelectorAll("button").forEach((b) => b.setAttribute("role", "menuitem"));
+    function items() {
+      return Array.from(menu.querySelectorAll("button"))
+        .filter((b) => !b.hidden && !b.disabled);
+    }
+    menu.addEventListener("keydown", (e) => {
+      const list = items();
+      if (!list.length) return;
+      const i = list.indexOf(document.activeElement);
+      let next = null;
+      if (e.key === "ArrowDown") next = list[(i + 1) % list.length];
+      else if (e.key === "ArrowUp") next = list[(i - 1 + list.length) % list.length];
+      else if (e.key === "Home") next = list[0];
+      else if (e.key === "End") next = list[list.length - 1];
+      else if (e.key === "Escape") {
+        e.preventDefault();
+        const trigger = menu.parentElement && menu.parentElement.querySelector(".eb");
+        menu.hidden = true;
+        if (trigger) trigger.focus();
+        return;
+      }
+      if (next) { e.preventDefault(); next.focus(); }
+    });
+  }
+  [listMenu, tableMenu, exampleMenu].forEach(wireMenu);
+
   NB.editbar = { show, hide, refresh, actions, closeEmoji: closeEmojiPanel };
 })();

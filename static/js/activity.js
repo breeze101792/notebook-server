@@ -328,14 +328,39 @@
     header.appendChild(makeCollapseBtn());
     host.appendChild(header);
 
+    const strip = document.createElement("div");
+    strip.className = "recent-strip";
     const input = document.createElement("input");
     input.type = "search";
     input.className = "recent-filter";
     input.placeholder = "Filter recent files…  (Enter to open top match)";
-    host.appendChild(input);
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-label", "Filter recent files");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "true");
+    input.setAttribute("aria-controls", "recent-list");
+    strip.appendChild(input);
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "recent-clear";
+    clear.setAttribute("aria-label", "Clear recent filter");
+    clear.title = "Clear filter";
+    clear.textContent = "×";
+    clear.hidden = true;
+    clear.addEventListener("click", () => {
+      input.value = "";
+      selectedIdx = 0;
+      renderList();
+      input.focus();
+    });
+    strip.appendChild(clear);
+    host.appendChild(strip);
 
     const list = document.createElement("div");
     list.className = "recent-list";
+    list.id = "recent-list";
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Recent files");
     host.appendChild(list);
 
     let selectedIdx = 0;
@@ -373,6 +398,9 @@
         const row = document.createElement("div");
         row.className = "recent-row" + (idx === selectedIdx ? " selected" : "");
         row.dataset.path = p;
+        row.id = "recent-option-" + idx;
+        row.setAttribute("role", "option");
+        row.setAttribute("aria-selected", idx === selectedIdx ? "true" : "false");
         const name = document.createElement("span");
         name.className = "recent-name";
         name.textContent = baseName(p);
@@ -389,6 +417,10 @@
         list.appendChild(row);
       });
       if (selectedIdx >= items.length) selectedIdx = 0;
+      clear.hidden = !input.value;
+      const active = items[selectedIdx] ? "recent-option-" + selectedIdx : "";
+      if (active) input.setAttribute("aria-activedescendant", active);
+      else input.removeAttribute("aria-activedescendant");
     }
 
     function openFile(path) {
@@ -398,7 +430,11 @@
     function baseName(p) { const i = p.lastIndexOf("/"); return i < 0 ? p : p.slice(i + 1); }
     function parentOf(p) { const i = p.lastIndexOf("/"); return i < 0 ? "" : p.slice(0, i); }
 
-    input.addEventListener("input", () => { selectedIdx = 0; renderList(); });
+    input.addEventListener("input", () => {
+      selectedIdx = 0;
+      clear.hidden = !input.value;
+      renderList();
+    });
     input.addEventListener("keydown", (e) => {
       const items = currentItems();
       if (e.key === "ArrowDown") {
@@ -826,6 +862,7 @@
       summary.classList.remove("error");
       clearSummaryActions();
       summaryText.textContent = text;
+      summaryText.classList.toggle("is-incomplete", text.includes(SEARCH_TIMEOUT_SUFFIX));
       summary.title = text;
     }
 

@@ -733,7 +733,18 @@
     if (!wrap || !NB.menu) return;
     const writable = isWritable();
     const only = sessions.length <= 1;
+    const idx = sessions.findIndex((s) => s.id === id);
     const items = [
+      {
+        label: "Move up",
+        disabled: !writable || idx <= 0,
+        handler: () => NB.tabs.moveSession(id, -1),
+      },
+      {
+        label: "Move down",
+        disabled: !writable || idx < 0 || idx >= sessions.length - 1,
+        handler: () => NB.tabs.moveSession(id, 1),
+      },
       {
         label: ACTION_RENAME,
         disabled: !writable,

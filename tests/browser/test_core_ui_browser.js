@@ -679,8 +679,8 @@ async function main() {
         inputWidth: input.getBoundingClientRect().width,
       };
     });
-    check("search clear: visible and 22x22 on desktop",
-      clearBox.hidden === false && clearBox.w === "22px" && clearBox.h === "22px",
+    check("search clear: visible and 24x24 on desktop",
+      clearBox.hidden === false && clearBox.w === "24px" && clearBox.h === "24px",
       JSON.stringify(clearBox));
     check("search clear: input reserves a 32px right slot",
       clearBox.padRight === "32px", clearBox.padRight);
@@ -1903,10 +1903,10 @@ async function main() {
       createdId + '"] .session-more').click();
     await page.waitForFunction(() => !document.getElementById("nb-menu").hidden,
       null, { timeout: 5000 });
-    check("sessions: the row \u22ef menu offers Rename and Delete",
+    check("sessions: the row \u22ef menu offers Move and Rename/Delete",
       await page.evaluate(() =>
         Array.from(document.querySelectorAll("#nb-menu > button"))
-          .map((b) => b.textContent).join("|") === "Rename\u2026|Delete\u2026"),
+          .map((b) => b.textContent).join("|") === "Move up|Move down|Rename\u2026|Delete\u2026"),
       await page.evaluate(() =>
         Array.from(document.querySelectorAll("#nb-menu > button"))
           .map((b) => b.textContent).join("|")));

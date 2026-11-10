@@ -715,21 +715,23 @@
    * Tool execution + trace
    * ------------------------------------------------------------------ */
 
-  function makeTrace(tool, path) {
-    const el = document.createElement("div");
+  function makeTrace(tool, path, plain) {
+    const el = document.createElement(plain ? "div" : "details");
     el.className = "ai-tool-trace";
     el.dataset.testToolTrace = tool;
+    const head = plain ? el : document.createElement("summary");
     const name = document.createElement("span");
     name.className = "ai-tool-name";
     name.textContent = tool;
-    el.appendChild(name);
+    head.appendChild(name);
     if (path) {
       const p = document.createElement("span");
       p.className = "ai-tool-path";
       p.textContent = path;
-      el.appendChild(p);
+      head.appendChild(p);
     }
-    const out = document.createElement("span");
+    if (!plain) el.appendChild(head);
+    const out = document.createElement(plain ? "span" : "pre");
     out.className = "ai-tool-out";
     el.appendChild(out);
     return el;
@@ -1736,7 +1738,7 @@
              * traces read chronologically. Inert for OpenAI providers. */
             if (frame.acp === "trace" &&
                 typeof frame.text === "string" && frame.text) {
-              log.insertBefore(makeTrace(frame.text), bubble);
+              log.insertBefore(makeTrace(frame.text, "", true), bubble);
               scrollLog(log);
             }
           });
@@ -2278,6 +2280,7 @@
       lastSentPrompt = "";
       lastSentFiles = [];
       clearStoredHistory();   // a true reset: the chat must not come back
+      syncSend();
     });
     actions.appendChild(clearBtn);
     if (NB.activity && NB.activity.makeCollapseBtn) {
@@ -2407,9 +2410,11 @@
     let ctl = null;
 
     function syncSend() {
-      sendBtn.disabled = !!ctl || pendingReads > 0;
+      const empty = !ta.value.trim() && chipTotal === 0;
+      sendBtn.disabled = !!ctl || pendingReads > 0 || empty;
       sendBtn.hidden = !!ctl;
       attachBtn.disabled = !!ctl;
+      if (clearBtn) clearBtn.disabled = conversation.length === 0 && chipTotal === 0;
       /* Keep the newest turn's controls in step with the live state. */
       updateTurnDisabled();
     }
@@ -2671,7 +2676,7 @@
     });
     /* Typing or clearing the draft flips the Edit control's disabled
      * state (see updateTurnDisabled); it also resizes the field. */
-    ta.addEventListener("input", () => { updateTurnDisabled(); autoGrow(); });
+    ta.addEventListener("input", () => { updateTurnDisabled(); autoGrow(); syncSend(); });
     /* Clipboard files (a copied screenshot) take the same add path. Plain
      * text paste is left alone so the default insertion happens. */
     ta.addEventListener("paste", (e) => {

@@ -172,6 +172,9 @@
     row.className = "bookmark-row";
     row.dataset.path = path;
     row.draggable = !isPhone();
+    row.setAttribute("role", "button");
+    row.tabIndex = 0;
+    row.setAttribute("aria-current", path === activeFile ? "true" : "false");
     // The leading ⭐ reserves the same width the tree uses for its icon so
     // the file name aligns across the two lists.
     const pin = document.createElement("span");
@@ -185,6 +188,12 @@
     row.append(pin, name);
     if (path === activeFile) row.classList.add("selected");
     row.addEventListener("click", () => NB.evt.emit("file:open-request", path));
+    row.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        NB.evt.emit("file:open-request", path);
+      }
+    });
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (isPhone()) return;   // read-only on the phone
@@ -411,12 +420,17 @@
     for (const section of sections) {
       const listEl = section.listEl;
       if (!listEl) continue;
-      listEl.querySelectorAll(".bookmark-row.selected")
-        .forEach(r => r.classList.remove("selected"));
+      listEl.querySelectorAll(".bookmark-row").forEach((r) => {
+        r.classList.remove("selected");
+        r.setAttribute("aria-current", "false");
+      });
       if (activeFile && bookmarks.includes(activeFile)) {
         const row = listEl.querySelector('.bookmark-row[data-path="' +
           cssEscape(activeFile) + '"]');
-        if (row) row.classList.add("selected");
+        if (row) {
+          row.classList.add("selected");
+          row.setAttribute("aria-current", "true");
+        }
       }
     }
     updateAddBtn();

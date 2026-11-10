@@ -145,6 +145,7 @@
         // is what the preview does too, so the two panes stay
         // visually consistent.
         cm.EditorView.lineWrapping,
+        cm.EditorView.contentAttributes.of({ "aria-label": "Markdown source" }),
         // Vim keymap -- only when VIM mode is on (Settings → "VIM
         // mode"). Off means the editor is a plain CM6 instance. The
         // Compartment lets setVimMode() flip this live.

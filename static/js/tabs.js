@@ -22,6 +22,10 @@
   // cached index.html (pre-split) degrades instead of throwing at module load.
   const listEl = document.getElementById("tab-list") || barEl;
   const pinEl = document.getElementById("tab-pinned") || listEl;
+  pinEl.setAttribute("role", "tablist");
+  pinEl.setAttribute("aria-label", "Pinned files");
+  listEl.setAttribute("role", "tablist");
+  listEl.setAttribute("aria-label", "Open files");
   // The outline toggle (#outline-toggle) is a sibling of both regions, at the
   // fixed right edge, so an overflowing tab can never overlap it. Drag/click
   // events bubble from either region up to #tab-bar, where the delegated
@@ -633,6 +637,12 @@
     ghosts.slice().forEach(removeGhost);
   }
 
+  function setRoving(tab) {
+    [pinEl, listEl].forEach((region) => {
+      region.querySelectorAll(".tab").forEach((t) => { t.tabIndex = t === tab ? 0 : -1; });
+    });
+  }
+
   function render() {
     stopRelease();               // an in-flight settle belongs to the old nodes
     captureFrozenWidths();       // measure before the old tab nodes are dropped
@@ -649,7 +659,16 @@
       if (!isSpecial(path) && NB.viewer.isDirty(path)) tab.classList.add("dirty");
       tab.dataset.path = path;
       tab.title = isSpecial(path) ? (specialTabs.get(path) || {}).label || path : path;
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", path === activePath ? "true" : "false");
+      tab.tabIndex = path === activePath ? 0 : -1;
       tab.draggable = true;
+
+      let tabName = isSpecial(path) ? ((specialTabs.get(path) || {}).label || path) : baseName(path);
+      if (pinned.has(path)) tabName += ", pinned";
+      if (!isSpecial(path) && NB.viewer.isDirty(path)) tabName += ", unsaved changes";
+      if (!isSpecial(path) && conflictSet.has(path)) tabName += ", changed on disk";
+      tab.setAttribute("aria-label", tabName);
 
       if (pinned.has(path)) {
         const pin = document.createElement("span");
@@ -691,11 +710,32 @@
         closeBtn.className = "tab-close";
         closeBtn.textContent = "×";
         closeBtn.title = "Close (middle-click also closes)";
+        closeBtn.tabIndex = -1;
+        closeBtn.setAttribute("aria-hidden", "true");
+        closeBtn.setAttribute("aria-label", "Close " + tabName);
         closeBtn.addEventListener("click", (e) => { e.stopPropagation(); close(path); });
         tab.appendChild(closeBtn);
       }
 
       tab.addEventListener("click", () => activate(path));
+      tab.addEventListener("focus", () => setRoving(tab));
+      tab.addEventListener("keydown", (e) => {
+        const region = tab.parentElement;
+        const tabs = Array.from(region.querySelectorAll(".tab"));
+        const i = tabs.indexOf(tab);
+        let next = null;
+        if (e.key === "ArrowRight") next = tabs[(i + 1) % tabs.length];
+        else if (e.key === "ArrowLeft") next = tabs[(i - 1 + tabs.length) % tabs.length];
+        else if (e.key === "Home") next = tabs[0];
+        else if (e.key === "End") next = tabs[tabs.length - 1];
+        else if (e.key === "Delete") { e.preventDefault(); close(path); return; }
+        if (next) {
+          e.preventDefault();
+          setRoving(next);
+          next.focus();
+          activate(next.dataset.path);
+        }
+      });
       tab.addEventListener("auxclick", (e) => {
         if (e.button === 1 && !pinned.has(path)) { e.preventDefault(); close(path); }
       });
@@ -707,6 +747,11 @@
     // occupied.
     syncPinnedRegion();
     materializeGhosts();         // ghost slots hold a closed tab's position
+    [pinEl, listEl].forEach((region) => {
+      if (region === pinEl && pinEl.hidden) return;
+      const tabs = region.querySelectorAll(".tab");
+      if (tabs.length && !region.querySelector('.tab[tabindex="0"]')) tabs[0].tabIndex = 0;
+    });
     applyFrozenWidths();
     listEl.scrollLeft = savedScroll;
     if (pinEl !== listEl) pinEl.scrollLeft = savedPinnedScroll;
@@ -1086,6 +1131,17 @@
     storedSessions.set(id, { openFiles: [], activeFile: null });
     await moveToSession(path, id);
     return { ok: true, code: "", id, name: check.name };
+  }
+
+  function moveSession(id, delta) {
+    const i = sessionOrder.indexOf(id);
+    const j = i + delta;
+    if (i < 0 || j < 0 || j >= sessionOrder.length) return false;
+    sessionOrder.splice(i, 1);
+    sessionOrder.splice(j, 0, id);
+    render();
+    emitChanged();
+    return true;
   }
 
   function renameSession(id, name) {
@@ -1602,6 +1658,7 @@
     swapTo,
     createSession,
     createSessionFromTab,
+    moveSession,
     renameSession,
     deleteSession,
     moveToSession,

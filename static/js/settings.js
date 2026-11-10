@@ -32,6 +32,16 @@
   const closeFooterBtn = document.getElementById("settings-close-btn");
   const navItems = Array.from(overlayEl.querySelectorAll(".settings-nav-item"));
   const sectionEls = Array.from(overlayEl.querySelectorAll(".settings-section[data-section]"));
+  const navEl = overlayEl.querySelector(".settings-nav");
+  if (navEl) navEl.setAttribute("aria-orientation", "vertical");
+  for (const item of navItems) {
+    item.id = "settings-tab-" + item.dataset.tab;
+    item.tabIndex = item.classList.contains("active") ? 0 : -1;
+  }
+  for (const el of sectionEls) {
+    el.setAttribute("role", "tabpanel");
+    el.setAttribute("aria-labelledby", "settings-tab-" + el.dataset.section);
+  }
   const themeRadios = Array.from(overlayEl.querySelectorAll('input[name="theme"]'));
   const fontSizeRadios = Array.from(overlayEl.querySelectorAll('input[name="fontSize"]'));
   const settingsModalWidthRadios = Array.from(overlayEl.querySelectorAll('input[name="settingsModalWidth"]'));
@@ -122,6 +132,7 @@
       const on = item.dataset.tab === name;
       item.classList.toggle("active", on);
       item.setAttribute("aria-selected", on ? "true" : "false");
+      item.tabIndex = on ? 0 : -1;
     }
     for (const el of sectionEls) {
       el.hidden = (el.dataset.section !== name);
@@ -129,6 +140,19 @@
   }
   for (const item of navItems) {
     item.addEventListener("click", () => showTab(item.dataset.tab));
+    item.addEventListener("keydown", (e) => {
+      const i = navItems.indexOf(item);
+      let next = null;
+      if (e.key === "ArrowDown") next = navItems[(i + 1) % navItems.length];
+      else if (e.key === "ArrowUp") next = navItems[(i - 1 + navItems.length) % navItems.length];
+      else if (e.key === "Home") next = navItems[0];
+      else if (e.key === "End") next = navItems[navItems.length - 1];
+      if (next) {
+        e.preventDefault();
+        next.focus();
+        showTab(next.dataset.tab);
+      }
+    });
   }
 
   // Sync a radio group's `checked` from the current cfg. Each radio's

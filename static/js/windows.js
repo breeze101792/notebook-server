@@ -63,10 +63,10 @@
     if (!g) return;
     const vpW = viewportW();
     const vpH = viewportH();
-    const left = clamp(g.left, EDGE_MARGIN, Math.max(EDGE_MARGIN, vpW - MIN_W - EDGE_MARGIN));
-    const top  = clamp(g.top,  EDGE_MARGIN, Math.max(EDGE_MARGIN, vpH - MIN_H - EDGE_MARGIN));
     const w    = clamp(g.w, MIN_W, vpW - 2 * EDGE_MARGIN);
     const h    = clamp(g.h, MIN_H, vpH - 2 * EDGE_MARGIN);
+    const left = clamp(g.left, EDGE_MARGIN, Math.max(EDGE_MARGIN, vpW - w - EDGE_MARGIN));
+    const top  = clamp(g.top,  EDGE_MARGIN, Math.max(EDGE_MARGIN, vpH - h - EDGE_MARGIN));
     modal.style.left = left + "px";
     modal.style.top = top + "px";
     modal.style.width = w + "px";
@@ -207,8 +207,10 @@
       const startW = rect.width, startH = rect.height;
 
       function onMove(ev) {
-        const w = Math.max(MIN_W, startW + (ev.clientX - startX));
-        const h = Math.max(MIN_H, startH + (ev.clientY - startY));
+        const maxW = Math.max(MIN_W, viewportW() - rect.left - EDGE_MARGIN);
+        const maxH = Math.max(MIN_H, viewportH() - rect.top - EDGE_MARGIN);
+        const w = Math.min(maxW, Math.max(MIN_W, startW + (ev.clientX - startX)));
+        const h = Math.min(maxH, Math.max(MIN_H, startH + (ev.clientY - startY)));
         modal.style.width = w + "px";
         modal.style.height = h + "px";
       }

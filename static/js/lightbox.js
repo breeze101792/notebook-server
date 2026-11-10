@@ -45,8 +45,21 @@
   const LIGHTBOX_ROOT_SELECTOR = "#viewer-content, .ai-chat-log";
 
   function create(cfg) {
-    const overlay = document.getElementById(cfg.overlayId);
-    const body    = document.getElementById(cfg.bodyId);
+    let overlay = document.getElementById(cfg.overlayId);
+    let body    = document.getElementById(cfg.bodyId);
+    if ((!overlay || !body) && document.getElementById("lightbox-template")) {
+      const frag = document.getElementById("lightbox-template").content.cloneNode(true);
+      overlay = frag.querySelector(".mermaid-lightbox-overlay");
+      body = overlay.querySelector(".mermaid-lightbox-body");
+      overlay.id = cfg.overlayId;
+      body.id = cfg.bodyId;
+      overlay.querySelector('[data-lb="zoom-out"]').id = cfg.zoomOutId;
+      overlay.querySelector('[data-lb="zoom-in"]').id = cfg.zoomInId;
+      overlay.querySelector('[data-lb="fit"]').id = cfg.fitId;
+      overlay.querySelector('[data-lb="close"]').id = cfg.closeId;
+      overlay.querySelector(".mlb-zoom-pct").id = cfg.pctId;
+      document.body.appendChild(frag);
+    }
     // Owned by this lightbox, so capture it now: a lazy lookup could hit a
     // note element that happens to reuse the id.
     const pctEl   = document.getElementById(cfg.pctId);
@@ -109,7 +122,15 @@
      * We clone the node so the original in the viewer remains untouched;
      * the clone carries all inline styles, classes, and the viewBox the
      * diagram library set during rendering. Starts in fit-to-page mode. */
+    let lastTrigger = null;
+
     function openLightbox(svg) {
+      lastTrigger = document.activeElement;
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-label", cfg.label || "Diagram");
+      const pct = document.getElementById(cfg.pctId);
+      if (pct) pct.setAttribute("aria-live", "polite");
       body.innerHTML = "";
       const clone = svg.cloneNode(true);
       clone.removeAttribute("style");
@@ -123,6 +144,8 @@
       lightboxOpen = true;
       document.body.classList.add("mermaid-lightbox-active");
       applyZoom();
+      const close = document.getElementById(cfg.closeId);
+      if (close) close.focus({ preventScroll: true });
     }
 
     function closeLightbox() {
@@ -131,6 +154,10 @@
       body.innerHTML = "";
       lightboxOpen = false;
       document.body.classList.remove("mermaid-lightbox-active");
+      if (lastTrigger && lastTrigger.isConnected) {
+        lastTrigger.focus({ preventScroll: true });
+      }
+      lastTrigger = null;
     }
 
     function zoomIn() {

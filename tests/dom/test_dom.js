@@ -31542,8 +31542,8 @@ function check(label, cond, extra) {
       check("ai attach wedge: bar is empty right after the synchronous remove",
         aChips().length === 0, "chips=" + aChips().length);
       await tick(60);   // let the abandoned read settle
-      check("ai attach wedge: send re-enables once the abandoned read settles",
-        sendBtn().disabled === false && aBar().hidden === true &&
+      check("ai attach wedge: the read settles and the empty draft keeps send disabled",
+        sendBtn().disabled === true && aBar().hidden === true &&
         aChips().length === 0,
         "disabled=" + sendBtn().disabled + " hidden=" + aBar().hidden);
       // pendingReads must not have gone negative either: a later send has
@@ -31551,6 +31551,7 @@ function check(label, cond, extra) {
       const wedgeBefore = aiChatLog.length;
       aiChatStreams.push([sseFrame("sure")]);
       aiInput().value = "still here?";
+      aiInput().dispatchEvent(new window.Event("input", { bubbles: true }));
       aiSend();
       await tick(150);
       check("ai attach wedge: a later send posts exactly once",
@@ -41827,9 +41828,9 @@ function check(label, cond, extra) {
 
     ssMore("s2").dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(20);
-    check("sessions view: the row \u22ef menu offers Rename and Delete",
+    check("sessions view: the row \u22ef menu offers Move and Rename/Delete",
       $("nb-menu").hidden === false &&
-      ssMenuButtons().map((b) => b.textContent).join("|") === "Rename\u2026|Delete\u2026",
+      ssMenuButtons().map((b) => b.textContent).join("|") === "Move up|Move down|Rename\u2026|Delete\u2026",
       ssMenuButtons().map((b) => b.textContent).join("|"));
     window.NB.menu.close("sessions");
     await tick(10);
