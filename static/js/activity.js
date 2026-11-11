@@ -106,10 +106,21 @@
       btn.dataset.view = v.id;
       btn.title = v.label || v.id;
       btn.setAttribute("aria-label", v.label || v.id);
-      const icon = document.createElement("span");
-      icon.className = "activity-icon";
-      icon.textContent = v.icon || "?";
-      btn.appendChild(icon);
+      if (v.icon && v.icon.indexOf("nb-icon-") === 0) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("class", "activity-icon");
+        svg.setAttribute("aria-hidden", "true");
+        svg.setAttribute("focusable", "false");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", "#" + v.icon);
+        svg.appendChild(use);
+        btn.appendChild(svg);
+      } else {
+        const icon = document.createElement("span");
+        icon.className = "activity-icon";
+        icon.textContent = v.icon || "?";
+        btn.appendChild(icon);
+      }
       btn.addEventListener("click", () => activate(v.id, /*toggle*/ true));
       viewsEl.appendChild(btn);
     }
@@ -282,7 +293,8 @@
     const phone = isPhone();
     btn.title = phone ? "Close panel" : "Collapse panel";
     btn.setAttribute("aria-label", phone ? "Close panel" : "Collapse panel");
-    btn.textContent = phone ? "×" : "‹";
+    btn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' +
+      (phone ? "nb-icon-close" : "nb-icon-chevron-left") + '"/></svg>';
     btn.addEventListener("click", () => collapse());
     return btn;
   }
@@ -1355,19 +1367,19 @@
   // the HTML with the file tree wired by sidebar.js, so mount is a no-op.
   register({
     id: "explorer",
-    icon: "📁",
+    icon: "nb-icon-explorer",
     label: "Explorer",
     mount: function () {},
   });
   // Sessions: the host (#sessions-view) ships empty; sessions.js populates
   // its header + list at load, so mount is not needed. Only [hidden] toggles
   // here.
-  register({ id: "sessions", icon: "🗂", label: "Sessions" });
+  register({ id: "sessions", icon: "nb-icon-session", label: "Sessions" });
   // Pinned folders: the same pin rows the Explorer's inline top section
   // shows, mounted into their own pane on first activation.
   register({
     id: "pinned",
-    icon: "📌",
+    icon: "nb-icon-pin",
     label: "Pinned folders",
     mount: function (host) {
       if (NB.sidebar && typeof NB.sidebar.mountPinnedView === "function") {
@@ -1379,25 +1391,25 @@
   // populates its header + list at load, so mount is a no-op.
   register({
     id: "bookmarks",
-    icon: "🔖",
+    icon: "nb-icon-bookmark",
     label: "Bookmarks",
     mount: function () {},
   });
   register({
     id: "recent",
-    icon: "🕒",
+    icon: "nb-icon-clock",
     label: "Recent files",
     mount: mountRecent,
   });
   register({
     id: "search",
-    icon: "🔍",
+    icon: "nb-icon-search",
     label: "Search",
     mount: mountSearch,
   });
   register({
     id: "ai",
-    icon: "✨",
+    icon: "nb-icon-ai",
     label: "AI Assistant",
     mount: function (host) {
       if (NB.ai && typeof NB.ai.mount === "function") NB.ai.mount(host);

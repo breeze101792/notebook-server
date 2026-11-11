@@ -547,7 +547,7 @@
    * pencil, so the two modes read apart at a glance. The label always
    * names the action the click will take. */
   function setEditModeLabel(inEdit) {
-    editBtn.textContent = "📝";
+    editBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-code"/></svg>';
     editBtn.title = inEdit
       ? "Back to rendered view (Ctrl/Cmd+E)"
       : "Edit Markdown source (Ctrl/Cmd+E)";

@@ -46,7 +46,7 @@
   const ROW_SELECTOR = ".session-item";
   const ACTION_NEW = "new";
   const NEW_LABEL = "New session…";
-  const CHECK = "✓";
+  const CHECK = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-check"/></svg>';
   const PLUS = "+";
 
   const MODE_CREATE = "create";
@@ -182,7 +182,7 @@
     const footPin = document.createElement("span");
     footPin.className = "sessions-foot-pin";
     footPin.setAttribute("aria-hidden", "true");
-    footPin.textContent = "📌";
+    footPin.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg>';
     foot.appendChild(footPin);
     const hint = document.createElement("span");
     hint.textContent = FOOT_TEXT;
@@ -270,7 +270,7 @@
     const check = document.createElement("span");
     check.className = "session-check";
     check.setAttribute("aria-hidden", "true");
-    check.textContent = s.active ? CHECK : "";
+    check.innerHTML = s.active ? CHECK : "";
     row.appendChild(check);
 
     const name = document.createElement("span");

@@ -35,7 +35,7 @@ records the conflict and names which side changes. Every claim about current cod
 └── #layout  (grid, minmax(0,1fr) row)
     ├── #activity-bar              48 px   fixed, never resizes
     ├── #side-panel                240 px  the primary resizable pane
-    │   ├── .panel-header          36 px   frame owns it
+    │   ├── .panel-header          34 px   frame owns it
     │   ├── .side-panel-view       flex    view host; view owns its scroller
     │   └── .resize-handle         8 px    overlays the inner edge
     ├── #editor-pane               1fr     absorbs every change, min 0
@@ -43,7 +43,7 @@ records the conflict and names which side changes. Every claim about current cod
     │   ├── #edit-bar              content-driven; 63 at 772, 119 at 861
     │   └── reader                 1fr
     └── #outline-pane              220 px  resizable on its left edge
-        ├── .panel-header          36 px
+        ├── .panel-header          34 px
         └── #outline               flex    the scroller
 ```
 
@@ -391,7 +391,7 @@ never the signal. No badge may be attached to an action.
 ```
 #side-panel   width var(--side-panel-width), --surface-panel, right border, position:relative
 ┌──────────────────────────────────────────┬─┐
-│ .panel-header   36 px, z 20              │ │
+│ .panel-header   34 px, z 20              │ │
 │   h2#panel-title        .panel-header-   │ │  ← 8 px resize strip,
 │                          actions         │ │    bar 2 px, z 10
 ├──────────────────────────────────────────┤ │
@@ -407,7 +407,7 @@ never the signal. No badge may be attached to an action.
 
 One header **pattern**, one node per view. Today every view builds its own
 (`activity.js:322-328`, `:447-453`, `bookmarks.js:58-79`, `sessions.js:132-162`, `ai.js:2252-2284`,
-`sidebar.js:597-603`) — seven copies of one 36 px strip. The target keeps a node inside each view,
+`sidebar.js:597-603`) — seven copies of one 34 px strip. The target keeps a node inside each view,
 because the DOM tests and the phone drawer select `#<view> .panel-header .collapse-btn` and
 `#<view> .panel-title` (`tests/dom/test_dom.js:20391`, `:20405`, `:20439`, `:23341`, `:34279`;
 `mobile.js:339-341`, `:857`). Promoting one node to the frame would break eight selectors and the
@@ -418,11 +418,11 @@ same order. A view may add up to two actions before the collapse control.
 
 | Part | Value |
 |---|---|
-| Height | `min-height: var(--control-h-lg)` 36, one line, no vertical padding |
+| Height | `min-height: calc(34px * var(--font-scale))`, one line, no vertical padding; matches the tab bar |
 | Padding | `0 var(--space-3)` |
 | Gap | `var(--space-2)` between title and actions; `var(--space-hair)` between actions |
 | Surface | `--surface-panel`, 1 px bottom `--border` |
-| Title | `<h2 class="panel-title">` with `margin: 0; font-weight: var(--fw-regular); line-height: var(--lh-tight)`; `--text-xs`, `--tracking-label`, `--text-muted`, ellipsis, `white-space: nowrap`. The reset is required: an `<h2>` without it inherits the UA 1.5 em bold block and blows the 36 px header |
+| Title | `<h2 class="panel-title">` with `margin: 0; font-weight: var(--fw-regular); line-height: var(--lh-tight)`; `--text-xs`, `--tracking-label`, `--text-muted`, ellipsis, `white-space: nowrap`. The reset is required: an `<h2>` without it inherits the UA 1.5 em bold block and blows the 34 px header |
 | Actions | icon buttons, sm (24 × 24), glyph `--icon-md` |
 | Collapse control | last action, glyph `nb-icon-chevron-left`, `aria-label="Collapse panel"`, `title="Collapse panel"` |
 | Stacking | `position: relative; z-index: 20` so header buttons win over the 8 px resize strip at `z-index: 10` (local stack, foundations §6.1) |
@@ -499,7 +499,7 @@ the button reports the collapsed state.
 ```
 #outline-pane  width var(--outline-width), --surface-panel, left border, position:relative
 ┌─┬────────────────────────────────────────┐
-│ │ .panel-header  36 px                   │
+│ │ .panel-header  34 px                   │
 │ │   h2 "Outline"            [›]          │
 │ ├────────────────────────────────────────┤
 │ │ nav#outline[aria-label="Outline"]      │
@@ -813,7 +813,7 @@ No framework, no build step, no new dependency.
 | **AC8** | Exactly one picker mount is visible | `style.css` | Desktop: the chip renders, the rail glyph does not. `body.topbar-hidden`: the reverse. Phone: the chip only, rail glyph none. |
 | **AC9** | Hiding the topbar has a visible way back | `index.html`, `style.css` | With `hideTopbar` on, `#topbar-show-btn` is visible in the rail's bottom group; clicking it restores the bar and persists `hideTopbar: false`. The phone hides it. |
 | **AC10** | The rail is one ordered, keyboard-operable list | `activity.js` | Seven view buttons in registration order, then the bottom actions; `ArrowDown` wraps from the last view to the first; exactly one view carries `aria-pressed="true"`. |
-| **AC11** | Every side-panel view uses one header pattern | `activity.js`, `templates/index.html` | Each view keeps its own `.panel-header` node (so the existing per-view selectors and the phone drawer close still resolve), and all seven use the same markup: title, optional actions, 36 px. |
+| **AC11** | Every side-panel view uses one header pattern | `activity.js`, `templates/index.html` | Each view keeps its own `.panel-header` node (so the existing per-view selectors and the phone drawer close still resolve), and all seven use the same markup: title, optional actions, 34 px. |
 | **AC12** | A failed mount is visible and retryable | `activity.js` | A `mount` that throws leaves the header plus a `role="alert"` line and a Retry button; Retry re-invokes `mount` without a page load. |
 | **AC13** | The outline marks the current heading for assistive tech | `outline.js` | Scrolling the reader moves `aria-current="location"` to exactly one link and scrolls it into view; focus does not move. |
 | **AC14** | The outline toggle reports its state | `index.html`, `app.js` | `#outline-toggle` has `aria-pressed`, which flips with the pane; its `aria-label` does not promise the wrong action. |

@@ -1810,7 +1810,7 @@ async function main() {
         const row = rows.find((r) => r.dataset.sessionId === active);
         return rows.length === NB.tabs.getSessionList().length &&
           !!row && row.getAttribute("aria-current") === "true" &&
-          row.querySelector(".session-check").textContent === "\u2713" &&
+          !!row.querySelector('.session-check use[href="#nb-icon-check"]') &&
           document.activeElement === row &&
           document.getElementById("session-switch")
             .getAttribute("aria-expanded") === "true";
@@ -1948,7 +1948,7 @@ async function main() {
           "#session-menu-list .session-item[data-session-id]"));
         const row = rows.find((r) => r.dataset.sessionId === id);
         const checked = rows.filter((r) =>
-          r.querySelector(".session-check").textContent === "\u2713");
+          r.querySelector('.session-check use[href="#nb-icon-check"]'));
         return !!row && row.getAttribute("aria-current") === "true" &&
           checked.length === 1 && checked[0] === row &&
           document.activeElement === row;

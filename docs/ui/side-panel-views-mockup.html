@@ -251,7 +251,7 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
   position: relative;
   z-index: 20;
   flex: 0 0 auto;
-  min-height: var(--control-h-lg);
+  min-height: 34px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -678,28 +678,33 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
 <svg class="icon-sprite" aria-hidden="true" focusable="false" style="position:absolute;width:0;height:0;overflow:hidden">
   <defs>
     <symbol id="nb-icon-folder" viewBox="0 0 16 16">
-      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.3 1.6h5.1A1.5 1.5 0 0 1 14 6.1v5.4A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1l1.6 1.7h4.3A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="#EFA93B"/>
+      <path d="M2 6.4h12v5.1A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="#F7C15C"/>
     </symbol>
     <symbol id="nb-icon-folder-open" viewBox="0 0 16 16">
-      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.6l1.3 1.6h5.1A1.5 1.5 0 0 1 14 6.1V7H2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      <path d="M2.4 7h11.9l-1.4 5.1a1 1 0 0 1-1 .9H3.4a1 1 0 0 1-1-.9z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1l1.6 1.7h3.9a1.2 1.2 0 0 1 1.16.86l.6 2.1H2z" fill="#EFA93B"/>
+      <path d="M2.4 8.2h11.5a.9.9 0 0 1 .87 1.16l-.9 3.1A1.5 1.5 0 0 1 12.1 13H3.9a1.5 1.5 0 0 1-1.44-1.13l-.9-3.1A.9.9 0 0 1 2.4 8.2z" fill="#F7C15C"/>
     </symbol>
     <symbol id="nb-icon-file" viewBox="0 0 16 16">
-      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      <path d="M9 2.5v3h3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M4 1.8h4.7L13 6.1V14a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V2.6A.8.8 0 0 1 4 1.8z" fill="#DCE6FF" stroke="#6C9CFF" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M8.7 1.8 13 6.1H9.5A.8.8 0 0 1 8.7 5.3z" fill="#6C9CFF"/>
+      <path d="M5.6 8.4h4.8M5.6 10.6h4.8" stroke="#6C9CFF" stroke-width="1" stroke-linecap="round"/>
     </symbol>
     <symbol id="nb-icon-readme" viewBox="0 0 16 16">
-      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".14" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      <path d="M6 8h4M6 10.5h4M6 5.5h1.5" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-    </symbol>
-    <symbol id="nb-icon-license" viewBox="0 0 16 16">
-      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      <circle cx="7" cy="9" r="1.7" fill="none" stroke="currentColor" stroke-width="1.2"/>
-      <path d="M7 10.7v2" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <path d="M2.4 3.1c1.7-.5 3.6-.3 5.1.7v9c-1.5-1-3.4-1.2-5.1-.7a.7.7 0 0 1-1-.64V3.74a.7.7 0 0 1 .52-.64z" fill="#4C8DF6"/>
+      <path d="M13.6 3.1c-1.7-.5-3.6-.3-5.1.7v9c1.5-1 3.4-1.2 5.1-.7a.7.7 0 0 0 1-.64V3.74a.7.7 0 0 0-.52-.64z" fill="#7FA8F5"/>
     </symbol>
     <symbol id="nb-icon-claude" viewBox="0 0 16 16">
-      <path d="M4 2.5h5l3 3v8H4z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
-      <path d="M8 6.4v3.2M6.4 8h3.2M6.9 6.9l2.2 2.2M9.1 6.9 6.9 9.1" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/>
+      <rect x="3" y="4.5" width="10" height="8" rx="2" fill="#9A7BFF"/>
+      <circle cx="6.2" cy="8.5" r="1.1" fill="#fff"/>
+      <circle cx="9.8" cy="8.5" r="1.1" fill="#fff"/>
+      <path d="M8 2.2v2.3M6 13v1.3M10 13v1.3" stroke="#9A7BFF" stroke-width="1.2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-license" viewBox="0 0 16 16">
+      <path d="M8 2.4v10.4M5 12.8h6M3.4 4.6h9.2" stroke="#D9A441" stroke-width="1.3" stroke-linecap="round"/>
+      <path d="M3.4 4.6v1.6M12.6 4.6v1.6" stroke="#D9A441" stroke-width="1.1"/>
+      <path d="M2.2 6.2Q3.4 8.6 4.6 6.2Z" fill="#F5C15C"/>
+      <path d="M11.4 6.2Q12.6 8.6 13.8 6.2Z" fill="#F5C15C"/>
     </symbol>
     <symbol id="nb-icon-pin" viewBox="0 0 16 16">
       <path d="M6 2.5h4l-.6 3.2 2.1 2v1H4.5v-1l2.1-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>

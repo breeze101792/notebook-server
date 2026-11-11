@@ -20,7 +20,7 @@
 
   const viewEl = document.getElementById("bookmarks-view");
   const explorerEl = document.getElementById("explorer-bookmarks");
-  const STAR_ON = "★";
+  const STAR_ON = "nb-icon-star";
   // Bookmarks: an ordered list of file paths. The source of truth on disk
   // is config.json; this list is the in-memory view. Insertion order:
   // toggle() appends; reordering is via drag.
@@ -69,7 +69,7 @@
     addBtn.id = "bookmarks-add";
     addBtn.title = "Bookmark the active file";
     addBtn.setAttribute("aria-label", "Bookmark the active file");
-    addBtn.textContent = STAR_ON;
+    addBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' + STAR_ON + '"/></svg>';
     addBtn.hidden = true;
     addBtn.addEventListener("click", () => {
       if (activeFile && !bookmarks.includes(activeFile)) toggle(activeFile);
@@ -179,7 +179,7 @@
     // the file name aligns across the two lists.
     const pin = document.createElement("span");
     pin.className = "bookmark-pin";
-    pin.textContent = STAR_ON;
+    pin.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' + STAR_ON + '"/></svg>';
     const name = document.createElement("span");
     name.className = "bookmark-name";
     // Show just the base name; the full path is recoverable from data-path.

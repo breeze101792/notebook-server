@@ -51,7 +51,7 @@ One pattern, one node per view (shell-frame §4.2). This document adds the per-v
 - Title element becomes `<h2 class="panel-title">` inside each view's existing header node
   (shell-frame §4.2, AC11). Each view converts its own title in its own pass; the node and its
   selector stay put, so the browser test at `test_core_ui_browser.js:1763` keeps resolving.
-- The header is 36 px, `padding: 0 var(--space-3)`, actions `sm` (24 × 24), gap `--space-hair`;
+- The header is 34 px, `padding: 0 var(--space-3)`, actions `sm` (24 × 24), gap `--space-hair`;
   shell-frame §4.2 owns those numbers.
 - Explorer already has two actions before the collapse control, the maximum shell-frame §4.2
   allows (`templates/index.html:229-233`).
@@ -164,7 +164,7 @@ Focus entry:
 
 ```
 #sidebar[data-view="explorer"]                     .side-panel-view
-├── .panel-header                       36 px
+├── .panel-header                       34 px
 │   ├── .panel-title            "Files"
 │   └── .panel-header-actions
 │       ├── #explorer-top-toggle   24
@@ -1068,7 +1068,7 @@ No framework, no build step, no new dependency.
 
 | # | Criterion | File | Observable |
 |---|---|---|---|
-| **AC1** | Every header owned by this document is 36 px, with a title, optional count, at most two actions and the collapse control last | `templates/index.html`, `bookmarks.js`, `sidebar.js`, `activity.js` | The Explorer, Pinned, Bookmarks and Recent headers measure 36 px; Explorer has exactly two actions before collapse; Pinned and Bookmarks carry a numeral count |
+| **AC1** | Every header owned by this document is 34 px, with a title, optional count, at most two actions and the collapse control last | `templates/index.html`, `bookmarks.js`, `sidebar.js`, `activity.js` | The Explorer, Pinned, Bookmarks and Recent headers measure 34 px; Explorer has exactly two actions before collapse; Pinned and Bookmarks carry a numeral count |
 | **AC2** | The tree keeps its shipped geometry; list rows are 30 px | `style.css` | `#file-tree .tree-row` measures ≈22 with `3px 6px` padding and its guide strokes meet; `.bookmark-row` and `.recent-row` measure 30 at 240 px |
 | **AC3** | The tree visuals are unchanged; list hover is neutral | `style.css` | In `#file-tree` hover and selection paint `--accent-soft` and the guide is unbroken; hovering a Pinned, Bookmarks or Recent row paints `--surface-raised` |
 | **AC4** | The tree exposes structure and one Tab stop | `sidebar.js` | `#file-tree` is `role="tree"`; exactly one row has `tabindex="0"`; folders carry `aria-expanded`; the active row carries `aria-selected="true"`; `Enter` opens a leaf |

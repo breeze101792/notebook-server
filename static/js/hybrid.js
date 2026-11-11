@@ -43,8 +43,8 @@
   const topbar         = document.getElementById("topbar");
   // Hybrid mode replaces the text labels with icons so the two mode
   // actions read at a glance next to the formatting buttons.
-  const HYBRID_SAVE_ICON = "💾";
-  const HYBRID_EXIT_ICON = "✕";
+  const HYBRID_SAVE_ICON = "nb-icon-save";
+  const HYBRID_EXIT_ICON = "nb-icon-close";
   // The emoji picker panel, owned by editbar.js; hybrid only listens for
   // the click that chooses an emoji (that panel lives outside the editable
   // region, so the insertion is done here, not by editbar.js).
@@ -6978,7 +6978,8 @@
       closeEditBtn.hidden = false;
       // The phone has no keyboard shortcut and icons alone are ambiguous;
       // spell the exit out. Desktop keeps the compact ✕.
-      closeEditBtn.textContent = isPhoneMode() ? "Done" : HYBRID_EXIT_ICON;
+      if (isPhoneMode()) closeEditBtn.textContent = "Done";
+      else closeEditBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' + HYBRID_EXIT_ICON + '"/></svg>';
       closeEditBtn.title = "Exit WYSIWYG mode";
       closeEditBtn.setAttribute("aria-label", "Exit WYSIWYG mode");
     }
@@ -6987,7 +6988,7 @@
       // the way. The phone toolbar has room and no keyboard shortcut, so
       // the explicit Save stays visible next to Done.
       saveBtn.hidden = !isPhoneMode();
-      saveBtn.textContent = HYBRID_SAVE_ICON;
+      saveBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' + HYBRID_SAVE_ICON + '"/></svg>';
       saveBtn.title = "Save current file";
       saveBtn.setAttribute("aria-label", "Save current file");
     }

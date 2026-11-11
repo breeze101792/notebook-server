@@ -230,7 +230,7 @@
       warn = document.createElement("span");
       warn.className = "workspace-warn";
       warn.setAttribute("aria-hidden", "true");
-      warn.textContent = "⚠";
+      warn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-warning"/></svg>';
       const caret = switchBtn.querySelector(".workspace-caret");
       switchBtn.insertBefore(warn, caret || null);
     } else if (!missing && warn) {
@@ -290,7 +290,7 @@
 
     if (ws.id === activeId) {
       row.setAttribute("aria-current", "page");
-      check.textContent = "✓";
+      check.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-check"/></svg>';
     }
 
     if (ws.available === false) {
@@ -309,7 +309,7 @@
       const warn = document.createElement("span");
       warn.className = "ws-item-warn";
       warn.setAttribute("aria-hidden", "true");
-      warn.textContent = "⚠";
+      warn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-warning"/></svg>';
 
       row.appendChild(check);
       row.appendChild(body);
@@ -834,7 +834,7 @@
     const check = document.createElement("span");
     check.className = "ws-row-check";
     check.setAttribute("aria-hidden", "true");
-    check.textContent = active ? "✓" : "";
+    check.innerHTML = active ? '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-check"/></svg>' : "";
 
     const text = document.createElement("span");
     text.className = "ws-row-text";

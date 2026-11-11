@@ -454,7 +454,7 @@ body.topbar-hidden { --topbar-h: 0px; }
   border-radius: 1px;
   background: var(--accent);
 }
-.activity-icon { pointer-events: none; }
+.activity-icon { pointer-events: none; width: var(--icon-lg); height: var(--icon-lg); display: block; }
 
 /* A flex spacer pushes the bottom-pinned actions (settings) to the
  * bottom of the bar, away from the view icons at the top. */
@@ -515,8 +515,9 @@ body.topbar-hidden { --topbar-h: 0px; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: var(--space-2);
+  min-height: calc(34px * var(--font-scale));
+  padding: 0 var(--space-3);
   flex: 0 0 auto;
   font-size: .79rem;
   text-transform: uppercase;
@@ -527,7 +528,17 @@ body.topbar-hidden { --topbar-h: 0px; }
   background: var(--bg-panel);
   z-index: 20;               /* above the resize handle so header buttons win */
 }
-.panel-title { overflow: hidden; text-overflow: ellipsis; }
+.panel-title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: var(--fw-regular) var(--text-xs)/var(--lh-tight) var(--font-ui);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
 /* Group a header's right-side icon buttons so they sit together at the
  * end of the space-between header (Explorer's ↻ + ‹; AI's Clear + ‹). */
 .panel-header-actions {
@@ -1828,12 +1839,12 @@ body[data-theme="light"] #settings-overlay {
   .settings-modal-width-options, .settings-modal-height-options,
   .wallpaper-options, .wallpaper-scroll-options,
   .wallpaper-color-options, .wallpaper-intensity-options) label {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 4px 11px;
-  border: 1px solid var(--border); border-radius: var(--stg-radius-pill);
-  background: var(--bg-elev); color: var(--fg-muted); font-size: .86rem;
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: var(--stroke-1) solid var(--border-strong); border-radius: var(--radius-pill);
+  background: var(--surface-raised); color: var(--text-muted); font-size: var(--text-ui);
   cursor: pointer;
-  transition: background .12s ease, border-color .12s ease, color .12s ease;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
 #settings-overlay :is(.theme-options, .font-size-options,
   .settings-modal-width-options, .settings-modal-height-options,
@@ -1857,7 +1868,7 @@ body[data-theme="light"] #settings-overlay {
   .settings-modal-width-options, .settings-modal-height-options,
   .wallpaper-options, .wallpaper-scroll-options,
   .wallpaper-color-options, .wallpaper-intensity-options) label:has(input:focus-visible) {
-  outline: var(--stg-focus-ring); outline-offset: 1px;
+  outline: var(--focus-ring); outline-offset: var(--focus-offset);
 }
 #settings-overlay :is(.theme-options, .font-size-options,
   .settings-modal-width-options, .settings-modal-height-options,
@@ -4065,8 +4076,8 @@ body > #nb-menu .submenu.open {
 .recent-row.selected { color: var(--accent); }
 .recent-name { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
 .recent-dir {
-  font-size: .78rem;
-  color: var(--fg-muted);
+  font-size: var(--text-sm);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 0 auto;
@@ -4455,8 +4466,8 @@ body > #nb-menu .submenu.open {
   gap: var(--search-space-3);
   min-height: 26px;
   padding: var(--search-space-1) var(--search-pad-x) var(--search-space-2);
-  color: var(--fg-muted);
-  font-size: .78rem;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 .search-panel-summary-text {
   flex: 1 1 auto;
@@ -5244,7 +5255,7 @@ body > #nb-menu .submenu.open {
   background: var(--bg-panel);
   min-width: 0;
 }
-#ai-view .panel-header { padding-right: 10px; }
+#ai-view .panel-header { padding-right: var(--space-3); }
 /* Group the header's right-side actions (Clear + collapse) so they sit
  * together instead of being spread apart by the header's space-between. */
 #ai-view .panel-header-actions {
@@ -8210,7 +8221,7 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: .84rem;
+  font-size: var(--text-ui);
   font-weight: 600;
   line-height: 1.2;
   color: var(--fg);
@@ -8483,7 +8494,7 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
  * 140 px floor: the panel width is --side-panel-width, which no viewport
  * media query can see (D20). */
 .side-panel-view[data-view="sessions"] { container-type: inline-size; }
-.side-panel-view[data-view="sessions"] > .panel-header { padding: 7px 10px; }
+.side-panel-view[data-view="sessions"] > .panel-header { padding: 0 var(--space-3); }
 
 /* Title + total. The total is a chip, not a notification badge: it
  * counts rows, it does not ask for attention (D16). */
@@ -8585,8 +8596,8 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   border-radius: 6px;
   color: var(--fg);
   font: inherit;
-  font-size: .9rem;
-  line-height: 1.35;
+  font-size: var(--text-body);
+  line-height: var(--lh-snug);
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -9129,3 +9140,30 @@ details.ai-tool-trace .ai-tool-out { display: block; margin-top: 4px; }
   font-size: var(--text-body);
   line-height: var(--lh-normal);
 }
+
+/* Topbar: phone-only actions stay hidden on desktop; chips take the
+ * secondary control face. */
+#topbar #back-btn { display: none; }
+#topbar .mobile-icon { display: none; }
+#topbar .workspace-switch,
+#topbar .session-switch {
+  height: var(--control-h-md);
+  font-size: var(--text-ui);
+  border-color: var(--border-strong);
+}
+.tab-bar .outline-toggle {
+  display: grid;
+  place-items: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+}
+@media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
+  #topbar #back-btn { display: flex; }
+  #topbar .mobile-icon { display: flex; }
+  #topbar .workspace-switch,
+  #topbar .session-switch { height: var(--m-hit); font-size: 16px; }
+}
+
+/* One size rule for sprite callers. */
+.icon { width: var(--icon-md); height: var(--icon-md); display: block; }

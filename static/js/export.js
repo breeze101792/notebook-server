@@ -198,7 +198,7 @@
       const hideLabel = document.createElement("label");
       hideLabel.htmlFor = "export-toc-hide";
       hideLabel.className = "export-toc-hamburger";
-      hideLabel.textContent = "☰";
+      hideLabel.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg>';
       hideLabel.setAttribute("aria-label", "Hide sidebar");
       hideLabel.title = "Hide sidebar";
       hideWrapper.appendChild(hideInput);
@@ -208,7 +208,7 @@
       showLabel = document.createElement("label");
       showLabel.htmlFor = "export-toc-hide";
       showLabel.className = "export-toc-show";
-      showLabel.textContent = "☰";
+      showLabel.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg>';
       showLabel.setAttribute("aria-label", "Show sidebar");
       showLabel.title = "Show sidebar";
 

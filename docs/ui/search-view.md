@@ -38,7 +38,7 @@ occurrences, unless the user chooses **All matches**.
 
 ```
 ┌ #search-view  240 ───────────────────────────────┐
-│ .panel-header            36   SEARCH          ‹  │  fixed
+│ .panel-header            34   SEARCH          ‹  │  fixed
 ├──────────────────────────────────────────────────┤
 │ .search-panel-controls                           │
 │   [ Search notebooks…                    × ]     │  36
@@ -68,10 +68,10 @@ The view is a flex column (`static/css/style.css:296-303`). The header, controls
 summary, and note are `flex: 0 0 auto`; the list is `flex: 1 1 auto; min-height: 0;
 overflow: auto` (`style.css:4273-4279`). Nothing else scrolls.
 
-The header is the frame's header pattern: 36 px on desktop, a collapse control at the
+The header is the frame's header pattern: 34 px on desktop, a collapse control at the
 trailing edge (`activity.js:447-455`; `shell-frame.md` §4.2). The shared `.panel-header`
 still ships at its padding-derived height today (`style.css:329-343`); the height budget
-below uses the frame's 36 px target. On the phone the same node is 52 px and the control
+below uses the frame's 34 px target. On the phone the same node is 52 px and the control
 becomes `×` (`activity.js:278-286`; `style.css:7252-7264`).
 
 ### 1.2 At the 140 px floor
@@ -168,7 +168,7 @@ Approximate, at `--font-scale: 1`, with Advanced collapsed:
 
 | Zone | 240 px | Phone | Notes |
 |---|---|---|---|
-| Header | 36 | 52 | frame-owned |
+| Header | 34 | 52 | frame-owned |
 | Controls | 88 | 124 | 12 top + field + 8/12 gap + Advanced row + 8/12 bottom |
 | Results summary | 27 | 30 | one line; wraps only for an error or a timeout |
 | Note | 22 | 22 | unique-mode hint or the zero state |
@@ -1565,7 +1565,7 @@ phone query at 860 / coarse 1023 (`foundations.md` §8.2).
 | Part | Desktop | Phone |
 |---|---|---|
 | Drawer | 240 column | `min(86vw, 340px)`; **Search is 100 %** (`style.css:7232`) |
-| Header | 36, `‹` | 52, `×` (`activity.js:282-285`) |
+| Header | 34, `‹` | 52, `×` (`activity.js:282-285`) |
 | Field | 36, `--text-ui` | 44, 16 px fixed |
 | Clear | 24 | 44; slot 48 |
 | Advanced row | 24 | 44 |

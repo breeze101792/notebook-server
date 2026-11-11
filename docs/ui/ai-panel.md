@@ -33,7 +33,7 @@ never scrolls (`style.css:296-300`); the view's own log is the scroller.
 
 ```
 #ai-view  flex column, --surface-panel, overflow hidden
-├─ .panel-header          36   "AI Assistant" · Clear · collapse
+├─ .panel-header          34   "AI Assistant" · Clear · collapse
 ├─ .ai-model-bar          48   provider <select>  (+ .ai-acp-note 24 when ACP)
 ├─ .ai-config-hint        —    only a config failure or the viewer gate
 ├─ .ai-chat-log           flex  THE ZONE THAT SCROLLS
@@ -52,7 +52,7 @@ never scrolls (`style.css:296-300`); the view's own log is the scroller.
 |---|---|---|
 | Panel width | 240 default, 140 floor, 480 cap | `--side-panel-width`, `--shell-pane-min`, `--side-panel-max` (`foundations.md:504`, `:979-981`) |
 | Content box | 216 | panel width − `2 × --space-3` |
-| Header | 36 | frame pattern, `docs/ui/shell-frame.md:418-427` |
+| Header | 34 | frame pattern, `docs/ui/shell-frame.md:418-427` |
 | Provider row | 48 | 8 + 36 select + 4 |
 | ACP note | 24 | only when the selected provider is ACP |
 | Attach bar | 0 when empty; 26 per image row, 24 per text row, `--space-1` gap | Hidden when empty (`ai.js:2316-2319`); two chips wrap at 240 |

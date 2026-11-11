@@ -1397,7 +1397,7 @@
     tag.title = "Configured by editing config/acp.json on the server";
     const lock = document.createElement("span");
     lock.setAttribute("aria-hidden", "true");
-    lock.textContent = "🔒";
+    lock.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-lock"/></svg>';
     tag.append(lock, document.createTextNode(" Read-only"));
 
     head.append(title, tag);

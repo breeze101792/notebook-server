@@ -169,7 +169,7 @@
     if (NB.tabs && NB.tabs.registerSpecial) {
       NB.tabs.registerSpecial({
         id: TAB_ID,
-        icon: "🕸",
+        icon: "nb-icon-graph",
         label: "Graph",
         onActivate: onTabActivate,
         onClose: onTabClose,

@@ -22,14 +22,14 @@
   const DIR_ICON_OPEN = "folder-open";
   const FILE_ICON = "file";
   const PIN_ICON = "pin";
-  const STAR_ON = "★";
-  const STAR_OFF = "☆";
+  const STAR_ON = "nb-icon-star";
+  const STAR_OFF = "nb-icon-star-outline";
   // Tri-state top section in the Explorer view: Pinned folders, inline
   // Bookmarks, or nothing. Persisted as cfg.explorerTop.
   const EXPLORER_TOP_LABELS = {
-    pinned: { icon: "📌", current: "Pinned folders", next: "Bookmarks" },
-    bookmarks: { icon: "🔖", current: "Bookmarks", next: "None" },
-    none: { icon: "▭", current: "None", next: "Pinned folders" },
+    pinned: { icon: "nb-icon-pin", current: "Pinned folders", next: "Bookmarks" },
+    bookmarks: { icon: "nb-icon-bookmark", current: "Bookmarks", next: "None" },
+    none: { icon: "nb-icon-section-none", current: "None", next: "Pinned folders" },
   };
   const EXPLORER_TOP_MODES = Object.keys(EXPLORER_TOP_LABELS);
   const EXPLORER_TOP_DEFAULT = "pinned";
@@ -231,7 +231,7 @@
       const pinned = NB.bookmarks && NB.bookmarks.has(node.path);
       const star = document.createElement("span");
       star.className = "tree-star" + (pinned ? " is-bookmarked" : "");
-      star.textContent = pinned ? STAR_ON : STAR_OFF;
+      star.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' + (pinned ? STAR_ON : STAR_OFF) + '"/></svg>';
       star.title = pinned ? "Remove bookmark" : "Add bookmark";
       star.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -318,7 +318,7 @@
     const star = row.querySelector(".tree-star");
     if (!star) return;
     const isOn = NB.bookmarks && NB.bookmarks.has(path);
-    star.textContent = isOn ? STAR_ON : STAR_OFF;
+    star.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' + (isOn ? STAR_ON : STAR_OFF) + '"/></svg>';
     star.title = isOn ? "Remove bookmark" : "Add bookmark";
     star.classList.toggle("is-bookmarked", isOn);
   }
@@ -550,7 +550,8 @@
     if (!explorerTopBtn) return;
     const info = EXPLORER_TOP_LABELS[explorerTop];
     explorerTopBtn.dataset.mode = explorerTop;
-    explorerTopBtn.textContent = info.icon;
+    explorerTopBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' +
+      info.icon + '"/></svg>';
     explorerTopBtn.title =
       "Top section: " + info.current + ". Click to show " + info.next + ".";
     explorerTopBtn.setAttribute("aria-label", explorerTopBtn.title);

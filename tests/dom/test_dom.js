@@ -7087,7 +7087,7 @@ function check(label, cond, extra) {
     await tick(10);
   }
   check("baseline: active file is clean", !window.NB.viewer.isDirty(activeTabPath()));
-  check("Edit button shows the memo glyph in view mode", $("edit-toggle").textContent === "📝",
+  check("Edit button shows the code glyph in view mode", !!$("edit-toggle").querySelector('use[href="#nb-icon-code"]'),
     "got: " + JSON.stringify($("edit-toggle").textContent));
 
   click("edit-toggle");
@@ -7102,7 +7102,7 @@ function check(label, cond, extra) {
   // [Close] group in the edit bar takes over the affordance. Save starts
   // hidden because the file is clean.
   check("edit button gets .editing class while editing", $("edit-toggle").classList.contains("editing"));
-  check("Edit button keeps the memo glyph in edit mode", $("edit-toggle").textContent === "📝",
+  check("Edit button keeps the code glyph in edit mode", !!$("edit-toggle").querySelector('use[href="#nb-icon-code"]'),
     "got: " + JSON.stringify($("edit-toggle").textContent));
   check("edit bar shown while editing", !$("edit-bar").hidden);
   check("Preview button visible in edit mode", !$("preview-btn").hidden);
@@ -7165,7 +7165,7 @@ function check(label, cond, extra) {
   check("Close on clean file: topbar editing class removed",
     !$("topbar").classList.contains("editing"));
   check("Edit button keeps the memo glyph after exiting edit mode",
-    $("edit-toggle").textContent === "📝",
+    !!$("edit-toggle").querySelector('use[href="#nb-icon-code"]'),
     "got: " + JSON.stringify($("edit-toggle").textContent));
   check("re-rendered new heading id", !!$("new-heading"));
   // Close on a dirty file should prompt; Cancel keeps the user in edit.
@@ -10024,10 +10024,10 @@ function check(label, cond, extra) {
     check("hybrid: no combined Save & Exit button",
       !$("save-exit-btn"), "save-exit-btn present");
     check("hybrid: Save and exit use icons",
-      $("save-btn").textContent === "💾" &&
-      $("close-edit-btn").textContent === "✕",
-      "save=" + JSON.stringify($("save-btn").textContent) +
-      " exit=" + JSON.stringify($("close-edit-btn").textContent));
+      !!$("save-btn").querySelector('use[href="#nb-icon-save"]') &&
+      !!$("close-edit-btn").querySelector('use[href="#nb-icon-close"]'),
+      "save=" + $("save-btn").innerHTML.length +
+      " exit=" + $("close-edit-btn").innerHTML.length);
     // Edit then Save, then exit.
     vc.innerHTML += "<p>save-exit test</p>";
     vc.dispatchEvent(new window.Event("input", { bubbles: true }));
@@ -20600,7 +20600,7 @@ function check(label, cond, extra) {
       // resize; the tri-state toggle must keep its own glyph and label.
       window.NB.mobile.refreshMode();
       check("explorer top: chrome sync leaves the toggle label alone",
-        topToggle.textContent === "🔖" && topToggle.title.indexOf("Bookmarks") !== -1,
+        !!topToggle.querySelector('use[href="#nb-icon-bookmark"]') && topToggle.title.indexOf("Bookmarks") !== -1,
         topToggle.textContent + " | " + topToggle.title);
       await tick(350);
       const topCfg1 = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
@@ -22665,8 +22665,9 @@ function check(label, cond, extra) {
   const aStar = () => aRow() && aRow().querySelector(".tree-star");
   check("bookmarks: file row has a star",
     !!aStar(), "no .tree-star on notes/a.md");
-  check("bookmarks: star starts as ☆ (off)",
-    aStar() && aStar().textContent === "☆", aStar() && aStar().textContent);
+  check("bookmarks: star starts as the outline sprite",
+    aStar() && !!aStar().querySelector('use[href="#nb-icon-star-outline"]'),
+    aStar() && aStar().innerHTML);
   check("bookmarks: star has no is-bookmarked class initially",
     aStar() && !aStar().classList.contains("is-bookmarked"));
   aStar().dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -22675,14 +22676,14 @@ function check(label, cond, extra) {
     bookmarkRows().length === 1 &&
     bookmarkRows()[0].dataset.path === "notes/a.md",
     "rows=" + bookmarkRows().length);
-  check("bookmarks: star now shows ★ and is-bookmarked class",
-    aStar() && aStar().textContent === "★" &&
+  check("bookmarks: star now shows the filled sprite and is-bookmarked class",
+    aStar() && !!aStar().querySelector('use[href="#nb-icon-star"]') &&
     aStar().classList.contains("is-bookmarked"),
-    aStar() && aStar().textContent + " " + aStar().className);
+    aStar() && aStar().innerHTML + " " + aStar().className);
   // The list row shows the base name + has a .bookmark-pin star span.
   const listPin = bookmarkRows()[0].querySelector(".bookmark-pin");
-  check("bookmarks: list row has a .bookmark-pin (★)",
-    listPin && listPin.textContent === "★", listPin && listPin.textContent);
+  check("bookmarks: list row has a .bookmark-pin sprite",
+    listPin && !!listPin.querySelector('use[href="#nb-icon-star"]'), listPin && listPin.innerHTML);
   check("bookmarks: list row name is the base name",
     bookmarkRows()[0].querySelector(".bookmark-name").textContent === "a.md",
     bookmarkRows()[0].querySelector(".bookmark-name").textContent);
@@ -42523,7 +42524,7 @@ function check(label, cond, extra) {
       tbRowIds().join(","));
     check("topbar picker: the active row is marked and checked",
       tbRow("s1").getAttribute("aria-current") === "true" &&
-      tbRow("s1").querySelector(".session-check").textContent === "\u2713" &&
+      !!tbRow("s1").querySelector('.session-check use[href="#nb-icon-check"]') &&
       tbRow("s1").querySelector(".session-check")
         .getAttribute("aria-hidden") === "true" &&
       !tbRow("s2").hasAttribute("aria-current") &&
@@ -42605,8 +42606,8 @@ function check(label, cond, extra) {
     await tbOpen();
     check("topbar picker: the check moves to the picked row",
       tbRow("s2").getAttribute("aria-current") === "true" &&
-      tbRow("s2").querySelector(".session-check").textContent === "\u2713" &&
-      tbRow("s1").querySelector(".session-check").textContent === "" &&
+      !!tbRow("s2").querySelector('.session-check use[href="#nb-icon-check"]') &&
+      tbRow("s1").querySelector(".session-check").innerHTML === "" &&
       tbFocus() === tbRow("s2"));
     await tbShut();
 

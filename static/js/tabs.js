@@ -671,10 +671,13 @@
       tab.setAttribute("aria-label", tabName);
 
       if (pinned.has(path)) {
-        const pin = document.createElement("span");
-        pin.className = "tab-pin";
-        pin.textContent = "📌";
-        pin.title = "Pinned";
+        const pin = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        pin.setAttribute("class", "tab-pin icon");
+        pin.setAttribute("aria-hidden", "true");
+        pin.setAttribute("focusable", "false");
+        const pinUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        pinUse.setAttribute("href", "#nb-icon-pin");
+        pin.appendChild(pinUse);
         tab.appendChild(pin);
       }
 
@@ -683,10 +686,21 @@
       if (isSpecial(path)) {
         const spec = specialTabs.get(path) || {};
         if (spec.icon) {
-          const icon = document.createElement("span");
-          icon.className = "tab-special-icon";
-          icon.textContent = spec.icon;
-          label.appendChild(icon);
+          if (spec.icon.indexOf("nb-icon-") === 0) {
+            const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            icon.setAttribute("class", "tab-special-icon icon");
+            icon.setAttribute("aria-hidden", "true");
+            icon.setAttribute("focusable", "false");
+            const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+            use.setAttribute("href", "#" + spec.icon);
+            icon.appendChild(use);
+            label.appendChild(icon);
+          } else {
+            const icon = document.createElement("span");
+            icon.className = "tab-special-icon";
+            icon.textContent = spec.icon;
+            label.appendChild(icon);
+          }
         }
         const text = document.createElement("span");
         text.textContent = spec.label || path;
@@ -695,10 +709,14 @@
         label.textContent = baseName(path);
       }
       if (!isSpecial(path) && conflictSet.has(path)) {
-        const badge = document.createElement("span");
-        badge.className = "tab-conflict";
-        badge.textContent = "↻";
-        badge.title = "Disk has a newer version of this file (your edits are kept locally).";
+        const badge = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        badge.setAttribute("class", "tab-conflict icon");
+        badge.setAttribute("aria-hidden", "true");
+        badge.setAttribute("focusable", "false");
+        const badgeUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        badgeUse.setAttribute("href", "#nb-icon-conflict");
+        badge.appendChild(badgeUse);
+        badge.setAttribute("title", "Disk has a newer version of this file (your edits are kept locally).");
         label.appendChild(badge);
       }
       tab.appendChild(label);
@@ -708,7 +726,14 @@
       if (!pinned.has(path)) {
         const closeBtn = document.createElement("button");
         closeBtn.className = "tab-close";
-        closeBtn.textContent = "×";
+        const closeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        closeIcon.setAttribute("class", "icon");
+        closeIcon.setAttribute("aria-hidden", "true");
+        closeIcon.setAttribute("focusable", "false");
+        const closeUse = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        closeUse.setAttribute("href", "#nb-icon-close");
+        closeIcon.appendChild(closeUse);
+        closeBtn.appendChild(closeIcon);
         closeBtn.title = "Close (middle-click also closes)";
         closeBtn.tabIndex = -1;
         closeBtn.setAttribute("aria-hidden", "true");

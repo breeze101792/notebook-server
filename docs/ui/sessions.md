@@ -36,8 +36,8 @@ in the tab bar; pinned tabs are shared by every session and are not counted here
 
 | Part | Value | Source |
 |---|---|---|
-| Header | `.panel-header`, 36 px, padding `7px 10px`, gap 4 | `sessions.js:130-140`; `style.css:8247-8253` |
-| Title | `Sessions`, `.72rem`, 600, tracking `.08em`, uppercase, `--text-muted` | `sessions.js:134-136` |
+| Header | `.panel-header`, 34 px, padding `0 12px`, gap 8 | `sessions.js:130-140`; `style.css:8247-8253` |
+| Title | `Sessions`, `.72rem`, 400, line-height 1.2, tracking `.08em`, uppercase, `--text-muted` | `sessions.js:134-136` |
 | Total | `.panel-heading` with a count chip: 20 × 18, radius 5, 1 px `--border`, `.72rem` 600, tabular | `:137-146`; `style.css:8254-8269` |
 | Add | `+`, 24 × 24, radius 5, `--text-muted`; hover wash + `--text-primary`; focus ring | `:155-160`; `style.css:8271-8292` |
 | Collapse | 24 × 24, the frame's `makeCollapseBtn()` | `sessions.js:161-164` |
