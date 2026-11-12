@@ -25,6 +25,7 @@ const SUITES = [
   { name: "mobile", file: "test_mobile_browser.js", port: 5095 },
   { name: "mermaid designer", file: "test_designer_browser.js", port: 5098 },
   { name: "dot/wavedrom designer", file: "test_dw_designer_browser.js", port: 5096 },
+  { name: "typography", file: "test_typography_browser.js", port: 5097 },
 ];
 
 const onlyArg = process.argv.find((a) => a.startsWith("--only="));

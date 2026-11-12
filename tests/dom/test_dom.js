@@ -511,12 +511,12 @@ const html = `<!DOCTYPE html><html><head>
               </div>
             </div>
             <div class="settings-row">
-              <span class="settings-label">Font size</span>
+              <span class="settings-label">Font size · <span id="settings-font-size-current">14 px</span></span>
               <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
-                <label><input type="radio" name="fontSize" value="small"> S</label>
-                <label><input type="radio" name="fontSize" value="medium"> M</label>
-                <label><input type="radio" name="fontSize" value="large"> L</label>
-                <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+                <label class="fs-tile fs-s"><input type="radio" name="fontSize" value="small" aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span class="fs-tile-px">12.6 px</span></span></label>
+                <label class="fs-tile fs-m"><input type="radio" name="fontSize" value="medium" aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span class="fs-tile-px">14 px</span></span></label>
+                <label class="fs-tile fs-l"><input type="radio" name="fontSize" value="large" aria-label="Large — 16.1 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span class="fs-tile-px">16.1 px</span></span></label>
+                <label class="fs-tile fs-xl"><input type="radio" name="fontSize" value="xlarge" aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span class="fs-tile-px">18.2 px</span></span></label>
               </div>
             </div>
             <div class="settings-row">
@@ -26988,6 +26988,10 @@ function check(label, cond, extra) {
   // Each set is wrapped in `before`/`after` to confirm the value is the
   // picked one, not the previous one.
   const expectScale = { small: "0.9", medium: "1", large: "1.15", xlarge: "1.3" };
+  const expectPx = { small: "12.6 px", medium: "14 px", large: "16.1 px", xlarge: "18.2 px" };
+  const fsCurrent = () => (window.document.getElementById("settings-font-size-current") || {}).textContent;
+  check("font size: the row label carries the current value (14 px)",
+    fsCurrent() === "14 px", "label=" + fsCurrent());
   for (const name of ["small", "large", "xlarge", "medium"]) {
     fsRadio(name).checked = true;
     fsRadio(name).dispatchEvent(new window.Event("change", { bubbles: true }));
@@ -26997,6 +27001,8 @@ function check(label, cond, extra) {
       + " immediately",
       cssVar("--font-scale") === expectScale[name],
       "scale=" + cssVar("--font-scale"));
+    check("font size: " + name + " -> label reads " + expectPx[name],
+      fsCurrent() === expectPx[name], "label=" + fsCurrent());
   }
   // Persistence: the live change should have POSTed to /api/config with
   // the latest picked value (medium, the last in the loop).
@@ -41811,7 +41817,7 @@ function check(label, cond, extra) {
       !ssRowBtn("s3").hasAttribute("aria-current"));
     const ssFoot = ssView().querySelector(".sessions-foot");
     check("sessions view: the + and the shared-pin footnote exist",
-      !!ssAdd() && ssAdd().textContent === "+" && !!ssFoot &&
+      !!ssAdd() && !!ssAdd().querySelector('use[href="#nb-icon-plus"]') && !!ssFoot &&
       /Pinned tabs are shared by every session/.test(ssFoot.textContent),
       ssFoot && ssFoot.textContent);
 

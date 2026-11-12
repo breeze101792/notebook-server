@@ -59,13 +59,13 @@ One row is a wrapper plus two sibling buttons; a button cannot contain a button.
 | Part | Value | Source |
 |---|---|---|
 | Wrapper | `.session-row-wrap`, flex, gap 2, `flex: 0 0 auto` | `style.css:8309-8316` |
-| Row button | 30 px min, padding `3px 6px 3px 10px`, radius 6, `.9rem/1.35`, left | `:8317-8338` |
+| Row button | 30 px min, padding `3px 6px 3px 10px`, radius 6, `--text-body`/`--lh-snug`, left | `:8317-8338` |
 | Hover | neutral `--surface-raised` on the row when the wrapper is hovered and the row is not active | `:8341-8344` |
 | Active | `--accent-soft` face, 600, 2 px accent marker 14 px tall at the left edge | `:8345-8355` |
 | Focus | ring at `--focus-offset-inset` (−2) | `:8356` |
 | Name | flexes first, ellipsis, `title` = full name | `:8358-8364` |
 | Dirty dot | 8 px accent dot; `aria-hidden`; the name carries `, unsaved changes` | `:8365-8374`; `sessions.js:452-465` |
-| Unpinned count | `.76rem`, tabular, 2ch min, right; `--text-muted`; on the active row `--text-primary` | `:8375-8382` |
+| Unpinned count | `--text-sm`, tabular, 2ch min, right; `--text-muted`; on the active row `--text-primary` | `:8375-8382` |
 | More | `⋯`, 24 × 24, always visible, radius 5; `aria-haspopup="menu"`, `aria-expanded` | `:8384-8412`; `sessions.js:468-490` |
 
 The count is unpinned tabs only. Pinned tabs are shared, so counting them in every row would

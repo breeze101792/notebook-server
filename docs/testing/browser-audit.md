@@ -203,3 +203,74 @@ node tests/dom/test_dom.js
 Playwright cache, the system paths, and the Nix store. `PORT` selects a
 server port; `run_all.js` assigns one per suite because the old defaults
 collided (hybrid and mobile both used 5099).
+
+## Typography suites (landed with the type contract)
+
+Two suites enforce [`typography.md`](typography.md);
+`npm test` runs the first, `run_all.js` runs the second on port 5097.
+
+| Suite | Scope | Result at landing |
+| --- | --- | --- |
+| `tests/static/test_typography.js` | Source: every `font-size` and the size slot of every `font:` in `style.css` and `vimnav.css`; the `:root` step block; JS element-size writes; `addStyleTag` injections | 10 checks; 247 literal declarations allowlisted, 105 tokenised |
+| `tests/browser/test_typography_browser.js` | Computed type at S/M/L/XL across 22 states (shell, seven panels, seven Settings tabs, three dialogs, AI with a local SSE stub) | 33 checks; 404 text nodes per setting, zero off-scale |
+
+### The allowlist at landing
+
+The allowlist landed at 259 entries, seeded from the inventory of the tree at
+landing, not from §7 of the plan. The follow-up commit retired 12 of them
+(`.settings-help`, `.settings-note`, `.settings-text-input`, `.ai-clear`, the two
+session counts, the welcome title/action/tips, the outline rows and the three
+desktop search aliases), so the count and the table below are the landing
+state:
+
+| Category (`why`) | Entries |
+| --- | --- |
+| token-value literal, tier-1 swap pending (`phase 1`) | 85 |
+| off-scale role literal, role rounding pending (`phase 2.x`) | 94 |
+| phone shell px ladder (`phase 3`) | 49 |
+| graph-view overlay text (`phase 2.6`) | 12 |
+| glyph/icon size, not text | 6 |
+| prose/glyph `em` outside a prose container | 4 |
+| iOS 16 px zoom floor on a phone field (`never`) | 4 |
+| retired local search alias (`phase 2.5`) | 3 |
+| fixed badge numeral (`never`) | 2 |
+
+The ratchet baseline is `tests/static/typography-baseline.json`, now
+`"literals": 247` (259 at landing). The count must match exactly: a rise fails
+as a new literal, a fall fails until the baseline is lowered in the same commit.
+
+**Deviation from the plan, recorded deliberately.** §7 of the plan says only
+ten literals remain. They do not: the partial sweep left 259 declarations
+(85 at landing; 73 now, token-value spellings such as `.93rem` and `1rem`). The suites
+enforce the contract against the real tree; the allowlist is the to-do list,
+not a clean bill.
+
+### T1–T3, run by hand
+
+- **T1, injected literal.** Appending `.t1-probe { font-size: .77rem }`:
+  `style.css:9212  .t1-probe  font-size: .77rem  nearest --text-sm (+0.42)`,
+  plus the ratchet failures (`baseline 247, found 248`); exit 1.
+- **T2, stale entry.** Deleting `font-size: 11px` from `.bookmark-pin`:
+  `FAIL the allowlist has no stale entries — style.css  .bookmark-pin
+  font-size: 11px  (no declaration matches)`, plus the baseline falling to
+  258; exit 1.
+- **T3, injected runtime size.** `page.addStyleTag` setting `.tree-name` to
+  `.9rem`: A1 lists each tree row at `12.6 px · nearest --text-ui-lg 13.02
+  (-0.42)`, A2 reports `found 12.6 / 14 px` across the row group, and the
+  static `addStyleTag` guard names the injection at its own line.
+
+All three were reverted; the tree is unchanged.
+
+### Known deviations in the runtime audit
+
+- **Glyph-only elements are skipped.** A text node with no letter and no
+  digit (`×`, `‹`, `⋯`) is decoration, not chrome text; the glyph sizes are
+  pinned statically instead.
+- **The font-size tile is excluded** from A1 and asserted separately at
+  12.6 / 14 / 16.1 / 18.2 px at every setting.
+- **A6 is scoped to text-bearing Settings controls.** Checkboxes and radios
+  paint no text and carry the UA size; `.ws-row-main` has no text of its own
+  (its spans do); the Settings nav tabs are the navigation role and are
+  asserted as `--text-ui-lg`, not `--text-ui`.
+- **`viewer-content`, `.ai-prose-span`, `.sr-only` and SVG text are out of
+  scope**, per the plan §3.2.

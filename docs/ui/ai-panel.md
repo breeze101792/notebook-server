@@ -72,7 +72,7 @@ At the floor (`--shell-pane-min` 140) the content box is 116 px.
 | Header | Title ellipsizes to "AI Assi…"; Clear and the collapse button both stay | 24 padding + 43 + 2 + 24 = 93, leaving 47 for the title; it is the only flexible item |
 | Provider select | 116 wide; the native arrow reserves 24, so the value shows ~4 characters and clips | Full value in `title`; `controls.md` §2.5 keeps the native popup |
 | User bubble | 95 % of 116 ≈ 110 | `max-width: 95%` |
-| Assistant prose | 116 px ≈ 17 characters per line at `--text-ui-lg` | No second layout; the log wraps |
+| Assistant prose | 116 px ≈ 15 characters per line at `--text-body` | No second layout; the log wraps |
 | Edit card | Op and stats on the first row; the path on its own line; at 140 the stats wrap and the actions stack | §4.2 |
 | Diff | Horizontal scroll; the hunk header is sticky | The card is a preview; the server is the authority (`ai-assistant.md:334-339`) |
 | Attach chip | The size clips first; the name then ellipsizes; the `×` stays | §5.4 |
@@ -244,7 +244,7 @@ the speaker is already given by alignment and by the message's accessible name (
 | Radius | `--radius-lg --radius-lg --radius-xs --radius-lg` | 12/12/3/12 |
 | Face | `--accent-soft` | same |
 | Border | none | already flattened |
-| Type | `--text-ui-lg`, `--lh-normal`, `--text-primary` | `.9rem` / 1.5 |
+| Type | `--text-body`, `--lh-normal`, `--text-primary` | `.9rem` / 1.5 |
 | Wrap | `white-space: pre-wrap`, `overflow-wrap: anywhere` | same |
 | Markdown | **never** — the prompt is rendered as text | same (`ai.js:1248-1255`) |
 
@@ -268,10 +268,10 @@ not fork the renderer.
 
 | Element | Value |
 |---|---|
-| Prose span | `--text-ui-lg` (13 px @1.0), `--lh-prose` 1.65, `--text-primary` |
+| Prose span | `--text-body` (14 px @1.0), `--lh-prose` 1.65, `--text-primary` |
 | Span gap | `--space-1` between segments |
 | Paragraph | margin `.45em 0` (prose rhythm, scales with the text) |
-| H1 / H2 / H3–H6 | `--text-lg` / `--text-body` / `--text-ui-lg`; weight `--fw-heading`; line `--lh-tight` |
+| H1 / H2 / H3–H6 | `--text-lg` / `--text-body` / `1em` (inherits the prose base); weight `--fw-heading`; line `--lh-tight`. h2 and below rank by weight and margin, never by a size below body |
 | List | padding-left `1.5em`; item margin `.18em` |
 | Inline code | `--font-mono`, `.82em`, `--surface-well`, 1 px `--border`, `--radius-xs`, padding `0 --space-1` |
 | Code block | `--surface-well`, 1 px `--border`, `--radius-sm`, padding `--space-2 --space-3`, `--text-sm`, `--lh-normal`, wraps (`overflow-wrap: anywhere`) |
@@ -1058,7 +1058,7 @@ last AI rule. No existing rule is reordered, and no token block is moved.
   border-radius: var(--radius-lg) var(--radius-lg) var(--radius-xs) var(--radius-lg);
   background: var(--accent-soft);
   color: var(--text-primary);
-  font-size: var(--text-ui-lg);
+  font-size: var(--text-body);
   line-height: var(--lh-normal);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1066,7 +1066,7 @@ last AI rule. No existing rule is reordered, and no token block is moved.
 
 .ai-msg-assistant > .ai-prose-span {
   color: var(--text-primary);
-  font-size: var(--text-ui-lg);
+  font-size: var(--text-body);
   line-height: var(--lh-prose);
   overflow-wrap: anywhere;
   min-width: 0;
@@ -1084,7 +1084,7 @@ last AI rule. No existing rule is reordered, and no token block is moved.
 .ai-prose-span h1 { font-size: var(--text-lg); }
 .ai-prose-span h2 { font-size: var(--text-body); }
 .ai-prose-span h3, .ai-prose-span h4,
-.ai-prose-span h5, .ai-prose-span h6 { font-size: var(--text-ui-lg); }
+.ai-prose-span h5, .ai-prose-span h6 { font-size: 1em; }
 .ai-prose-span ul, .ai-prose-span ol { margin: .45em 0; padding-left: 1.5em; }
 .ai-prose-span li { margin: .18em 0; }
 .ai-prose-span li > p:first-child { margin-top: 0; }
@@ -1792,8 +1792,8 @@ Two assertions change with this spec, and must be updated in the same commit:
 | Select | 29 high, `--border`, no focus ring | 36, `--border-strong`, ring, disabled while streaming | `style.css:5048-5056`; `controls.md:38` |
 | Log padding | 4/12/12 | 12 all round | `style.css:5062` |
 | Log gap | 12 | `--space-3` (12) | `style.css:5065` |
-| User text | `.9rem` / 1.5 | `--text-ui-lg` / `--lh-normal` | `style.css:5075-5076` |
-| Assistant prose | `.9rem` / 1.5 | `--text-ui-lg` / `--lh-prose` | `style.css:5082-5083` |
+| User text | `.9rem` / 1.5 | `--text-body` / `--lh-normal` | `style.css:5075-5076` |
+| Assistant prose | `.9rem` / 1.5 | `--text-body` / `--lh-prose` | `style.css:5082-5083` |
 | Error text | `--danger` on `--danger-soft` | `--text-primary`, danger chrome | `style.css:5231-5240` |
 | Card radius | 8 | `--radius-md` (8) | `style.css:5250` |
 | Card head | op · path · stats on one row | op + stats, then the path on its own row | `ai.js:536-545` |

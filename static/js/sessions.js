@@ -155,7 +155,7 @@
     addBtn.className = "session-add";
     addBtn.title = LABEL_ADD;
     addBtn.setAttribute("aria-label", LABEL_ADD);
-    addBtn.textContent = "+";
+    addBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-plus"/></svg>';
     addBtn.addEventListener("click", () => openCreate());
     actions.appendChild(addBtn);
     if (NB.activity && NB.activity.makeCollapseBtn) {

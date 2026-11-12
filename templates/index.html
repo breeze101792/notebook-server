@@ -770,7 +770,7 @@
          aria-labelledby="ws-dialog-title" aria-describedby="ws-dialog-help" tabindex="-1">
       <div class="settings-header">
         <h2 id="ws-dialog-title">Add workspace</h2>
-        <button id="ws-dialog-close" class="icon-btn" type="button" title="Close" aria-label="Close">×</button>
+        <button id="ws-dialog-close" class="icon-btn" type="button" title="Close" aria-label="Close"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-close"/></svg></button>
       </div>
       <form class="settings-body auth-form" id="ws-form" novalidate>
         <p class="auth-help" id="ws-dialog-help">Point at a folder of Markdown notes on this machine. Nothing is copied or moved.</p>
@@ -854,7 +854,7 @@
     <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title" tabindex="-1">
       <div class="settings-header">
         <h2 id="settings-title">Settings</h2>
-        <button id="settings-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+        <button id="settings-close" class="icon-btn" title="Close" aria-label="Close"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-close"/></svg></button>
       </div>
       <div class="settings-body">
         <!-- Left sidebar nav. Each entry maps to a .settings-section in
@@ -962,12 +962,12 @@
               </div>
             </div>
             <div class="settings-row">
-              <label class="settings-label">Font size</label>
+              <span class="settings-label">Font size · <span id="settings-font-size-current">14 px</span></span>
               <div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
-                <label><input type="radio" name="fontSize" value="small"> S</label>
-                <label><input type="radio" name="fontSize" value="medium"> M</label>
-                <label><input type="radio" name="fontSize" value="large"> L</label>
-                <label><input type="radio" name="fontSize" value="xlarge"> XL</label>
+                <label class="fs-tile fs-s"><input type="radio" name="fontSize" value="small" aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span class="fs-tile-px">12.6 px</span></span></label>
+                <label class="fs-tile fs-m"><input type="radio" name="fontSize" value="medium" aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span class="fs-tile-px">14 px</span></span></label>
+                <label class="fs-tile fs-l"><input type="radio" name="fontSize" value="large" aria-label="Large — 16.1 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span class="fs-tile-px">16.1 px</span></span></label>
+                <label class="fs-tile fs-xl"><input type="radio" name="fontSize" value="xlarge" aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span class="fs-tile-px">18.2 px</span></span></label>
               </div>
             </div>
             <div class="settings-row">
@@ -1382,7 +1382,7 @@
     <div class="settings-modal export-modal" role="dialog" aria-modal="true" aria-labelledby="export-title" tabindex="-1">
       <div class="settings-header">
         <h2 id="export-title">Export</h2>
-        <button id="export-close" class="icon-btn" title="Close" aria-label="Close">×</button>
+        <button id="export-close" class="icon-btn" title="Close" aria-label="Close"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-close"/></svg></button>
       </div>
       <div class="settings-body">
         <div class="settings-sections">

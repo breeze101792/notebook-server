@@ -281,6 +281,7 @@ kbd { font-family: var(--font-mono); }
 .stage--phone { width: 390px; height: 780px; }
 .stage--measure { width: 390px; height: 320px; }
 .stage--spec { width: 660px; height: 1240px; padding: var(--space-4); overflow: auto; background: var(--surface-panel); }
+.stage--tiles { width: 660px; padding: var(--space-4); background: var(--surface-panel); }
 
 /* ==================================================================
    3. SETTINGS — shipped values, foundation tokens.
@@ -529,6 +530,44 @@ kbd { font-family: var(--font-mono); }
 }
 [data-chips] input { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
 [data-chips] label.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* ---- font-size preview tiles: settings-modal.md §3.6.1 ----
+   The mockup's html carries no user --font-scale, so the Aa size is
+   absolute here; the shipped rule is calc(1rem / var(--font-scale) * --fs-opt),
+   which is the same 14 px at every setting. */
+.settings-control.fs-tiles { gap: var(--space-2); }
+.fs-tile {
+  --fs-opt: 1;
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--space-1);
+  width: 72px; height: 52px;
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: var(--text-2xs); line-height: var(--lh-tight);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.fs-tile input { position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0; }
+.fs-s { --fs-opt: .9; }
+.fs-m { --fs-opt: 1; }
+.fs-l { --fs-opt: 1.15; }
+.fs-xl { --fs-opt: 1.3; }
+.fs-tile-aa {
+  font-size: calc(14px * var(--fs-opt));
+  font-weight: var(--fw-medium); line-height: var(--lh-flat); color: var(--text-primary);
+}
+.fs-tile-cap { display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+.fs-tile-cap b { font-weight: var(--fw-semibold); }
+.fs-tile:hover, .fs-tile.is-hover { border-color: var(--accent); color: var(--text-primary); }
+.fs-tile:has(input:checked), .fs-tile.is-checked {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--text-primary);
+}
+.fs-tile.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.fs-label-value { font-size: var(--text-2xs); font-weight: var(--fw-semibold); color: var(--text-primary); }
 
 /* ---- card rows: provider + token ---- */
 .settings-ai-row, .settings-token-row {
@@ -911,7 +950,8 @@ kbd { font-family: var(--font-mono); }
 <section class="sec">
   <h2>2 · Appearance — light</h2>
   <p class="lede">Three Interface controls, the two Modal size groups, and the four wallpaper
-    groups. Chips show rest, checked and focus; switches show off and on.</p>
+    groups. Chip groups show rest, checked and focus; the Font size row is four preview tiles with
+    <code>M</code> selected, and its label carries the current px; switches show off and on.</p>
 
   <div class="board">
     <div class="board-head"><span class="dot"></span>Appearance · 1280 × 960 · light<span class="grow"></span><span class="size">three group titles with hairlines</span></div>
@@ -951,12 +991,12 @@ kbd { font-family: var(--font-mono); }
                   </div>
                 </div>
                 <div class="settings-row">
-                  <span class="settings-label">Font size</span>
-                  <div class="settings-control" data-chips role="radiogroup" aria-label="Font size">
-                    <label><input type="radio" name="b2-size" value="small"> S</label>
-                    <label><input type="radio" name="b2-size" value="medium" checked> M</label>
-                    <label><input type="radio" name="b2-size" value="large"> L</label>
-                    <label><input type="radio" name="b2-size" value="xlarge"> XL</label>
+                  <span class="settings-label">Font size · <span class="fs-label-value">14 px</span></span>
+                  <div class="settings-control fs-tiles font-size-options" role="radiogroup" aria-label="Font size">
+                    <label class="fs-tile fs-s"><input type="radio" name="b2-size" value="small" aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span>12.6 px</span></span></label>
+                    <label class="fs-tile fs-m"><input type="radio" name="b2-size" value="medium" checked aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label>
+                    <label class="fs-tile fs-l"><input type="radio" name="b2-size" value="large" aria-label="Large — 16.1 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span>16.1 px</span></span></label>
+                    <label class="fs-tile fs-xl"><input type="radio" name="b2-size" value="xlarge" aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span>18.2 px</span></span></label>
                   </div>
                 </div>
                 <div class="settings-row">
@@ -1025,6 +1065,51 @@ kbd { font-family: var(--font-mono); }
           </div>
           <div class="settings-footer"><button class="settings-action" type="button">Close</button></div>
           <div class="resize-grip" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>2b · Font size — the preview tiles, dark</h2>
+  <p class="lede">One row, two selections. The <code>Aa</code> size is absolute, so the four tiles
+    differ at every setting; the row label repeats the value the tile already prints. Selected
+    tiles carry an accent border, the accent wash, and a caption that steps from muted to primary.
+    Text on the wash stays <code>--text-primary</code>: <code>--accent</code> measures 3.97:1 there
+    and <code>--text-muted</code> 3.65:1, both under 4.5.</p>
+
+  <div class="board">
+    <div class="board-head"><span class="dot"></span>Font size · dark<span class="grow"></span><span class="size">72 × 52 · gap 8 · caption 9 px fixed</span></div>
+    <div class="stage stage--tiles theme-dark">
+      <div class="spec">
+        <div class="spec-group">
+          <h3>Selected: XL — the app is at 18.2 px</h3>
+          <div class="settings-row">
+            <span class="settings-label">Font size · <span class="fs-label-value">18.2 px</span></span>
+            <div class="settings-control fs-tiles font-size-options" role="radiogroup" aria-label="Font size">
+              <label class="fs-tile fs-s"><input type="radio" name="b2b-size-a" value="small" aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span>12.6 px</span></span></label>
+              <label class="fs-tile fs-m"><input type="radio" name="b2b-size-a" value="medium" aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label>
+              <label class="fs-tile fs-l"><input type="radio" name="b2b-size-a" value="large" aria-label="Large — 16.1 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span>16.1 px</span></span></label>
+              <label class="fs-tile fs-xl"><input type="radio" name="b2b-size-a" value="xlarge" checked aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span>18.2 px</span></span></label>
+            </div>
+          </div>
+          <p class="settings-note">The tiles do not move when the setting changes. Only the selection and the label text do.</p>
+        </div>
+
+        <div class="spec-group">
+          <h3>Selected: S — the app is at 12.6 px</h3>
+          <div class="settings-row">
+            <span class="settings-label">Font size · <span class="fs-label-value">12.6 px</span></span>
+            <div class="settings-control fs-tiles font-size-options" role="radiogroup" aria-label="Font size">
+              <label class="fs-tile fs-s"><input type="radio" name="b2b-size-b" value="small" checked aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span>12.6 px</span></span></label>
+              <label class="fs-tile fs-m"><input type="radio" name="b2b-size-b" value="medium" aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label>
+              <label class="fs-tile fs-l"><input type="radio" name="b2b-size-b" value="large" aria-label="Large — 16.1 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span>16.1 px</span></span></label>
+              <label class="fs-tile fs-xl"><input type="radio" name="b2b-size-b" value="xlarge" aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span>18.2 px</span></span></label>
+            </div>
+          </div>
+          <p class="settings-note">Same four tiles, one selection lower. Tiles and gaps measure 312 px, inside the 407 px control column at a 1024 viewport.</p>
         </div>
       </div>
     </div>
@@ -1936,7 +2021,8 @@ kbd { font-family: var(--font-mono); }
   <h2>13 · Control states</h2>
   <p class="lede">Each specimen is the shipped control in its shipped state: nav rest / hover /
     active / focus, switch off / on / focus / disabled, field rest / focus / disabled, button
-    variants and the danger ghost, chip rest / checked / focus, badge, status, kbd, card row.</p>
+    variants and the danger ghost, chip rest / checked / focus, the font-size tile group / hover /
+    focus, badge, status, kbd, card row.</p>
 
   <div class="pair">
     <div class="board">
@@ -1986,6 +2072,18 @@ kbd { font-family: var(--font-mono); }
             <div class="spec-line" data-chips>
               <label class="is-hover"><input type="radio" name="s2" value="a"> Hover</label>
             </div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Font-size tile</h3>
+            <div class="spec-line"><span class="spec-cap">group</span><div class="settings-control fs-tiles font-size-options" role="radiogroup" aria-label="Font size">
+              <label class="fs-tile fs-s"><input type="radio" name="s1-fs" value="small" aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span>12.6 px</span></span></label>
+              <label class="fs-tile fs-m"><input type="radio" name="s1-fs" value="medium" aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label>
+              <label class="fs-tile fs-l"><input type="radio" name="s1-fs" value="large" aria-label="Large — 16.1 px" checked><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span>16.1 px</span></span></label>
+              <label class="fs-tile fs-xl"><input type="radio" name="s1-fs" value="xlarge" aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span>18.2 px</span></span></label>
+            </div></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><label class="fs-tile fs-m is-hover"><input type="radio" name="s1-fs-hover" value="medium" aria-label="Medium — 14 px" tabindex="-1"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><label class="fs-tile fs-m is-focus"><input type="radio" name="s1-fs-focus" value="medium" aria-label="Medium — 14 px" checked tabindex="-1"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label></div>
           </div>
 
           <div class="spec-group">
@@ -2058,6 +2156,18 @@ kbd { font-family: var(--font-mono); }
             <div class="spec-line" data-chips>
               <label class="is-hover"><input type="radio" name="l2" value="a"> Hover</label>
             </div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Font-size tile</h3>
+            <div class="spec-line"><span class="spec-cap">group</span><div class="settings-control fs-tiles font-size-options" role="radiogroup" aria-label="Font size">
+              <label class="fs-tile fs-s"><input type="radio" name="l1-fs" value="small" aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span>12.6 px</span></span></label>
+              <label class="fs-tile fs-m"><input type="radio" name="l1-fs" value="medium" aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label>
+              <label class="fs-tile fs-l"><input type="radio" name="l1-fs" value="large" aria-label="Large — 16.1 px" checked><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span>16.1 px</span></span></label>
+              <label class="fs-tile fs-xl"><input type="radio" name="l1-fs" value="xlarge" aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span>18.2 px</span></span></label>
+            </div></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><label class="fs-tile fs-m is-hover"><input type="radio" name="l1-fs-hover" value="medium" aria-label="Medium — 14 px" tabindex="-1"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><label class="fs-tile fs-m is-focus"><input type="radio" name="l1-fs-focus" value="medium" aria-label="Medium — 14 px" checked tabindex="-1"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span>14 px</span></span></label></div>
           </div>
 
           <div class="spec-group">

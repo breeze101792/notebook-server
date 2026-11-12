@@ -3,10 +3,10 @@
 Status: Current spec — shipped surface, codified.
 
 Reference mockup: [`settings-modal-mockup.html`](settings-modal-mockup.html) — dark and light
-boards: General, Appearance, Workspaces (two rows), Shortcuts (with a row capturing), Security as
-admin, Security API tokens, Security as viewer, AI with two providers and the ACP panel, AI with no
-providers (empty list), About, the validation-error board, the control-state strip, the 390 phone
-settings sheet, and the measured 292 px desktop modal at 390.
+boards: General, Appearance, the Appearance font-size row in dark, Workspaces (two rows), Shortcuts
+(with a row capturing), Security as admin, Security API tokens, Security as viewer, AI with two
+providers and the ACP panel, AI with no providers (empty list), About, the validation-error board,
+the control-state strip, the 390 phone settings sheet, and the measured 292 px desktop modal at 390.
 
 **Prerequisite.** [`foundations.md`](foundations.md) §11.1 and [`controls.md`](controls.md) §3.3 step 1 must land before any rule below; until then a token rule falls back to the shipped literal.
 
@@ -24,7 +24,10 @@ Abbreviations: `style.css` = `static/css/style.css`; `index.html` = `templates/i
 controls are unified with the control layer: 36 px fields on `--border-strong`, 30 px buttons on
 `--border-strong` with a halo primary hover, `--opacity-disabled`, `--dur-1` switches and chips,
 and a 2 px focus offset. Those deltas are applied and listed in §10.3. Missing ARIA and keyboard
-behaviour are added. What still changes the layout is in §12 and is not applied.
+behaviour are added. One control is redrawn rather than unified: the Font size row becomes four
+preview tiles, because the shipped `S M L XL` chips print all four options at the same size and
+never show what any of them does (§3.6.1, exception E12). What still changes the layout is in §12
+and is not applied.
 
 ---
 
@@ -287,22 +290,126 @@ size across all five.
 
 ### 3.6 Radio chips
 
-Eight groups share one appearance, named explicitly in the CSS so the Export modal's own
-`-options` class is not caught (`style.css:1617-1622`). The groups are theme, font size, settings
-modal width, settings modal height, wallpaper, wallpaper scroll, wallpaper colour, wallpaper
-intensity (`index.html:816-889`).
+Seven groups share one appearance, named explicitly in the CSS so the Export modal's own
+`-options` class is not caught (`style.css:1829-1880`). The groups are theme, settings modal width,
+settings modal height, wallpaper, wallpaper scroll, wallpaper colour and wallpaper intensity
+(`index.html:956-963`, `:981-1028`). Font size left this set in this pass: it is a preview tile
+group, §3.6.1.
 
 | State | Face | Border | Text | Source |
 |---|---|---|---|---|
 | Rest | `--surface-raised` | `1px --border-strong` | `--text-muted`, `--text-ui` | unified |
-| Hover | unchanged | `--accent` | `--text-primary` | `style.css:1636-1641` |
-| Checked | `--accent-soft` | `--accent` | `--accent`, weight 600 | `style.css:1643-1653` |
-| Focus-visible (on the label) | unchanged | unchanged | unchanged, `--focus-ring` at `var(--focus-offset)` | unified |
+| Hover | unchanged | `--accent` | `--text-primary` | `style.css:1849-1853` |
+| Checked | `--accent-soft` | `--accent` | `--accent`, weight 600 | `style.css:1856-1865` |
+| Focus-visible (on the label) | unchanged | unchanged | unchanged, `--focus-ring` at `var(--focus-offset)` | `style.css:1866-1869` |
 | Disabled | group inherits `opacity: .55` where a whole group is disabled — none ships today | — | — | — |
 
-Shape: pill, `padding: var(--space-1) var(--space-3)` (4/12), gap `var(--space-1)`, group gap `var(--space-2)`, group wraps; motion `--dur-1`.
-The native radio is visually hidden but focusable (`style.css:1660-1665`). Arrow keys move within a
+Shape: pill, `padding: var(--space-1) var(--space-3)` (4/12), gap `var(--space-1)`, group gap `--stg-space-2` (6), group wraps; motion `--dur-1`.
+The native radio is visually hidden but focusable (`style.css:1870-1872`). Arrow keys move within a
 group natively because the inputs share a `name`.
+
+### 3.6.1 Font-size preview tiles
+
+A chip names an option. This row has to show what each option *produces*, so it draws four preview
+tiles: `Aa` at that option's real size, the letter, and the px value. The current value is repeated
+beside the row label.
+
+```
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│      Aa      │ │      Aa      │ │      Aa      │ │      Aa      │
+│  S   12.6 px │ │  M   14 px   │ │  L   16.1 px │ │ XL   18.2 px │
+└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+   rest             rest            selected          rest
+   ────────────────────────── gap 8 px ──────────────────────────
+```
+
+**Anatomy.**
+
+| Part | Value | Token |
+|---|---|---|
+| Group | flex, `flex-wrap: wrap`, gap 8 | `--space-2` |
+| Tile box | 72 × 52, radius 8, padding 4 8, `justify-content: center`, gap 4 | `--stg-fs-tile-w` 72, `--stg-fs-tile-h` 52, `--radius-md`, `--space-1`, `--space-2` |
+| Border | 1 px | `--stroke-1` |
+| `Aa` | `calc(1rem / var(--font-scale, 1) * var(--fs-opt))` — 12.6 / 14 / 16.1 / 18.2 px at every setting; weight 500; line 1 | `--fs-opt` per tile `.9 / 1 / 1.15 / 1.3`; `--fw-medium`; `--lh-flat` |
+| Caption | one line, no wrap, gap 4; letter 600, px value 400, both 9 px fixed | `--text-2xs`, `--fw-semibold`, `--fw-regular`, `--space-1`, `--lh-tight` |
+| Motion | background, border and colour 120 ms | `--dur-1`, `--ease-out`; none under `prefers-reduced-motion` |
+
+**Why the division in `Aa`.** The root is already scaled by the setting in force
+(`style.css:292-297`), so `1rem / var(--font-scale)` is 14 px at every setting. Multiplying by the
+option's own multiplier gives that option's true size, which is why M draws smaller than L while the
+user is on L. The four multipliers are the only numbers the row copies from `app.js:259-264`.
+
+**States.**
+
+| State | Face | Border | `Aa` | Letter | px value |
+|---|---|---|---|---|---|
+| Rest | `--surface-raised` | `--border-strong` | `--text-primary` | `--text-muted`, 600 | `--text-muted`, 400 |
+| Hover | `--surface-raised` | `--accent` | `--text-primary` | `--text-primary`, 600 | `--text-primary`, 400 |
+| Selected (`:has(input:checked)`) | `--accent-soft` | `--accent` | `--text-primary` | `--text-primary`, 600 | `--text-primary`, 400 |
+| Focus-visible (on the label) | unchanged | unchanged | unchanged | unchanged | ring `--focus-ring` at `--focus-offset` 2 |
+| Disabled | not drawn — no group is disabled today, so no rule ships | — | — | — | — |
+
+Selection is carried by three signals — accent border, wash, and the caption stepping from
+`--text-muted` to `--text-primary`. The border stays `--stroke-1` in every state, so selecting a
+tile reflows nothing. The text stays `--text-primary` on the wash because
+`--accent` measures 3.97:1 dark / 4.20:1 light and `--text-muted` 3.65 / 4.37 there, both under
+4.5 (`typography.md` §7.2). The tile deliberately does **not** copy the checked chip's accent label.
+
+**Copy.** The four numbers are 14 × the multiplier, one decimal, with a trailing `.0` dropped.
+
+| `value` | Letter | `Aa` drawn at | Caption | `aria-label` | Row label when selected |
+|---|---|---|---|---|---|
+| `small` | `S` | 12.6 px | `12.6 px` | `Small — 12.6 px` | `Font size · 12.6 px` |
+| `medium` | `M` | 14 px | `14 px` | `Medium — 14 px` | `Font size · 14 px` |
+| `large` | `L` | 16.1 px | `16.1 px` | `Large — 16.1 px` | `Font size · 16.1 px` |
+| `xlarge` | `XL` | 18.2 px | `18.2 px` | `Extra large — 18.2 px` | `Font size · 18.2 px` |
+
+The row label is `Font size · <span id="settings-font-size-current">14 px</span>`, in a
+`<span class="settings-label">` because it names a group, not a control (the shipped `<label>` has no
+`for`; `index.html:965`). The value span is `--text-2xs` at weight 600 in `--text-primary`, so the
+whole label measures 116.5 px at XL (95.5 at M, 88.4 at S) inside the 132 px gutter; with the
+value at `--text-ui-lg` too it would measure 138.7 px and wrap.
+
+**Markup.** The radio inputs do not change — same `name`, same four `value`s, still visually hidden
+and focusable — so the DOM suite keeps driving them (`tests/dom/test_dom.js:515-519`, `:26983-27006`).
+Only the label's content and a class per option are new:
+
+```html
+<div class="settings-control font-size-options" role="radiogroup" aria-label="Font size">
+  <label class="fs-tile fs-s"><input type="radio" name="fontSize" value="small" aria-label="Small — 12.6 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>S</b><span class="fs-tile-px">12.6 px</span></span></label>
+  <label class="fs-tile fs-m"><input type="radio" name="fontSize" value="medium" aria-label="Medium — 14 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>M</b><span class="fs-tile-px">14 px</span></span></label>
+  <label class="fs-tile fs-l"><input type="radio" name="fontSize" value="large" aria-label="Large — 16.1 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>L</b><span class="fs-tile-px">16.1 px</span></span></label>
+  <label class="fs-tile fs-xl"><input type="radio" name="fontSize" value="xlarge" aria-label="Extra large — 18.2 px"><span class="fs-tile-aa">Aa</span><span class="fs-tile-cap"><b>XL</b><span class="fs-tile-px">18.2 px</span></span></label>
+</div>
+```
+
+**ARIA and keyboard.**
+
+| Element | Contract |
+|---|---|
+| Group | `role="radiogroup" aria-label="Font size"` — unchanged (`index.html:966`) |
+| Tile | a `<label>` wrapping the native radio, as today |
+| Input | `name="fontSize"`, one of the values `small` / `medium` / `large` / `xlarge`, visually hidden but focusable (`style.css:1870-1872`) |
+| Accessible name | `aria-label` on the input names the option in words and repeats its px: `Small — 12.6 px` … `Extra large — 18.2 px`. A letter is not a name, and `xlarge` is not a word to read aloud |
+| Visible text | `Aa`, the letter and the px are the drawing of that name; no `aria-hidden` is needed because the input's `aria-label` wins the name computation |
+| Keyboard | arrows move within the group because the inputs share a `name`; the ring draws on the label at 2 px |
+| Row label value | not a live region — the user just clicked the thing that changed, so announcing it twice is noise |
+
+**When the value changes.** Two places, both one line, both copying the string that already exists
+in the markup:
+
+| Where | What |
+|---|---|
+| Radio sync on open | `syncRadios()` (`settings.js:164-184`) checks the tile, then copies the checked tile's `.fs-tile-px` into `#settings-font-size-current` |
+| Change handler | `settings.js:256-258` applies the option, then does the same copy |
+
+`.fs-tile-px` carries no rule of its own: it is the hook the sync reads. The four px strings
+therefore exist once, in the markup. Nothing else in the row moves when the
+value changes: the captions are 9 px fixed and the `Aa` sizes are absolute.
+
+**Geometry.** The row grows from ≈26 px (chip height) to 64 px (52 + 6 + 6 row padding): **+38 px**
+in the Appearance tab. The four tiles and their gaps measure 312 px, inside the 407 px control column at a 1024
+viewport (and 598 px at 1280). Both figures are in exception **E12**.
 
 ### 3.7 Save behaviour
 
@@ -402,7 +509,7 @@ not clickable (`workspaces.js:859`). A missing folder renders the row as a disab
 | 1 | `h3` | `Appearance` | — |
 | 2 | Group title | `Interface` | — |
 | 3 | Row: `Theme` + 3 chips | `Auto` `Dark` `Light` | live → `theme`; `Auto` follows the system |
-| 4 | Row: `Font size` + 4 chips | `S` `M` `L` `XL` | live → `fontSize`; sets `--font-scale` 0.9 / 1 / 1.15 / 1.3 |
+| 4 | Row: `Font size · 12.6 px` (value follows the setting) + 4 preview tiles | `Aa` `Aa` `Aa` `Aa` over `S 12.6 px` `M 14 px` `L 16.1 px` `XL 18.2 px` | live → `fontSize`; sets `--font-scale` 0.9 / 1 / 1.15 / 1.3 and the root to 12.6 / 14 / 16.1 / 18.2 px. Anatomy, states and ARIA: §3.6.1 |
 | 5 | Row: `Hide top bar` + switch | off | live → `hideTopbar`; the topbar collapses to 0 px |
 | 6 | Row: `Graph background particles` + switch | off | live → `graphParticles` |
 | 7 | Group title | `Modal size` | — |
@@ -414,7 +521,8 @@ not clickable (`workspaces.js:859`). A missing folder renders the row as a disab
 | 13 | Row: `Wallpaper color` + 5 chips | `Neutral` `Blue` `Green` `Purple` `Amber` | live → `wallpaperColor` |
 | 14 | Row: `Wallpaper intensity` + 3 chips | `Subtle` `Medium` `Bold` | live → `wallpaperIntensity` |
 
-Sources: `index.html:811-890`; `settings.js:134-158` (radio sync), `:228-251` (live writers);
+Sources: `index.html:952-1030` (markup; earlier revisions of this document named lines ~140 too
+low, because the template grew); `settings.js:164-184` (radio sync), `:228-262` (live writers);
 `app.js:36-56` (defaults), `:259-273` (scales), `:315-356` (wallpaper).
 
 The two "Modal size" rows resize the modal the user is standing in. That is intentional: the
@@ -829,6 +937,7 @@ the scroller, so focusing a control below the fold scrolls the column, not the p
 | Field | 36 px | 24 fine ✓ |
 | Switch | 36 × 20 | **20 < 24** — the `<label>` extends the hit to the row; proposal P4 keeps the box |
 | Radio chip | ≈26 px tall | 24 fine ✓ |
+| Font-size tile | 72 × 52 | Floor exceeded; the box is the specimen, not a text target |
 | Ghost row action | `padding: 4px 10px`, ≈25 px | 24 fine ✓ |
 | Close icon button | ≈26 px | 24 fine ✓ |
 | Resize grip | 18 × 18 | Pointer-only affordance; the modal can also be resized by dragging saved geometry. Recorded, not enlarged (P12) |
@@ -935,7 +1044,10 @@ are listed here so the pass does not claim otherwise.
 | `180px` nav column | no token; keep component-local `--stg-nav-w` | `:1932` | yes |
 | `--stg-field-pad-y/x` 6/10 | no token; keep | `:1412-1413` | yes |
 | `--stg-btn-pad-y/x` 6/14 | no token; keep | `:1414-1415` | yes |
-| `.93rem`, `.86rem`, `.8rem`, `.78rem`, `.76rem`, `.74rem`, `.72rem`, `.68rem` | `--text-ui-lg`, `--text-ui`, `--text-sm` (.8), no token (.78), no token (.76), no token (.74), `--text-xs` (.72), no token (.68) | throughout | partial — see E6 |
+| `.93rem`, `.86rem`, `.8rem`, `.78rem`, `.76rem`, `.74rem`, `.72rem`, `.68rem` | `--text-ui-lg`, `--text-ui`, `--text-sm` (.8), no token (.78), no token (.76), no token (.74), `--text-xs` (.72), no token (.68) | throughout | partial — see E6; the role each one becomes is `typography.md` §6.2 |
+| Font-size tile 72 × 52 and the group gap 8 | no foundation token; component-local `--stg-fs-tile-w`, `--stg-fs-tile-h`; gap is `--space-2` | §3.6.1 | new — E12 |
+| Tile `Aa` multiplier `.9 / 1 / 1.15 / 1.3` | no token; component-local `--fs-opt` per tile | §3.6.1 | new — the same four numbers as `app.js:259-264` |
+| Tile caption `9px` | `--text-2xs` | §3.6.1 | yes — the fixed badge size, `typography.md` §6.3 |
 | `#9799a4` / `#5d6470` override of `--fg-muted` | already the foundation value in both themes | `:1421`, `:1436` | yes — the override is a no-op |
 | `--stg-ok: var(--ok)`, `--stg-warn: var(--warn)` | identical alias | `:1425-1426`, `:1437-1438` | yes — delete |
 | `--stg-switch-knob` | `--switch-knob` (controls §1.2) | `:1430`, `:1439` | yes |
@@ -980,9 +1092,11 @@ Each is an accessibility or consistency fix. None changes a resting pixel; E7 ad
 | **E8** | The shortcut capture pulse and the chip-label colour transitions have no reduced-motion twin | Foundations §7.3 is mandatory; the eight chip groups transition background/border/colour at `.12s` (`style.css:1634`) | `@media (prefers-reduced-motion: reduce) { .shortcut-binding-capturing { animation: none; } #settings-overlay :is(.theme-options, .font-size-options, .wallpaper-color-options, .wallpaper-intensity-options) label { transition: none; } }` — the accent border and wash carry the state |
 | **E9** | `touch-action: none` sits on the whole modal box | Blocks touch scrolling of the sections column on a coarse-pointer tablet | Move it to `.resize-grip` and `.settings-header`, as controls §9 C6 already requires |
 | **E10** | The phone sheet has no trap, no inert background, no return focus | It is `role="dialog" aria-modal="true"` but behaves as a plain panel | `NB.dialog.open/close` around `openSettings`; focus already moves to Close (`mobile.js:752-756`). Exempt `.toast` from the inert list and keep `#mobile-scrim` clickable, or include the scrim in the dialog node set |
+| **E12** | The Font size row is four `S M L XL` chips at one size, so the setting shows nothing about its own effect | A user cannot tell 12.6 px from 18.2 px before choosing; the row is the only place the scale is set | The four preview tiles of §3.6.1: row 26 → 64 px (**+38**), group 312 px wide, tile 72 × 52, captions 9 px fixed. Approved by the user, 2026-11-11, Appearance → Font size |
 
 E7 changes one sentence and one disabled state; E8 and E9 change no resting pixels; E10 changes
-behaviour only. The rest are semantics.
+behaviour only; E12 is the one layout change in this pass (+38 px in the Appearance tab). The rest
+are semantics.
 
 ### 10.4 Rules, in landing order
 
@@ -1096,6 +1210,63 @@ Each step is one commit and ships alone. `style.css` line numbers name the rule 
 #settings-overlay input[type="checkbox"]:checked::after { transform: translateX(16px); }
 #settings-overlay input[type="checkbox"]:disabled { opacity: var(--opacity-disabled); }
 #settings-overlay .settings-nav-item { min-height: var(--control-h-md); font-size: var(--text-ui); }
+
+/* 13. E12: the Font size row is four preview tiles, not chips.
+       Step 12a: delete .font-size-options from the seven chip :is() lists at
+       style.css:1829-1878, or the chip look outranks these rules. The input
+       hiding rule must be re-declared here: it lived in that list. */
+#settings-overlay { --stg-fs-tile-w: 72px; --stg-fs-tile-h: 52px; }
+#settings-overlay .settings-control.font-size-options { gap: var(--space-2); }
+#settings-overlay .font-size-options label {
+  --fs-opt: 1;
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--space-1);
+  width: var(--stg-fs-tile-w); height: var(--stg-fs-tile-h);
+  padding: var(--space-1) var(--space-2);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-tight);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out),
+              border-color var(--dur-1) var(--ease-out),
+              color var(--dur-1) var(--ease-out);
+}
+#settings-overlay .font-size-options input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; margin: 0;
+}
+#settings-overlay .font-size-options .fs-s  { --fs-opt: .9; }
+#settings-overlay .font-size-options .fs-m  { --fs-opt: 1; }
+#settings-overlay .font-size-options .fs-l  { --fs-opt: 1.15; }
+#settings-overlay .font-size-options .fs-xl { --fs-opt: 1.3; }
+#settings-overlay .font-size-options .fs-tile-aa {
+  /* the root is already scaled, so this is 14 px at every setting */
+  font-size: calc(1rem / var(--font-scale, 1) * var(--fs-opt));
+  font-weight: var(--fw-medium);
+  line-height: var(--lh-flat);
+  color: var(--text-primary);
+}
+#settings-overlay .font-size-options .fs-tile-cap {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  white-space: nowrap;
+}
+#settings-overlay .font-size-options .fs-tile-cap b { font-weight: var(--fw-semibold); }
+#settings-overlay .font-size-options label:hover {
+  border-color: var(--accent); color: var(--text-primary);
+}
+#settings-overlay .font-size-options label:has(input:checked) {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--text-primary);
+}
+#settings-overlay .font-size-options label:has(input:focus-visible) {
+  outline: var(--focus-ring); outline-offset: var(--focus-offset);
+}
+#settings-font-size-current { font-size: var(--text-2xs); font-weight: var(--fw-semibold); color: var(--text-primary); }
+@media (prefers-reduced-motion: reduce) {
+  #settings-overlay .font-size-options label { transition: none; }
+}
 ```
 
 Steps 4–6 are mechanical: `--bg-panel` → `--surface-panel`, `--bg-elev` → `--surface-raised`,
@@ -1145,6 +1316,9 @@ Each is testable and names its file and check. `style.css` = `static/css/style.c
 | **AC22** | E10: the sheet is contained | `mobile.js` | Opening the sheet inerts the background, Tab wraps inside it, and closing returns focus to the control that opened it |
 | **AC23** | E7 and E9 hold | `settings.js`, `style.css` | A rejected `/api/auth` leaves the initial form disabled with the named line in `#settings-auth-help`; `touch-action: none` appears only on `.settings-header` and `.resize-grip`, and the sections column touch-scrolls |
 | **AC24** | The control layer is unified | `style.css` | A field is `--control-h-lg` 36 high with `--border-strong` and `--text-ui`; a button is `--control-h-md` 30 with `--border-strong`; a switch off-track is `--border-strong`; every disabled control is `--opacity-disabled`; focus is `--focus-ring` at `--focus-offset`; the primary hover is a 3 px `--accent-soft` halo with no `filter`; a chip is `var(--space-1) var(--space-3)` with `--text-ui` |
+| **AC25** | The Font size row is four preview tiles | `index.html`, `style.css`, `settings-modal-mockup.html` | Four tiles 72 × 52 at gap 8; each draws `Aa` at 12.6 / 14 / 16.1 / 18.2 px, its letter and its px caption; the selected tile is `--accent-soft` with a `--accent` border; the chip look no longer applies to `.font-size-options` |
+| **AC26** | The row label carries the current value | `index.html`, `settings.js` | The row reads `Font size · 14 px` at M, and follows the setting on change and on reopen; the px string is copied from the selected tile's caption, not computed a second time |
+| **AC27** | The tiles are named, not lettered | `index.html` | Each input carries `aria-label` naming the option in words and repeating its px (`Medium — 14 px`); the four inputs keep `name="fontSize"`, so the existing suite still drives them (`tests/dom/test_dom.js:515-519`, `:26983-27006`) |
 
 ---
 
@@ -1172,6 +1346,7 @@ Each names what it would touch.
 | **P15** | Move `#settings-auth-error` under the password group that raised it, or keep one error per group | The single shared block sits at the end of the Passwords section, so an admin mismatch is announced beside the viewer toggle, not beside the admin fields (markup `index.html:1096`) | One block per group or one anchor that names the group; no visual change beyond position |
 | **P16** | Let the assistant-instructions textarea use the column width (drop `.settings-auth-input` from it, or raise its `max-width`) | The 260 px field cap leaves a four-line prompt in a 260 px box inside a 740 px column | Visible; one class change on the textarea |
 | **P17** | Keep the `agent guide` link and rewrite only the sentence around it | The live render replaces the help paragraph's children with `textContent`, so the shipped `target="_blank"` link disappears on the first open (`settings.js:924-928`; markup `index.html:1104-1107`) | Restores one link; the rest of the paragraph is unchanged |
+| **P18** | Show the current px in the phone sheet's `Text size` row (`Text size · 16 px`) | The sheet names the option but not its effect, and the desktop fix (E12) does not reach it | One label change in `mobile.js:685-709`. The sheet's 44 px segmented buttons cannot hold a 52 px card, so the value goes in the row label only. `tests/dom/test_dom.js:40743-40791` asserts the buttons, not the label |
 
 P2 and P3 are the two that matter for correctness. The rest are finish.
 
@@ -1198,6 +1373,9 @@ P2 and P3 are the two that matter for correctness. The rest are finish.
 | Renaming `#settings-overlay`, `.settings-modal` or any shared class | Four other dialogs depend on them (§1.4) |
 | A second `role="dialog"` inside the modal for a tab panel | Tabs are a tablist; only the whole modal is a dialog |
 | An entrance animation on the modal | Foundations §7.4: nothing on first paint animates |
+| A slider, a stepper, or a per-role size control for the type scale | One radio group with four options is the whole setting; `typography.md` §11 |
+| Preview tiles inside the phone settings sheet | The sheet's control is a 44 px segmented strip (§9.3); the value goes in its row label, P18 |
+| A preview tile that scales with the current setting | The specimen must differ from the row it sits in, or the four tiles look identical (§3.6.1) |
 
 ---
 
@@ -1220,3 +1398,8 @@ P2 and P3 are the two that matter for correctness. The rest are finish.
 | Phone sheet | 100 % wide, `min(72dvh, 560px)` tall, header 52, rows ≥52, close 44 |
 | Contrast, muted text on raised | 4.96 dark / 5.13 light (foundations §3.2) |
 | Contrast, field border on well | 1.39 dark / 1.27 light — below 3:1 (proposal P3) |
+| Font-size group | 312 px (4 × 72 + 3 × 8) |
+| Font-size row height | 64 px (52 tile + 6 + 6 row padding), up from ≈26 px: **+38 px** |
+| Tile caption width at XL | The widest caption, `XL` + `18.2 px` at 9 px, measures 49.1 px inside the 54 px content box (S 43.7, M 37.1, L 43.0); at `--text-xs` it measures 69.7 px and overflows |
+| Row label at XL | 116.5 px inside the 132 px gutter (M 95.5, S 88.4); with the value at `--text-ui-lg` it measures 138.7 px and wraps |
+| Root at each setting | 12.6 / 14 / 16.1 / 18.2 px (`--font-scale` 0.9 / 1 / 1.15 / 1.3) |

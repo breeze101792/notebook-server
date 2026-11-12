@@ -6,9 +6,9 @@ This is the document to follow when you write, review, or build any surface in t
 folder. It does not define a new surface. It defines the rules the surface docs already
 share, the exceptions that are allowed, and how to tell a spec from a proposal.
 
-Read [`foundations.md`](foundations.md) and [`controls.md`](controls.md) first. This file
-sits above the surface docs: where a surface doc and this file disagree, the surface doc is
-wrong.
+Read [`foundations.md`](foundations.md), [`typography.md`](typography.md) and [`controls.md`](controls.md)
+first. This file sits above the surface docs: where a surface doc and this file disagree, the surface
+doc is wrong.
 
 ---
 
@@ -65,6 +65,13 @@ exception in its own doc.
 | Switch track | 36 × 20 | `--surface-well` off, `--accent` on | — | `--border-strong` | `--radius-pill` |
 | Table cell control | 32 (`--control-h-body`) | transparent | `--text-ui` | none | `--radius-xs` |
 
+**The Text column mixes a size and a colour.** `--text-ui` is the size: it is the **control** role
+in [`typography.md`](typography.md) §2, and that document is the single source of truth for type —
+the role table, the rule for choosing a role, the retired literal sizes, and how a fixed height holds
+its text at XL. The other names in the column (`--text-primary`, `--text-muted`,
+`--text-on-accent`) are colour tokens, foundations §3.2. This section says which role a control
+takes; it never says how big a font is.
+
 | State | Rule |
 |---|---|
 | Hover (secondary) | `--accent-soft` face, `--accent` border |
@@ -112,7 +119,8 @@ Rules:
 | Surface | Owner | Reads |
 |---|---|---|
 | Tokens, type, space, elevation, motion, breakpoints | [`foundations.md`](foundations.md) | — |
-| Control anatomy, states, focus, ARIA | [`controls.md`](controls.md) | foundations |
+| Type roles, choosing a role, retired literal sizes, and how layout follows the scale | [`typography.md`](typography.md) | foundations §4 |
+| Control anatomy, states, focus, ARIA | [`controls.md`](controls.md) | foundations, typography |
 | Desktop shell, topbar, rail, side panel, outline, phone conversion | [`shell-frame.md`](shell-frame.md) | foundations, controls |
 | Tab strip | [`tab-bar.md`](tab-bar.md) | foundations, controls |
 | Side-panel views | [`side-panel-views.md`](side-panel-views.md) | shell-frame, controls |

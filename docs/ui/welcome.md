@@ -119,21 +119,21 @@ The welcome already reads the base tokens. No new token is needed.
 ```css
 #welcome .welcome-inner { max-width: 480px; }
 #welcome .welcome-icon { font-size: 48px; margin-bottom: var(--space-3); }
-#welcome .welcome-title { margin: 0 0 var(--space-2); font-size: 1.4rem; font-weight: var(--fw-semibold); }
+#welcome .welcome-title { margin: 0 0 var(--space-2); font-size: var(--text-lg); font-weight: var(--fw-semibold); }
 #welcome .welcome-subtitle { margin: 0 0 var(--space-6); color: var(--text-muted); font-size: 1rem; line-height: var(--lh-normal); }
 #welcome .welcome-actions { display: flex; gap: var(--space-2); justify-content: center; margin-bottom: var(--space-7, 32px); flex-wrap: wrap; }
-#welcome .welcome-action { height: var(--control-h-lg); padding: 0 var(--space-4); border: var(--stroke-1) solid var(--border); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text-primary); font-size: .95rem; }
+#welcome .welcome-action { height: var(--control-h-lg); padding: 0 var(--space-4); border: var(--stroke-1) solid var(--border); border-radius: var(--radius-sm); background: var(--surface-raised); color: var(--text-primary); font-size: var(--text-ui); }
 #welcome .welcome-action:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 #welcome .welcome-action:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 #welcome .welcome-divider { border: 0; border-top: var(--stroke-1) solid var(--border); margin: 0 0 var(--space-5); }
-#welcome .welcome-tips { margin: 0; padding: 0; list-style: none; color: var(--text-muted); font-size: .9rem; line-height: 1.6; }
+#welcome .welcome-tips { margin: 0; padding: 0; list-style: none; color: var(--text-muted); font-size: var(--text-sm); line-height: var(--lh-normal); }
 #welcome .welcome-tips li { margin-bottom: var(--space-1); }
 ```
 
 ### 8.3 Geometry
 
-Inner 480; icon 48; title 1.4 rem; subtitle 1 rem; button 36 high; divider full width;
-tips .9 rem/1.6; kbd radius 4.
+Inner 480; icon 48; title `--text-lg`; subtitle `--text-body`; button 36 high, `--text-ui`;
+divider full width; tips `--text-sm`/1.5 with `kbd` at `.82em`; kbd radius 4.
 
 ### 8.4 Exceptions
 
@@ -143,6 +143,9 @@ tips .9 rem/1.6; kbd radius 4.
 | E2 | The icon is `aria-hidden` and the title is the heading | The emoji is decorative | none |
 | E3 | The subtitle names the sidebar in a `title`-free way | Copy only | none |
 | E4 | Load failure keeps the tab and the draft | Today a failure can leave an empty pane | none |
+| E5 | Title takes the display role | `1.4rem` → `--text-lg` | −3.5 px at M (19.6 → 16.1) |
+| E6 | Action takes the control role | `.95rem` → `--text-ui` | −1.3 px at M (13.3 → 12.0) |
+| E7 | Tips take the meta role, `kbd` stays `em` | `.9rem`/1.6 → `--text-sm`/`--lh-normal`; the `kbd` is prose-relative | −1.4 px at M (12.6 → 11.2) |
 
 ---
 

@@ -237,6 +237,12 @@ Everything else in §3 keeps its current hex.
 
 ## 4. Typography
 
+The token names and values are owned here. The **role contract** — which role a piece of text takes,
+the px each role produces at S/M/L/XL, the retired literal sizes, and how a fixed height holds its
+text at XL — is owned by [`typography.md`](typography.md). Where this section and that document
+disagree about a role or a call site, `typography.md` wins; where they disagree about a token
+value, this section wins.
+
 ### 4.1 Stacks
 
 | Token | Value | Source |
@@ -257,10 +263,10 @@ Every rem value in the table scales with it; px values do not.
 |---|---|---|---|---|---|---|---|
 | `--text-2xs` | `9px` | 9 | 9 | 600 | 1.2 | .04em | Count badges only. Fixed. |
 | `--text-xs` | `.72rem` | 10.1 | 13.1 | 400–600 | 1.2 | .08em uppercase | Code-fence label, panel section labels |
-| `--text-sm` | `.8rem` | 11.2 | 14.6 | 400 | 1.35 | 0 | Meta, hints, toolbar labels, tree rows |
+| `--text-sm` | `.8rem` | 11.2 | 14.6 | 400 | 1.35 | 0 | Meta, hints, toolbar labels |
 | `--text-ui` | `.86rem` | 12.0 | 15.6 | 400–500 | 1.4 | 0 | Dense chrome, menu items, fields |
 | `--text-ui-lg` | `.93rem` | 13.0 | 16.9 | 400–600 | 1.4 | 0 | Topbar buttons, tabs, primary chrome text |
-| `--text-body` | `1rem` | 14 | 18.2 | 400 | 1.5 | 0 | Base UI and desktop prose |
+| `--text-body` | `1rem` | 14 | 18.2 | 400–500 | 1.35–1.5 | 0 | Base UI, side-panel rows, desktop prose |
 | `--text-lg` | `1.15rem` | 16.1 | 20.9 | 600 | 1.25 | 0 | Dialog titles, h4, edit-bar headings |
 
 Weights: `--fw-regular: 400`, `--fw-medium: 500`, `--fw-semibold: 600`,
@@ -278,7 +284,8 @@ brand's `.3px` (`style.css:177`) stays local to the brand.
 
 | Context | Size | Source |
 |---|---|---|
-| Chrome (topbar, tabs, panels, menus) | `.72`–`.93rem` | dominant sizes in `style.css` |
+| Chrome (topbar, tabs, menus, controls) | `.72`–`.93rem` | dominant sizes in `style.css` |
+| Side-panel rows | `1rem` / `--lh-snug` | [`typography.md`](typography.md) §2, row role |
 | Desktop prose | `1rem` / 1.5 | `body` rule, `style.css:146` |
 | Phone prose | `calc(16px * var(--font-scale))` / 1.65 | `style.css:7438` |
 | Prose headings | `1.7 / 1.4 / 1.2 / 1.05 em`, weight 650 | `style.css:7440-7443` |

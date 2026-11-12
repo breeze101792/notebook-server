@@ -63,6 +63,7 @@
   const siteTitleEl  = document.getElementById("settings-site-title");
   const dataDirEl   = document.getElementById("settings-data-dir");
   const configDirEl = document.getElementById("settings-config-dir");
+  const fontSizeCurrentEl = document.getElementById("settings-font-size-current");
 
   // Shortcuts section handles. The rows themselves are rendered into
   // #settings-shortcuts-list by renderShortcuts() (the action list
@@ -155,6 +156,17 @@
     });
   }
 
+  // The row label repeats the selected option's px value. The string is
+  // copied from the tile's caption, so the four sizes exist once, in the
+  // markup -- nothing recomputes px here.
+  function syncFontSizeValue() {
+    if (!fontSizeCurrentEl) return;
+    const picked = fontSizeRadios.find(r => r.checked);
+    const pxEl = picked && picked.parentElement
+      ? picked.parentElement.querySelector(".fs-tile-px") : null;
+    if (pxEl) fontSizeCurrentEl.textContent = pxEl.textContent;
+  }
+
   // Sync a radio group's `checked` from the current cfg. Each radio's
   // `value` is the same string the cfg uses for the field, so we walk
   // the group and check the one whose value matches. Called on open so
@@ -179,6 +191,7 @@
         r.checked = (r.value === val);
       }
     }
+    syncFontSizeValue();
   }
 
   /* Focus lands on the Close button, and a forced ring keeps it visible
@@ -253,7 +266,10 @@
     if (r.checked) NB.app.setTheme(r.value);
   }));
   fontSizeRadios.forEach(r => r.addEventListener("change", () => {
-    if (r.checked) NB.app.setFontSize(r.value);
+    if (r.checked) {
+      NB.app.setFontSize(r.value);
+      syncFontSizeValue();
+    }
   }));
   settingsModalWidthRadios.forEach(r => r.addEventListener("change", () => {
     if (r.checked) NB.app.setSettingsModalWidth(r.value);

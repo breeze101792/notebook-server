@@ -1231,7 +1231,7 @@ These replace `style.css:3865-4394`. Class names stay.
   white-space: nowrap;
 }
 .sp-file {
-  font-size: var(--text-ui);
+  font-size: var(--text-body);
   font-weight: var(--fw-semibold);
 }
 .sp-dir {

@@ -528,7 +528,7 @@ action: `#outline-collapse`, glyph `nb-icon-chevron-right`, `aria-label="Collaps
 | Structure | one flat `<ul>`; one `<li class="outline-item" data-level>` per heading | same (`outline.js:32-53`) |
 | Indent | `12 px` per level above 1 (`--space-3`), applied as `padding-left` on the `<a>` | inline `(level-1)*12` (`outline.js:41`) |
 | Row | `padding: var(--space-1) var(--space-2)`, `border-left: var(--stroke-2) solid transparent`, radius `0 var(--radius-xs) var(--radius-xs) 0` | `3px 8px`, 2 px, `0 4px 4px 0` (`:3107-3116`) |
-| Type | `--text-ui`, `--text-muted`, one line, ellipsis | `.89rem` (`:3115`) |
+| Type | `--text-ui` (navigation chrome, not a content row: the minimap stays dense), `--text-muted`, one line, ellipsis | `.89rem` → `--text-ui`, −0.42 px at M (`:3115`) |
 | Hover | `--text-primary` on `--accent-soft` | same |
 | Active | `--accent` text, `--fw-semibold`, `--accent-soft` face, `border-left-color: --accent`, `aria-current="location"` | `.active` class only (`:3120-3125`) |
 | Container | `padding: var(--space-2) var(--space-1)`, scrolls | `8px 6px` (`:3105`) |

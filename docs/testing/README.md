@@ -6,7 +6,7 @@ there is no lint or type-check step.
 
 ## Strategy
 
-The server has two host suites plus twelve real-browser suites, one per
+The server has two host suites plus thirteen real-browser suites, one per
 surface:
 
 | Suite | File | Runs against | Framework |
@@ -17,6 +17,7 @@ surface:
 | Frontend browser (app) | `tests/browser/test_core_ui_browser.js`, `test_auth_export_browser.js`, `test_ai_editor_browser.js`, `test_ai_blocks_browser.js` | Tree, tabs, search, graph, bookmarks, auth, export, PWA, AI, ACP, CodeMirror, and the AI panel's rendered fences | Hand-rolled `check()` harness |
 | Frontend browser (figure sizing) | `tests/browser/test_figure_sizing_browser.js` | Rendered SVG sizing: font scale, layout matrix, engine units, page-growth behaviour (no nested scroller), no inner math/code/error scrollbars, lightbox, phone tokens, export, hybrid round-trip | Hand-rolled `check()` harness |
 | Frontend browser (design/windows) | `tests/browser/test_designer_browser.js`, `test_dw_designer_browser.js`, `test_mobile_browser.js` | Visimer canvas, Graphviz/WaveDrom windows, phone shell | Hand-rolled `check()` harness |
+| Frontend browser (typography) | `tests/browser/test_typography_browser.js` | Computed type at S/M/L/XL across the side panels, Settings and dialogs | Hand-rolled `check()` harness |
 
 The backend suite exercises routing, path safety, the atomic write paths, the
 auth layer, and the AI proxy end to end, with real loopback `HTTPServer`
@@ -52,9 +53,10 @@ npm run test:browser:core           # one suite by name; package.json has one
                                     # :mobile, :designer, :table-editor, :dw
 node tests/browser/test_designer_browser.js   # mermaid designer canvas
 node tests/browser/run_all.js                  # every browser suite
+node tests/browser/test_typography_browser.js  # computed type, port 5097
 ```
 
-The backend (461 tests), the DOM suite (4,777 checks), and all twelve browser
+The backend (461 tests), the DOM suite (4,993 checks), and all thirteen browser
 suites pass. The numbers are in
 [`browser-audit.md`](browser-audit.md) and the gate baseline in
 [`hybrid-regression-checklist.md`](hybrid-regression-checklist.md) §2. See
@@ -79,6 +81,11 @@ of each harness.
   jsdom can assert belongs in the DOM suite. Pick the suite for the surface
   and keep one `check()` group per user gesture. `run_all.js` runs them
   sequentially on distinct ports.
+- **Static, `tests/static/test_typography.js`** — any rule that adds,
+  removes or retokenises a `font-size`. The check runs first in `npm test`
+  and rejects a literal outside the four sanctioned categories. Its browser
+  half, `tests/browser/test_typography_browser.js`, is the only suite that
+  asserts computed type; see [`typography.md`](typography.md).
 
 ## Related documentation
 
@@ -95,5 +102,10 @@ of each harness.
   structure, storage, auth, and the AI proxy.
 - [`../architecture/frontend.md`](../architecture/frontend.md) — the module
   inventory, boot sequence, and renderer pipeline.
+- [`typography.md`](typography.md) — the type regression plan: the source
+  check, the browser audit, its state matrix, and how each test proves it can
+  fail.
+- [`../architecture/typography.md`](../architecture/typography.md) — the type
+  contract's enforcement design and migration order.
 - [`../../CLAUDE.md`](../../CLAUDE.md) — orientation notes for coding
   agents.

@@ -67,6 +67,7 @@ Start here depending on the job:
 | [`architecture/mermaid-designer-coverage.md`](architecture/mermaid-designer-coverage.md) | The add-sidebar coverage per Mermaid diagram type. |
 | [`architecture/mobile.md`](architecture/mobile.md) | The mobile v1 implementation record: mode signal, bottom rail, drawer, persistence gate, capture request, and the test plan. |
 | [`architecture/bugfix-preview-overflow-tabs-focus.md`](architecture/bugfix-preview-overflow-tabs-focus.md) | Shipped structural fixes for preview overflow, modal focus, and tab-strip scroll. |
+| [`architecture/typography.md`](architecture/typography.md) | The type-size contract: root cause, roles, `--font-scale` semantics, the static check, the browser audit, and the per-surface migration order. |
 
 ## Contracts
 

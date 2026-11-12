@@ -252,7 +252,7 @@ This pass adds ARIA, keyboard and real buttons; it does not redraw a row.
 | Guide | `--tree-indent` 18 per ancestor level + one corner cell | `:2806-2809`; the token holds the same 18 |
 | Guide strokes | `1px --border`, `top/bottom: -3px`, continuous across rows | `:2813-2837` |
 | Root rows | flat: no guide cell | `sidebar.js:126-131` |
-| Name | inherits body size, one line, ellipsis | `:2792` |
+| Name | `--text-body` (1rem), one line, ellipsis | `:2792` |
 | Container | `padding: 6px 4px` | `:2770` |
 | Empty | moved to a sibling of the scroller, same padding and copy | §1.5 |
 | Hover | `--accent-soft` (shipped) | `:2780` |
@@ -522,7 +522,7 @@ activity view and the inline Explorer section share one renderer and one order (
 |---|---|---|
 | Row | list row: 30 px, `--radius-sm`, `padding: var(--space-1) var(--space-2)`, gap `--space-2` | div, ≈21 px, radius 4 (`style.css:2971-2980`) |
 | Marker | `--icon-sm` 14, `--text-muted`, `★`, `aria-hidden="true"` | 14 px, 11 px text, `--warn` (`:2992`) |
-| Name | `--text-ui`, one line, ellipsis, `title` = full path | `.bookmark-name` (`:2993`; `bookmarks.js:183-184`) |
+| Name | `--text-body`, one line, ellipsis, `title` = full path | `.bookmark-name` (`:2993`; `bookmarks.js:183-184`) |
 | List | `padding: 0 var(--space-1) var(--space-1)`, gap `--space-hair`, `margin-right: var(--space-2)` | `0 4px 6px` (`:2957`) |
 | Empty | §1.5 block, `.bookmarks-empty` | `:2960-2965` |
 
@@ -622,7 +622,7 @@ timestamp in the model. The view reads it on every render and mounts lazily
 | Field focus | accent border + 3 px `--accent-soft` halo, no outline (controls §2.4) | accent border only (`:3823`) |
 | Clear | 24 × 24 icon button inset `--space-1` from the right; field reserves `--control-h-body`; native cancel suppressed | none for Recent; `.search-panel-input` suppresses its own WebKit cancel, `.recent-filter` does not |
 | Row | list row 30 px, `--radius-sm`, `padding: var(--space-1) var(--space-2)`, gap `--space-2` | ≈26 px, radius 4, padding 5 × 8 (`:3831-3841`) |
-| Name | `--text-ui` 500, ellipsis | `--text-ui` 500 (`:3844`) |
+| Name | `--text-body` 500, ellipsis | `--text-body` (`:3844`) |
 | Meta | directory, `--font-mono`, `--text-xs`, `--text-muted`, right-aligned, `max-width: 40%`, ellipsis | `.78rem` sans, 40 % (`:3845-3852`) |
 | List | `padding: 0 var(--space-1) var(--space-1)`, `margin-right: var(--space-2)` | `0 6px 8px` (`:3828`) |
 | Empty | §1.5 block, `.recent-empty` | `:3853-3858` |
