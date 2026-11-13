@@ -1807,6 +1807,137 @@ async function main() {
       ruleImage.rules === 1 && ruleImage.images === 0 &&
         /alpha/.test(ruleImage.text), JSON.stringify(ruleImage));
 
+    // A forward Delete at a block edge before a list must not pull the
+    // list's first item up (that deletes its list type while the rest of
+    // the list stays). Two or more items keep the key dead; a one-item
+    // list merges cleanly, and typing continues at the join.
+    await boot("# L\n\nIntro\n\n- a\n- b\n");
+    await placeCaretInText("Intro", "Intro".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    let listBoundary = await page.evaluate(() => ({
+      items: document.querySelectorAll("#viewer-content li").length,
+      lists: document.querySelectorAll("#viewer-content ul").length,
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("list boundary: Delete before a two-item list keeps both items",
+      listBoundary.items === 2 && listBoundary.lists === 1 &&
+        /Intro/.test(listBoundary.text) && !/Introa/.test(listBoundary.text),
+      JSON.stringify(listBoundary));
+    await page.keyboard.press("Control+s");
+    check("list boundary: the refused delete saves the list intact",
+      await waitForFile((md) => /- a/.test(md) && /- b/.test(md)),
+      JSON.stringify(readNote()));
+
+    await boot("# L\n\nIntro\n\n- a\n");
+    await placeCaretInText("Intro", "Intro".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    listBoundary = await page.evaluate(() => {
+      const p = Array.from(document.querySelectorAll("#viewer-content p"))
+        .find((el) => /Introa/.test(el.textContent));
+      return {
+        lists: document.querySelectorAll("#viewer-content ul").length,
+        text: p ? p.textContent.replace(/\u200B/g, "").trim() : "",
+      };
+    });
+    check("list boundary: a one-item list merges into the block above",
+      listBoundary.lists === 0 && listBoundary.text === "Introa",
+      JSON.stringify(listBoundary));
+    await page.keyboard.type("x");
+    await sleep(200);
+    check("list boundary: typing continues at the merge point",
+      (await page.evaluate(() => {
+        const p = Array.from(document.querySelectorAll("#viewer-content p"))
+          .find((el) => /Introax/.test(el.textContent));
+        return p ? p.textContent.replace(/\u200B/g, "").trim() : "";
+      })) === "Introax");
+    await page.keyboard.press("Control+s");
+    check("list boundary: the one-item merge saves the joined text",
+      await waitForFile((md) => /Introax/.test(md)), JSON.stringify(readNote()));
+
+    // A task item's checkbox is a marker: the merge drops it instead of
+    // stranding an input in the paragraph.
+    await boot("# L\n\nIntro\n\n- [ ] a\n");
+    await placeCaretInText("Intro", "Intro".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    const taskBoundary = await page.evaluate(() => ({
+      lists: document.querySelectorAll("#viewer-content ul").length,
+      boxes: document.querySelectorAll(
+        '#viewer-content input[type="checkbox"]').length,
+      text: (Array.from(document.querySelectorAll("#viewer-content p"))
+        .find((el) => /Introa/.test(el.textContent)) || { textContent: "" })
+        .textContent.replace(/\u200B/g, "").trim(),
+    }));
+    check("list boundary: a one-item task merge drops the checkbox",
+      taskBoundary.lists === 0 && taskBoundary.boxes === 0 &&
+        taskBoundary.text === "Introa", JSON.stringify(taskBoundary));
+
+    // The same rule inside an item: Delete at the end of the parent's own
+    // text must not pull a nested child up while its siblings stay.
+    await boot("# L\n\n- alpha\n  - a1\n  - a2\n- bravo\n");
+    await placeCaretInText("alpha", "alpha".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    const nestedBoundary = await page.evaluate(() => ({
+      nested: Array.from(document.querySelectorAll("#viewer-content li li"))
+        .map((li) => li.textContent.replace(/\u200B/g, "").trim()),
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("list boundary: Delete before a two-item nested list is refused",
+      nestedBoundary.nested.length === 2 &&
+        nestedBoundary.nested.includes("a1") &&
+        nestedBoundary.nested.includes("a2") &&
+        /alpha/.test(nestedBoundary.text), JSON.stringify(nestedBoundary));
+
+    await boot("# L\n\n- alpha\n  - a1\n- bravo\n");
+    await placeCaretInText("alpha", "alpha".length);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    const nestedMerge = await page.evaluate(() => ({
+      nested: document.querySelectorAll("#viewer-content li li").length,
+      text: document.querySelector("#viewer-content > ul > li").textContent
+        .replace(/\u200B/g, "").trim(),
+    }));
+    check("list boundary: a one-item nested list merges into its parent",
+      nestedMerge.nested === 0 && nestedMerge.text === "alphaa1",
+      JSON.stringify(nestedMerge));
+    await page.keyboard.type("x");
+    await sleep(200);
+    check("list boundary: typing continues after a nested merge",
+      (await page.evaluate(() => document.querySelector(
+        "#viewer-content > ul > li").textContent
+        .replace(/\u200B/g, "").trim())) === "alphaa1x");
+
+    // An empty item is a line: Delete removes it and keeps one list,
+    // instead of lifting it to a paragraph and splitting the list.
+    await boot("# L\n\n- a\n-\n- b\n");
+    await page.evaluate(() => {
+      const li = document.querySelectorAll("#viewer-content li")[1];
+      const r = document.createRange();
+      r.selectNodeContents(li);
+      r.collapse(true);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      document.getElementById("viewer-content").focus();
+    });
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    const emptyItem = await page.evaluate(() => ({
+      lists: document.querySelectorAll("#viewer-content ul").length,
+      items: Array.from(document.querySelectorAll("#viewer-content li"))
+        .map((li) => li.textContent.replace(/\u200B/g, "").trim()),
+      paras: document.querySelectorAll("#viewer-content > p").length,
+    }));
+    check("list boundary: Delete on an empty middle item keeps one list",
+      emptyItem.lists === 1 && emptyItem.items.length === 2 &&
+        emptyItem.items[0] === "a" && emptyItem.items[1] === "b" &&
+        emptyItem.paras === 0, JSON.stringify(emptyItem));
+
     // Table structural deletes moved from the block context menu into the
     // "Edit table" modal. The same refusal rules live on its toolbar.
     const openTableEditor = async (cellSelector = "#viewer-content td") => {

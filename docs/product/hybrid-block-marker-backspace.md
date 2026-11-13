@@ -117,7 +117,21 @@ Rules that fall out of the table:
   space, or HTML reaches the saved file.
 - A non-collapsed selection, a modifier chord, a mid-block caret, a table cell,
   a fence, an atomic block, or an `<hr>` never triggers it.
-- Forward Delete on a non-empty block is not prevented.
+- Forward Delete inside a non-empty block is not prevented; at a list boundary
+  the guard below claims it.
+- A forward Delete at the end of a paragraph, heading, or list item's own
+  content immediately before a list does not pull the list's first item into
+  the block: that would delete the item's list type while the rest of the list
+  stays. Two or more items: refused. One plain item: the merge is allowed and
+  the list goes with it. A task item never strands its checkbox in the text; a
+  child that carries its own block content (a nested list, a second paragraph)
+  is refused. A task item with a next sibling keeps the existing task-item
+  merge, which runs first.
+- An empty list item is a line, not a block type: Delete removes that line
+  forward, Backspace removes it backward, and the list stays whole. The marker
+  strip would lift it to a paragraph and split the list in two. A stray
+  horizontal rule left under the emptied item (a dash run that parsed as an
+  `<hr>`) goes with it. A one-item empty list still strips to a paragraph.
 
 ## 6. Write-back and history
 
@@ -148,7 +162,7 @@ Rules that fall out of the table:
 | Native Backspace merge for headings/lists/quotes | Replaced at T by this gesture; the second Backspace merges. |
 | Enter on an empty list item / quote line | Unchanged. |
 | Clear formatting (`Mod+\`) | Unchanged; it is the multi-block, inline-inclusive action. This gesture is one block and marker-only. Do not implement it through `clearFormatting` (it keeps inputs, so a checkbox would survive). |
-| Delete at a block end (forward merge) | Unchanged. |
+| Delete at a block end (forward merge) | Unchanged between text blocks. At the end of a paragraph, heading, or list item's own content immediately before a list, a list-boundary guard claims the key: refused for a multi-item list, a clean merge for a one-item list (the task checkbox is dropped, never stranded). A child with its own block content is refused; an empty top-level paragraph before the list is removed and the list kept. An empty item inside a multi-item list is removed as a line on Delete or Backspace, keeping one list; a stray rule under the emptied item goes with it. |
 | Rules, atomic blocks, emptied fences, table selections, whole-note clear | Unchanged; the trigger excludes them and the guards are disjoint. |
 | Source (CM6) and preview modes | Unchanged; the gesture is hybrid-only. |
 
@@ -230,6 +244,20 @@ task edge merge cannot shadow it.
     `**Bold** title`.
 18. **Hybrid only.** Repeating the gesture in preview and source mode changes
     nothing and does not prevent the key.
+19. **List boundary Delete.** Given `<p>Intro</p>` followed by a list with two
+    or more items, with the caret at the end of the paragraph, when Delete,
+    then the key is prevented and the list keeps every item and its type. With
+    one plain item, the paragraph and the item's text join and the list is
+    removed. With one task item the checkbox is dropped, not carried into the
+    paragraph. The same rule applies at the end of a list item's own content
+    before its nested list; a child that carries its own block content is
+    refused.
+20. **Empty item Delete.** Given a multi-item list with an empty item, when
+    Delete (or Backspace) on that item, then the empty line is removed, the
+    list stays one list, and the caret is at the next item's start (Delete) or
+    the previous item's end (Backspace). A stray horizontal rule left under the
+    emptied item is removed with it. A one-item empty list still strips to one
+    empty paragraph.
 
 ## 10. Open decisions
 

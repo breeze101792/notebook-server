@@ -3294,6 +3294,203 @@
     return true;
   }
 
+  /* The paragraph or heading the caret sits in, whose parent is the
+   * editor root or a blockquote. A paragraph inside a list item or a
+   * table is not a line block for the list-boundary rule. */
+  function lineBlockAtCaret(node) {
+    let el = node;
+    while (el && el !== viewerContentEl) {
+      const parent = el.parentElement;
+      if ((el.tagName === "P" || HEADING_TAG_RE.test(el.tagName)) &&
+          (parent === viewerContentEl ||
+           (parent && parent.tagName === "BLOCKQUOTE"))) {
+        return el;
+      }
+      el = parent;
+    }
+    return null;
+  }
+
+  /* The line block the caret is in inside `li`: its own paragraph, or the
+   * item itself for bare text and inline content. A loose item can hold
+   * several paragraphs, so the merge must land in the caret's paragraph,
+   * never in the item's first one. */
+  function listItemLineBlock(li, range) {
+    let node = range.startContainer;
+    while (node && node.parentElement !== li) node = node.parentElement;
+    if (node && node.nodeType === Node.ELEMENT_NODE &&
+        (node.tagName === "P" || HEADING_TAG_RE.test(node.tagName))) {
+      return node;
+    }
+    return li;
+  }
+
+  /* The item's own child list that follows the caret inside `li`, or
+   * null. A loose item can hold more than one list (a list, a paragraph,
+   * another list): only the one after the caret is the merge target. */
+  function listChildAfterCaret(li, range) {
+    let node = range.startContainer;
+    while (node && node.parentElement !== li) node = node.parentElement;
+    if (!node) return null;
+    for (let sib = node.nextSibling; sib; sib = sib.nextSibling) {
+      if (sib.nodeType !== Node.ELEMENT_NODE) continue;
+      return isNestedList(sib) ? sib : null;
+    }
+    return null;
+  }
+
+  /* A forward Delete at the end of a paragraph, heading, or list item's
+   * own content immediately before a list. Letting the engine merge there
+   * drags the list's first item into the block, which drops that item's
+   * list type while the rest of the list stays (a task item strands its
+   * checkbox in the text; a parent item leaves its nested list under an
+   * empty marker). Only a list with one plain line merges cleanly: the
+   * item's content moves into the block and the list goes with it.
+   * Returns null when the caret is elsewhere, or a boundary descriptor
+   * with `refuse` set when the merge must not happen. */
+  function listForwardDeleteBoundary() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !viewerContentEl.contains(node)) return null;
+    if (insideProtectedBlock(node)) return null;
+    // Nested list: the caret at the end of an item's own content, before
+    // the item's own child list. A quote INSIDE the item is its own line
+    // block; let the line branch below resolve it.
+    const owner = node.closest ? node.closest("li") : null;
+    const innerQuote = node.closest ? node.closest("blockquote") : null;
+    const quoteInside = !!(owner && innerQuote && owner.contains(innerQuote));
+    if (owner && !quoteInside && viewerContentEl.contains(owner) &&
+        caretAtListItemContentEnd(owner, range)) {
+      const child = listChildAfterCaret(owner, range);
+      return child
+        ? listBoundaryDecision(child, listItemLineBlock(owner, range))
+        : null;
+    }
+    const line = lineBlockAtCaret(node);
+    if (!line) return null;
+    if (!caretDirectlyInTop(line, range) || !caretAtBlockEnd(line, range)) {
+      return null;
+    }
+    let list = line.nextElementSibling;
+    // A quote line followed by a list outside the quote: delete joins
+    // the list into the quote line, so the list's type is the one at
+    // risk there too.
+    if (!line.nextElementSibling &&
+        line.parentElement.tagName === "BLOCKQUOTE" &&
+        isNestedList(line.parentElement.nextElementSibling)) {
+      list = line.parentElement.nextElementSibling;
+    }
+    return isNestedList(list) ? listBoundaryDecision(list, line) : null;
+  }
+
+  /* Apply the one-line rule to a list a forward Delete would merge into
+   * `target`: more than one item, or an item that carries its own block
+   * content (a nested list, a second paragraph), keeps the list (refuse);
+   * a single plain item merges. */
+  function listBoundaryDecision(list, target) {
+    const items = Array.from(list.children).filter((n) => n.tagName === "LI");
+    if (!items.length) return null;
+    if (items.length > 1) return { target, list, refuse: true };
+    const li = items[0];
+    if (listItemBlockChildren(li).length) return { target, list, refuse: true };
+    return { target, list, li };
+  }
+
+  /* Merge a one-item list into the block before it: the item's own
+   * content joins the target and the list container goes with it. The
+   * checkbox of a task item is a marker and is dropped, never carried
+   * into the text. */
+  function joinSingleItemListForward(boundary) {
+    if (!boundary || boundary.refuse || !boundary.li) return false;
+    joinListItemInto(boundary.li, boundary.target, boundary.list);
+    if (boundary.target.tagName === "LI") {
+      setSelectionToRange(listItemOwnContentEndRange(boundary.target));
+    } else {
+      caretToEdge(boundary.target, true);
+    }
+    return true;
+  }
+
+  /* True when a line block holds no text and no embedded content: only
+   * editing artifacts (a caret line box, whitespace) are left. */
+  function blockHasNoContent(block) {
+    if (!block) return false;
+    if (block.textContent.replace(/[\s\u200B]/g, "") !== "") return false;
+    return !block.querySelector(EMBEDDED_CONTENT_SELECTOR +
+      ",table,pre,ul,ol,blockquote");
+  }
+
+  /* Delete on an empty line before a list removes the empty line and
+   * leaves the list intact: there is no type to protect, and refusing
+   * would make the key dead. Only a top-level empty paragraph reaches
+   * here: an empty heading or quote line is a marker-strip target and is
+   * claimed earlier. The caret lands at the first item's text. */
+  function removeEmptyLineBeforeList(boundary) {
+    const block = boundary.target;
+    if (!block || !block.parentElement) return false;
+    const first = Array.from(boundary.list.children)
+      .find((n) => n.tagName === "LI");
+    if (!first) return false;
+    block.remove();
+    viewerContentEl.focus({ preventScroll: true });
+    setSelectionToRange(listItemCaretRange(first, false));
+    onContentChange();
+    return true;
+  }
+
+  /* The empty list item a delete key should remove, or null. Only a
+   * collapsed caret at the item's own start, an empty own line, and a
+   * list that keeps at least one item qualify: a one-line list is left to
+   * the marker strip, where the type may go with the last line. */
+  function emptyListItemForDeleteKey() {
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !viewerContentEl.contains(node)) return null;
+    if (insideProtectedBlock(node)) return null;
+    const li = node.closest ? node.closest("li") : null;
+    if (!li) return null;
+    if (!caretAtListItemStart(li, range)) return null;
+    if (!listItemEmptyAfterCaret(li, range)) return null;
+    // An empty line's only surviving block child can be a horizontal rule
+    // left from a dash run; the line and that rule go together. Any other
+    // structural child (a nested list, a paragraph) is real content.
+    const blocks = listItemBlockChildren(li);
+    if (blocks.some((n) => n.tagName !== "HR")) return null;
+    // A caret before a task checkbox is S, not the item's content start.
+    if (taskCheckboxOf(li) && range.startContainer === li &&
+        range.startOffset === 0) return null;
+    const list = li.parentElement;
+    if (!isNestedList(list)) return null;
+    const items = Array.from(list.children).filter((n) => n.tagName === "LI");
+    return items.length > 1 ? li : null;
+  }
+
+  /* Remove an empty item's line and keep the list whole. Delete pulls the
+   * next line up (caret at the next item's start); Backspace pulls the
+   * line back (caret at the previous item's end). At the list's edge the
+   * caret falls to the surviving neighbour. */
+  function removeEmptyListItem(li, back) {
+    const prev = li.previousElementSibling;
+    const next = li.nextElementSibling;
+    li.remove();
+    viewerContentEl.focus({ preventScroll: true });
+    if (back && prev && prev.isConnected && prev.tagName === "LI") {
+      setSelectionToRange(listItemCaretRange(prev, true));
+    } else if (next && next.isConnected && next.tagName === "LI") {
+      setSelectionToRange(listItemCaretRange(next, false));
+    } else if (prev && prev.isConnected && prev.tagName === "LI") {
+      setSelectionToRange(listItemCaretRange(prev, true));
+    }
+    onContentChange();
+    return true;
+  }
+
   /* Where a new checkbox for `li` belongs. A loose item wraps its content
    * in a <p>; the checkbox must be a DIRECT <li> child or turndown's gfm
    * taskListItems rule does not see it and the marker degrades to plain
@@ -5300,6 +5497,19 @@
       e.preventDefault();
       return;
     }
+    // A delete key on an empty list item removes that line and keeps the
+    // list whole. The marker strip would otherwise lift the item into a
+    // paragraph and split the list in two. A one-line list still strips,
+    // where the type may go with the last line.
+    if ((e.key === "Delete" || e.key === "Backspace") &&
+        !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        !e.isComposing) {
+      const emptyItem = emptyListItemForDeleteKey();
+      if (emptyItem && removeEmptyListItem(emptyItem, e.key === "Backspace")) {
+        e.preventDefault();
+        return;
+      }
+    }
     // A collapsed caret at the first content position (T) of a formatted
     // block deletes that block's own marker and keeps its text. Delete
     // does so only when the block is empty, so a forward delete in a
@@ -5516,6 +5726,29 @@
           e.preventDefault();
           return;
         }
+      }
+    }
+    // Forward Delete at the end of a paragraph, heading, or list item's
+    // own content before a list must not let the engine drag the first
+    // item into the block: that deletes the item's list type while the
+    // rest of the list stays. The task-item merge above keeps priority;
+    // here the key is refused for two or more lines, and a one-line list
+    // merges cleanly with the list container going with it.
+    if (e.key === "Delete" &&
+        !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        !e.isComposing) {
+      const boundary = listForwardDeleteBoundary();
+      if (boundary) {
+        e.preventDefault();
+        if (!boundary.refuse) {
+          joinSingleItemListForward(boundary);
+        } else if (boundary.target && boundary.target.tagName !== "LI" &&
+                   blockHasNoContent(boundary.target)) {
+          // Nothing to protect on an empty line: delete the line, keep the
+          // list. Refusing here would leave Delete dead.
+          removeEmptyLineBeforeList(boundary);
+        }
+        return;
       }
     }
     // A printable character typed against a rule would merge into the

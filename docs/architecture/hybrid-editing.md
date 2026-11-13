@@ -1141,13 +1141,19 @@ intended spec, proposed here:
    result is one paragraph containing both texts (no word lost).
 2. `Delete` at **E** of block *A* joins *B* into *A* symmetrically.
 3. Merging a list item into a preceding paragraph (or vice versa) collapses the
-   list structure only for the merged item; the rest of the list stays.
+   list structure only for the merged item; the rest of the list stays. At a
+   list boundary a forward `Delete` is guarded instead: before a list with two
+   or more items it is refused, so the first item keeps its type; a one-item
+   list merges and the list goes with it; a task checkbox is dropped, never
+   stranded; a child that carries its own block content is refused; and a task
+   item with a next sibling keeps the task merge, which runs first
+   (`listForwardDeleteBoundary`).
 4. A merge that would leave a construct with a required marker but no content
    (a table with no rows, a zero-column table) is refused, as the existing table
    guards already do (`:3729`, `:3769`).
 5. Byte preservation of the neighbour applies as a Q1 consequence — see §5.5.
 
-The two edges where the engine cannot merge safely are implemented:
+The edges where the engine cannot merge safely are implemented:
 
 - **Atomic block.** A rendered plugin container (or a raw `<pre>` that is not
   being edited) is one character. The caret must sit DIRECTLY in the
@@ -1165,7 +1171,22 @@ The two edges where the engine cannot merge safely are implemented:
   item joins the preceding top-level block. Delete at the content end pulls the
   next sibling's content in and drops that item's checkbox. Nested lists and
   extra paragraphs travel after the target's own content. Plain list items keep
-  the native merge (`mergeTaskItemAtEdge` `:3031`).
+  the native merge (`mergeTaskItemAtEdge`).
+- **List boundary.** A forward Delete at the end of a top-level paragraph or
+  heading, or of a list item's own content before its nested list, would pull
+  the list's first item into the block and delete its list type while the rest
+  of the list stays. The key is refused for two or more items and for a child
+  that carries its own block content (a nested list, a second paragraph); a
+  one-item list merges cleanly (its content joins the target, the list goes, a
+  task checkbox is dropped). The task-item merge above runs first, so a task
+  item with a next sibling still merges that sibling. An empty top-level
+  paragraph before the list is deleted rather than refused, since it has no
+  type to protect (an empty heading or quote line is claimed by the marker
+  strip first). An empty item inside a multi-item list is removed as a line on
+  Delete or Backspace (`removeEmptyListItem`), so the key never splits one list
+  in two; a stray `<hr>` under the emptied item goes with the line, and a
+  one-item empty list keeps the marker-strip result.
+  `listForwardDeleteBoundary` / `joinSingleItemListForward`.
 - **Whole note.** Ctrl+A + Delete/Backspace, Ctrl+X, or Shift+Delete over the
   entire note replaces the root with one `p[data-hybrid-caret="1"]`, so the next
   typed character is plain text and an empty save never emits a stray heading

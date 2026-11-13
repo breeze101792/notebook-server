@@ -14408,6 +14408,320 @@ function check(label, cond, extra) {
           !!p.querySelector("[data-hybrid-caret-br]"),
           "html=" + vc.innerHTML);
       }
+      // Forward Delete at the end of a block before a list: the engine's
+      // merge would drop the first item's type while the rest of the list
+      // stays. It is refused for two or more lines; a one-line list merges
+      // cleanly and the list container goes with it.
+      await loadNote("Intro\n\n- a\n- b\n");
+      {
+        const p = vc.querySelector("p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: Delete before a two-item list is refused",
+          ev.defaultPrevented && vc.querySelectorAll("li").length === 2 &&
+          !!vc.querySelector("ul") && !/span/.test(vc.innerHTML),
+          "html=" + vc.innerHTML);
+        check("hybrid list delete: the refused merge saves both items",
+          norm(md()) === "Intro - a - b", JSON.stringify(md()));
+      }
+      await loadNote("Intro\n\n- a\n");
+      {
+        const p = vc.querySelector("p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: Delete before a one-item list merges it",
+          ev.defaultPrevented && !vc.querySelector("ul") &&
+          vc.querySelector("p").textContent === "Introa",
+          "html=" + vc.innerHTML);
+        check("hybrid list delete: the one-item merge saves a plain paragraph",
+          norm(md()) === "Introa", JSON.stringify(md()));
+        press(vc, { key: "z", ctrlKey: true });
+        await tick(50);
+        check("hybrid list delete: one undo restores the merged list",
+          !!vc.querySelector("ul") && vc.querySelectorAll("li").length === 1,
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("Intro\n\n- [ ] a\n");
+      {
+        const p = vc.querySelector("p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: a one-item task merge drops the checkbox",
+          ev.defaultPrevented && !vc.querySelector("ul") &&
+          !vc.querySelector("input") &&
+          vc.querySelector("p").textContent === "Introa",
+          "html=" + vc.innerHTML);
+        check("hybrid list delete: the task merge saves no checkbox marker",
+          norm(md()) === "Introa", JSON.stringify(md()));
+      }
+      await loadNote("Intro\n\n- a\n  - a1\n");
+      {
+        const p = vc.querySelector("p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: a parent item with a nested list is refused",
+          ev.defaultPrevented && !!vc.querySelector("ul ul") &&
+          !!vc.querySelector("li"), "html=" + vc.innerHTML);
+      }
+      await loadNote("## Title\n\n- a\n- b\n");
+      {
+        const h = vc.querySelector("h2");
+        caret(h.firstChild, h.textContent.length);
+        const ev = key(h, "Delete");
+        check("hybrid list delete: a heading keeps a two-item list",
+          ev.defaultPrevented && !!vc.querySelector("h2") &&
+          vc.querySelectorAll("li").length === 2 &&
+          vc.querySelector("h2").textContent === "Title",
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("- alpha\n  - a1\n  - a2\n- bravo\n");
+      {
+        const li = vc.querySelector("ul > li");
+        caret(li.firstChild, li.firstChild.nodeValue.length);
+        const ev = key(li, "Delete");
+        check("hybrid list delete: Delete before a two-item nested list is refused",
+          ev.defaultPrevented && !!vc.querySelector("ul ul") &&
+          vc.querySelectorAll("ul ul li").length === 2,
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("- alpha\n  - a1\n- bravo\n");
+      {
+        const li = vc.querySelector("ul > li");
+        caret(li.firstChild, li.firstChild.nodeValue.length);
+        const ev = key(li, "Delete");
+        const parent = vc.querySelector("ul > li");
+        check("hybrid list delete: a one-item nested list merges into its parent",
+          ev.defaultPrevented && !vc.querySelector("ul ul") &&
+          parent.textContent.trim() === "alphaa1",
+          "html=" + vc.innerHTML);
+        check("hybrid list delete: the nested merge saves both words",
+          norm(md()) === "- alphaa1 - bravo", JSON.stringify(md()));
+      }
+      await loadNote("- [ ] alpha\n  - [ ] a1\n");
+      {
+        const li = vc.querySelector("ul > li");
+        const text = Array.from(li.childNodes)
+          .find((n) => n.nodeType === 3 && n.nodeValue.trim());
+        caret(text, text.nodeValue.length);
+        const ev = key(li, "Delete");
+        const parent = vc.querySelector("ul > li");
+        check("hybrid list delete: a nested task merge drops the child checkbox",
+          ev.defaultPrevented && !vc.querySelector("ul ul") &&
+          parent.textContent.trim() === "alphaa1" &&
+          parent.querySelectorAll("input").length === 1,
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("- alpha\n  - a1\n    - a2\n- bravo\n");
+      {
+        const li = vc.querySelector("ul > li");
+        caret(li.firstChild, li.firstChild.nodeValue.length);
+        const ev = key(li, "Delete");
+        check("hybrid list delete: a nested child with its own list is refused",
+          ev.defaultPrevented && !!vc.querySelector("ul ul ul"),
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("Intro\n\n1. a\n2. b\n");
+      {
+        const p = vc.querySelector("p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: an ordered list with two items is refused",
+          ev.defaultPrevented && vc.querySelectorAll("ol li").length === 2,
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("Intro\n\n1. a\n");
+      {
+        const p = vc.querySelector("p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: a one-item ordered list merges",
+          ev.defaultPrevented && !vc.querySelector("ol") &&
+          vc.querySelector("p").textContent === "Introa",
+          "html=" + vc.innerHTML);
+      }
+      // A loose item can hold a list, a paragraph, then another list: only
+      // the list after the caret is the merge target.
+      await loadNote("- alpha\n  - a1\n\n  more\n\n  - a2\n  - a3\n");
+      {
+        const li = vc.querySelector("ul > li");
+        const more = Array.from(li.querySelectorAll("p"))
+          .find((p) => p.textContent === "more");
+        caret(more.firstChild, more.textContent.length);
+        const ev = key(li, "Delete");
+        const childLists = Array.from(li.children)
+          .filter((n) => n.tagName === "UL");
+        check("hybrid list delete: only the list after the caret is considered",
+          ev.defaultPrevented && childLists.length === 2 &&
+          childLists[0].children.length === 1 &&
+          childLists[1].children.length === 2,
+          "html=" + vc.innerHTML);
+      }
+      // An empty line before a list has no type to protect: Delete removes
+      // the line and keeps the list, rather than going dead.
+      await loadNote("Intro\n\n- a\n- b\n");
+      {
+        const p = vc.querySelector("p");
+        p.textContent = "";
+        const br = doc.createElement("br");
+        br.setAttribute("data-hybrid-caret-br", "1");
+        p.appendChild(br);
+        caret(p, 1);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: an empty line before a list is removed",
+          ev.defaultPrevented && !vc.querySelector("p") &&
+          vc.querySelectorAll("li").length === 2,
+          "html=" + vc.innerHTML);
+      }
+      // A quote line before a list inside the quote has the same target.
+      await loadNote("> Intro\n>\n> - a\n> - b\n");
+      {
+        const p = vc.querySelector("blockquote p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: a quote line before a two-item list is refused",
+          ev.defaultPrevented && vc.querySelectorAll("blockquote li").length === 2 &&
+          !!vc.querySelector("blockquote p"),
+          "html=" + vc.innerHTML);
+      }
+      // A quote line followed by a top-level list: the list is outside the
+      // quote, and the engine would still pull its first item into the quote.
+      await loadNote("> Intro\n\n- a\n- b\n");
+      {
+        const p = vc.querySelector("blockquote p");
+        caret(p.firstChild, p.textContent.length);
+        const ev = key(p, "Delete");
+        check("hybrid list delete: a quote line before an outside list is refused",
+          ev.defaultPrevented && vc.querySelectorAll("blockquote li").length === 0 &&
+          vc.querySelectorAll("ul > li").length === 2 &&
+          vc.querySelector("blockquote p").textContent === "Intro",
+          "html=" + vc.innerHTML);
+      }
+      // The list after the caret can be the merge target even in a loose
+      // item with two child lists.
+      await loadNote("- alpha\n  - a1\n\n  more\n\n  - b1\n");
+      {
+        const li = vc.querySelector("ul > li");
+        const more = Array.from(li.querySelectorAll("p"))
+          .find((p) => p.textContent === "more");
+        caret(more.firstChild, more.textContent.length);
+        const ev = key(li, "Delete");
+        const childLists = Array.from(li.children)
+          .filter((n) => n.tagName === "UL");
+        const merged = Array.from(li.querySelectorAll("p"))
+          .find((p) => p.textContent === "moreb1");
+        check("hybrid list delete: the one-item list after the caret merges",
+          ev.defaultPrevented && childLists.length === 1 &&
+          childLists[0].textContent.trim() === "a1" && !!merged,
+          "html=" + vc.innerHTML);
+      }
+      // An empty item is a line, not a block type: Delete removes that
+      // line and keeps one list instead of splitting the list in two.
+      await loadNote("- a\n-\n- b\n");
+      {
+        const empty = vc.querySelectorAll("li")[1];
+        caret(empty, 0);
+        const ev = key(empty, "Delete");
+        const items = vc.querySelectorAll("li");
+        check("hybrid list delete: Delete on an empty middle item keeps one list",
+          ev.defaultPrevented && vc.querySelectorAll("ul").length === 1 &&
+          items.length === 2 && !vc.querySelector("p") &&
+          items[0].textContent.trim() === "a" &&
+          items[1].textContent.trim() === "b",
+          "html=" + vc.innerHTML);
+        check("hybrid list delete: the empty middle item saves one list",
+          norm(md()) === "- a - b", JSON.stringify(md()));
+        const sel = window.getSelection();
+        const nextText = Array.from(items[1].childNodes)
+          .find((n) => n.nodeType === 3 && n.nodeValue.indexOf("b") !== -1);
+        check("hybrid list delete: the caret lands at the next item's start",
+          !!nextText && sel.isCollapsed && sel.anchorNode === nextText &&
+          sel.anchorOffset === 0,
+          "anchor=" + (sel.anchorNode && sel.anchorNode.nodeName) +
+          " off=" + sel.anchorOffset);
+        press(vc, { key: "z", ctrlKey: true });
+        await tick(50);
+        check("hybrid list delete: one undo restores the empty item",
+          vc.querySelectorAll("li").length === 3, "html=" + vc.innerHTML);
+      }
+      await loadNote("-\n- b\n");
+      {
+        const empty = vc.querySelector("li");
+        caret(empty, 0);
+        const ev = key(empty, "Delete");
+        check("hybrid list delete: Delete on an empty first item keeps one list",
+          ev.defaultPrevented && vc.querySelectorAll("ul").length === 1 &&
+          vc.querySelectorAll("li").length === 1 &&
+          vc.querySelector("li").textContent.trim() === "b",
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("- a\n-\n\nAfter\n");
+      {
+        const empty = vc.querySelectorAll("li")[1];
+        caret(empty, 0);
+        const ev = key(empty, "Delete");
+        check("hybrid list delete: Delete on a trailing empty item keeps the list",
+          ev.defaultPrevented && vc.querySelectorAll("ul").length === 1 &&
+          vc.querySelectorAll("li").length === 1 &&
+          vc.querySelector("li").textContent.trim() === "a" &&
+          !!vc.querySelector("p"),
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("-\n");
+      {
+        const empty = vc.querySelector("li");
+        caret(empty, 0);
+        const ev = key(empty, "Delete");
+        check("hybrid list delete: a one-line empty list still strips",
+          ev.defaultPrevented && !vc.querySelector("ul") &&
+          !!paragraph(), "html=" + vc.innerHTML);
+      }
+      // Backspace on the same empty line pulls it back instead of lifting
+      // it into a paragraph between two lists.
+      await loadNote("- a\n-\n- b\n");
+      {
+        const empty = vc.querySelectorAll("li")[1];
+        caret(empty, 0);
+        const ev = key(empty, "Backspace");
+        const items = vc.querySelectorAll("li");
+        const sel = window.getSelection();
+        const prevText = Array.from(items[0].childNodes)
+          .find((n) => n.nodeType === 3 && n.nodeValue.indexOf("a") !== -1);
+        check("hybrid list delete: Backspace on an empty middle item keeps one list",
+          ev.defaultPrevented && vc.querySelectorAll("ul").length === 1 &&
+          items.length === 2 && !vc.querySelector("p") && !!prevText &&
+          sel.isCollapsed && sel.anchorNode === prevText &&
+          sel.anchorOffset === prevText.nodeValue.length,
+          "html=" + vc.innerHTML);
+      }
+      await loadNote("-\n- b\n");
+      {
+        const empty = vc.querySelector("li");
+        caret(empty, 0);
+        const ev = key(empty, "Backspace");
+        check("hybrid list delete: Backspace on an empty first item keeps one list",
+          ev.defaultPrevented && vc.querySelectorAll("ul").length === 1 &&
+          vc.querySelectorAll("li").length === 1 &&
+          vc.querySelector("li").textContent.trim() === "b",
+          "html=" + vc.innerHTML);
+      }
+      // A stray horizontal rule under an emptied item (a dash run that
+      // parsed as an <hr>) is part of that empty line: removing the line
+      // removes it too, instead of hoisting it and splitting the list.
+      await loadNote("- [ ] a\n- [ ] \n\n    * * *\n\n- [ ] b\n");
+      {
+        const empty = vc.querySelectorAll("li")[1];
+        check("hybrid list delete: the emptied item holds the stray rule",
+          !!empty && !!empty.querySelector("hr"), "html=" + vc.innerHTML);
+        const box = empty.querySelector('input[type="checkbox"]');
+        caret(box.nextSibling, 0);
+        const ev = key(empty, "Delete");
+        const items = vc.querySelectorAll("li");
+        check("hybrid list delete: an empty item with a stray rule keeps one list",
+          ev.defaultPrevented && vc.querySelectorAll("ul").length === 1 &&
+          items.length === 2 && !vc.querySelector("hr") &&
+          !vc.querySelector(":scope > p"),
+          "html=" + vc.innerHTML);
+      }
     }
 
     // --- AC7/AC8: link create -------------------------------------------
