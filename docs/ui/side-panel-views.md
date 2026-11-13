@@ -256,7 +256,7 @@ This pass adds ARIA, keyboard and real buttons; it does not redraw a row.
 | Container | `padding: 6px 4px` | `:2770` |
 | Empty | moved to a sibling of the scroller, same padding and copy | §1.5 |
 | Hover | `--accent-soft` (shipped) | `:2780` |
-| Active file | `--accent-soft`, `--accent` text, 600 (shipped) | `:2781` |
+| Active file | `--accent-soft`, `--accent` text, weight 400 (shipped) | `:2781` |
 | Multi-selected | `--accent-soft`, `--fg` text, 400, inset 2 px `--accent` | `:2785-2790` |
 
 The active-file treatment measures 4.39:1 on `--accent-soft` in the dark theme, under the
@@ -289,7 +289,7 @@ multi-selection (`:390-402`), and a mode flip drops it (`:1692-1700`).
 |---|---|---|
 | Rest | transparent, `--fg` | transparent, `--text-primary` |
 | Hover | `--accent-soft` | `--surface-raised` |
-| Active file | `--accent-soft`, `--accent` text, 600 | `--accent-soft`, `--text-primary`, 600, inset 2 px `--accent` |
+| Active file | `--accent-soft`, `--accent` text, 600 | `--accent-soft`, `--text-primary`, 400, inset 2 px `--accent` |
 | Multi-selected | `--accent-soft`, `--fg` text, 400, inset 2 px `--accent` | same as active |
 | Focus-visible | ring at `--focus-offset-inset` | ring at `--focus-offset-inset` |
 | Dragging | `opacity: var(--opacity-drag)` | `opacity: var(--opacity-drag)` |
@@ -521,7 +521,7 @@ activity view and the inline Explorer section share one renderer and one order (
 | Property | Value | Today |
 |---|---|---|
 | Row | list row: 30 px, `--radius-sm`, `padding: var(--space-1) var(--space-2)`, gap `--space-2` | div, ≈21 px, radius 4 (`style.css:2971-2980`) |
-| Marker | `--icon-sm` 14, `--text-muted`, `★`, `aria-hidden="true"` | 14 px, 11 px text, `--warn` (`:2992`) |
+| Marker | `--icon-md` 16 column, `--icon-sm` 14 glyph, `--warn`, `★`, `aria-hidden="true"` | 14 px, 11 px text, `--warn` (`:2992`) |
 | Name | `--text-body`, one line, ellipsis, `title` = full path | `.bookmark-name` (`:2993`; `bookmarks.js:183-184`) |
 | List | `padding: 0 var(--space-1) var(--space-1)`, gap `--space-hair`, `margin-right: var(--space-2)` | `0 4px 6px` (`:2957`) |
 | Empty | §1.5 block, `.bookmarks-empty` | `:2960-2965` |
@@ -567,7 +567,7 @@ Copy:
 |---|---|
 | Rest | transparent, name `--text-primary` |
 | Hover | row `--surface-raised` (`bookmarks.js` marks nothing; CSS only) |
-| Active file | `--accent-soft` face, name `--text-primary` 600, 2 px inset accent bar, `aria-current="true"` |
+| Active file | `--accent-soft` face, name `--text-primary`, 2 px inset accent bar, `aria-current="true"`; weight 400 |
 | Focus-visible | inset ring on the row button |
 | Dragging | `--opacity-drag` on the wrapper; insert mark 2 px accent at the edge |
 | Long list | list scrolls; the header count does not change |
@@ -621,9 +621,9 @@ timestamp in the model. The view reads it on every render and mounts lazily
 | Field | `--control-h-lg` 36, `--surface-well`, `1px --border-strong`, `--radius-sm`, `--text-ui`, placeholder `--text-muted` | 32 px, `--bg` face, `--border` (`:3813-3822`) |
 | Field focus | accent border + 3 px `--accent-soft` halo, no outline (controls §2.4) | accent border only (`:3823`) |
 | Clear | 24 × 24 icon button inset `--space-1` from the right; field reserves `--control-h-body`; native cancel suppressed | none for Recent; `.search-panel-input` suppresses its own WebKit cancel, `.recent-filter` does not |
-| Row | list row 30 px, `--radius-sm`, `padding: var(--space-1) var(--space-2)`, gap `--space-2` | ≈26 px, radius 4, padding 5 × 8 (`:3831-3841`) |
-| Name | `--text-body` 500, ellipsis | `--text-body` (`:3844`) |
-| Meta | directory, `--font-mono`, `--text-xs`, `--text-muted`, right-aligned, `max-width: 40%`, ellipsis | `.78rem` sans, 40 % (`:3845-3852`) |
+| Row | list row 30 px, `--radius-sm`, `padding: 3px 6px` (the tree row box), gap `--space-2` | 30 px, radius 4, padding 3 × 6 (`:3831-3841`) |
+| Name | `--text-body`, 400, ellipsis | `--text-body` (`:3844`) |
+| Meta | directory, `--font-mono`, `--text-sm`, `--text-muted`, right-aligned, `max-width: 40%`, ellipsis | `.78rem` sans, 40 % (`:3845-3852`) |
 | List | `padding: 0 var(--space-1) var(--space-1)`, `margin-right: var(--space-2)` | `0 6px 8px` (`:3828`) |
 | Empty | §1.5 block, `.recent-empty` | `:3853-3858` |
 
@@ -898,7 +898,6 @@ Exact additions. `.is-bookmarked` and `.is-pinned` are kept as paint aliases bes
 .bookmark-row.selected, .recent-row.selected {
   background: var(--accent-soft);
   color: var(--text-primary);
-  font-weight: var(--fw-semibold);
   box-shadow: inset var(--stroke-2) 0 0 var(--accent);
 }
 .tree-row.multi-selected {
@@ -1098,7 +1097,7 @@ No framework, no build step, no new dependency.
 | **C1** | Controls' target rows are 24 px (tree) and 30 px (list); the shipped rows are ≈22 and ≈21–26. | `controls.md` §2.16; `style.css:2771-2779`, `:2971-2980`, `:3831-3841` | The target heights apply to all four views. |
 | **C2** | Controls' target hover is `--surface-raised`; the shipped tree, bookmark and recent rows wash with `--accent-soft`, so hover and selection look the same. | `controls.md` §2.16, §3.4; `style.css:2780`, `:2885`, `:2981`, `:3842` | Neutral hover; accent wash only for selection and the cursor. Sessions already does this (`sessions.md` D17). |
 | **C3** | Bookmark and pin "on" states use `--warn` (amber), whose role is caution/unsaved. | `style.css:2992`, `:3012`, `:3029`; foundations §3.4 | Accent-wash face + `--accent` glyph on a pressed toggle; the bookmark row's marker is `--text-muted`. |
-| **C4** | The active row paints `--accent` text on `--accent-soft`, 4.39:1 in the dark theme — under the 4.5:1 text floor at 11 px. | `style.css:2781`, `:2887`, `:2982`; `sessions.md` §3.3 | `--text-primary` + 600 + a 2 px inset accent bar. Sessions' reasoning, applied to the four views. |
+| **C4** | The active row paints `--accent` text on `--accent-soft`, 4.39:1 in the dark theme — under the 4.5:1 text floor at 11 px. | `style.css:2781`, `:2887`, `:2982`; `sessions.md` §3.3 | `--text-primary` + a 2 px inset accent bar; the weight stays 400 so the row keeps the row contract. |
 | **C5** | `.recent-filter` is 32 px, `--border`, page background, no label, no clear control; the phone block never resizes it, so it stays below 16 px and iOS zooms on focus. | `style.css:3813-3823`; `controls.md` §2.4, §5; `activity.js:331-335` | 36 px / 44 px, `--surface-well`, `--border-strong`, a label, a 24 px clear button; 16 px fixed on phone. |
 | **C6** | Bookmarks and pins reorder by drag only. | `bookmarks.js:265-336`; `sidebar.js:785-874`; foundations §10.5 rule 4 | `Move up` / `Move down` in each row menu; drag stays. |
 | **C7** | The tree star and pin are hover-gated `span`s with a `title` and no role, no focus, no pressed state. | `sidebar.js:173-235`; `style.css:2999-3031`; `controls.md` §2.16 | Buttons with `aria-pressed`; `tabindex="-1"`; the row menu is the keyboard path. |

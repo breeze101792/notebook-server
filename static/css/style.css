@@ -2450,6 +2450,7 @@ body[data-theme="light"] #settings-overlay {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  font-size: var(--text-ui);
 }
 .shortcut-binding {
   /* The kbd look matches the existing :help overlay's kbd style so
@@ -3034,7 +3035,7 @@ body[data-theme="light"] :is(#viewer-content, #viewer-scroll) {
   white-space: nowrap;
 }
 :where(#file-tree) .tree-row:hover { background: var(--accent-soft); }
-:where(#file-tree) .tree-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+:where(#file-tree) .tree-row.selected { background: var(--accent-soft); color: var(--accent); }
 /* Multi-selection: a soft band with an accent edge, deliberately distinct
  * from the active-file .selected (accent text + bold). */
 :where(#file-tree) .tree-row.multi-selected {
@@ -3043,7 +3044,7 @@ body[data-theme="light"] :is(#viewer-content, #viewer-scroll) {
   color: var(--fg);
   font-weight: 400;
 }
-:where(#file-tree) .tree-row.selected.multi-selected { color: var(--accent); font-weight: 600; }
+:where(#file-tree) .tree-row.selected.multi-selected { color: var(--accent); }
 .tree-icon { width: 16px; height: 16px; flex: 0 0 16px; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; }
 /* Guide lines drawn like the `tree` command's branches ("├── " / "└── "
@@ -3234,7 +3235,7 @@ body[data-theme="light"] :is(#viewer-content, #viewer-scroll) {
   user-select: none;
 }
 .bookmark-row:hover { background: var(--accent-soft); }
-.bookmark-row.selected { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.bookmark-row.selected { background: var(--accent-soft); color: var(--accent); }
 .bookmark-row.dragging { opacity: .4; }
 /* Drop markers mirror the tree's drag affordance. drop-before/ drop-after
  * are used for the empty-space-between-rows case (the row resolves to
@@ -3244,7 +3245,7 @@ body[data-theme="light"] :is(#viewer-content, #viewer-scroll) {
 .bookmark-row.drop-before { box-shadow: -2px 0 0 0 var(--accent); }
 .bookmark-row.drop-after  { box-shadow:  2px 0 0 0 var(--accent); }
 .bookmarks-list.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
-.bookmark-pin { width: 14px; text-align: center; font-size: 11px; line-height: 1; color: var(--warn); }
+.bookmark-pin { width: var(--icon-md); flex: 0 0 var(--icon-md); text-align: center; font-size: var(--icon-sm); line-height: 1; color: var(--warn); }
 .bookmark-name { overflow: hidden; text-overflow: ellipsis; }
 /* The inline ⭐ toggle on tree rows. Hidden by default; the row's
  * :hover + the file's "is bookmarked" state control visibility (the
@@ -3361,12 +3362,12 @@ body > #nb-menu .submenu.open {
 .outline ul { list-style: none; margin: 0; padding: 0; }
 .outline-item a {
   display: block;
-  padding: 3px 8px;
+  padding: 3px 6px;
   color: var(--fg-muted);
   text-decoration: none;
   border-left: 2px solid transparent;
   border-radius: 0 4px 4px 0;
-  font-size: var(--text-ui);
+  font-size: var(--text-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3380,7 +3381,6 @@ body > #nb-menu .submenu.open {
   color: var(--outline-active);
   border-left-color: var(--outline-active);
   background: var(--accent-soft);
-  font-weight: 600;
 }
 .outline-empty { padding: 16px 12px; color: var(--fg-muted); font-size: .86rem; }
 
@@ -4105,7 +4105,7 @@ body > #nb-menu .submenu.open {
   align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 8px;
+  padding: 3px 6px;
   border-radius: 4px;
   cursor: pointer;
   white-space: nowrap;
@@ -4113,7 +4113,7 @@ body > #nb-menu .submenu.open {
 }
 .recent-row:hover, .recent-row.selected { background: var(--accent-soft); }
 .recent-row.selected { color: var(--accent); }
-.recent-name { overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+.recent-name { overflow: hidden; text-overflow: ellipsis; }
 .recent-dir {
   font-size: var(--text-sm);
   color: var(--text-muted);
@@ -4598,7 +4598,7 @@ body > #nb-menu .submenu.open {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.sp-file { font-weight: 600; font-size: .86rem; }
+.sp-file { font-size: var(--text-body); font-weight: var(--fw-regular); }
 .sp-dir { color: var(--fg-muted); font-weight: 400; }
 .sp-meta { font-size: .74rem; color: var(--fg-muted); flex: 0 0 auto; white-space: nowrap; }
 .sp-count {
@@ -4607,7 +4607,7 @@ body > #nb-menu .submenu.open {
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--fg);
-  font-size: .72rem;
+  font-size: var(--text-sm);
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -5356,7 +5356,7 @@ body > #nb-menu .submenu.open {
 .ai-msg-assistant > .ai-prose-span {
   color: var(--text-primary);
   font-size: var(--text-body);
-  line-height: var(--lh-normal);
+  line-height: var(--lh-prose);
   word-break: break-word;
   min-width: 0;
 }
@@ -8624,15 +8624,14 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   min-width: 0;
   display: flex;
   align-items: center;
-  min-height: 30px;
   padding: 3px 6px 3px 10px;
   background: none;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   color: var(--fg);
   font: inherit;
   font-size: var(--text-body);
-  line-height: var(--lh-snug);
+  line-height: var(--lh-normal);
   text-align: left;
   white-space: nowrap;
   cursor: pointer;
@@ -8646,7 +8645,7 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 /* Active: tinted face + a 14 px accent marker + 600. The marker is the
  * same 2 px indicator the activity bar uses, and being 14 px tall it
  * never meets the row's 6 px corners. Three cues, one positional. */
-.session-row[aria-current="true"] { background: var(--accent-soft); font-weight: 600; }
+.session-row[aria-current="true"] { background: var(--accent-soft); }
 .session-row[aria-current="true"]::before {
   content: "";
   position: absolute;
@@ -8665,7 +8664,7 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 .session-name {
   flex: 1 1 auto;
   min-width: 0;
-  margin-right: 6px;
+  margin-right: 8px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8689,7 +8688,7 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   flex: 0 0 auto;
   min-width: 2ch;
   text-align: right;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--text-muted);
 }

@@ -119,7 +119,7 @@ that already use them (`docs/ui/controls.md`, `docs/ui/sessions.md`,
 | Label (panel title, section header, small uppercase) | `--text-xs` | `--fw-regular`, `--lh-tight`, `--tracking-label`, uppercase | `style.css:531-537`; `sessions.md:40`; `side-panel-views.md:220` |
 | Meta (secondary line in a row, footer, hint, status) | `--text-sm` | `--fw-regular`, `--lh-snug` | `foundations.md:260`; `controls.md:652`, `:654` |
 | Control (button, field, menu item, chip, toggle) | `--text-ui` | `--fw-medium`, `--lh-flat` or `--lh-normal` | `controls.md:155`, `:504`, `:653` |
-| Row (primary text of a list row: file, session, bookmark name) | `--text-body` | `--fw-regular`–`--fw-medium`, `--lh-snug` | `side-panel-views.md:525`, `:625`; `docs/ui/typography.md` §2 |
+| Row (primary text of a list row: file, session, bookmark name) | `--text-body` | `--fw-regular` always (the current row changes face and colour, not weight), `--lh-normal` | `side-panel-views.md:525`, `:625`; `docs/ui/typography.md` §2 |
 | Primary chrome (topbar, tabs, edit bar, brand, picker rows) | `--text-ui-lg` | 400–600, `--lh-flat` | `foundations.md:256`; `style.css:336`, `:8271` |
 | Prose (viewer body, empty-state sentence, error body) | `--text-body` | `--fw-regular`, `--lh-normal` (1.5) | `style.css:303`; `controls.md:682` |
 | UI heading (dialog title, modal h2, edit-window title) | `--text-lg` | `--fw-semibold`, `--lh-tight` | `foundations.md:257` |
@@ -366,9 +366,9 @@ This is the §4 contract, executed.
 selectors the suite asserts one size per role — all `.panel-title`
 elements equal `var(--text-xs)`; the row-name group
 (`.tree-name`, `.sp-file`, `.bookmark-name`, `.recent-name`,
-`.session-name`, `.search-panel-hit-file`) shares one step,
-`--text-body`; all `button`, `input`, `select` in the settings modal are
-`--text-ui`. A second side panel that picks a different size fails here
+`.session-name`, `.outline-item a`) shares one size, one line height and
+one rest weight; all `button`, `input`, `select` in the settings modal
+are `--text-ui`. A second side panel that picks a different size fails here
 even though both sizes are "legal".
 
 **False positives avoided:** prose can only produce `--text-body` and the

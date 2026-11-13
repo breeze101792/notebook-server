@@ -124,8 +124,6 @@ const ALLOWLIST = [
   { file: "static/css/style.css", selector: ".toast", value: ".86rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".recent-empty", value: ".86rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".search-panel-note", value: ".72rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
-  { file: "static/css/style.css", selector: ".sp-file", value: ".86rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
-  { file: "static/css/style.css", selector: ".sp-count", value: ".72rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".search-panel-hit-snippet", value: ".8rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".ai-prose-span h2", value: "1rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".ai-prose-span h3, .ai-prose-span h4, .ai-prose-span h5, .ai-prose-span h6", value: ".93rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
@@ -273,7 +271,6 @@ const ALLOWLIST = [
   { file: "static/css/style.css", selector: ":where(#tab-bar) .tab .tab-close", value: "16px", why: "glyph/icon size, not text; becomes --icon-*", retires: "never -- glyph -> --icon-* (foundations §9)" },
   { file: "static/css/style.css", selector: ":where(#tab-bar) .tab.pinned .tab-pin", value: "14px", why: "glyph/icon size, not text; becomes --icon-*", retires: "never -- glyph -> --icon-* (foundations §9)" },
   { file: "static/css/style.css", selector: "#welcome .welcome-icon", value: "48px", why: "glyph/icon size, not text; becomes --icon-*", retires: "never -- glyph -> --icon-* (foundations §9)" },
-  { file: "static/css/style.css", selector: ".bookmark-pin", value: "11px", why: "glyph/icon size, not text; becomes --icon-*", retires: "never -- glyph -> --icon-* (foundations §9)" },
   { file: "static/css/style.css", selector: ".tree-star", value: "11px", why: "glyph/icon size, not text; becomes --icon-*", retires: "never -- glyph -> --icon-* (foundations §9)" },
   { file: "static/css/style.css", selector: ".recent-clear", value: "16px", why: "glyph/icon size, not text; becomes --icon-*", retires: "never -- glyph -> --icon-* (foundations §9)" },
 

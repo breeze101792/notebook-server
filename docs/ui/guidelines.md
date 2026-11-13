@@ -87,6 +87,31 @@ takes; it never says how big a font is.
 26 px buttons, because it is a dense formatting strip above the reader. The modal edit bar is
 44 px. Both keep the focus ring at +1 px; see §4.
 
+### 2.1 The list-row contract
+
+A row in a side panel, the outline or a picker is the same object everywhere: one file, one
+session, one bookmark, one hit. Its text is the **row** role in [`typography.md`](typography.md) §2;
+its box is this table. A surface doc may add a column (an icon, a count, a pin) but never changes a
+value here — a panel that disagrees is the drift this contract exists to stop.
+
+| Property | Value | Why |
+|---|---|---|
+| Height | line box + 6 px padding — 27 px at the 1.0 root, 30 px at 1.15 | one rhythm across the sidebar, the outline and every list; it follows `--font-scale` like the text |
+| Padding | `3px 6px` | the tree-row box; every list matches it so the rows line up |
+| Radius | `--radius-xs` (4) | flat list, not a card; the outline keeps square left corners because its accent bar owns that edge |
+| Gap | `var(--space-1)` (4) icon to name; `var(--space-2)` (8) before a trailing count or path | one content gap, one meta gap |
+| Type | `--text-body` / `--lh-normal` (1.5) | one size and one line box in every panel |
+| Weight | 400 on every row, current included | a selected row is still the same row; selection is face and colour, never bold |
+| Name | one line, ellipsis, `title` = the full value | never wraps, never truncates without a way to read it |
+| Rest face | transparent | no zebra stripes |
+| Hover | `--accent-soft` | the row is one click target |
+| Current | `--accent-soft` + 600, accent marker or accent text | one signal per surface, see the surface doc |
+| Focus | inset ring, `--focus-offset-inset` | the list clips |
+| Trailing meta | `--text-sm`, `--text-muted`, `flex: 0 0 auto` | counts, paths and dates never push the name |
+
+The tree is the reference: it is the densest list in the app and every other row was measured
+against it. A new list copies this table, not the nearest surface.
+
 ---
 
 ## 3. Tokens

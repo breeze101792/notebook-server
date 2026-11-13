@@ -140,14 +140,17 @@ between steps (1.0 px at S, 1.3 px at L).
 | # | Assertion | Fails when |
 |---|---|---|
 | A1 | Zero unmatched sizes in the matrix | any text is off the scale |
-| A2 | The row group measures one px: `.tree-name`, `.session-name`, `.bookmark-name`, `.recent-name`, `.search-panel-hit-file`, `.ai-prose-span` | two panels disagree — **the original bug** |
+| A2 | The row group shares one font size: `.tree-name`, `.session-name`, `.bookmark-name`, `.recent-name`, `.search-panel-hit-file`, `.ai-prose-span`, `.outline-item a`; the list rows (all but `.ai-prose-span`) also share one line height and one weight, current rows included | two panels disagree — **the original bug, and its line-height and weight cousins** |
 | A3 | All `.panel-title` elements measure one px, and it is `--text-xs` | a panel header drifts |
 | A4 | All panel headers and the tab bar are equal in height | a header stops following the scale |
 | A5 | At S/M/L/XL each step equals root × its rem value; `--text-2xs` stays 9 px | a token stops scaling |
 | A6 | At M, `.tab` is `--text-ui-lg`; every visible Settings `button`/`input`/`select`/`textarea` carries `--text-ui` (fields included: their text is in `value`, not a child node) | a control takes the wrong rank |
+| A7 | *Retired.* The row box is R4 of the row-contract group (§3.5), which measures every list through its own box selector and asserts one height across lists | — |
 
 A2 and A3 are the anti-drift assertions: they are cheap, they name the role rather than the value,
-and they fail on a *new* surface that picks its own size even when that size is legal.
+and they fail on a *new* surface that picks its own size even when that size is legal. A2 reads its
+rows through the name selectors; §3.5 reads the same rows through their boxes and adds the six
+properties A2 cannot see.
 
 The Settings row's `Font size · <px>` label is behaviour, not computed type, so it stays in the DOM
 suite: `tests/dom/test_dom.js` asserts `14 px` on open and the picked value on every change, driving
@@ -165,6 +168,42 @@ FAIL search, advanced open, XL: 9 off-scale
 ```
 
 The delta and the nearest step make the fix obvious without opening the stylesheet.
+
+### 3.5 The row-contract group
+
+[`guidelines.md`](../ui/guidelines.md) §2.1 is the normative table for a list row. The runtime
+audit holds it in a named group after the A-assertions — one check each per setting, so a failure
+names the setting and the list.
+
+| # | Assertion | Fails when |
+|---|---|---|
+| R0 | All eight lists (Explorer tree, Pinned, Bookmarks, Recent, Sessions, Search hit, Outline, AI message) produce a visible row in the matrix | a list stops rendering, or a state is unlisted — a vacuous pass |
+| R1 | Every row name is `--text-body`: root × 1 | a panel picks a size of its own |
+| R2 | Every row line box is `--lh-normal`: root × 1.5. The AI log is prose and takes `--lh-prose` (root × 1.65) | a panel picks a line height of its own |
+| R3 | Weight 400 on every row, the current row included. Selection is face and colour only | a row bolds, selected or not |
+| R4 | Box height = line box + 6, and one height across every list at a setting | a row grows a second box, or one panel pads differently |
+| R5 | Padding 3 top and bottom, 6 right and left, radius 4; gap 4 from a leading icon and 8 before trailing meta | a surface invents its own row box |
+| R6 | The name is `white-space: nowrap`, `overflow: hidden` in both axes, `text-overflow: ellipsis` | a name wraps, or clips without an ellipsis |
+| R7 | Trailing meta (`.session-count`, `.recent-dir`, `.sp-count`) is `--text-sm`, `nowrap`, `flex-grow: 0` | a count or a path pushes the name, or takes a second size |
+
+**Three elements per list.** R1–R3 read the element that holds the name text, R6 reads the element
+that owns the ellipsis, R4–R5 read the box. They are not always the same element: the search hit
+clips on `.search-panel-path` and the file name inside it is the `.sp-file` span, so an override on
+either fails. `ROW_LISTS` in the suite names all three per list.
+
+**Exclusions, each reasoned where it is written.**
+
+| Excluded | Why |
+|---|---|
+| The search hit's *box* (R4, R5) | It is a two-line block, content-sized: 5 px padding around the path line plus a snippet that wraps — 46 / 49.8 / 74.8 px at S / M / L in the fixture. Its name line is still asserted by R1, R2, R6 and R7. |
+| The AI message (R4, R5, R6) | It is rendered prose, not a row: it wraps and has no box. R1 and R2 still hold it to the row size and line box. |
+| Picker rows | Not a panel row: the workspace and session dialogs are not in this contract. |
+| Two box values (R5) | `ROW_BOX_DELTAS` pins the only two structural departures: the session row's `padding-left` (10, so the name clears its 2 px accent marker) and the outline's square left corners (its accent bar owns that edge). Each is pinned to (list, property, value) with a reason; any value that is neither the contract nor the record fails. |
+
+**The conflicts the first run found are fixed, not recorded.** The session radius (6 → 4), the
+Recent and Sessions gaps (6/8 → one content gap and one meta gap), the outline's right padding
+(8 → 6) and `.sp-count` (`--text-xs` → `--text-sm`) are now contract values in `style.css`, and the
+AI log takes its documented `--lh-prose`. The deltas left are the two structural ones above.
 
 ---
 
@@ -233,7 +272,7 @@ clean bill.
 | `.ws-row-name` | `.95rem` | 15.29 | `--text-ui-lg` | 2.4 |
 | `.shortcut-label` | `.95rem` | 15.29 | `--text-ui-lg` | 2.1 |
 | `.shortcut-binding` | `.9rem` | 14.49 | `--text-ui` | 2.1 |
-| `#outline .outline-item a` | `.89rem` | 14.33 | `--text-ui` | 2.6 |
+| `#outline .outline-item a` | `.89rem` | 14.33 | `--text-body` (row) | 2.6 |
 
 The seven side panels and Settings are clean in every state the audit walks. When the allowlist
 holds only the four sanctioned categories, §2.3's final state holds.

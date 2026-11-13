@@ -39,6 +39,30 @@ from flask import (Flask, Response, g, has_request_context, jsonify,
                    render_template, request, send_from_directory, session)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Bumped per request: the newest mtime of the linked CSS and JS, so a changed
+# file gets a new URL and a browser or proxy cache cannot serve the old one.
+_ASSET_DIRS = ("static/css", "static/js")
+_ASSET_EXTS = (".css", ".js")
+
+
+def asset_version():
+    newest = 0.0
+    for rel in _ASSET_DIRS:
+        try:
+            entries = os.scandir(os.path.join(BASE_DIR, rel))
+        except OSError:
+            continue
+        with entries:
+            for entry in entries:
+                if entry.is_file() and entry.name.endswith(_ASSET_EXTS):
+                    try:
+                        newest = max(newest, entry.stat().st_mtime)
+                    except OSError:
+                        pass
+    return str(int(newest))
+
+
 # NOTEBOOK_DATA_DIR / NOTEBOOK_CONFIG_DIR let tests (and alternate installs)
 # point the data and config folders elsewhere. Default to the project folders.
 DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "notebook")
@@ -1493,7 +1517,7 @@ def _render_index():
         state = boot_state({"theme": cfg.get("theme", "auto")})
     else:
         state = boot_state()
-    return render_template("index.html", boot=state)
+    return render_template("index.html", boot=state, asset_v=asset_version())
 
 
 def _fold_legacy_workspace_state(cfg):

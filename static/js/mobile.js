@@ -869,7 +869,10 @@
       // styling; its glyph and label are owned by sidebar.js.
       if (btn.id === "sidebar-refresh" || btn.id === "explorer-top-toggle" ||
           btn.querySelector(".refresh-glyph")) return;
-      btn.textContent = on ? "\u00D7" : "\u2039";
+      // Keep the sprite, not a text glyph: a "\u2039" inherits the panel font
+      // size and stops matching the 16 px icon buttons beside it.
+      btn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' +
+        (on ? "nb-icon-close" : "nb-icon-chevron-left") + '"/></svg>';
       btn.title = on ? "Close panel" : "Collapse panel";
       btn.setAttribute("aria-label", on ? "Close panel" : "Collapse panel");
     });

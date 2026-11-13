@@ -52,7 +52,7 @@ context differ, and those are what the role names carry.
 |---|---|---|---|---|---|---|---|---|
 | **display** | `--text-lg` `1.15rem` | 14.5 | 16.1 | 18.5 | 20.9 | 600 | `--lh-tight` 1.2 | The name of the surface: dialog and window titles |
 | **body** | `--text-body` `1rem` | 12.6 | 14.0 | 16.1 | 18.2 | 400 | `--lh-normal` 1.5 (phone prose and the AI log `--lh-prose` 1.65) | Note prose, rendered blocks, AI message text |
-| **row** | `--text-body` `1rem` | 12.6 | 14.0 | 16.1 | 18.2 | 400–500 | `--lh-snug` 1.35 | Primary text of a side-panel row: file, session, bookmark, recent file, search hit |
+| **row** | `--text-body` `1rem` | 12.6 | 14.0 | 16.1 | 18.2 | 400, always | `--lh-normal` 1.5 | Primary text of a side-panel row: file, session, bookmark, recent file, search hit. One size, one line box, one weight in every panel |
 | **navigation** | `--text-ui-lg` `.93rem` | 11.7 | 13.0 | 15.0 | 16.9 | 400–600 | `--lh-snug` 1.35 | Tabs, topbar controls, nav items, Settings labels and values |
 | **control** | `--text-ui` `.86rem` | 10.8 | 12.0 | 13.8 | 15.7 | 400–600 | `--lh-flat` in a fixed-height control, else `--lh-snug` | Buttons, chips, fields, menu items |
 | **meta** | `--text-sm` `.8rem` | 10.1 | 11.2 | 12.9 | 14.6 | 400 | `--lh-snug` 1.35 | Paths, snippets, dates, helper and status lines, counts |
@@ -62,10 +62,13 @@ context differ, and those are what the role names carry.
 Line heights and weights are the foundation tokens (`style.css:205-216`). `--fw-heading` 650 and
 `--lh-prose` 1.65 belong to the reader and are not chrome roles.
 
-**A row is one size in every panel.** The tree, Sessions, Pinned, Bookmarks, Recent and the Search
-hit list all set their primary text to `--text-body`; the AI message takes it too, as prose. Two
-panels that disagree about this are a defect, whatever the source. The runtime audit in
-`docs/testing/typography.md` asserts the equality directly.
+**A row is one size, one line box and one weight in every panel.** The tree, Sessions, Pinned,
+Bookmarks, Recent, the Search hit list and the Outline all set their primary text to `--text-body`,
+`--lh-normal` and `--fw-regular`. The current row is a state of face and colour only: accent text,
+an accent-soft wash and an accent marker. It never changes its weight, because a bold row reads as
+a different kind of row. The AI message takes the same size as prose. Two panels that disagree
+about size, line box or weight are a defect, whatever the source: the runtime audit asserts the
+trio, current rows included.
 
 **Measured at L (Chromium, `--font-scale: 1.15`):** root and rows 16.1, tabs 14.97, controls 13.85, meta
 12.88, panel titles 11.59. Each one is its token's L column carried to two decimals: `1rem` →
@@ -278,7 +281,7 @@ type system.
 | `.tab` = navigation (`:1392`) inside a bar that scales (`:690`) | the role and the height move together |
 | `body` = body `1rem/1.5` (`:303`), phone prose = `16px × scale/1.65` (`:7689`) | prose is one role at two densities, not two roles |
 | `.settings-label` and `.settings-value` both navigation (`:2233`, `:2306`) | label and value are one rank, so the column reads down one line |
-| `.tree-name`, `.session-name`, `.recent-name`, `.bookmark-name`, `.search-panel-hit-file` all `var(--text-body)` | one row role, one step, seven panels; the audit asserts the equality rather than the look |
+| `.tree-name`, `.session-name`, `.recent-name`, `.bookmark-name`, `.sp-file`, `.outline-item a` all `var(--text-body)` at `--lh-normal` and 400, selected or not | one row role, one step, one line box, one weight, seven panels; the audit asserts the trio rather than the look |
 | Settings chip = control (`:1845`), Settings button = control (`:2365`) | a chip and a button are the same rank; only the shape differs |
 
 ### 7.2 Wrong

@@ -15,6 +15,9 @@
  *   A5  each step equals root × its rem value at S/M/L/XL; --text-2xs stays 9 px
  *   A6  at M: .tab is --text-ui-lg; Settings section controls are --text-ui
  *       (nav items are the navigation role, asserted as --text-ui-lg)
+ * The row contract (docs/ui/guidelines.md §2.1) is a named group of checks per
+ * setting, R0-R7; see the ROW_LISTS block below for the lists and the
+ * exclusions, and docs/testing/typography.md §3.5 for the rationale.
  * Plus the font-size tile specimen, which is deliberately absolute: its four
  * Aa values stay 12.6 / 14 / 16.1 / 18.2 px at every setting (§8 of
  * docs/ui/typography.md), and it is excluded from A1 for that reason.
@@ -60,7 +63,67 @@ const SIZE_TILE = [
   { sel: ".fs-xl .fs-tile-aa", px: 18.2 },
 ];
 const SETTINGS_TABS = ["general", "workspaces", "appearance", "shortcuts", "security", "ai", "about"];
-const ROW_SELECTORS = [".tree-name", ".session-name", ".bookmark-name", ".recent-name", ".search-panel-hit-file", ".ai-prose-span"];
+const ROW_SELECTORS = [".tree-name", ".session-name", ".bookmark-name", ".recent-name", ".search-panel-hit-file", ".ai-prose-span", ".outline-item a"];
+
+/* ---- the row contract (docs/ui/guidelines.md §2.1) ------------------ *
+ *
+ * Seven lists carry a row and the AI message carries the same text role.
+ * Each list is measured through three elements:
+ *   box   the row box: padding, radius, gap, height, the current-row face
+ *   name  the element holding the name text: size, line box, weight
+ *   clip  the element that owns nowrap/ellipsis. It is not always `name`:
+ *         the search hit clips on .search-panel-path, while the file name
+ *         text lives in the .sp-file span inside it.
+ * ":self" means the box is its own name (the outline anchor).
+ *
+ * The vertical rhythm, the type and the one-line rule are one value in every
+ * panel, so they are asserted exactly. The four numbers in ROW_BOX_DELTAS are
+ * the shipped per-surface departures from §2.1 that the test records instead
+ * of failing on: each is pinned to (list, property, shipped value) with the
+ * reason, so it cannot drift further and cannot rot silently. `kind` says why
+ * it is there: "adaptation" is a structural addition §2.1 allows a surface to
+ * make (a marker column, a bar on the edge); "conflict" is two documents that
+ * disagree, where §2.1 is the authority and the surface doc has to change.
+ */
+const ROW_LISTS = [
+  { key: "tree", label: "Explorer tree", box: ".tree-row", name: ".tree-name", clip: ".tree-name" },
+  { key: "pinned", label: "Pinned", box: ".pin-row, .pin-child", name: ".tree-name", clip: ".tree-name" },
+  { key: "bookmarks", label: "Bookmarks", box: ".bookmark-row", name: ".bookmark-name", clip: ".bookmark-name" },
+  { key: "recent", label: "Recent", box: ".recent-row", name: ".recent-name", clip: ".recent-name" },
+  { key: "sessions", label: "Sessions", box: ".session-row", name: ".session-name", clip: ".session-name" },
+  { key: "search", label: "Search hit", box: ".search-panel-hit", name: ".sp-file", clip: ".search-panel-path" },
+  { key: "outline", label: "Outline", box: ".outline-item a", name: ":self", clip: ":self" },
+  { key: "ai", label: "AI message", box: ".ai-prose-span", name: ":self", clip: ":self" },
+];
+
+/* The lists whose box is not a §2.1 row box. The search hit is a two-line
+ * block: content-sized (5 px + 5 px padding around the path line and a snippet
+ * that wraps — 46 / 49.8 / 74.8 px at S / M / L in the fixture), and its name
+ * line is asserted instead. The AI message is prose, not a row. */
+const NO_ROW_BOX = ["search", "ai"];
+
+const ROW_BOX_DELTAS = [
+  { list: "sessions", prop: "padL", shipped: "10px", kind: "adaptation",
+    why: "the row draws its 2 px accent marker (.session-row::before) inside its own box; the extra left inset keeps the name clear of the marker (sessions.md §2)" },
+  { list: "outline", prop: "radius", shipped: "0px 4px 4px 0px", kind: "adaptation",
+    why: "the accent bar owns the left edge, so its corners stay square and only the right end is rounded" },
+];
+
+/* Trailing meta: --text-sm (.8rem), muted, flex: 0 0 auto, never wraps. */
+const TRAILING_META = [".session-count", ".recent-dir", ".sp-count"];
+
+/* The measured value of a box property, in the form R5 compares: every length
+ * as a px string, so a recorded delta and a computed value are the same kind
+ * of thing. The row's effective gap: column-gap when set, else the name's trailing
+ * margin, which is how the session row spaces its count. */
+function rowGap(row) {
+  return row.gap && row.gap !== "normal" ? row.gap + "px" : (row.marginRight || 0) + "px";
+}
+
+function boxProp(row, prop) {
+  if (prop === "radius") return row.radius;
+  return (prop === "gap" ? row.gap : row[prop]) + "px";
+}
 
 /* ---- fixtures ------------------------------------------------------ */
 
@@ -236,8 +299,8 @@ const nextFrame = (page) => page.evaluate(() => new Promise((resolve) =>
  * nothing to the document. */
 const ROW_SELECTOR_LIST = ROW_SELECTORS;
 
-async function walk(page, scope) {
-  return page.evaluate(({ scope, tolerance, rowSelectors }) => {
+async function walk(page, scope, lists) {
+  return page.evaluate(({ scope, tolerance, rowSelectors, lists, metaSelectors }) => {
     const STEPS = [
       { token: "--text-2xs", rem: 0 },
       { token: "--text-xs", rem: 0.72 },
@@ -256,6 +319,8 @@ async function walk(page, scope) {
       violations: [],
       titles: [],
       rows: [],
+      listRows: [],
+      listMeta: [],
       headers: [],
       missing: !rootEl,
     };
@@ -320,9 +385,81 @@ async function walk(page, scope) {
     for (const sel of rowSelectors) {
       for (const el of rootEl.querySelectorAll(sel)) {
         if (!visible(el) || !el.textContent.trim()) continue;
+        // The current row is a state: it may carry 600. Compare the rest.
+        const current = !!el.closest('[aria-current="true"], .selected, .is-active, .active');
+        const cs = getComputedStyle(el);
         out.rows.push({
           sel,
-          px: +parseFloat(getComputedStyle(el).fontSize).toFixed(2),
+          px: +parseFloat(cs.fontSize).toFixed(2),
+          lh: +parseFloat(cs.lineHeight).toFixed(2),
+          weight: cs.fontWeight,
+          prose: sel === ".ai-prose-span",
+          current,
+          text: el.textContent.trim().slice(0, 24),
+        });
+      }
+    }
+
+    /* The row contract: one record per visible row of every list this state
+     * shows. Read-only — computed style plus the box rect. */
+    const num = (v) => Math.round(parseFloat(v) * 100) / 100;
+    out.listRows = [];
+    out.listMeta = [];
+    for (const spec of lists) {
+      for (const box of rootEl.querySelectorAll(spec.box)) {
+        if (!visible(box) || box.closest(".sr-only")) continue;
+        const name = spec.name === ":self" ? box : box.querySelector(spec.name);
+        if (!name || !name.textContent.trim()) continue;
+        const clip = spec.clip === ":self" ? name : (name.closest(spec.clip) || name);
+        const cs = getComputedStyle(name);
+        const clipCs = getComputedStyle(clip);
+        const bcs = getComputedStyle(box);
+        const rect = box.getBoundingClientRect();
+        /* A current row may carry 600. The flag is on the row itself (tree,
+         * bookmarks, recent, search), on [aria-current] (sessions), or on the
+         * list item that wraps the anchor (outline). An ancestor `.active`
+         * would catch unrelated chrome, so it is not part of the test. */
+        const current =
+          box.matches('.selected, [aria-current="true"], .is-active') ||
+          !!(box.parentElement && box.parentElement.matches(".outline-item.active"));
+        /* Two children means the row is icon/text or name/meta; its gap is the
+         * column-gap when there is one, else the name's own right margin, which
+         * is how the session row spaces the count it does not wrap in a gap. */
+        const kids = box.children.length;
+        const gapPx = parseFloat(bcs.columnGap);
+        const marginPx = parseFloat(getComputedStyle(name).marginRight);
+        out.listRows.push({
+          list: spec.key,
+          label: spec.label,
+          text: name.textContent.trim().slice(0, 24),
+          current,
+          size: num(cs.fontSize),
+          lh: num(cs.lineHeight),
+          weight: cs.fontWeight,
+          ws: clipCs.whiteSpace,
+          ovx: clipCs.overflowX,
+          ovy: clipCs.overflowY,
+          to: clipCs.textOverflow,
+          h: num(rect.height),
+          padT: num(bcs.paddingTop),
+          padR: num(bcs.paddingRight),
+          padB: num(bcs.paddingBottom),
+          padL: num(bcs.paddingLeft),
+          radius: bcs.borderRadius,
+          gap: kids > 1 ? num(Number.isFinite(gapPx) && gapPx > 0 ? gapPx : marginPx) : 0,
+          kids,
+        });
+      }
+    }
+    for (const sel of metaSelectors) {
+      for (const el of rootEl.querySelectorAll(sel)) {
+        if (!visible(el) || !el.textContent.trim()) continue;
+        const cs = getComputedStyle(el);
+        out.listMeta.push({
+          sel,
+          size: num(cs.fontSize),
+          ws: cs.whiteSpace,
+          grow: cs.flexGrow,
           text: el.textContent.trim().slice(0, 24),
         });
       }
@@ -336,7 +473,13 @@ async function walk(page, scope) {
       });
     }
     return out;
-  }, { scope, tolerance: TOLERANCE, rowSelectors: ROW_SELECTOR_LIST });
+  }, {
+    scope,
+    tolerance: TOLERANCE,
+    rowSelectors: ROW_SELECTOR_LIST,
+    lists: lists || [],
+    metaSelectors: TRAILING_META,
+  });
 }
 
 /* ---- the state machine --------------------------------------------- */
@@ -618,17 +761,17 @@ async function main() {
     ];
     const states = [
       { key: "shell", surface: "shell", state: "default", scope: "#layout" },
-      { key: "explorer", surface: "explorer", state: "folder expanded", scope: "#side-panel" },
+      { key: "explorer", surface: "explorer", state: "folder expanded", scope: "#side-panel", lists: ["tree", "pinned"] },
       { key: "explorer-menu", surface: "explorer", state: "context menu", scope: "#nb-menu" },
-      { key: "sessions", surface: "sessions", state: "two sessions", scope: "#sessions-view" },
-      { key: "pinned", surface: "pinned", state: "one pinned folder", scope: "#pinned-view" },
-      { key: "bookmarks", surface: "bookmarks", state: "three bookmarks", scope: "#bookmarks-view" },
-      { key: "recent", surface: "recent", state: "three entries", scope: "#recent-view" },
+      { key: "sessions", surface: "sessions", state: "two sessions", scope: "#sessions-view", lists: ["sessions"] },
+      { key: "pinned", surface: "pinned", state: "one pinned folder", scope: "#pinned-view", lists: ["pinned"] },
+      { key: "bookmarks", surface: "bookmarks", state: "three bookmarks", scope: "#bookmarks-view", lists: ["bookmarks"] },
+      { key: "recent", surface: "recent", state: "three entries", scope: "#recent-view", lists: ["recent"] },
       { key: "search-idle", surface: "search", state: "idle", scope: "#search-view" },
       { key: "search-advanced", surface: "search", state: "advanced open", scope: "#search-view" },
-      { key: "search-results", surface: "search", state: "with results", scope: "#search-view" },
-      { key: "ai", surface: "ai", state: "messages and error", scope: "#ai-view" },
-      { key: "outline", surface: "outline", state: "note open", scope: "#outline-pane" },
+      { key: "search-results", surface: "search", state: "with results", scope: "#search-view", lists: ["search"] },
+      { key: "ai", surface: "ai", state: "messages and error", scope: "#ai-view", lists: ["ai"] },
+      { key: "outline", surface: "outline", state: "note open", scope: "#outline-pane", lists: ["outline"] },
     ];
     const settingsStates = SETTINGS_TABS.map((tab) => ({
       key: "settings:" + tab, surface: "settings", state: tab, scope: "#settings-overlay",
@@ -644,6 +787,9 @@ async function main() {
     const rowsBySetting = {};
     const titlesBySetting = {};
     const headersBySetting = {};
+    const rowContractBySetting = {};
+    const metaBySetting = {};
+    const rootBySetting = {};
     const emptyStates = [];
 
     for (const setting of settings) {
@@ -655,6 +801,8 @@ async function main() {
       rowsBySetting[setting.name] = [];
       titlesBySetting[setting.name] = [];
       headersBySetting[setting.name] = [];
+      rowContractBySetting[setting.name] = [];
+      metaBySetting[setting.name] = [];
 
       for (const state of matrix) {
         let key = state.key;
@@ -669,7 +817,8 @@ async function main() {
         } else {
           await prepareState(page, key);
         }
-        const result = await walk(page, state.scope);
+        const result = await walk(page, state.scope, (state.lists || []).map(
+          (k) => ROW_LISTS.find((l) => l.key === k)));
         audited += result.count;
         if (result.count === 0) emptyStates.push(setting.name + " " + state.surface + "/" + state.state);
         if (result.missing) {
@@ -680,8 +829,11 @@ async function main() {
           violations.push(violationText(state.surface, state.state, setting.name, v));
         }
         rowsBySetting[setting.name].push(...result.rows.map((r) => Object.assign({ state: state.surface, rootPx: result.root }, r)));
+        rowContractBySetting[setting.name].push(...result.listRows);
+        metaBySetting[setting.name].push(...result.listMeta.map((m) => Object.assign({ state: state.surface }, m)));
         titlesBySetting[setting.name].push(...result.titles.map((px) => ({ state: state.surface, px })));
         headersBySetting[setting.name].push(...result.headers);
+        rootBySetting[setting.name] = result.root;
       }
       await closeOverlays(page);
 
@@ -697,13 +849,148 @@ async function main() {
     /* ---- A2: one row role in every panel ---------------------------- */
     for (const setting of settings) {
       const rows = rowsBySetting[setting.name];
+      const listRows = rows.filter((r) => !r.prose);
       const sizes = [...new Set(rows.map((r) => r.px))];
+      const lines = [...new Set(listRows.map((r) => r.lh))];
+      const weights = [...new Set(listRows.map((r) => r.weight))];
       const seen = [...new Set(rows.map((r) => r.sel))];
-      const detail = rows.map((r) => r.sel + " (" + r.state + ") = " + r.px + " px [" + r.text + "]").join("\n");
-      check("A2 " + setting.name + ": the row group measures one px (" + seen.length + " selectors)",
-        seen.length >= 5 && sizes.length === 1,
-        "expected one size across " + ROW_SELECTORS.join(", ") + "; found " + sizes.join(" / ") + " px\n" + detail);
+      const detail = rows.map((r) => r.sel + " (" + r.state + ") = " + r.px + " px / " + r.lh + " lh / w" + r.weight + (r.current ? " [current]" : "") + " [" + r.text + "]").join("\n");
+      check("A2 " + setting.name + ": the row group shares one size, line and weight (" + seen.length + " selectors)",
+        seen.length >= 5 && sizes.length === 1 && lines.length === 1 && weights.length === 1,
+        "expected one size/line/weight across " + ROW_SELECTORS.join(", ") +
+        "; found " + sizes.join(" / ") + " px, " + lines.join(" / ") + " lh, " + weights.join(" / ") + "\n" + detail);
+
+      /* A7's row-box equality is now R4 in the row-contract group below: it
+       * measures every list through its own box selector, including the pinned
+       * row and the outline anchor, which the old closest() map missed. */
     }
+
+    /* ================================================================= *
+     * The row contract — docs/ui/guidelines.md §2.1
+     * R1 size, R2 line box, R3 weight, R4 box height, R5 box geometry,
+     * R6 one line, R7 trailing meta. One check each per setting.
+     * ================================================================= */
+    console.log("\n== row contract (docs/ui/guidelines.md §2.1) ==");
+    for (const setting of settings) {
+      const rows = rowContractBySetting[setting.name];
+      const meta = metaBySetting[setting.name];
+      const root = rootBySetting[setting.name];
+      const at = " " + setting.name + " (root " + root.toFixed(2) + " px)";
+      const wantSize = root;
+      const wantLine = +(root * 1.5).toFixed(2);
+      const wantMeta = +(root * 0.8).toFixed(2);
+      const lists = [...new Set(rows.map((r) => r.list))];
+      const describe = (r) => r.label + " · " + r.list + " [" + r.text + "]" + (r.current ? " [current]" : "");
+
+      /* R0: every list was found. A list that renders nothing makes every
+       * assertion below vacuous, so it is its own check. */
+      const missing = ROW_LISTS.filter((l) => !lists.includes(l.key)).map((l) => l.label);
+      check("R0" + at + ": all " + ROW_LISTS.length + " row lists rendered in the matrix",
+        missing.length === 0, "no visible row for: " + missing.join(", "));
+
+      /* R1: font-size === root × 1 (--text-body). */
+      const badSize = rows.filter((r) => Math.abs(r.size - wantSize) > TOLERANCE);
+      check("R1" + at + ": every row name is --text-body = " + wantSize.toFixed(2) + " px (" + rows.length + " rows)",
+        badSize.length === 0,
+        badSize.map((r) => describe(r) + " = " + r.size + " px (" + (r.size - wantSize > 0 ? "+" : "") +
+          (r.size - wantSize).toFixed(2) + ")").join("\n"));
+
+      /* R2: line-height === root × 1.5 (--lh-normal). The AI message carries
+       * the same size as a row but is prose, not a row: it is measured here so
+       * its line box cannot drift unnoticed, and it is exempt from R4-R6.
+       * docs/ui/typography.md §2 names --lh-prose 1.65 for the AI log; the
+       * shipped rule (style.css:5357) takes --lh-normal and --lh-prose has no
+       * consumer, so the test pins what ships. See the report. */
+      const wantProseLine = +(root * 1.65).toFixed(2);
+      const lineFor = (r) => (r.list === "ai" ? wantProseLine : wantLine);
+      const badLine = rows.filter((r) => Math.abs(r.lh - lineFor(r)) > TOLERANCE);
+      check("R2" + at + ": every row line box is --lh-normal = " + wantLine.toFixed(2) +
+        " px (the AI prose log is --lh-prose = " + wantProseLine.toFixed(2) + ")",
+        badLine.length === 0,
+        badLine.map((r) => describe(r) + " = " + r.lh + " px, expected " + lineFor(r) + " (" +
+          (r.lh - lineFor(r) > 0 ? "+" : "") + (r.lh - lineFor(r)).toFixed(2) + ")").join("\n"));
+
+      /* R3: one weight, 400, on every row. The current row is a state of
+       * face and colour only -- bold is not a row state. */
+      const badWeight = rows.filter((r) => r.weight !== "400");
+      const currentRows = rows.filter((r) => r.current);
+      check("R3" + at + ": every row, current included, is weight 400 (" +
+        rows.length + " rows, " + currentRows.length + " current)",
+        badWeight.length === 0 && currentRows.length > 0,
+        badWeight.map((r) => describe(r) + " = w" + r.weight).join("\n") +
+        (currentRows.length ? "" : "\nno current row in the matrix"));
+
+      /* R4: box height === line box + 6 px, and equal in every list. */
+      const boxed = rows.filter((r) => !NO_ROW_BOX.includes(r.list));
+      const wantBox = +(wantLine + 6).toFixed(2);
+      const badBox = boxed.filter((r) => Math.abs(r.h - (r.lh + r.padT + r.padB)) > 1 ||
+        Math.abs(r.h - wantBox) > 1);
+      const heights = [...new Set(boxed.map((r) => r.h))];
+      const spread = heights.length ? Math.max(...heights) - Math.min(...heights) : 0;
+      check("R4" + at + ": every list row is " + wantBox.toFixed(2) +
+        " px (line box + 6) and one height across " + new Set(boxed.map((r) => r.list)).size + " lists",
+        boxed.length >= 10 && badBox.length === 0 && spread <= 1,
+        badBox.map((r) => describe(r) + " = " + r.h + " px; line " + r.lh + " + padding " +
+          (r.padT + r.padB) + " = " + (r.lh + r.padT + r.padB).toFixed(2) + ", expected " + wantBox).join("\n") +
+        (spread > 1 ? "\nheights " + heights.join(" / ") + " px, spread " + spread.toFixed(2) : ""));
+
+      /* R5: padding 3 top and bottom, 6 left and right, radius 4, gap 4 where
+       * a row has more than one child. A recorded delta replaces the contract
+       * value for that one (list, property); anything else fails. */
+      const padFails = [];
+      for (const r of boxed) {
+        const delta = (prop) => ROW_BOX_DELTAS.find((d) => d.list === r.list && d.prop === prop);
+        const expect = (prop, want) => {
+          const got = boxProp(r, prop);
+          const d = delta(prop);
+          if (got === want) return true;
+          if (d && got === d.shipped) return true;
+          padFails.push(describe(r) + " " + prop + " = " + got + "; §2.1 says " + want +
+            (d ? "; recorded " + d.kind + " is " + d.shipped : ""));
+          return false;
+        };
+        expect("padT", "3px");
+        expect("padB", "3px");
+        expect("padR", "6px");
+        expect("padL", "6px");
+        expect("radius", "4px");
+        if (r.kids > 1) {
+          const got = rowGap(r);
+          if (got !== "4px" && got !== "8px") {
+            padFails.push(describe(r) + " gap = " + got + "; §2.1 says 4 (icon to name) or 8 (before trailing meta)");
+          }
+        }
+      }
+      check("R5" + at + ": padding 3/6, radius 4 and gap 4 on every list row (" + boxed.length + " rows)",
+        boxed.length >= 10 && padFails.length === 0, padFails.join("\n"));
+
+      /* R6: the name is one line and clips with an ellipsis. The AI message is
+       * rendered prose and wraps, so it is not measured here. */
+      const badClip = rows.filter((r) => r.list !== "ai" &&
+        (r.ws !== "nowrap" || r.ovx !== "hidden" || r.ovy !== "hidden" || r.to !== "ellipsis"));
+      check("R6" + at + ": every row name is one line with an ellipsis (" +
+        rows.filter((r) => r.list !== "ai").length + " names)",
+        badClip.length === 0,
+        badClip.map((r) => describe(r) + " = nowrap:" + r.ws + " overflow:" + r.ovx + "/" + r.ovy +
+          " text-overflow:" + r.to).join("\n"));
+
+      /* R7: trailing meta is --text-sm, never wraps, never grows. */
+      const badMeta = meta.filter((m) =>
+        Math.abs(m.size - wantMeta) > TOLERANCE || m.ws !== "nowrap" || m.grow !== "0");
+      check("R7" + at + ": trailing meta is --text-sm = " + wantMeta.toFixed(2) +
+        " px, nowrap, flex-grow 0 (" + meta.length + ")",
+        meta.length >= 4 && badMeta.length === 0,
+        (meta.length < 4 ? "expected at least 4 trailing-meta elements, found " + meta.length + "\n" : "") +
+        badMeta.map((m) => m.sel + " [" + m.text + "] = " + m.size + " px, white-space " + m.ws +
+          ", flex-grow " + m.grow).join("\n"));
+    }
+
+    /* A recorded delta that stops matching anything is stale, and a stale entry
+     * is how an allowlist rots. */
+    const seenLists = new Set(Object.values(rowContractBySetting).flat().map((r) => r.list));
+    const staleDeltas = ROW_BOX_DELTAS.filter((d) => !seenLists.has(d.list));
+    check("R0: every recorded row-box delta names a list the matrix measures",
+      staleDeltas.length === 0, staleDeltas.map((d) => d.list + "." + d.prop).join(", "));
 
     /* ---- A3: every panel title, one step ---------------------------- */
     for (const setting of settings) {

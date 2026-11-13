@@ -30,8 +30,8 @@
   <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-v2.png">
   <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-v2.png">
   <link rel="apple-touch-icon-precomposed" href="/static/icons/apple-touch-icon-v2.png">
-  <link rel="stylesheet" href="/static/css/style.css">
-  <link rel="stylesheet" href="/static/css/vimnav.css">
+  <link rel="stylesheet" href="/static/css/style.css?v={{ asset_v }}">
+  <link rel="stylesheet" href="/static/css/vimnav.css?v={{ asset_v }}">
   <!-- KaTeX stylesheet + its woff2 fonts (vendored, works offline). The
        math CSS is theme-independent (black on transparent), so it reads
        on both light and dark surfaces. -->
@@ -845,9 +845,9 @@
        multi-MB viz/codemirror/katex bundles still download and parse in
        the background. The rest of the app modules load in dependency
        order at the bottom of <body>. -->
-  <script src="/static/js/api.js"></script>
-  <script src="/static/js/dialog.js"></script>
-  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/api.js?v={{ asset_v }}"></script>
+  <script src="/static/js/dialog.js?v={{ asset_v }}"></script>
+  <script src="/static/js/auth.js?v={{ asset_v }}"></script>
 
   <!-- Settings modal. Opened by the ⚙ button in the top bar. -->
   <div id="settings-overlay" class="settings-overlay" hidden>
@@ -1962,49 +1962,49 @@
   <script src="/static/vendor/purify.min.js" defer></script>
   <script src="/static/vendor/turndown.browser.js" defer></script>
   <script src="/static/vendor/turndown-plugin-gfm.browser.js" defer></script>
-  <script src="/static/js/cm-bridge.js" defer></script>
-  <script src="/static/js/lightbox.js" defer></script>
-  <script src="/static/js/blocks.js" defer></script>
-  <script src="/static/js/menu.js" defer></script>
-  <script src="/static/js/mermaid.js" defer></script>
-  <script src="/static/js/wavedrom.js" defer></script>
-  <script src="/static/js/katex.js" defer></script>
-  <script src="/static/js/viz.js" defer></script>
-  <script src="/static/js/htmlpreview.js" defer></script>
-  <script src="/static/js/svg.js" defer></script>
-  <script src="/static/js/copy-image.js" defer></script>
-  <script src="/static/js/viewer.js" defer></script>
-  <script src="/static/js/editbar.js" defer></script>
-  <script src="/static/js/hybrid.js" defer></script>
-  <script src="/static/js/table-edit.js" defer></script>
-  <script src="/static/js/list-edit.js" defer></script>
-  <script src="/static/js/table-view.js" defer></script>
-  <script src="/static/js/table-select.js" defer></script>
-  <script src="/static/js/edit-window.js" defer></script>
-  <script src="/static/js/table-editor.js" defer></script>
-  <script src="/static/js/watcher.js" defer></script>
-  <script src="/static/js/outline.js" defer></script>
-  <script src="/static/js/sidebar.js" defer></script>
-  <script src="/static/js/graph-2d.js" defer></script>
-  <script src="/static/js/graph-3d.js" defer></script>
-  <script src="/static/js/graph.js" defer></script>
-  <script src="/static/js/tabs.js" defer></script>
-  <script src="/static/js/windows.js" defer></script>
-  <script src="/static/js/settings.js" defer></script>
-  <script src="/static/js/export.js" defer></script>
-  <script src="/static/js/mermaid-designer.js" defer></script>
-  <script src="/static/js/designer-shell.js" defer></script>
-  <script src="/static/js/dot-designer.js" defer></script>
-  <script src="/static/js/wavedrom-designer.js" defer></script>
-  <script src="/static/js/vimnav.js" defer></script>
-  <script src="/static/js/ai.js" defer></script>
-  <script src="/static/js/activity.js" defer></script>
-  <script src="/static/js/bookmarks.js" defer></script>
-  <script src="/static/js/sessions.js" defer></script>
-  <script src="/static/js/shortcuts.js" defer></script>
-  <script src="/static/js/mobile.js" defer></script>
-  <script src="/static/js/workspaces.js" defer></script>
-  <script src="/static/js/app.js" defer></script>
+  <script src="/static/js/cm-bridge.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/lightbox.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/blocks.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/menu.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/mermaid.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/wavedrom.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/katex.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/viz.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/htmlpreview.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/svg.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/copy-image.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/viewer.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/editbar.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/hybrid.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/table-edit.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/list-edit.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/table-view.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/table-select.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/edit-window.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/table-editor.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/watcher.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/outline.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/sidebar.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/graph-2d.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/graph-3d.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/graph.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/tabs.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/windows.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/settings.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/export.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/mermaid-designer.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/designer-shell.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/dot-designer.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/wavedrom-designer.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/vimnav.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/ai.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/activity.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/bookmarks.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/sessions.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/shortcuts.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/mobile.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/workspaces.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/app.js?v={{ asset_v }}" defer></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { scope: '/' });

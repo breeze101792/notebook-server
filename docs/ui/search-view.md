@@ -1232,7 +1232,7 @@ These replace `style.css:3865-4394`. Class names stay.
 }
 .sp-file {
   font-size: var(--text-body);
-  font-weight: var(--fw-semibold);
+  font-weight: var(--fw-regular);
 }
 .sp-dir {
   color: var(--text-muted);
@@ -1250,7 +1250,7 @@ These replace `style.css:3865-4394`. Class names stay.
   border: var(--stroke-1) solid var(--border);
   border-radius: var(--radius-pill);
   color: var(--text-muted);
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   line-height: var(--lh-snug);
   white-space: nowrap;
 }

@@ -59,9 +59,9 @@ One row is a wrapper plus two sibling buttons; a button cannot contain a button.
 | Part | Value | Source |
 |---|---|---|
 | Wrapper | `.session-row-wrap`, flex, gap 2, `flex: 0 0 auto` | `style.css:8309-8316` |
-| Row button | 30 px min, padding `3px 6px 3px 10px`, radius 6, `--text-body`/`--lh-snug`, left | `:8317-8338` |
+| Row button | 30 px min, padding `3px 6px 3px 10px`, radius `--radius-xs` (4), `--text-body`/`--lh-normal`, left | `:8317-8338` |
 | Hover | neutral `--surface-raised` on the row when the wrapper is hovered and the row is not active | `:8341-8344` |
-| Active | `--accent-soft` face, 600, 2 px accent marker 14 px tall at the left edge | `:8345-8355` |
+| Active | `--accent-soft` face, `--accent` text, 2 px accent marker 14 px tall at the left edge; weight stays 400 | `:8345-8355` |
 | Focus | ring at `--focus-offset-inset` (−2) | `:8356` |
 | Name | flexes first, ellipsis, `title` = full name | `:8358-8364` |
 | Dirty dot | 8 px accent dot; `aria-hidden`; the name carries `, unsaved changes` | `:8365-8374`; `sessions.js:452-465` |
@@ -195,7 +195,7 @@ The view already reads base tokens. No new token is needed.
 .sessions-list { gap: var(--space-hair); margin-right: var(--space-2); padding: 6px 6px 10px; overflow-y: auto; overflow-x: hidden; }
 .session-row-wrap { display: flex; align-items: center; gap: 2px; min-width: 0; }
 .session-row { min-height: var(--control-h-md); padding: 3px 6px 3px 10px; border-radius: var(--radius-sm); font-size: .9rem; line-height: var(--lh-snug); }
-.session-row[aria-current="true"] { background: var(--accent-soft); font-weight: var(--fw-semibold); }
+.session-row[aria-current="true"] { background: var(--accent-soft); }
 .session-row[aria-current="true"]::before { width: var(--stroke-2); height: 14px; background: var(--accent); }
 .session-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-dot { width: var(--space-2); height: var(--space-2); background: var(--accent); }
@@ -231,7 +231,7 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 | AC1 | The view is the second desktop rail view and absent on the phone | `activity.js`, `style.css` | `sessions` registered; rail icon and host hidden at 390 |
 | AC2 | Header: title, total, `+`, collapse | `sessions.js` | `Sessions`, `N sessions`, `+`, chevron; at most two actions before collapse |
 | AC3 | Rows show name, count, dot and `⋯` | `sessions.js` | Unpinned count; dirty dot; `⋯` always visible |
-| AC4 | Active row is tinted, 600 and marked | `sessions.js`, `style.css` | `aria-current="true"`; 2 px marker; `--accent-soft` |
+| AC4 | Active row is tinted and marked | `sessions.js`, `style.css` | `aria-current="true"`; 2 px marker; `--accent-soft`; weight 400 like every row |
 | AC5 | The `+` is capped at 20 and stays reachable | `sessions.js` | `aria-disabled` + `aria-describedby`; title names the cap |
 | AC6 | A viewer cannot change sessions | `sessions.js` | `+` and Rename/Delete disabled; switching still works |
 | AC7 | Rename and delete dialogs match `dialogs.md` | `sessions.js`, `dialogs.js` | 40-char limit; duplicate/empty errors; delete confirm names the tab count |
