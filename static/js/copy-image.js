@@ -1,32 +1,35 @@
-/* copy-image.js -- the single owner of the "Copy" affordance on every
- * rendered code-block variant in the viewer.
+/* copy-image.js -- the single owner of the copy-action PAIR on every
+ * rendered block in the viewer: "Copy text" (the authored source) and
+ * "Copy image" (a PNG of the block).
  *
- * Two kinds of button, one shared look:
- *   - Source blocks (plain <pre> code, katex equations) get a text button
- *     that copies the block's source string. The <pre> buttons are wired
- *     by viewer.js through attachTextCopy; the katex container is wired
- *     here.
- *   - The image-producing blocks (mermaid, wavedrom, graphviz, and the
- *     html-live card) get an icon button that rasterizes the block to PNG
- *     and writes it to the system clipboard, so the user can paste it into
- *     another app. For an html-live card the rasterized source is the
- *     stored fenced HTML + CSS, snapshotted inertly into a real
- *     html>body document so `html`/`body` page styles apply. Static-snapshot
- *     limits (see htmlToPngBlob): scripts do not run, and SVG-image secure
- *     static mode blocks external subresources (images, @import, url(),
- *     web fonts), so script/canvas/animation output and remote assets are
- *     not captured.
- *     An SVG that renders through <foreignObject> (Mermaid flowcharts and
- *     class diagrams do) is loaded from a data: URL, because Chromium and
- *     WebKit taint the canvas for the blob: form; every other SVG stays on
- *     blob:. The rule itself lives on svgToPngBlob.
- *     When the clipboard image write is unavailable (insecure context,
- *     unsupported browser, denied permission, or a failed rasterize), it
- *     downloads the PNG instead.
- *     The preview table-view's "Copy image" action reuses this same
- *     rasterizer (copyHtmlToPng), so this file stays the single owner of
- *     PNG copying and of the snapshot frame's inset; only the size, the
- *     file name and the two toast messages differ.
+ * One entry point, attachBlockActions(host), wires both actions into every
+ * block kind it finds (BLOCK_KINDS below, plus every <pre> fence):
+ *   - A fenced code block: text = the sanitized source text, image = a
+ *     snapshot of the rendered card.
+ *   - A card (mermaid, wavedrom, graphviz, svg, html-live): text = the
+ *     AUTHORED fence source from the container's data-* attribute (never the
+ *     rendered markup), image = the rasterized diagram, or for an html-live
+ *     card the stored fenced HTML + CSS snapshotted inertly into a real
+ *     html>body document so `html`/`body` page styles apply.
+ *   - KaTeX: text only. Its image is deliberately NOT offered yet: the
+ *     snapshot renders in SVG-image secure static mode, which loads no
+ *     webfonts, so KaTeX's KaTeX_Main/Math symbols fall back and the formula
+ *     comes out garbled. Recorded as a follow-up rather than shipped broken.
+ *
+ * Static-snapshot limits (see htmlToPngBlob): scripts do not run, and
+ * SVG-image secure static mode blocks external subresources (images,
+ * @import, url(), web fonts), so script/canvas/animation output and remote
+ * assets are not captured. An SVG that renders through <foreignObject>
+ * (Mermaid flowcharts and class diagrams do) is loaded from a data: URL,
+ * because Chromium and WebKit taint the canvas for the blob: form; every
+ * other SVG stays on blob:. The rule itself lives on svgToPngBlob.
+ * When the clipboard image write is unavailable (insecure context,
+ * unsupported browser, denied permission, or a failed rasterize), it
+ * downloads the PNG instead.
+ * The preview table-view's "Copy image" action reuses this same rasterizer
+ * (copyHtmlToPng), so this file stays the single owner of PNG copying and of
+ * the snapshot frame's inset; only the size, the file name and the two toast
+ * messages differ.
  *
  * Why a MutationObserver: the renderer modules replace their <pre> with a
  * container asynchronously, after the viewer already emitted
@@ -49,15 +52,19 @@
   window.NB = window.NB || {};
 
   const VIEWER_CONTENT_ID = "viewer-content";
-  // SVG diagrams: an image button (rasterize the <svg> to PNG).
-  const IMAGE_CONTAINER_SELECTOR = ".mermaid-container, .wavedrom-container, .viz-container, .svg-container";
-  // Katex: a text button (copy the stored LaTeX source).
-  const KATEX_CONTAINER_SELECTOR = ".katex-container";
-  // Live HTML previews: an image button (rasterize the stored source).
-  const HTMLPREVIEW_CONTAINER_SELECTOR = ".htmlpreview-card";
-  // Used only to remove this module's text buttons; injection is gated on
-  // the source string, not on this selector.
-  const TEXT_CONTAINER_SELECTOR = KATEX_CONTAINER_SELECTOR;
+  // The block kinds that carry the copy-action pair, one row per rendered
+  // card: `dataset` holds the authored fence source the TEXT button copies
+  // (read at click time, so a re-render is picked up), `image` says how the
+  // PNG is rasterized -- "svg" = the rendered diagram, "html" = the stored
+  // fence, null = no image action (katex; see the module header).
+  const BLOCK_KINDS = [
+    { selector: ".mermaid-container", dataset: "mermaidSource", image: "svg" },
+    { selector: ".wavedrom-container", dataset: "wavedromSource", image: "svg" },
+    { selector: ".viz-container", dataset: "vizSource", image: "svg" },
+    { selector: ".svg-container", dataset: "svgSource", image: "svg" },
+    { selector: ".htmlpreview-card", dataset: "htmlpreviewSource", image: "html" },
+    { selector: ".katex-container", dataset: "katexSource", image: null },
+  ];
 
   // The text button and the image button share the base class so they style
   // identically and hybrid.js strips both from the note on save (it skips
@@ -68,6 +75,11 @@
 
   const TEXT_BUTTON_LABEL = "Copy";
   const TEXT_BUTTON_ARIA = "Copy code to clipboard";
+  // The code-block PNG action, next to the text one on every fence.
+  const CODE_IMAGE_LABEL = "Copy code as image";
+  const CODE_IMAGE_NAME = "code.png";
+  const CODE_IMAGE_DONE_MSG = "Code copied as image";
+  const CODE_IMAGE_FAIL_MSG = "Could not copy the code as an image";
   const COPIED_LABEL = "Copied!";
   const COPIED_HOLD_MS = 1200;
   const TEXT_COPIED_MESSAGE = "Copied to clipboard";
@@ -83,6 +95,28 @@
   const SVG_DATA_URL_PREFIX = "data:image/svg+xml;charset=utf-8,";
   const FOREIGN_OBJECT_RE = /foreignObject/;
   const PNG_MIME = "image/png";
+
+  // The code card's language label. The live label is a ::after drawn from
+  // data-fence-lang, which cannot be cloned, so the snapshot recreates it as
+  // a span. These mirror the ::after rule in style.css (.72em/1.2 monospace,
+  // fg-muted); the label's own top/left/font/colour are read from the live
+  // pseudo-element when the engine exposes it and fall back to these. The
+  // left inset is the pre's computed padding-left, which already follows the
+  // desktop (16px) / phone (14px) rules, so no breakpoint is repeated here.
+  const CODE_LABEL_FONT_STACK =
+    "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+  const CODE_LABEL_SCALE = 0.72;
+  const CODE_LABEL_LINE_HEIGHT = 1.2;
+  const CODE_LABEL_TOP = "6px";
+  // Space the two band buttons need on the right; the label never runs
+  // under them (style.css keeps the same guard on the live ::after).
+  const CODE_LABEL_MAX_GUARD = 132;
+  // Transient chrome a code block could carry (none occurs on a fence today:
+  // hybrid uses the browser's native selection and these classes belong to
+  // tables and <hr>), stripped so a stale one can never reach the image.
+  const CODE_CHROME_CLASSES = ["nb-ts-range", "nb-ts-drag", "nb-hr-selected"];
+  const TRANSPARENT_COLOR_RE =
+    /^(?:transparent|rgba?\(\s*0,\s*0,\s*0,\s*0\s*\))$/;
 
   // Namespaces that XMLSerializer already knows how to declare; attributes in
   // them (xlink:*, xml:*, xmlns:*) are left untouched by the sanitizer below.
@@ -792,6 +826,160 @@
     return { width, height };
   }
 
+  /* --- code block snapshot ---------------------------------------- */
+
+  /* One computed-style value of a node, or "". jsdom and detached nodes
+   * answer "", so every caller has a fallback. Pseudo-elements are never
+   * queried: the live language label is a ::after, and a pseudo computed
+   * style is not reliably readable across engines, so its metrics come from
+   * the pre and the constants below instead. */
+  function styleValue(node, prop) {
+    if (!node || !window.getComputedStyle) return "";
+    const cs = window.getComputedStyle(node);
+    return (cs && cs.getPropertyValue(prop)) || "";
+  }
+
+  /* A style attribute string from the pairs that have a value, so a
+   * property the engine reports as "" never becomes an empty declaration. */
+  function styleText(pairs) {
+    return pairs
+      .filter((pair) => pair[1])
+      .map((pair) => pair[0] + ":" + pair[1])
+      .join(";");
+  }
+
+  /* codeBlockSnapshot(pre) -> { source, width } or null.
+   * The PNG snapshot of a rendered code card: the clone carries the card's
+   * look as inline styles (the app stylesheet is not present in the
+   * snapshot), every highlight span keeps its own colours, both copy
+   * buttons and any transient selection chrome are dropped, and the fence's
+   * language label -- a ::after live, which cannot be cloned -- is
+   * recreated as a real span. The clone never enters the document. */
+  function codeBlockSnapshot(pre) {
+    if (!pre) return null;
+    const rect = pre.getBoundingClientRect();
+    const width = Math.ceil(rect.width);
+    if (!(width > 0)) return null;
+    const clone = pre.cloneNode(true);
+    clone.querySelectorAll("." + BUTTON_BASE_CLASS).forEach((n) => n.remove());
+    CODE_CHROME_CLASSES.forEach((cls) => {
+      clone.querySelectorAll("." + cls).forEach((n) => n.classList.remove(cls));
+    });
+    const borderWidth = styleValue(pre, "border-top-width");
+    const borderStyle = styleValue(pre, "border-top-style");
+    const borderColor = styleValue(pre, "border-top-color");
+    clone.setAttribute("style", styleText([
+      ["position", "relative"],
+      ["box-sizing", "border-box"],
+      // A <pre> is a flex item in the snapshot body, so its natural width is
+      // max-content; it must fill the measured frame instead.
+      ["width", "100%"],
+      // The card's own margin is page flow between blocks, not part of the
+      // image: the frame is sized to the card, so it starts at the inset.
+      ["margin", "0"],
+      ["background-color", styleValue(pre, "background-color")],
+      ["border", (borderWidth && borderStyle && borderColor)
+        ? borderWidth + " " + borderStyle + " " + borderColor : ""],
+      ["border-radius", styleValue(pre, "border-radius")],
+      ["padding", styleValue(pre, "padding")],
+      ["font-family", styleValue(pre, "font-family")],
+      ["font-size", styleValue(pre, "font-size")],
+      ["line-height", styleValue(pre, "line-height")],
+      ["color", styleValue(pre, "color")],
+      ["white-space", styleValue(pre, "white-space")],
+      ["overflow-wrap", styleValue(pre, "overflow-wrap")],
+    ]));
+    // Highlighting without the app stylesheet: each element of the live
+    // <code> subtree hands its own text colour, non-transparent background,
+    // weight, style and decoration to the matching clone element. Nothing
+    // else is copied -- no layout, no padding, no font size.
+    const liveCode = pre.querySelector("code");
+    const cloneCode = clone.querySelector("code");
+    if (liveCode && cloneCode) {
+      // The <code> element carries the block's own .88em / line-height rules
+      // AND the highlight theme's block box (display + 1em padding in the
+      // hljs themes), so its box metrics are copied too: without them the
+      // text lays out at the pre's size and the block's height is wrong.
+      const codeBox = styleText([
+        ["display", styleValue(liveCode, "display")],
+        ["padding", styleValue(liveCode, "padding")],
+        ["font-family", styleValue(liveCode, "font-family")],
+        ["font-size", styleValue(liveCode, "font-size")],
+        ["line-height", styleValue(liveCode, "line-height")],
+      ]);
+      if (codeBox) cloneCode.setAttribute("style", codeBox);
+      const liveEls = [liveCode].concat(Array.from(liveCode.querySelectorAll("*")));
+      const cloneEls = [cloneCode].concat(Array.from(cloneCode.querySelectorAll("*")));
+      liveEls.forEach((src, i) => {
+        const dst = cloneEls[i];
+        if (!dst) return;
+        const decls = [
+          ["color", styleValue(src, "color")],
+          ["font-weight", styleValue(src, "font-weight")],
+          ["font-style", styleValue(src, "font-style")],
+          ["text-decoration-line", styleValue(src, "text-decoration-line")],
+        ];
+        const bg = styleValue(src, "background-color");
+        if (bg && !TRANSPARENT_COLOR_RE.test(bg)) decls.push(["background-color", bg]);
+        const existing = dst.getAttribute("style") || "";
+        const extra = styleText(decls);
+        if (extra) {
+          dst.setAttribute("style",
+            existing ? existing.replace(/;$/, "") + ";" + extra : extra);
+        }
+      });
+    }
+    // Recreate the language label. The live one is generated content, so it
+    // cannot be cloned and its ::after metrics are not portably readable:
+    // the label is rebuilt from the pre's own box (padding-left is the same
+    // 16px/14px inset the live rule uses, and .72em of the pre's font-size)
+    // with the constants above. Colour is the pre's text colour -- the live
+    // --fg-muted has no element to sample -- which stays legible on the
+    // card's own background.
+    const lang = (pre.dataset && pre.dataset.fenceLang) || "";
+    if (lang) {
+      const preFont = parseFloat(styleValue(pre, "font-size"));
+      const label = document.createElement("span");
+      label.className = "nb-code-lang";
+      label.textContent = lang;
+      label.setAttribute("aria-hidden", "true");
+      label.setAttribute("style", styleText([
+        ["position", "absolute"],
+        ["left", styleValue(pre, "padding-left") || "16px"],
+        ["top", CODE_LABEL_TOP],
+        ["font-family", CODE_LABEL_FONT_STACK],
+        ["font-size", preFont > 0 ? (preFont * CODE_LABEL_SCALE) + "px" : ""],
+        ["line-height", String(CODE_LABEL_LINE_HEIGHT)],
+        ["color", styleValue(pre, "color")],
+        ["max-width", "calc(100% - " + CODE_LABEL_MAX_GUARD + "px)"],
+        ["white-space", "nowrap"],
+        ["overflow", "hidden"],
+        ["pointer-events", "none"],
+        ["z-index", "0"],
+      ]));
+      clone.appendChild(label);
+    }
+    return { source: clone.outerHTML, width: width + 2 * SNAPSHOT_INSET };
+  }
+
+  /* copyCodeToPng(pre) -- copy the rendered code card as a PNG through the
+   * shared rasterizer. Only the width is supplied; copy-image measures the
+   * snapshot height itself. Returns the snapshot, or false and a toast. */
+  function copyCodeToPng(pre) {
+    const snap = codeBlockSnapshot(pre);
+    if (!snap || !NB.copyButton || !NB.copyButton.copyHtmlToPng) {
+      notify(CODE_IMAGE_FAIL_MSG, "warn");
+      return false;
+    }
+    NB.copyButton.copyHtmlToPng(snap.source, {
+      name: CODE_IMAGE_NAME,
+      width: snap.width,
+      message: CODE_IMAGE_DONE_MSG,
+      failMessage: CODE_IMAGE_FAIL_MSG,
+    });
+    return snap;
+  }
+
   /* --- button injection ------------------------------------------- */
 
   /* sourceTextOf(targetEl) -- the copyable source of a block, with any
@@ -809,20 +997,40 @@
    * targetEl. This is the single owner of the source-block copy behavior
    * (viewer.js and the AI panel delegate their <pre> buttons here).
    * Byte-for-byte the same UX: "Copy" -> "Copied!" + .copied for a short
-   * hold, plus a toast. Idempotent: a target that already has a
-   * .code-copy-btn is skipped.
+   * hold, plus a toast. Idempotent: a target that already has a TEXT
+   * .code-copy-btn is skipped -- the image button shares that base class,
+   * so it must not count.
    *
    * getText, when supplied, is the source getter and is used unchanged
    * (the katex container passes a dataset-source getter). With no getText,
    * the sanitized sourceTextOf default is used so the button never copies
-   * its own label. */
+   * its own label. On a fence the image button is inserted before an
+   * existing image button (or appended), so the text action always comes
+   * first in the DOM. */
   function attachTextCopy(targetEl, getText) {
     if (!targetEl) return;
-    if (targetEl.querySelector("." + BUTTON_BASE_CLASS)) return;
+    if (targetEl.querySelector(
+      "." + BUTTON_BASE_CLASS + ":not(." + IMAGE_BUTTON_CLASS + ")")) return;
     const read = (typeof getText === "function")
       ? getText
       : () => sourceTextOf(targetEl);
-    targetEl.appendChild(buildTextButton(read));
+    const btn = buildTextButton(read);
+    const imageBtn = targetEl.querySelector("." + IMAGE_BUTTON_CLASS);
+    if (imageBtn) targetEl.insertBefore(btn, imageBtn);
+    else targetEl.appendChild(btn);
+  }
+
+  /* attachCodeImageCopy(pre) -- wire the PNG action into a rendered fenced
+   * code block, next to the text Copy. Idempotent, and only for a fence (a
+   * <pre> with a direct <code> child); plugin error boxes keep their single
+   * text button. */
+  function attachCodeImageCopy(pre) {
+    if (!pre) return;
+    if (pre.querySelector("." + IMAGE_BUTTON_CLASS)) return;
+    const isFence = Array.from(pre.children)
+      .some((node) => node.tagName === "CODE");
+    if (!isFence) return;
+    pre.appendChild(buildImageButton(() => copyCodeToPng(pre), CODE_IMAGE_LABEL));
   }
 
   function buildTextButton(getText) {
@@ -899,12 +1107,13 @@
   /* buildImageButton(onClick) -- the shared square icon button. Base +
    * modifier class: the shared chrome plus the icon tweak, and the
    * .code-copy-btn class hybrid.js strips from the note on save. */
-  function buildImageButton(onClick) {
+  function buildImageButton(onClick, label) {
+    const name = label || IMAGE_BUTTON_LABEL;
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = BUTTON_BASE_CLASS + " " + IMAGE_BUTTON_CLASS;
-    btn.title = IMAGE_BUTTON_LABEL;
-    btn.setAttribute("aria-label", IMAGE_BUTTON_LABEL);
+    btn.title = name;
+    btn.setAttribute("aria-label", name);
     btn.appendChild(buildIcon());
     btn.addEventListener("click", (e) => {
       // Both are required: preventDefault stops the anchor/button default,
@@ -918,18 +1127,58 @@
     return btn;
   }
 
-  /* removeAll() -- drop the buttons THIS module injected (image buttons on
-   * the diagram containers and the html-live cards, text buttons on the
-   * katex containers). The <pre> buttons belong to viewer.js and are left
-   * alone. */
+  /* --- block actions ---------------------------------------------- */
+
+  /* The pair for a fenced code block: text Copy (the sanitized source) and,
+   * on a real fence only, PNG Copy image. A plugin error box holds a
+   * text-only <pre> and keeps the single text button. */
+  function attachFenceActions(pre) {
+    attachTextCopy(pre);
+    attachCodeImageCopy(pre);
+  }
+
+  /* The pair for a rendered card, per its BLOCK_KINDS row. The text action
+   * copies the AUTHORED fence source from the dataset, never the rendered
+   * markup; it is only offered when a source was stored, so a failed render
+   * cannot yield a "Copied!" toast for an empty string. */
+  function attachCardActions(card, kind) {
+    const read = () => card.dataset[kind.dataset] || "";
+    if (read()) attachTextCopy(card, read);
+    if (kind.image === "svg") attachImageCopy(card);
+    else if (kind.image === "html") attachHtmlImageCopy(card);
+  }
+
+  /* attachBlockActions(host) -- the single entry point: wire the copy-action
+   * pair into every rendered block under `host` (the <pre> fences and every
+   * card kind). Idempotent, so a re-render or a mutation-observer pass can
+   * call it freely. viewer.js and the AI panel delegate to this. */
+  function attachBlockActions(host) {
+    if (!host || host.nodeType !== 1) return;
+    if (host.tagName === "PRE") attachFenceActions(host);
+    host.querySelectorAll("pre").forEach(attachFenceActions);
+    BLOCK_KINDS.forEach((kind) => {
+      if (host.matches && host.matches(kind.selector)) attachCardActions(host, kind);
+      host.querySelectorAll(kind.selector).forEach((card) => {
+        attachCardActions(card, kind);
+      });
+    });
+  }
+
+  /* removeAll() -- drop the buttons THIS module injected: every image button
+   * (cards and code fences) and every text button that is NOT inside a <pre>.
+   * A fence's text button survives, as before: hybrid.js strips both button
+   * kinds from the note when it serializes, and a cancelled edit must find
+   * its text button again. */
   function removeAll() {
     const host = document.getElementById(VIEWER_CONTENT_ID);
     if (!host) return;
     host.querySelectorAll("." + IMAGE_BUTTON_CLASS).forEach((btn) => btn.remove());
-    host.querySelectorAll(TEXT_CONTAINER_SELECTOR).forEach((container) => {
-      const btn = container.querySelector("." + BUTTON_BASE_CLASS);
-      if (btn) btn.remove();
-    });
+    host.querySelectorAll(
+      "." + BUTTON_BASE_CLASS + ":not(." + IMAGE_BUTTON_CLASS + ")")
+      .forEach((btn) => {
+        if (btn.closest("pre")) return;
+        btn.remove();
+      });
   }
 
   /* onRendered(ev) -- every render updates livePreview. A live-preview
@@ -942,9 +1191,8 @@
     scan();
   }
 
-  /* scan(root) -- inject the right button into every rendered block: an image
-   * button into each SVG diagram container and each html-live card, a text
-   * button into the katex container. Skipped in hybrid mode and in the live
+  /* scan(root) -- inject the pair into every rendered block under `root`
+   * (through attachBlockActions). Skipped in hybrid mode and in the live
    * preview; the buttons are view-only chrome and must never enter the
    * editable / serialized DOM. `root` defaults to the note viewer; a caller
    * passing another reading root (the AI panel's chat log) covers blocks the
@@ -957,15 +1205,7 @@
       if (livePreview) return;
       if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) return;
     }
-    host.querySelectorAll(IMAGE_CONTAINER_SELECTOR).forEach(attachImageCopy);
-    host.querySelectorAll(HTMLPREVIEW_CONTAINER_SELECTOR).forEach(attachHtmlImageCopy);
-    // Only offer the text button when there is a source to copy, so a
-    // render that stores nothing never yields a "Copied!" toast for an
-    // empty string.
-    host.querySelectorAll(KATEX_CONTAINER_SELECTOR).forEach((container) => {
-      if (!container.dataset.katexSource) return;
-      attachTextCopy(container, () => container.dataset.katexSource || "");
-    });
+    attachBlockActions(host);
   }
 
   function boot() {
@@ -986,7 +1226,9 @@
   }
 
   NB.copyButton = {
-    attachTextCopy, attachImageCopy, attachHtmlImageCopy, copySvgToPng, copyHtmlToPng,
+    attachTextCopy, attachImageCopy, attachHtmlImageCopy, attachCodeImageCopy,
+    attachBlockActions,
+    copySvgToPng, copyHtmlToPng, codeBlockSnapshot, copyCodeToPng,
     scan,
     snapshotInset: SNAPSHOT_INSET,
   };

@@ -5094,6 +5094,204 @@ function check(label, cond, extra) {
     mermaidCopyBtn().classList.contains("nb-copy-img-btn"),
     mermaidCopyBtn() && mermaidCopyBtn().className);
 
+  // (1b2) The copy-action PAIR on every card: the text button (the authored
+  // fence source from the container's dataset) first, the image button
+  // second. KaTeX is text-only on purpose (see copy-image.js's header).
+  const CARD_KINDS = [
+    [".mermaid-container", "mermaidSource"],
+    [".wavedrom-container", "wavedromSource"],
+    [".viz-container", "vizSource"],
+    [".svg-container", "svgSource"],
+    [".htmlpreview-card", "htmlpreviewSource"],
+  ];
+  const cardBtnCount = (sel) => {
+    const c = ciViewer.querySelector(sel);
+    return c ? c.querySelectorAll(".code-copy-btn").length : -1;
+  };
+  check("copy image: every card carries the text button then the image button",
+    CARD_KINDS.every(([sel]) => {
+      const card = ciViewer.querySelector(sel);
+      const btns = card ? Array.from(card.querySelectorAll(".code-copy-btn")) : [];
+      return btns.length === 2 &&
+        !btns[0].classList.contains("nb-copy-img-btn") &&
+        btns[1].classList.contains("nb-copy-img-btn");
+    }),
+    CARD_KINDS.map(([sel]) => sel + ":" + cardBtnCount(sel)).join(" "));
+  check("copy image: katex keeps exactly the text button (no image action)",
+    textBtnCount(".katex-container") === 1 &&
+    !ciViewer.querySelector(".katex-container .nb-copy-img-btn"),
+    "count=" + textBtnCount(".katex-container"));
+  // The card text action copies the AUTHORED fence source, read from the
+  // dataset at click time -- never the rendered markup.
+  for (const [sel, key] of CARD_KINDS) {
+    const card = ciViewer.querySelector(sel);
+    const expectedCard = card ? card.dataset[key] : "";
+    const cardClipBefore = __clipboard.writes;
+    const textBtn = card ? card.querySelector(
+      ".code-copy-btn:not(.nb-copy-img-btn)") : null;
+    if (textBtn) {
+      textBtn.dispatchEvent(new window.MouseEvent("click",
+        { bubbles: true, cancelable: true }));
+      await tick(20);
+    }
+    check("copy image: " + sel + " text copy writes its authored source",
+      !!expectedCard && __clipboard.writes === cardClipBefore + 1 &&
+      __clipboard.lastText === expectedCard &&
+      (__clipboard.lastText || "").indexOf("code-copy-btn") === -1,
+      "expected=" + JSON.stringify(expectedCard) +
+      " got=" + JSON.stringify(__clipboard.lastText));
+  }
+
+  // (1c) A fence carries BOTH actions: the text Copy first, then the PNG
+  // button (the image button shares the .code-copy-btn base class).
+  const ciPre = ciViewer.querySelector("pre");
+  const ciPreBtns = () => (ciPre
+    ? Array.from(ciPre.querySelectorAll(".code-copy-btn")) : []);
+  const ciCodeText = ciPre ? ciPre.querySelector("code").textContent : "";
+  check("copy image: a fence carries the text button then the image button",
+    ciPreBtns().length === 2 &&
+    !ciPreBtns()[0].classList.contains("nb-copy-img-btn") &&
+    ciPreBtns()[1].classList.contains("nb-copy-img-btn") &&
+    ciPreBtns()[0].classList.contains("code-copy-btn") &&
+    ciPreBtns()[1].classList.contains("code-copy-btn"),
+    "count=" + ciPreBtns().length);
+  check("copy image: the code image button is labelled 'Copy code as image'",
+    !!ciPreBtns()[1] &&
+    ciPreBtns()[1].getAttribute("aria-label") === "Copy code as image" &&
+    ciPreBtns()[1].title === "Copy code as image",
+    ciPreBtns()[1] && ciPreBtns()[1].getAttribute("aria-label"));
+  // The text action stays byte-identical with the second button in place.
+  const ciPreClipBefore = __clipboard.writes;
+  ciPreBtns()[0].dispatchEvent(new window.MouseEvent("click",
+    { bubbles: true, cancelable: true }));
+  await tick(20);
+  check("copy image: the fence text copy still yields the exact source",
+    __clipboard.writes === ciPreClipBefore + 1 &&
+    __clipboard.lastText === ciCodeText &&
+    !/(?:Copy|Copied!)$/.test(__clipboard.lastText || "") &&
+    (__clipboard.lastText || "").indexOf("code-copy-btn") === -1 &&
+    (__clipboard.lastText || "").indexOf("Copy code as image") === -1,
+    "expected=" + JSON.stringify(ciCodeText) +
+    " got=" + JSON.stringify(__clipboard.lastText));
+  await tick(1300);   // let the "Copied!" label revert before the next click
+
+  // (1d) codeBlockSnapshot: the card look and the highlight colours travel
+  // inline (the snapshot has no app stylesheet), both buttons are stripped,
+  // and the ::after language label is recreated as a real span.
+  {
+    const pre = ciPre;
+    const codeEl = pre.querySelector("code");
+    const hlSpan = codeEl.querySelector("span");
+    const realGCS = window.getComputedStyle;
+    const preStyle = {
+      "background-color": "rgb(24, 26, 33)",
+      "border-top-width": "1px", "border-top-style": "solid",
+      "border-top-color": "rgb(60, 60, 70)",
+      "border-radius": "8px", "padding": "22px 16px 14px",
+      "padding-left": "16px", "font-family": "Menlo, monospace",
+      "font-size": "14px", "line-height": "20px",
+      "color": "rgb(230, 230, 234)",
+      "white-space": "pre-wrap", "overflow-wrap": "anywhere",
+    };
+    const hlStyle = hlSpan ? {
+      "color": "rgb(255, 121, 198)", "background-color": "rgba(0, 0, 0, 0)",
+      "font-weight": "700", "font-style": "italic",
+      "text-decoration-line": "none",
+    } : null;
+    const realRect = pre.getBoundingClientRect;
+    window.getComputedStyle = function (el) {
+      const real = realGCS.call(window, el);
+      const map = (el === pre) ? preStyle : (el === hlSpan ? hlStyle : null);
+      if (!map) return real;
+      return { getPropertyValue: (p) => (p in map ? map[p] : "") };
+    };
+    Object.defineProperty(pre, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 600, height: 200, left: 10, top: 10,
+        right: 610, bottom: 210, x: 10, y: 10, toJSON() {} }),
+    });
+    try {
+      const preBefore = pre.outerHTML;
+      const snap = window.NB.copyButton.codeBlockSnapshot(pre);
+      check("copy image: codeBlockSnapshot sizes the frame from the pre",
+        !!snap &&
+        snap.width === 600 + 2 * window.NB.copyButton.snapshotInset,
+        snap ? "w=" + snap.width : "null");
+      check("copy image: the snapshot carries the card look inline",
+        !!snap &&
+        /background-color:rgb\(24, 26, 33\)/.test(snap.source) &&
+        /border:1px solid rgb\(60, 60, 70\)/.test(snap.source) &&
+        /border-radius:8px/.test(snap.source) &&
+        /padding:22px 16px 14px/.test(snap.source) &&
+        /box-sizing:border-box/.test(snap.source) &&
+        /white-space:pre-wrap/.test(snap.source),
+        snap ? snap.source.slice(0, 220) : "null");
+      check("copy image: neither copy button reaches the snapshot",
+        !!snap && snap.source.indexOf("code-copy-btn") === -1 &&
+        snap.source.indexOf("nb-copy-img-btn") === -1);
+      check("copy image: the language label is recreated as a span",
+        !!snap &&
+        /<span[^>]*class="nb-code-lang"[^>]*>js<\/span>/.test(snap.source),
+        snap ? snap.source.slice(0, 420) : "null");
+      check("copy image: a highlight span keeps its inline colour and weight",
+        !!snap && snap.source.indexOf("rgb(255, 121, 198)") !== -1 &&
+        /font-weight:700/.test(snap.source) &&
+        snap.source.indexOf("background-color:rgba(0, 0, 0, 0)") === -1,
+        snap ? snap.source.slice(0, 420) : "null");
+      check("copy image: the live pre is untouched by the snapshot",
+        pre.outerHTML === preBefore);
+    } finally {
+      window.getComputedStyle = realGCS;
+      Object.defineProperty(pre, "getBoundingClientRect",
+        { configurable: true, value: realRect });
+    }
+  }
+
+  // (1e) The image action goes through the shared rasterizer: code.png, the
+  // measured width and NO height (copy-image measures the snapshot).
+  {
+    const realCopyHtml = window.NB.copyButton.copyHtmlToPng;
+    const codeCalls = [];
+    window.NB.copyButton.copyHtmlToPng = (source, opts) => {
+      codeCalls.push({ source, opts });
+      return Promise.resolve();
+    };
+    const realRect = ciPre.getBoundingClientRect;
+    Object.defineProperty(ciPre, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ width: 600, height: 200, left: 10, top: 10,
+        right: 610, bottom: 210, x: 10, y: 10, toJSON() {} }),
+    });
+    try {
+      ciPreBtns()[1].dispatchEvent(new window.MouseEvent("click",
+        { bubbles: true, cancelable: true }));
+      await tick(20);
+      check("copy image: the code image button calls the rasterizer once",
+        codeCalls.length === 1, "calls=" + codeCalls.length);
+      const call = codeCalls[0] || { opts: {} };
+      check("copy image: it passes code.png, the width and no height",
+        call.opts.name === "code.png" && call.opts.width === 600 + 48 &&
+        !("height" in call.opts) &&
+        call.opts.message === "Code copied as image" &&
+        call.opts.failMessage === "Could not copy the code as an image",
+        JSON.stringify(call.opts));
+      check("copy image: it passes the snapshot source",
+        typeof call.source === "string" &&
+        call.source.indexOf("<pre") === 0,
+        String(call.source).slice(0, 60));
+      // A text-only <pre> (plugin error box) keeps the single button.
+      const errPre = window.document.createElement("pre");
+      errPre.textContent = "Syntax error in diagram";
+      window.NB.copyButton.attachCodeImageCopy(errPre);
+      check("copy image: a text-only <pre> gets no image button",
+        !errPre.querySelector(".nb-copy-img-btn"));
+    } finally {
+      window.NB.copyButton.copyHtmlToPng = realCopyHtml;
+      Object.defineProperty(ciPre, "getBoundingClientRect",
+        { configurable: true, value: realRect });
+    }
+  }
+
   // (2) Idempotency: a forced re-scan never doubles the buttons.
   window.NB.evt.emit("viewer:rendered", { path: COPY_IMG_PATH, live: false });
   await tick(20);
@@ -5112,6 +5310,12 @@ function check(label, cond, extra) {
   check("copy image: re-scan does not duplicate the html-live image button",
     containerBtnCount(".htmlpreview-card") === 1,
     "count=" + containerBtnCount(".htmlpreview-card"));
+  check("copy image: re-scan does not duplicate the card text buttons",
+    CARD_KINDS.every(([sel]) => cardBtnCount(sel) === 2),
+    CARD_KINDS.map(([sel]) => sel + ":" + cardBtnCount(sel)).join(" "));
+  check("copy image: re-scan does not duplicate the katex text button",
+    textBtnCount(".katex-container") === 1,
+    "count=" + textBtnCount(".katex-container"));
 
   // (2b) The katex text button copies the stored LaTeX source and flips to
   // "Copied!" -- same shared attachTextCopy UX as the <pre> button. Reuse
@@ -5145,8 +5349,18 @@ function check(label, cond, extra) {
   check("copy image: hybrid:will-enter removes the katex text and html-live image buttons",
     textBtnCount(".katex-container") === 0 && containerBtnCount(".htmlpreview-card") === 0,
     "k=" + textBtnCount(".katex-container") + " h=" + containerBtnCount(".htmlpreview-card"));
+  check("copy image: hybrid:will-enter removes BOTH buttons of every card",
+    CARD_KINDS.every(([sel]) => cardBtnCount(sel) === 0) &&
+    textBtnCount(".katex-container") === 0,
+    CARD_KINDS.map(([sel]) => sel + ":" + cardBtnCount(sel)).join(" ") +
+    " katex:" + textBtnCount(".katex-container"));
   check("copy image: hybrid:will-enter leaves the <pre> copy button alone",
     !!ciPreCopyBtn(), "preBtn=" + !!ciPreCopyBtn());
+  check("copy image: hybrid:will-enter drops the fence image button, text intact",
+    !ciPre.querySelector(".nb-copy-img-btn") &&
+    ciPre.querySelector("code").textContent === ciCodeText,
+    "imgBtn=" + !!ciPre.querySelector(".nb-copy-img-btn") +
+    " text=" + JSON.stringify(ciPre.querySelector("code").textContent));
   window.NB.hybrid.isActive = () => true;
   window.NB.evt.emit("viewer:rendered", { path: COPY_IMG_PATH, live: false });
   await tick(20);
@@ -5155,7 +5369,8 @@ function check(label, cond, extra) {
     containerBtnCount(".wavedrom-container") === 0 &&
     containerBtnCount(".viz-container") === 0 &&
     containerBtnCount(".htmlpreview-card") === 0 &&
-    textBtnCount(".katex-container") === 0,
+    textBtnCount(".katex-container") === 0 &&
+    CARD_KINDS.every(([sel]) => cardBtnCount(sel) === 0),
     "m=" + containerBtnCount(".mermaid-container") +
     " h=" + containerBtnCount(".htmlpreview-card"));
   window.NB.hybrid.isActive = realIsActive;
@@ -5166,7 +5381,9 @@ function check(label, cond, extra) {
     containerBtnCount(".wavedrom-container") === 1 &&
     containerBtnCount(".viz-container") === 1 &&
     containerBtnCount(".htmlpreview-card") === 1 &&
-    textBtnCount(".katex-container") === 1,
+    textBtnCount(".katex-container") === 1 &&
+    ciPreBtns().length === 2 &&
+    CARD_KINDS.every(([sel]) => cardBtnCount(sel) === 2),
     "m=" + containerBtnCount(".mermaid-container") +
     " h=" + containerBtnCount(".htmlpreview-card"));
 
@@ -31652,9 +31869,12 @@ function check(label, cond, extra) {
     // generic word "copied" or a broad `classList.add` match, which could
     // legitimately appear for other UI reasons.
     const aiSrc = read("static/js/ai.js");
-    check("ai copy: ai.js delegates to NB.copyButton.attachTextCopy",
-      aiSrc.indexOf("NB.copyButton.attachTextCopy") !== -1,
-      "no attachTextCopy call in ai.js");
+    const viewerSrc = read("static/js/viewer.js");
+    check("ai copy: ai.js and viewer.js delegate to NB.copyButton.attachBlockActions",
+      aiSrc.indexOf("NB.copyButton.attachBlockActions") !== -1 &&
+      viewerSrc.indexOf("NB.copyButton.attachBlockActions") !== -1,
+      "ai=" + aiSrc.indexOf("attachBlockActions") +
+      " viewer=" + viewerSrc.indexOf("attachBlockActions"));
     check("ai copy: ai.js no longer builds its own .code-copy-btn " +
       '(checked via className = "code-copy-btn", unique to copy-button code)',
       aiSrc.indexOf('className = "code-copy-btn"') === -1,
@@ -31668,30 +31888,35 @@ function check(label, cond, extra) {
       /\.ai-prose-span pre:focus-within \.code-copy-btn/.test(aiCss),
       "no .ai-prose-span pre reveal rule for .code-copy-btn");
 
-    // DOM-level: exactly ONE shared button on the rendered block (the old
-    // local construction plus the shared injection would have produced two),
-    // and it copies the code + flips to "Copied!" like every other block.
+    // DOM-level: the block carries the shared pair -- text Copy first, the
+    // PNG action second (the old local construction plus the shared
+    // injection would have produced a duplicate text button) -- and the
+    // text one copies the code + flips to "Copied!" like every other block.
     const aiProsePre = lastProse && lastProse.querySelector("pre");
     const aiCopyBtns = aiProsePre ? aiProsePre.querySelectorAll(".code-copy-btn") : [];
+    const aiTextBtn = aiCopyBtns[0] || null;
     const aiCodeEl = aiProsePre ? aiProsePre.querySelector("code") : null;
     const aiExpected = aiCodeEl ? aiCodeEl.textContent : "";
-    check("ai copy: assistant prose code block has exactly one .code-copy-btn",
-      aiCopyBtns.length === 1, "count=" + aiCopyBtns.length);
+    check("ai copy: assistant prose code block has the text button then the image button",
+      aiCopyBtns.length === 2 &&
+      !aiCopyBtns[0].classList.contains("nb-copy-img-btn") &&
+      aiCopyBtns[1].classList.contains("nb-copy-img-btn"),
+      "count=" + aiCopyBtns.length);
     const aiClipBefore = __clipboard.writes;
-    if (aiCopyBtns.length === 1) {
-      aiCopyBtns[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+    if (aiTextBtn) {
+      aiTextBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
       await tick(20);
     }
     check("ai copy: clicking it writes the exact code text (no button label)",
-      aiCopyBtns.length === 1 && __clipboard.writes === aiClipBefore + 1 &&
+      !!aiTextBtn && __clipboard.writes === aiClipBefore + 1 &&
       __clipboard.lastText === aiExpected &&
       !/(?:Copy|Copied!)$/.test(__clipboard.lastText || "") &&
       (__clipboard.lastText || "").indexOf("code-copy-btn") === -1,
       "expected=" + JSON.stringify(aiExpected) + " got=" + JSON.stringify(__clipboard.lastText));
     check("ai copy: the button flips to 'Copied!'",
-      aiCopyBtns.length === 1 && aiCopyBtns[0].textContent === "Copied!" &&
-      aiCopyBtns[0].classList.contains("copied"),
-      aiCopyBtns.length ? JSON.stringify(aiCopyBtns[0].textContent) : "(no button)");
+      !!aiTextBtn && aiTextBtn.textContent === "Copied!" &&
+      aiTextBtn.classList.contains("copied"),
+      aiTextBtn ? JSON.stringify(aiTextBtn.textContent) : "(no button)");
   }
 
   // --- Turn 3: DELETE-style patch whose find no longer matches -> 400 --

@@ -194,6 +194,18 @@ body[data-theme="light"] {
   --font-prose: var(--font-ui);
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
+  /* Width of the icon copy button (16px glyph + 4px padding + 1px border per
+   * side). The text button of a copy-action pair sits one of these plus the
+   * gap to the left of the card's right edge. */
+  --copy-btn-icon-w: 26px;
+  /* The one placement every copy-action pair uses: both buttons are 26px
+   * tall, sit --copy-btn-inset from the host's edge and --copy-btn-gap
+   * apart. Absolute offsets are measured from the host's padding box, so
+   * with its 1px border the pair reads 7px from the border box. */
+  --copy-btn-inset: 6px;
+  --copy-btn-gap: 6px;
+  --copy-btn-h: 26px;
+
   --text-2xs: 9px;
   --text-xs: .72rem;
   --text-sm: .8rem;
@@ -3543,11 +3555,12 @@ body > #nb-menu .submenu.open {
   overflow-wrap: anywhere;
   overflow-x: clip;
 }
-/* A fence reserves a top band for its language header in every state, so
- * clicking it never changes the block's height. Plugin error boxes hold a
- * text-only <pre>, so the :has() keeps the band off them. */
+/* A fence reserves a top band for its language label and copy pair in every
+ * state, so clicking it never changes the block's height. The band is the
+ * 26px button plus --copy-btn-inset above and below (38px). Plugin error
+ * boxes hold a text-only <pre>, so the :has() keeps the band off them. */
 .markdown-body pre:has(> code) {
-  padding-top: 22px;
+  padding-top: 38px;
 }
 .markdown-body pre code,
 .markdown-body pre code.hljs {
@@ -3564,8 +3577,12 @@ body > #nb-menu .submenu.open {
 .markdown-body pre { position: relative; }
 .code-copy-btn {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: var(--copy-btn-inset);
+  right: var(--copy-btn-inset);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--copy-btn-h);
   font-size: .76rem;
   line-height: 1;
   padding: 4px 8px;
@@ -3613,10 +3630,14 @@ body > #nb-menu .submenu.open {
 .markdown-body pre:has(> code)[data-fence-lang]:not([data-fence-lang=""])::after {
   content: attr(data-fence-lang);
   position: absolute;
-  top: 6px;
+  /* The label's line box is the whole band, so its centre lines up with the
+   * copy pair's centre. */
+  top: 0;
   left: 16px;
-  max-width: calc(100% - 96px);
-  font: .72em/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  max-width: calc(100% - 134px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .72em;
+  line-height: 38px;
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -3626,11 +3647,22 @@ body > #nb-menu .submenu.open {
 .markdown-body pre.hybrid-plugin-editing::after {
   display: none;
 }
-/* The copy button sits in the band, not over the first code line. */
+/* The fence buttons sit in the band above the first code line, so they must
+ * paint over the code's own background. Position comes from the base rule. */
 .markdown-body pre:has(> code) > .code-copy-btn {
-  top: 1px;
-  right: 10px;
   z-index: 2;
+}
+/* ONE placement for the pair, in every host that carries it: the icon button
+ * keeps the base inset (6/6 in the padding box) and the text button sits one
+ * icon width plus the gap to its left, so a widening "Copied!" label can
+ * never cover it. KaTeX is text-only and keeps the base position. */
+.markdown-body pre:has(> code) > .code-copy-btn:not(.nb-copy-img-btn),
+.mermaid-container > .code-copy-btn:not(.nb-copy-img-btn),
+.wavedrom-container > .code-copy-btn:not(.nb-copy-img-btn),
+.viz-container > .code-copy-btn:not(.nb-copy-img-btn),
+.svg-container > .code-copy-btn:not(.nb-copy-img-btn),
+.htmlpreview-card > .code-copy-btn:not(.nb-copy-img-btn) {
+  right: calc(var(--copy-btn-inset) + var(--copy-btn-icon-w) + var(--copy-btn-gap));
 }
 /* Language chip on a code block being edited in hybrid mode. Click and type
  * to change the fence language -- Enter commits, Esc cancels. The box keeps
@@ -3639,7 +3671,7 @@ body > #nb-menu .submenu.open {
  * x = 16 (7 + 8 padding + 1 border), matching the generated label. */
 .hybrid-lang-pill {
   position: absolute;
-  top: 2px;
+  top: 10px;
   left: 7px;
   box-sizing: border-box;
   height: 18px;
@@ -3877,7 +3909,9 @@ body > #nb-menu .submenu.open {
   cursor: zoom-in;
 }
 /* Icon modifier of the shared .code-copy-btn: square padding and no text
- * line-height. Position, colors, and the reveal all come from the base. */
+ * line-height. Position, colors, and the reveal all come from the base; the
+ * shared 26px height keeps the box 26×26 (16px glyph + 4px padding + 1px
+ * border per side). */
 .nb-copy-img-btn {
   display: inline-flex;
   align-items: center;
@@ -7750,11 +7784,13 @@ body[data-theme="light"] #dw-designer-overlay {
     padding: 44px 14px 12px;
   }
   .markdown-body pre:has(> code)[data-fence-lang]:not([data-fence-lang=""])::after {
-    top: 13px;
+    top: 0;
     left: 14px;
+    max-width: calc(100% - 116px);
+    line-height: 44px;
   }
   .hybrid-lang-pill {
-    top: 12px;
+    top: 13px;
     left: 5px;
   }
   /* Must out-specify the desktop pre > .code-copy-btn rule. */
@@ -7766,6 +7802,18 @@ body[data-theme="light"] #dw-designer-overlay {
     padding: 0;
     opacity: 1;
     font-size: 12px;
+  }
+  /* Both actions are 44px touch targets in every host that carries the pair:
+   * the icon at the right edge (the rules above / below), the text button one
+   * hit-width plus the gap to its left. KaTeX stays a single text button at
+   * the right edge. */
+  .markdown-body pre:has(> code) > .code-copy-btn:not(.nb-copy-img-btn),
+  .mermaid-container > .code-copy-btn:not(.nb-copy-img-btn),
+  .wavedrom-container > .code-copy-btn:not(.nb-copy-img-btn),
+  .viz-container > .code-copy-btn:not(.nb-copy-img-btn),
+  .svg-container > .code-copy-btn:not(.nb-copy-img-btn),
+  .htmlpreview-card > .code-copy-btn:not(.nb-copy-img-btn) {
+    right: calc(var(--m-hit) + var(--copy-btn-gap));
   }
   .code-copy-btn {
     top: 0;

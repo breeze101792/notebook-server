@@ -86,7 +86,7 @@
   --content-block-gap: .7em;
   --content-pre-pad-block: 14px;
   --content-pre-pad-inline: 16px;
-  --content-pre-band: 22px;
+  --content-pre-band: 38px;
   --content-code-pad: 1em;
   --content-code-size: .88em;
   --content-code-line: 1.5;
@@ -94,13 +94,16 @@
   --content-copy-pad-block: 4px;
   --content-copy-pad-inline: 8px;
   --content-copy-offset: 6px;
-  --content-band-copy-top: 1px;
-  --content-band-copy-right: 10px;
+  --content-band-copy-top: 6px;
+  --content-band-copy-right: 6px;
+  --content-copy-icon-w: 26px;
+  --content-copy-gap: 6px;
+  --content-copy-h: 26px;
   --content-label-size: .72em;
-  --content-label-line: 1.2;
-  --content-label-top: 6px;
+  --content-label-line: 38px;
+  --content-label-top: 0;
   --content-label-left: 16px;
-  --content-label-offset: 96px;
+  --content-label-offset: 134px;
   --content-cell-pad-block: 6px;
   --content-cell-pad-inline: 10px;
   --content-card-pad-block: 14px;
@@ -356,14 +359,20 @@ body {
 .reader--phone .fence { padding: 12px 14px; font-size: 13px; }
 .reader--phone .fence.has-code { padding: 44px 14px 12px; }
 .reader--phone .fence[data-fence-lang]:not([data-fence-lang=""])::after {
-  top: 13px; left: 14px;
+  top: 0; line-height: var(--control-h-touch); left: 14px;
+  max-width: calc(100% - 116px);
 }
 .reader--phone .copy {
   top: 0; right: 0;
   width: var(--control-h-touch); height: var(--control-h-touch);
   padding: 0; opacity: 1; font-size: 12px;
 }
-.reader--phone .fence.has-code > .copy { top: 0; right: 0; }
+.reader--phone .fence.has-code > .copy,
+.reader--phone .card > .copy { top: 0; right: 0; }
+.reader--phone .fence.has-code > .copy:not(.copy--img),
+.reader--phone .card > .copy:not(.copy--img) {
+  right: calc(var(--control-h-touch) + var(--content-copy-gap));
+}
 .reader--phone .copy--img { padding: 0; }
 .reader--phone .table-scroll { border-radius: var(--radius-md); }
 
@@ -421,6 +430,10 @@ body {
   top: var(--content-copy-offset);
   right: var(--content-copy-offset);
   z-index: var(--z-inline);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--content-copy-h);
   font-family: var(--font-ui);
   font-size: var(--content-copy-size);
   line-height: var(--lh-flat);
@@ -439,6 +452,16 @@ body {
 .fence.has-code > .copy {
   top: var(--content-band-copy-top);
   right: var(--content-band-copy-right);
+}
+/* The pair: the icon keeps the host's top/right, the text button sits one
+ * icon width + the gap to its left. */
+.fence.has-code > .copy:not(.copy--img),
+.card > .copy:not(.copy--img) {
+  right: calc(var(--content-band-copy-right) + var(--content-copy-icon-w) + var(--content-copy-gap));
+}
+.card > .copy {
+  top: var(--content-copy-offset);
+  right: var(--content-copy-offset);
 }
 .fence:hover > .copy,
 .fence:focus-within > .copy,
@@ -936,7 +959,7 @@ tr.nb-tv-hide-row { display: none; }
      ================================================================ -->
 <section class="sec">
   <h2>2 · Code fences — band, label, copy</h2>
-  <p class="lede">A fence reserves the 22 px band in every state, so a click never changes
+  <p class="lede">A fence reserves the 38 px band in every state, so a click never changes
     its height. The label is generated text. The copy button is hidden at rest and revealed
     by hover, focus-within, or its own focus.</p>
 
@@ -963,8 +986,8 @@ tr.nb-tv-hide-row { display: none; }
 }
 
 <span class="hl-com">/* 4.7 kΩ pull-up, 3V3 */</span></code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
-          <p class="callout">The button sits at <code>top: 1px; right: 10px</code> inside the
-            band, not over the first code line. Copy hover is an <code>--accent-soft</code> face.</p>
+          <p class="callout">The pair sits at <code>top: 6px</code>, icon <code>right: 6px</code> and text
+            <code>right: 38px</code>, inside the band and not over the first code line. Copy hover is an <code>--accent-soft</code> face.</p>
         </div>
 
         <div class="demo">
@@ -980,7 +1003,7 @@ tr.nb-tv-hide-row { display: none; }
 PA1   ── sensor power gate
 GND   ── common
 3V3   ── rail, 80 mA budget</code><button type="button" class="copy" aria-label="Copy code to clipboard">Copy</button></pre>
-          <p class="callout">Same 22 px band and the same copy position. An empty band is what
+          <p class="callout">Same 38 px band and the same copy position. An empty band is what
             keeps a bare fence the same height as a labelled one.</p>
         </div>
 

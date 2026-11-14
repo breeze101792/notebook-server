@@ -458,8 +458,8 @@ async function main() {
     check("ai blocks: a ```wavedrom fence in a reply stays a code block",
       skipped.containers === 0 && skipped.raw === 1,
       "containers=" + skipped.containers + " raw=" + skipped.raw);
-    check("ai blocks: the skipped wavedrom fence keeps its text copy button",
-      skipped.buttons === 1 && skipped.imageButtons === 0,
+    check("ai blocks: the skipped wavedrom fence keeps its copy pair",
+      skipped.buttons === 2 && skipped.imageButtons === 1,
       JSON.stringify(skipped));
 
     section("ai blocks: the chat figure fits the chat log");
@@ -506,8 +506,8 @@ async function main() {
         image: card.querySelectorAll(".code-copy-btn.nb-copy-img-btn").length,
       };
     });
-    check("ai blocks: the chat diagram card gets one image copy button",
-      copyState.total === 1 && copyState.image === 1,
+    check("ai blocks: the chat diagram card gets the copy pair",
+      copyState.total === 2 && copyState.image === 1,
       JSON.stringify(copyState));
 
     await page.locator("#ai-chat-log .mermaid-container .nb-figure-viewport > svg")
@@ -628,8 +628,8 @@ async function main() {
     }, "ai-fence-marker");
     check("ai blocks: the ```js prose fence stays a highlighted code block",
       proseFence.found && proseFence.highlighted, JSON.stringify(proseFence));
-    check("ai blocks: the prose fence keeps exactly one text copy button",
-      proseFence.buttons === 1 && proseFence.imageButtons === 0,
+    check("ai blocks: the prose fence keeps the copy pair",
+      proseFence.buttons === 2 && proseFence.imageButtons === 1,
       JSON.stringify(proseFence));
 
     section("ai blocks: a tool fence renders nothing");

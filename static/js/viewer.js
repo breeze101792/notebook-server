@@ -373,16 +373,15 @@
   }
 
   /* --- copy button on code blocks ----------------------------------- */
-  /* attachCopyButton(pre) delegates to NB.copyButton.attachTextCopy, the
-   * single owner of the source-block copy affordance (copy-image.js). The
-   * behavior is unchanged: a "Copy" button in the <pre>'s top-right copies
-   * the RAW source (textContent, not the highlighted innerHTML), flips to
-   * "Copied!" briefly, and fires a toast. The call is synchronous so the
-   * button exists the moment a render completes. Guarded so a missing
-   * copy-image.js degrades to no button instead of throwing. */
+  /* attachCopyButton(pre) delegates to NB.copyButton.attachBlockActions, the
+   * single owner of the copy-action pair (copy-image.js): the text "Copy"
+   * (raw source: textContent, not the highlighted innerHTML, flipping to
+   * "Copied!" briefly with a toast) and the PNG "Copy code as image" next to
+   * it. Synchronous, so the buttons exist the moment a render completes;
+   * guarded so a missing copy-image.js degrades to no button. */
   function attachCopyButton(pre) {
-    if (NB.copyButton && NB.copyButton.attachTextCopy) {
-      NB.copyButton.attachTextCopy(pre);
+    if (NB.copyButton && NB.copyButton.attachBlockActions) {
+      NB.copyButton.attachBlockActions(pre);
     }
   }
   NB.slugify = slugify; // exposed for potential reuse

@@ -182,7 +182,16 @@ async function main() {
     // --- 1b. the opening click places the caret where it lands ---------
     console.log("\n== fence editor: click caret ==");
     await boot(PLAIN);
-    await block().click({ position: { x: 44, y: 40 } });
+    // The fence band is reserved for the copy pair, so click the first code
+    // line rather than a fixed y: the band height is not this test's subject.
+    const firstLineY = await page.evaluate(() => {
+      const pre = document.querySelector("#viewer-content pre");
+      const code = pre.querySelector("code");
+      const pr = pre.getBoundingClientRect();
+      const cr = code.getBoundingClientRect();
+      return Math.round(cr.top - pr.top + parseFloat(getComputedStyle(code).paddingTop) + 6);
+    });
+    await block().click({ position: { x: 44, y: firstLineY } });
     await page.waitForFunction(
       () => !!document.querySelector("#viewer-content pre.hybrid-plugin-editing"),
       null, { timeout: 5000 });

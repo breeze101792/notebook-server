@@ -70,7 +70,7 @@ a last-child collapse: it would change the shipped scroll height.
 On desktop a toolbar toggle (paragraph ↔ list, quote, code fence) must not move the blocks
 around the line. Every construct uses `.7em`, so toggling a line changes only that block's
 own height. On the phone the three gaps differ by up to 4.5 px; that is shipped and is not
-part of this pass. The fence band follows the same rule: the 22 px header band is reserved in every
+part of this pass. The fence band follows the same rule: the 38 px header band is reserved in every
 fence state, so clicking a fence never changes its height (`code-block-chip.md:§2`).
 
 The code fence is the one block whose *inner* top padding is not prose-relative: the
@@ -84,7 +84,7 @@ vendor theme adds `1em` inside `<code>` (`github-dark.css:1`, `github.css:5`). S
 
 ```
 ┌──────────────────────────────────────────────┐  border 1px --border, radius 8
-│ c                                  [ Copy ]  │  band 22; label top 6 left 16
+│ c                           [ Copy ] [img]   │  band 38; label centred, left 16
 │                                              │
 │     static int ds18b20_read(...)             │  code padding 1em (vendor)
 │     {                                        │  code .88em mono, wraps
@@ -94,21 +94,23 @@ vendor theme adds `1em` inside `<code>` (`github-dark.css:1`, `github.css:5`). S
 | Part | Shipped value | Source |
 |---|---|---|
 | Outer `<pre>` | `background: var(--code-bg)`; `1px solid var(--border)`; `border-radius: 8px`; `padding: 14px 16px`; `margin: .7em 0`; `white-space: pre-wrap`; `overflow-wrap: anywhere`; `overflow-x: clip`; `position: relative` | `style.css:3264-3279`, `:3296` |
-| Fence top padding | `padding-top: 22px` when the pre has a direct `<code>` child | `style.css:3281-3283` |
+| Fence top padding | `padding-top: 38px` when the pre has a direct `<code>` child (`6 + 26 + 6`) | `style.css:3560-3564` |
 | Inner code | `display: block`; `padding: 1em`; `background: none` (app); `font-size: .88em`; mono stack | `style.css:3284-3290`; `github-dark.css:1`; `github.css:5` |
-| Band | the 22 px top padding. No fill, no divider, no separate bar: the block's own well colour runs to the top edge | `style.css:3281-3283` |
-| Language label | generated `::after`; `content: attr(data-fence-lang)`; `top: 6px`; `left: 16px`; `max-width: calc(100% - 96px)`; `.72em/1.2` mono; `--fg-muted`; `nowrap`; `overflow: hidden`; `pointer-events: none`; `z-index: 0` | `style.css:3345-3356` |
-| Copy button | `position: absolute`; `top: 1px`; `right: 10px`; `z-index: 2` inside a fence; `font-size: .76rem`; `line-height: 1`; `padding: 4px 8px`; `radius: 4px`; `1px --border`; `--bg-elev`; `--fg-muted`; `opacity: 0` | `style.css:3297-3313`, `:3362-3366` |
+| Band | the 38 px top padding. No fill, no divider, no separate bar: the block's own well colour runs to the top edge | `style.css:3560-3564` |
+| Language label | generated `::after`; `content: attr(data-fence-lang)`; `top: 0`; `line-height: 38px`; `left: 16px`; `max-width: calc(100% - 134px)`; `.72em` mono; `--fg-muted`; `nowrap`; `overflow: hidden`; `pointer-events: none`; `z-index: 0` | `style.css:3631-3645` |
+| Copy button | `position: absolute`; `top: 6px`; `right: calc(6px + 26px + 6px)`; `display: inline-flex`; `align-items: center`; `height: 26px`; `font-size: .76rem`; `line-height: 1`; `padding: 4px 8px`; `radius: 4px`; `1px --border`; `--bg-elev`; `--fg-muted`; `opacity: 0` | `style.css:3578-3596`, `:3659-3667` |
+| Copy image button | 26 × 26 icon button at the fence's right edge, `top: 6px`; `right: 6px`; same face, border and reveal as the text button | `style.css:3915-3924` |
 
 **Code text origin.** The label starts at x = 16 px. The code text starts at
 x = 16 + 1em, where 1em is the code's own font size: 12.32 px at the desktop base, so
 ≈ 28.3 px. This offset is shipped. §12 P3 proposes removing it; do not apply that here.
 
-**Vertical measurement.** The band is 22 px. The first code line starts 22 + 12.32
-≈ 34.3 px below the top border on desktop, and 44 + 11.44 ≈ 55.4 px on the phone. The
-copy button sits in the band at 1.0, not over the first line (`style.css:3361-3366`). At
-`--font-scale: 1.3` the button measures ≈23.8 px against the 22 px band and overhangs the
-first line by ≈3.8 px; the band is px and the button rem. P17 records the repair.
+**Vertical measurement.** The band is 38 px (`6 + 26 + 6`). The first code line starts
+38 + 12.32 ≈ 50.3 px below the top border on desktop, and 44 + 11.44 ≈ 55.4 px on the
+phone. Both buttons are 26 px boxes (`height: 26px`, border-box) at `top: 6px`, fully
+inside the band: the icon's bottom is 33 px from the top, the code starts at 38. The pair
+is vertically centred on the same line box as the label, and the fixed 26 px box closes
+the old overhang at `--font-scale: 1.3` (the rem text grows inside the fixed box).
 
 ### 2.2 Markup and the generated label
 
@@ -125,8 +127,9 @@ first line by ≈3.8 px; the band is px and the button rem. P17 records the repa
   swallowed and the plain text stays.
 - The label is generated text, not a node: it cannot be selected, copied, saved, undone,
   or take a caret (`style.css:3337-3344`).
-- The copy button is appended to every `<pre>` in view mode only; live edit preview has
-  no button (`viewer.js:484-493`).
+- Two buttons are appended to every `<pre>` in view mode only; the live edit preview has
+  none (`viewer.js:484-493`). The text `Copy` button is owned by `copy-image.js`, and the
+  `Copy code as image` icon button next to it rasterizes the rendered block.
 
 ### 2.3 States
 
@@ -136,21 +139,26 @@ first line by ≈3.8 px; the band is px and the button rem. P17 records the repa
 | Hover / focus within | visible | `opacity: 1` | unchanged |
 | Copy button hover | visible | `--accent-soft` face, `--fg` text | unchanged |
 | Copy button focus | visible | `opacity: 1`; browser focus ring (no `outline` reset) | unchanged |
+| Copy image | visible on hover/focus; 26 px desktop, 44 px phone, right-aligned | icon only; toast `Code copied as image`; clipboard PNG of the rendered block | unchanged |
 | Copied (1.2 s) | visible | text `Copied!`; `--accent` text and border; toast `Copied to clipboard` | unchanged |
 | Copy fails (2.2 s toast) | visible | text stays `Copy`; toast `Copy failed` | unchanged |
 | No language | band reserved, no `::after` | visible on hover | same height as a labelled fence |
 | Hybrid edit | label hidden; the language chip occupies its place | not in the editable DOM | unchanged band (`style.css:3358-3360`; chip out of scope) |
 
-Copy behaviour is owned by `copy-image.js` (`attachTextCopy`, `:684-729`): raw
+Copy behaviour is owned by `copy-image.js` (`attachTextCopy`, `:1003-1045`): raw
 `textContent` with every `.code-copy-btn` removed, the label flips to `Copied!` for
-1200 ms, and one polite toast fires (`copy-image.js:61-66`, `:248`). The preview table-view's
-`Copy image` action reuses the same file's `copyHtmlToPng` (`copy-image.js:724-738`), so PNG
-copying has one owner.
+1200 ms, and one polite toast fires (`copy-image.js:61-66`, `:248`). The same file adds the
+PNG action: `attachCodeImageCopy` (`:1020-1028`) wires `codeBlockSnapshot` (`:851-958`),
+which clones the `<pre>`, strips both buttons, inlines the card look and every highlight
+span's colour from computed styles, recreates the language label as an absolutely
+positioned span (`data-fence-lang`), and hands `{source, width}` to `copyHtmlToPng`
+(`:724-738`), which measures the height. The preview table-view's `Copy image` action
+reuses the same rasterizer, so PNG copying has one owner.
 
 ### 2.4 No-language fence
 
 A fence with no info string has no `data-fence-lang`; the `:has(> code)` rule still
-reserves 22 px (`style.css:3281-3283`). The band is empty. Do not collapse it: an empty
+reserves 38 px (`style.css:3560-3564`). The band is empty. Do not collapse it: an empty
 band is what keeps a bare fence the same height as a labelled one and gives the copy
 button a home.
 
@@ -204,13 +212,13 @@ apply that here.
 |---|---|---|
 | Pre | `padding: 12px 14px`; `font-size: 13px` | `style.css:7446-7450` |
 | Fence | `padding: 44px 14px 12px` | `style.css:7452-7454` |
-| Label | `top: 13px`; `left: 14px` | `style.css:7455-7458` |
-| Copy | `top: 0`; `right: 0`; `44px × 44px`; `padding: 0`; `opacity: 1`; `font-size: 12px` | `style.css:7464-7472` |
+| Label | `top: 0`; `line-height: 44px`; `left: 14px`; `max-width: calc(100% - 116px)` | `style.css:7778-7784` |
+| Copy | text `right: 50px`, image `right: 0`; both `44px × 44px`; `top: 0`; `padding: 0`; `opacity: 1`; `font-size: 12px` | `style.css:7803-7820` |
 | Inner code | still `1em` padding from the vendor; `.88em` → 11.44 px at the 13 px pre | `github.css:5` |
 
-The 44 px copy target is always visible because there is no hover on touch. The label and
-the 44 px button share the 44 px band; the label's `max-width: calc(100% - 96px)`
-(`style.css:3350`) keeps it clear of the button.
+Both 44 px targets are always visible because there is no hover on touch. They fill the
+44 px band exactly (6 px apart); the label's `max-width: calc(100% - 116px)`
+(`style.css:7807`) keeps it clear of the pair.
 
 ### 2.9 Actions
 
@@ -555,16 +563,29 @@ host, font-size changes, the phone/desktop flip, and a `<details>` open
 
 | Action | Where | Detail |
 |---|---|---|
-| Copy image | top-right of every diagram card; and the live-HTML card | icon button, shared `.code-copy-btn` + `.nb-copy-img-btn`; 16 px glyph; `padding: 4px`; `line-height: 0`; `aria-label` and `title` `Copy image` |
-| Copy source | top-right of the math card | text `Copy`, copies the stored LaTeX |
+| Copy text | top-right of every diagram card, the live-HTML card and the math card | text `Copy`; writes the authored fence source stored in the card's dataset (`data-mermaid-source`, `data-wavedrom-source`, `data-viz-source`, `data-svg-source`, `data-htmlpreview-source`, `data-katex-source`) |
+| Copy image | top-right of every diagram card and the live-HTML card | icon button, shared `.code-copy-btn` + `.nb-copy-img-btn`; 16 px glyph; `padding: 4px`; `line-height: 0`; `aria-label` and `title` `Copy image` |
 | Edit | hybrid mode only | click the card, or the context menu / Shift+F10; opens the shared edit window; no visible header button |
 | Open lightbox | click the card in preview | whole card is the hit target; anchors inside the SVG are skipped |
 
-The copy-image button is injected by `copy-image.js` (`:732-785`), positioned at the base
-`top: 6px; right: 6px` (`style.css:3297-3300`), hidden until hover/focus within the host
-(`style.css:3318-3332`). A click calls `preventDefault` and `stopPropagation`, so it does
-not also open the lightbox (`copy-image.js:773-783`). The PNG is rasterised at 2×, capped
-at 4096 px, on a white background (`copy-image.js:98-101`, `:364-380`).
+One `copy-image.js` registry (`BLOCK_KINDS`, `:60-70`) and one entry point
+(`attachBlockActions`, `:1155-1170`) wire the pair into every variant; the renderers only
+store their source (`mermaid.js:205`, `wavedrom.js:170`, `viz.js:123`, `svg.js:95`,
+`htmlpreview.js:261`, `katex.js:128`). The math card is TEXT-ONLY on purpose: its PNG
+would be drawn in SVG secure-static mode, which loads no webfonts, so the formula would be
+garbled. Recorded as a follow-up, not shipped broken.
+
+The pair is anchored by the shared tokens `--copy-btn-inset` / `--copy-btn-icon-w` /
+`--copy-btn-gap` / `--copy-btn-h`, so the fence, the five cards and the math card share one
+placement: icon `top: 6px; right: 6px`, text `right: calc(var(--copy-btn-inset) +
+var(--copy-btn-icon-w) + var(--copy-btn-gap))` (38 px), both 26 px tall and centred on the
+same line (`style.css:3578-3596`, `:3659-3667`). A widening `Copied!` label grows left, so
+it cannot cover the icon. Both are hidden until hover/focus within the host
+(`style.css:3603-3630`) and both are 44 px on the phone with the icon at the card's right
+edge (`style.css:7803-7820`). A click calls
+`preventDefault` and `stopPropagation`, so it does not also open the lightbox
+(`copy-image.js:1036-1037`, `:1111-1119`). The PNG is rasterised at 2×, capped at 4096 px,
+on a white background (`copy-image.js:98-101`, `:364-380`).
 
 The lightbox trigger is delegated from `document.body` on `#viewer-content` and
 `.ai-chat-log`, skips hybrid mode, skips `<a>`, and prefers
@@ -709,7 +730,7 @@ Use `html-live` only for self-contained, offline demos
 
 | Block | Loading | Ready | Error | Unsupported / unavailable | Long | Narrow / phone |
 |---|---|---|---|---|---|---|
-| Code fence | n/a (synchronous highlight) | band + label + copy | n/a; highlight failure leaves plain text | no-language fence keeps the band | wraps, no inner scrollbar | 44 px band, 44 px copy, 13 px pre |
+| Code fence | n/a (synchronous highlight) | band + label + copy pair | n/a; highlight failure leaves plain text | no-language fence keeps the band | wraps, no inner scrollbar | 44 px band, two 44 px targets, 13 px pre |
 | Table | n/a | zebra rows, header, pan | n/a | merged cells: note, no controls | pans horizontally | pans; controls and selection unavailable |
 | Image | browser load | intrinsic ratio, max-width 100 % | broken glyph + alt | no figure wrapper from marked | downscales width | same, 350 px measure |
 | Figure | browser load | raw `<figure>` + unstyled caption | broken glyph + alt | caption only via raw HTML | grows page | same |
@@ -738,9 +759,8 @@ and the reason the band is reserved in every fence.
 - The copy-image button is icon-only with `title` and `aria-label` `Copy image`
   (`copy-image.js:59`, `:771-772`). Its box is 26 × 26 on desktop (16 px icon + 4 px
   padding each side + 1 px border) and 44 × 44 on the phone (`style.css:7473-7481`).
-- The text copy button is about 21 px high on desktop (`.76rem` line box + 4 px padding
-  each side + 1 px border, `style.css:3301-3305`). That is below the 24 px target floor;
-  A9 records it and §12 P17 proposes a fix.
+- Both buttons are 26 px high on desktop (`height: 26px`, border-box, `style.css:3573-3596`),
+  above the 24 px target floor; P17 is closed.
 - Copy feedback is both local (`Copied!`, 1.2 s) and a polite toast with `role="status"`
   and `aria-live="polite"` (`app.js:1154-1159`). The toast does not take focus.
 
@@ -847,7 +867,7 @@ role names and are read directly. No alias is introduced in the other direction.
 ### 10.2 Component tokens
 
 The shipped layer has values off the foundation ladder: 14 px, 6 px, 10 px, .76 rem,
-.74 rem, 180 px, 320 px, 16 px, 22 px, 24 px, 26 px, 1 em inner code padding. They are
+.74 rem, 180 px, 320 px, 16 px, 24 px, 26 px, 38 px, 1 em inner code padding. They are
 named here so a rule never carries a one-off. Each token holds a literal; none aliases
 another token.
 
@@ -856,7 +876,7 @@ another token.
 | `--content-block-gap` | `.7em` | `style.css:3157`, `:3267`, `:3760` |
 | `--content-pre-pad-block` | `14px` | `style.css:3270` |
 | `--content-pre-pad-inline` | `16px` | `style.css:3270` |
-| `--content-pre-band` | `22px` | `style.css:3282` |
+| `--content-pre-band` | `38px` | `style.css:3562` |
 | `--content-code-pad` | `1em` | `github-dark.css:1` |
 | `--content-code-size` | `.88em` | `style.css:3290` |
 | `--content-copy-size` | `.76rem` | `style.css:3301` |
@@ -914,7 +934,7 @@ change in the light theme, so §12 P6 proposes it and the target CSS keeps the l
   --content-block-gap: .7em;
   --content-pre-pad-block: 14px;
   --content-pre-pad-inline: 16px;
-  --content-pre-band: 22px;
+  --content-pre-band: 38px;
   --content-code-pad: 1em;
   --content-code-size: .88em;
   --content-copy-size: .76rem;
@@ -1359,9 +1379,9 @@ Each is testable and names the file or test that observes it.
 | # | Criterion | Where | Observable |
 |---|---|---|---|
 | AC1 | Every listed block keeps `.7em` top and bottom; the first child drops its top margin | `static/css/style.css` | Computed margins on `pre`, `table`, `figure`, the six cards and the five error boxes are 9.8 px at 14 px prose; the first block's top is 0 |
-| AC2 | A fence reserves a 22 px top band in every state | `style.css` | `.markdown-body pre:has(> code)` computes `padding-top: 22px`; toggling hybrid never changes the pre height |
+| AC2 | A fence reserves a 38 px top band in every state | `style.css` | `.markdown-body pre:has(> code)` computes `padding-top: 38px`; toggling hybrid never changes the pre height |
 | AC3 | The language label is generated from `data-fence-lang` and never shows a guessed language | `static/js/viewer.js:449-459` | A bare fence has no `data-fence-lang` and no `::after`; a ```` ```js ```` fence shows `js` |
-| AC4 | The copy button is hidden at rest, revealed on hover/focus, and copies raw source | `style.css:3297-3335`; `copy-image.js:684-729` | `opacity` 0 → 1; clipboard text equals `pre code` text with no button label or highlight spans; label becomes `Copied!` |
+| AC4 | The copy button is hidden at rest, revealed on hover/focus, and copies raw source | `style.css:3297-3335`; `copy-image.js:1003-1045` | `opacity` 0 → 1; clipboard text equals `pre code` text with no button label or highlight spans; label becomes `Copied!` |
 | AC5 | Long lines wrap; no code fence scrolls horizontally | `style.css:3268-3288` | `scrollWidth === clientWidth` on every fence at 390 and in the wide desktop reader |
 | AC6 | The error box has a warn border, warn head, and a source `<pre>` with no band | `style.css:3429-3466` | `.mermaid-error` exists after a bad mermaid fence; no `data-fence-lang`; source text equals the fence body |
 | AC7 | A table pans inside the reader, not the page | `style.css:3760`, `:2386` | A 12-column table has `scrollWidth > clientWidth` on the table and the page does not scroll horizontally |
@@ -1374,7 +1394,7 @@ Each is testable and names the file or test that observes it.
 | AC14 | Inline `$…$` is not rendered | `katex.js:187` | A paragraph with `$x$` shows the literal characters |
 | AC15 | Each SVG card uses the shared sizing model and never scrolls internally | `blocks.js:536-630`; `style.css:3565-3591` | `.nb-figure-viewport` wraps every SVG; `data-nb-mode` is normal/tall/fit; the wrapper has no max-height or overflow |
 | AC16 | A diagram card loads as its fence and swaps only on success | `mermaid.js:187-219`; `wavedrom.js:155-189`; `viz.js:111-140` | Before resolution the `pre > code.language-*` exists; after, the card exists |
-| AC17 | The copy-image button is 26 px desktop / 44 px phone and does not open the lightbox | `copy-image.js:732-783`; `style.css:7473-7481` | Box size; clicking it leaves the overlay hidden |
+| AC17 | Every card carries Copy text and Copy image (math: text only), 26 px / 44 px, and neither opens the lightbox | `copy-image.js:1155-1170`; `style.css:3906-3911`, `:7804-7811` | Two `.code-copy-btn` per non-math card, text then image; text writes the dataset source; box sizes; clicking either leaves the overlay hidden |
 | AC18 | AI replies skip WaveDrom and keep it as a code block | `blocks.js:880-897`; `wavedrom.js:294` | In `test_ai_blocks_browser.js`, `.wavedrom-container` absent, `pre > code.language-wavedrom` present with a copy button |
 | AC19 | `html-live` is a sandboxed iframe that grows and can be resized | `htmlpreview.js:207-238`; `style.css:3629-3649` | `sandbox="allow-scripts"`; no `allow-same-origin`; `resize: vertical`; height grows |
 | AC20 | The phone fence is 44 px band, 44 px copy, always visible | `style.css:7452-7481` | At 390, the copy box is 44 × 44 and `opacity: 1` |
@@ -1382,6 +1402,7 @@ Each is testable and names the file or test that observes it.
 | AC22 | The mockup is self-contained and shows both themes | `docs/ui/content-blocks-mockup.html` | Opening it offline makes zero network requests; both `data-theme` values render |
 | AC23 | The a11y additions add no pixels at rest | `static/css/style.css`, `static/js/*` | E1/E2/E4/E5 add attributes only; E3 paints a ring on `:focus-visible` only |
 | AC24 | Copy writes the visible table as TSV plus an HTML `<table>` | `table-view.js:599-696` | A hidden row and a hidden column are absent from both flavours; the header row is `<th>`, body rows `<td>`; sorted DOM order; the header chevron is absent; toast `Copied table` (or the text-only fallback) |
+| AC26 | Every fence offers Copy text and Copy image, and every card offers the same pair (math: text only) | `copy-image.js:851-980`, `:1135-1170`; `viewer.js:383-385`; `ai.js:1371-1373` | Two `.code-copy-btn` per fence, text then image; the snapshot has no buttons, carries the card background/border/padding from computed styles, keeps syntax colours and the language label; toast `Code copied as image`; no row clipped; AI reply blocks get the same pair |
 | AC25 | Copy image writes the visible table as a PNG | `table-view.js:714-849`, `copy-image.js:500-607` | A hidden row and a hidden column are absent from the snapshot; the width is the widest visible row plus the 24 px inset and the height is measured from the snapshot; the drawn table's height and column widths match the live table, no row is clipped and no dead band remains; no chevron glyph is drawn; toast `Table copied as image`; the PNG downloads as `table.png` when the image clipboard is unavailable |
 
 Existing tests that already cover part of this set:
@@ -1421,7 +1442,7 @@ decision.
 | P14 | Add a lightbox for images | Large images have no detail view | New overlay and trigger |
 | P15 | Sticky table headers | Long tables lose the header when panning/scrolling | Changes the table scroll model |
 | P16 | An empty-table state | A header-only table looks broken | New content |
-| P17 | Give the desktop text copy button a 24 px box (raise the fence band to 24 or let it overhang) | The 21 px button misses the 24 px target floor and overhangs at XL | Band height or overlap changes |
+| P17 | ~~Give the desktop text copy button a 24 px box~~ | Shipped: both buttons are 26 px boxes and the fence band is 38 px, so the target floor is met with no overhang at XL | Closed |
 | P18 | Call KaTeX with `output: "htmlAndMathml"` | Display math has no text alternative today (`katex.js:130-134`) | Adds MathML to every equation; measurable DOM growth |
 | P19 | Make the table's horizontal scroller focusable and named (`tabindex="0"`, `role="region"`, `aria-label="Table"`) | A wide table pans, but the table is not in the tab order and has no name | One attribute set; one stop in the reader |
 

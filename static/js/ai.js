@@ -1365,11 +1365,11 @@
         catch (e) { /* leave as plain text */ }
       });
     }
-    // Delegate to the shared copy-button owner (copy-image.js) so the AI
-    // panel's code blocks use the same affordance as every other block.
+    // Delegate to the shared copy-action owner (copy-image.js) so the AI
+    // panel's code blocks get the same text + PNG pair as every other block.
     host.querySelectorAll("pre").forEach(pre => {
-      if (NB.copyButton && NB.copyButton.attachTextCopy) {
-        NB.copyButton.attachTextCopy(pre);
+      if (NB.copyButton && NB.copyButton.attachBlockActions) {
+        NB.copyButton.attachBlockActions(pre);
       }
     });
     return frag;
