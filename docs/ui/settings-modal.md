@@ -547,7 +547,7 @@ preset is written to `:root` immediately (`app.js:304-313`).
 Sources: `index.html:897-997`; `settings.js:263-368`; `style.css:2171-2253`; `shortcuts.js:286`
 (order), `:50-60` (defaults). The 9 actions are Save current file, Open search, Previous tab, Next tab, Toggle edit mode,
 Toggle hybrid (WYSIWYG) mode, Cycle sidebar / editor / outline, Toggle top bar, Open Settings, with bindings `Ctrl+S`, `/`,
-`Alt+H`, `Alt+L`, `Ctrl+E`, `Ctrl+Shift+E`, `Ctrl+W`, `Ctrl+Shift+T`, `Ctrl+Comma` on this platform
+`Alt+H`, `Alt+L`, `Ctrl+Shift+E`, `Ctrl+E`, `Ctrl+W`, `Ctrl+Shift+T`, `Ctrl+Comma` on this platform
 (`tests/dom/test_dom.js:25740-25776`).
 
 The VIM keymap is deliberately not in this list. VIM's bindings live under General → VIM mode and

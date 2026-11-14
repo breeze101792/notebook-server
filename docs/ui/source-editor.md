@@ -59,7 +59,7 @@ narrower pane keeps a visible gutter. Prose, blocks and type are the reader's.
 | Route | Condition | Result | Source |
 |---|---|---|---|
 | `#edit-toggle` click | a file is open | `viewer.toggleEdit()` | `index.html:181`; `app.js:713`; `viewer.js:958-965` |
-| `Mod+E` | a file is open, no modal | same; rebindable in Settings | `shortcuts.js:58`, `:286`, `app.js:783` |
+| `Mod+Shift+E` | a file is open, no modal | same; rebindable in Settings | `shortcuts.js:58`, `:286`, `app.js:783` |
 | `:q` / `:q!` / `:wq` | vim on, editor focused | `closeEdit()` / `forceCloseEdit()` / save then close | `cm-bridge.js:176-195` |
 | `Close` | edit mode | `closeEdit()`, prompts when dirty | `viewer.js:1193`, `:939-952` |
 | `Ctrl/Cmd+B`, `Ctrl/Cmd+I` | editor focused | bold / italic | `cm-bridge.js:164-165` |
@@ -67,7 +67,7 @@ narrower pane keeps a visible gutter. Prose, blocks and type are the reader's.
 | `Esc` | editor focused | **does not exit.** Vim: insert → normal. Plain CM: collapse selection | `cm-bridge.js:157-166`, `:319-363`; `vimnav.js:160-170` |
 
 `Esc` is not an exit route and must not become one: it is the vim mode switch
-(`vimnav.js:373-376` says so in the shipped help). Exit is `Mod+E`, `Close`, `:q`, `:q!`
+(`vimnav.js:373-376` says so in the shipped help). Exit is `Mod+Shift+E`, `Close`, `:q`, `:q!`
 or `:wq`.
 
 Entering from hybrid mode first ends that session (`viewer.js:961-963`), because both
@@ -395,7 +395,7 @@ fix, the no-op scroll fix, and Escape ownership (`cm-bridge.js:57-374`).
 | Ex commands | `:w` save, `:q` close (prompt when dirty), `:q!` discard, `:wq` save + close | `cm-bridge.js:176-195` |
 | `:help` overlay | the shell's own overlay, not the editor's | `vimnav.js:360-430` |
 | Effect on the bar | **the bar hides itself** in source mode when vim is on | `editbar.js:985-1005` |
-| Effect on keys | the shell keymap yields to CM while it has focus; `Mod+E` and `Alt+H/L` still work | `vimnav.js:160-170`; `shortcuts.js:331-334` |
+| Effect on keys | the shell keymap yields to CM while it has focus; `Mod+Shift+E` and `Alt+H/L` still work | `vimnav.js:160-170`; `shortcuts.js:331-334` |
 
 The bar hiding under vim is shipped and intentional: vim users drive the editor from the
 keyboard and use `:w` / `:q` (`editbar.js:985-990`). It means a vim user has no visible
@@ -546,7 +546,7 @@ has no signal beyond the failure. Both are proposals, not new designs (§10 P3, 
 
 | Binding | Scope | Effect | Source |
 |---|---|---|---|
-| `Mod+E` | anywhere, no modal | enter / leave edit mode | `shortcuts.js:58`, `:286` |
+| `Mod+Shift+E` | anywhere, no modal | enter / leave edit mode | `shortcuts.js:58`, `:286` |
 | `Mod+S` | edit mode | save | `shortcuts.js:50`; `viewer.js:1057` |
 | `Mod+B` / `Mod+I` | editor focused | bold / italic | `cm-bridge.js:164-165` |
 | `Mod+F` | editor focused | CM find panel | CM `searchKeymap` |
@@ -555,7 +555,7 @@ has no signal beyond the failure. Both are proposals, not new designs (§10 P3, 
 | `Tab` | bar | next control, DOM order | native |
 | `Enter` / `Space` | bar | activate | native |
 
-`Mod+Shift+E` (hybrid) is suppressed while the source editor is open and does nothing
+`Mod+E` (hybrid) is suppressed while the source editor is open and does nothing
 (`shortcuts.js:331-334`).
 
 ### 6.2 The bar's ARIA today
@@ -738,7 +738,7 @@ Nothing here is applied. Each names its reason and its cost.
 | **P6** | Replace the native `confirm()` on a dirty close with the dialog frame (`controls.md` §2.11): title, body naming the file, `Discard` (danger) and `Cancel`. | The prompt is a browser string with a path in it; it cannot be themed, cannot be read in the app's own type, and blocks the frame. | One dialog + `NB.dialog` wiring; `tests/dom/test_dom.js:7160` stubs `window.confirm` and would need the dialog path. |
 | **P7** | In split, drop the editor's right padding from 40 to 24 so both panes share a gutter. | Shipped: editor right 40, preview right 24 (`style.css:2505` vs `:2555`). At the seam the two text columns start their margins differently. | One declaration inside `.edit-split.split #cm-host .cm-content`; a visible change at the seam. |
 | **P8** | A read-only signal: when the server rejects the write, mark the file read-only in the bar (a `Read-only` badge, `Save` disabled) instead of failing per click. | A viewer role can type indefinitely and only learns at save time, once per attempt. | Needs the save error to be classified (403 vs other) and a per-file flag. |
-| **P9** | Return focus to `#edit-toggle` (or the bar's first control) when the editor closes. | `Close` and `Mod+E` drop focus to the body; the next `Tab` restarts at the top of the shell. | One `focus()` call in `endEdit`, guarded for the phone and for a tab switch. |
+| **P9** | Return focus to `#edit-toggle` (or the bar's first control) when the editor closes. | `Close` and `Mod+Shift+E` drop focus to the body; the next `Tab` restarts at the top of the shell. | One `focus()` call in `endEdit`, guarded for the phone and for a tab switch. |
 | **P10** | A vim mode indicator: a 20 px line at the bottom of the split showing `-- INSERT --` / `-- NORMAL --`. | `cm.vim()` is called without `{ status: true }`, so the mode is shown only by the block cursor, and the bar is hidden in vim mode. A first-time vim user has no text cue. | A status strip is a new element inside the editor column; it changes the shipped look and the split height. |
 | **P11** | Sprite the bar glyphs: `↶ ↷ ☑ ☰ 🔗 🖼 😀 ▦ ── {} Tx` and the `📝` topbar toggle become `<use>` symbols at `--icon-md`. | Foundations §9.3 lists them. E5 puts the character in an `aria-hidden` span, which is the stated staging state, not the target. | New symbols, one per glyph, plus the topbar. Every one is a visible repaint; emoji are the widest. |
 | **P12** | Two bar heights, one rule: either snap buttons to `--control-h-md` 30 (bar 71 px at 772) or add `--eb-h: 26px` to the primitive block and read it. | 26 px is the only control height in the app outside the 24 / 30 / 36 / 44 ladder. | Snapping changes every screenshot and the 861 stack (119 → 143). The token keeps the look and costs one declaration. |

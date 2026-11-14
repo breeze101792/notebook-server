@@ -161,7 +161,7 @@
           // aren't vim bindings, but we keep the explicit priority so
           // they can't drift later). Escape is NOT bound here -- it's
           // a VIM key (insert -> normal mode). Exiting edit mode is
-          // Ctrl+E, handled in the shell (vimnav.js).
+          // Ctrl+Shift+E, handled in the shell (shortcuts.js).
           { key: "Mod-b", run: () => { if (NB.editbar && NB.editbar.actions) NB.editbar.actions.bold(); return true; } },
           { key: "Mod-i", run: () => { if (NB.editbar && NB.editbar.actions) NB.editbar.actions.italic(); return true; } },
         ])),

@@ -3,7 +3,7 @@
  * Two layers of VIM in this app:
  *   1. App shell (this module): sidebar / editor / outline act as
  *      three vim "windows". Ctrl+W cycles focus. j/k/gg/G navigate
- *      within the active window. Ctrl+E enters/exits edit mode.
+ *      within the active window. Ctrl+Shift+E enters/exits edit mode.
  *      Alt+H/L cycle to the previous/next tab. o/r/d mutate the
  *      file tree. / opens the Search panel.
  *   2. Editor textarea (CodeMirror 6 + @replit/codemirror-vim):
@@ -14,7 +14,7 @@
  *      and `/` (search within the note).
  *
  * The two layers hand off cleanly: when CodeMirror has focus, this
- * module only handles the global modifier bindings (Ctrl+E exit
+ * module only handles the global modifier bindings (Ctrl+Shift+E exit
  * edit, Alt+H/L switch tabs, Ctrl+S save, Ctrl+/ disable VIM,
  * Ctrl+W cycle window). Esc and `/` are NOT intercepted while CM
  * has focus -- they belong to the VIM keymap. Otherwise (anywhere
@@ -60,7 +60,7 @@
   /* CodeMirror's contentDOM is the actual editable element. When it
    * has focus, CM6's vim keymap owns all keys (Esc, i, a, o, :, etc.).
    * The only app-level keys that still work are the global Ctrl+?
-   * bindings handled in handleKey above (Ctrl+E to exit edit, Ctrl+H/L
+   * bindings handled in handleKey above (Ctrl+Shift+E to exit edit, Ctrl+H/L
    * to switch tabs, etc.). */
   function cmHasFocus() {
     const v = NB.cmEditor && NB.cmEditor.view && NB.cmEditor.view();
@@ -112,7 +112,7 @@
    * Modifier keys (Ctrl/Alt/Meta) we own are handled separately. */
   function isOwnerModifier(e) {
     // We only own Ctrl+/ (disable VIM). All other modifier combos
-    // (Ctrl+E, Ctrl+S, Ctrl+W, Alt+H/L) are in shortcuts.js and
+    // (Ctrl+Shift+E, Ctrl+S, Ctrl+W, Alt+H/L) are in shortcuts.js and
     // customizable.
     if ((e.ctrlKey || e.metaKey) && e.key === "/") return true;
     return false;
@@ -147,7 +147,7 @@
       return;
     }
     // --- global app-level bindings ---
-    // Ctrl+E (toggleEdit), Ctrl+S (save), Alt+H/L (tabPrev/Next),
+    // Ctrl+Shift+E (toggleEdit), Ctrl+S (save), Alt+H/L (tabPrev/Next),
     // Ctrl+W (cycleWindow) are now in shortcuts.js and customizable.
     // Only Ctrl+/ (disable vim) remains here — it's vim-specific.
     if ((e.ctrlKey || e.metaKey) && e.key === "/") {
@@ -161,7 +161,7 @@
       // CodeMirror has focus -- in edit mode. CM6's vim keymap owns
       // all keys now (Esc switches insert->normal mode, i/a/o enter
       // insert, :w saves, etc.). The only app-level keys are handled
-      // in the global Ctrl+? block above (Ctrl+E to exit edit, Ctrl+H/L
+      // in the global Ctrl+? block above (Ctrl+Shift+E to exit edit, Ctrl+H/L
       // to switch tabs).
       //
       // We also stash "had focus at keydown" for the keyup handler
@@ -313,9 +313,9 @@
   function dispatchEditor(k, e) {
     const v = NB.viewer;
     if (!v) return;
-    // (i / e used to enter edit mode; that's now Ctrl+E in the shell,
-    // so Esc stays free for VIM's mode switch. See isOwnerModifier +
-    // the Ctrl+E branch in handleKey.)
+    // (i / e used to enter edit mode; that's now Ctrl+Shift+E in the
+    // shell, so Esc stays free for VIM's mode switch. See
+    // isOwnerModifier + the Ctrl+Shift+E branch in handleKey.)
     if (k === "j" || k === "ArrowDown") { scrollEditor("down"); return; }
     if (k === "k" || k === "ArrowUp")   { scrollEditor("up"); return; }
     if (k === "G")                      { editorJump("bottom"); return; }
@@ -371,7 +371,8 @@
           <h3>App shell</h3>
           <table>
             <tr><th><kbd>Ctrl</kbd>+<kbd>W</kbd></th><td>Cycle window: sidebar → editor → outline</td></tr>
-            <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Toggle edit mode (focus the editor / return to preview)</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></th><td>Toggle edit mode (focus the editor / return to preview)</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Toggle the WYSIWYG (hybrid) editor</td></tr>
             <tr><th><kbd>Alt</kbd>+<kbd>H</kbd> / <kbd>Alt</kbd>+<kbd>L</kbd></th><td>Previous / next tab (prompts to save if dirty in edit mode)</td></tr>
             <tr><th><kbd>Esc</kbd></th><td>Close this help, blur any input (in edit mode, Esc is VIM's insert → normal switch and stays in edit mode)</td></tr>
             <tr><th><kbd>?</kbd></th><td>Show this :help</td></tr>
@@ -398,7 +399,7 @@
             <tr><th><kbd>j</kbd> / <kbd>k</kbd></th><td>Scroll one line down / up</td></tr>
             <tr><th><kbd>l</kbd> / <kbd>h</kbd></th><td>Scroll half-page down / up</td></tr>
             <tr><th><kbd>gg</kbd> / <kbd>G</kbd></th><td>Scroll to top / bottom</td></tr>
-            <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Enter edit mode (full VIM via CodeMirror)</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></th><td>Enter edit mode (full VIM via CodeMirror)</td></tr>
             <tr><th><kbd>/</kbd></th><td>Open the Search panel and focus its input. <kbd>Enter</kbd> hands focus to the results list.</td></tr>
             <tr><th><kbd>t</kbd></th><td>New note</td></tr>
           </table>
@@ -492,7 +493,7 @@
     if (e.key === "Escape" && pendingEscRestore && NB.cmEditor) {
       pendingEscRestore = false;
       // Guard: only restore if we're still in edit mode (cm-host
-      // is shown). If the user pressed Ctrl+E to exit edit mode
+      // is shown). If the user pressed Ctrl+Shift+E to exit edit mode
       // in the meantime, we shouldn't yank focus back into CM.
       const cmHost = document.getElementById("cm-host");
       if (cmHost && !cmHost.hidden) {

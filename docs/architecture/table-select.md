@@ -25,7 +25,7 @@ or `table-edit.js`. Three small strip/belt changes are added to `hybrid.js`
 - The chord matches the platform's Firefox table-selection chord: **Ctrl on
   Windows/Linux, Cmd on macOS** (section 4.2). Ctrl+click on macOS is
   right-click, so Ctrl alone never arms there.
-- No conflict exists in the app today: `shortcuts.js` binds Ctrl+S / Ctrl+E /
+- No conflict exists in the app today: `shortcuts.js` binds Ctrl+S / Ctrl+Shift+E /
   Ctrl+F / Ctrl+Comma; hybrid table ops are Alt+arrows; `table-edit.js` drags
   start only from grips. Nothing binds Ctrl+drag.
 - Alt is rejected: Alt+drag is window-move on some Linux desktop environments,

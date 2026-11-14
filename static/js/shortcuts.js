@@ -2,7 +2,7 @@
  *
  * This module owns the app-level keybindings that are active when
  * VIM mode is OFF. When VIM mode is on, vimnav.js takes over the
- * keyboard (it binds Ctrl+S save, Ctrl+E toggle edit, etc.) and the
+ * keyboard (it binds Ctrl+S save, Ctrl+Shift+E toggle edit, etc.) and the
  * user customizes those via the :help overlay -- deliberately, the
  * VIM keymap is not configurable here. (See Settings -> VIM mode
  * and the :help overlay for VIM's own bindings.)
@@ -12,8 +12,8 @@
  *   openSearch   /            -- open the Search panel
  *   tabPrev      Alt+H        -- previous tab
  *   tabNext      Alt+L        -- next tab
- *   toggleEdit   Mod+E        -- enter / leave edit mode
- *   toggleHybrid Mod+Shift+E  -- enter / leave WYSIWYG mode
+ *   toggleEdit   Mod+Shift+E  -- enter / leave edit mode
+ *   toggleHybrid Mod+E        -- enter / leave WYSIWYG mode
  *   windowCycle  Mod+W        -- cycle sidebar / editor / outline
  *   toggleTopbar Mod+Shift+T  -- hide / show the top bar
  *   openSettings Mod+comma    -- open the Settings modal
@@ -55,8 +55,8 @@
     openSearch:   "/",
     tabPrev:      "Alt+H",
     tabNext:      "Alt+L",
-    toggleEdit:   "Mod+E",
-    toggleHybrid: "Mod+Shift+E",
+    toggleEdit:   "Mod+Shift+E",
+    toggleHybrid: "Mod+E",
     windowCycle:  "Mod+W",
     toggleTopbar: "Mod+Shift+T",
     openSettings: "Mod+comma",
@@ -314,6 +314,12 @@
     // and don't fire -- the keystroke passes through to the input.
     // Same intuition vim's own / follows in the shell keymap.
     if (chordHasNoModifiers(matchChord) && typingTargetHasFocus()) return;
+    // The source editor owns the keyboard while it is open. The WYSIWYG
+    // toggle can do nothing there (the surface is hidden), so yield the
+    // chord before claiming it: CM6 and the VIM keymap keep their own
+    // binding for it (Ctrl+E scrolls in normal mode).
+    const cmHost = document.getElementById("cm-host");
+    if (cmHost && !cmHost.hidden && matchAction === "toggleHybrid") return;
     // Claim the chord for the app. preventDefault tells the browser
     // "we handle this key", which is important even when we don't
     // run the handler below (e.g. a modal is up): in that case the
@@ -328,10 +334,6 @@
     if (modalIsOpen()) return;
     // If vimnav already handled this event, don't double-fire.
     if (e.__vimnavHandled) return;
-    // When CM6 edit mode is active, the editor owns the keyboard.
-    // Don't fire shortcuts that would conflict with editing.
-    const cmHost = document.getElementById("cm-host");
-    if (cmHost && !cmHost.hidden && matchAction === "toggleHybrid") return;
     const fn = handlers[matchAction];
     if (fn) {
       try { fn(e); } catch (err) { console.error("shortcut handler error", err); }

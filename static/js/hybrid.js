@@ -3817,8 +3817,8 @@
    * otherwise it WRAPS the selection contents in the element. With a
    * collapsed caret an empty element is created and the caret placed
    * inside, so the next typed characters are styled (Typora behavior).
-   * Chords are chosen to avoid the app's global bindings (Mod+E is
-   * toggleEdit, so inline code uses Mod+Shift+C). */
+   * Chords are chosen to avoid the app's global bindings (Mod+Shift+E
+   * is toggleEdit, so inline code uses Mod+Shift+C). */
   function toggleInline(tag) {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
@@ -9342,7 +9342,7 @@
     });
   }
 
-  /* Keyboard shortcut: Mod+Shift+E toggles hybrid mode. */
+  /* Keyboard shortcut: Mod+E toggles hybrid mode. */
   NB.evt.on("shortcut:toggleHybrid", () => {
     toggle();
   });

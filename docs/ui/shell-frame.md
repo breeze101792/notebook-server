@@ -248,7 +248,7 @@ loses 46 px of chrome and gains it as reader height.
 | Brand, both chips, both actions | Not rendered. No substitute in the topbar. |
 | Workspace picker | Moves to the rail's first slot (`#workspace-rail-btn`, `workspaces.md` §4.2). CSS-only, correct on the first frame. |
 | Session picker | Not available. The Sessions rail icon is the second door to the same list (`topbar-session.md:52`). |
-| Edit entry | `#edit-toggle` and `#hybrid-toggle` are lost with the bar. `Mod+E` and `Mod+Shift+E` still work for a writer. |
+| Edit entry | `#edit-toggle` and `#hybrid-toggle` are lost with the bar. `Mod+Shift+E` and `Mod+E` still work for a writer. |
 | Recovery | **New:** a bottom-pinned rail action `#topbar-show-btn` appears only while the bar is hidden. `aria-label="Show top bar"`, `title="Show top bar (Ctrl/Cmd+Shift+T)"`, arrow keys reach it like any rail button. Clicking it clears `hideTopbar` and persists. |
 | Phone | The phone forces the bar visible and restores `--topbar-h`; `#topbar-show-btn` is hidden (`style.css:7015-7016`). |
 
@@ -780,7 +780,7 @@ writing its current `0` (the DOM tests read `--side-panel-width` directly); the 
 | Drawer `role` / `aria-modal` / trap / inert / return focus | `mobile.js:332-360`; `dialog.js` helper | §6.2 |
 | `aria-pressed` on `#hybrid-toggle` | `hybrid.js`; `app.js` for the outline toggle (`:757-762`) | state is visual today |
 | `#topbar-show-btn` click → `setHideTopbar(false)` + persist; visible only under `body.topbar-hidden` | `app.js:1281`; new listener | AC9 |
-| Viewer gate: hide `#edit-toggle`, and make `Mod+E` / `Mod+Shift+E` no-ops for a viewer | `viewer.js:958-964`; `shortcuts.js:58-59` | AC18 |
+| Viewer gate: hide `#edit-toggle`, and make `Mod+Shift+E` / `Mod+E` no-ops for a viewer | `viewer.js:958-964`; `shortcuts.js:58-59` | AC18 |
 
 Tests that must change with the same commit, because they assert the current glyphs:
 
@@ -820,7 +820,7 @@ No framework, no build step, no new dependency.
 | **AC15** | The phone drawer is modal | `mobile.js`, `style.css` | With the drawer open `#side-panel` has `role="dialog"` and `aria-modal="true"`; `Tab` from the last control lands on the first; the topbar, rail and editor are `inert`; closing returns focus to the opener. |
 | **AC16** | The phone rail has five view icons | `style.css` | At 390 the bottom bar shows Explorer, Pinned, Bookmarks, Recent, Search. Sessions, AI, graph, settings and logout are not view buttons. |
 | **AC17** | Every phone topbar target is 44 px | `style.css` | The workspace chip, back, `#hybrid-toggle`, capture and more each measure 44 × 44; the title takes the remainder and ellipsizes. `#edit-toggle` is not shown on a phone. |
-| **AC18** | A viewer sees no write entry and no write shortcut | `viewer.js`, `app.js`, `mobile.js`, `shortcuts.js` | With `role="viewer"`, `#edit-toggle` and `#mobile-capture` are hidden, `#hybrid-toggle` stays hidden, and `Mod+E` / `Mod+Shift+E` do not enter an editor. |
+| **AC18** | A viewer sees no write entry and no write shortcut | `viewer.js`, `app.js`, `mobile.js`, `shortcuts.js` | With `role="viewer"`, `#edit-toggle` and `#mobile-capture` are hidden, `#hybrid-toggle` stays hidden, and `Mod+Shift+E` / `Mod+E` do not enter an editor. |
 | **AC19** | Every visible shell control draws the ring | `style.css` | Tabbing at 1280 and at 390 never lands on an unstyled control. At 1280 that includes brand, chips, rail, header actions, separator, outline links and the outline toggle; at 390 the outline controls are not rendered. |
 | **AC20** | No new colour literal; shell geometry is tokenised | `style.css` | The diff adds hex only inside the token blocks; heights, paddings, gaps, radii and widths read a token or one of the three named shell-local variables. The only bare numbers are the clamp ratios (`.6`, `.4`), `0`, and `100vw`. |
 | **AC21** | Reduced motion removes the new transitions | `style.css` | With reduce emulated, the drawer and the resize bar switch state instantly and completely. |

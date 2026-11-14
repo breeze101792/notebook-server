@@ -549,8 +549,8 @@
   function setEditModeLabel(inEdit) {
     editBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-code"/></svg>';
     editBtn.title = inEdit
-      ? "Back to rendered view (Ctrl/Cmd+E)"
-      : "Edit Markdown source (Ctrl/Cmd+E)";
+      ? "Back to rendered view (Ctrl/Cmd+Shift+E)"
+      : "Edit Markdown source (Ctrl/Cmd+Shift+E)";
     editBtn.setAttribute("aria-label", inEdit ? "Back to rendered view" : "Edit Markdown source");
   }
 

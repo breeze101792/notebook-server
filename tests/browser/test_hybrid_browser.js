@@ -2526,6 +2526,37 @@ async function main() {
     check("real browser marker keys: no uncaught page errors",
       pageErrors.length === 0, pageErrors.join(" | "));
 
+    // --- the chord pair: Ctrl+E hybrid, Ctrl+Shift+E source ----------
+    // Ctrl+E is the common "edit" chord, so it opens the WYSIWYG surface;
+    // the source editor takes the shifted chord.
+    await page.keyboard.press("Control+E");
+    await page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    check("real browser chords: Ctrl+E enters hybrid mode",
+      await page.evaluate(() => window.NB.hybrid.isActive()));
+    await page.keyboard.press("Control+E");
+    await page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    check("real browser chords: Ctrl+E leaves hybrid mode", true);
+    await page.keyboard.press("Control+Shift+E");
+    await page.waitForFunction(() => {
+      const host = document.getElementById("cm-host");
+      return !!host && !host.hidden;
+    }, null, { timeout: 8000 });
+    check("real browser chords: Ctrl+Shift+E opens the source editor",
+      await page.evaluate(() => !document.getElementById("cm-host").hidden));
+    await page.keyboard.press("Control+Shift+E");
+    await page.waitForFunction(() => {
+      const host = document.getElementById("cm-host");
+      return !host || host.hidden;
+    }, null, { timeout: 8000 });
+    check("real browser chords: Ctrl+Shift+E closes the source editor",
+      await page.evaluate(() => {
+        const host = document.getElementById("cm-host");
+        return !host || host.hidden;
+      }));
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();

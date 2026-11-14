@@ -38,12 +38,12 @@ Every claim about current code cites `file:line`.
 | Element | `<button id="hybrid-toggle" class="icon-btn">` | `index.html:178` |
 | Glyph | `✎`, `font-size: 1.1rem`, `line-height: 1` | `index.html:178`; `style.css:2680-2684` |
 | Box | shared `#topbar button` face: `--bg-elev`, `1px --border`, `--radius-sm`, padding `2px 8px`; content `1.1rem` = 15.4 px, so ≈ 21 × 33 px | `style.css:192-201`, `:2680-2684` |
-| Name | `aria-label="WYSIWYG edit mode"`, `title="WYSIWYG edit mode (edit rendered markdown directly)"` | `index.html:178` |
+| Name | `aria-label="WYSIWYG edit mode"`, `title="WYSIWYG edit mode (Ctrl/Cmd+E)"` | `index.html:316` |
 | Visible when | a note is open **and** the role can write | `hybrid.js:9056-9061` |
 | Hidden when | no note, empty state, viewer role | same |
 | Pointer | click toggles; on a phone the active control acts as Done | `hybrid.js:9035-9041` |
-| Keyboard | `Mod+Shift+E` (`Ctrl+Shift+E` outside macOS) | `shortcuts.js:59`; `hybrid.js:9045-9047` |
-| Refused when | the CM6 source editor is open | `shortcuts.js:334` |
+| Keyboard | `Mod+E` (`Ctrl+E` outside macOS) | `shortcuts.js:59`; `hybrid.js:9345-9347` |
+| Refused when | the CM6 source editor is open (the chord is yielded to the editor) | `shortcuts.js` |
 
 The button is the only entry control. It never enters a menu and never moves.
 
@@ -90,7 +90,7 @@ appearance is part of the entry delta, not a hidden cost.
 | Edit-bar **Close** / **Done** | saves if the serialized bytes differ | `Save them before exiting WYSIWYG mode?` OK = save then exit; Cancel = discard and exit | `hybrid.js:7264-7300` |
 | Save fails during that prompt | no exit | `alert("Save failed: …")`, editor stays | `hybrid.js:7290-7295` |
 | Topbar `✎` (desktop) | **no** | none — `exit(false)` re-renders from cache | `hybrid.js:9035-9039`, `:7302-7303` |
-| `Mod+Shift+E` | **no** | none — same `toggle()` path | `hybrid.js:7302-7303`, `:9045-9047` |
+| `Mod+E` | **no** | none — same `toggle()` path | `hybrid.js:7302-7303`, `:9345-9347` |
 | Topbar `✎` (phone, active) | routes through Close | same as Close | `hybrid.js:9035-9038` |
 | Tab close / tab switch | see §6.4 | — | `hybrid.js:7325-7361` |
 
@@ -399,7 +399,7 @@ exiting WYSIWYG mode?` OK saves then exits; Cancel discards and exits (the shipp
 comment says "as before", `hybrid.js:7286-7289`). A failed save keeps the editor open with
 the buffer intact (`hybrid.js:7290-7295`).
 
-The desktop topbar toggle and `Mod+Shift+E` bypass this prompt and discard. That is
+The desktop topbar toggle and `Mod+E` bypass this prompt and discard. That is
 **P1**.
 
 ### 6.4 Tab switch and draft
@@ -446,7 +446,7 @@ behaviour is `hybrid-editing.md` §4; the full chord table is `hybrid-shortcuts.
 
 | Key | Where | Visible effect |
 |---|---|---|
-| `Mod+Shift+E` | anywhere a writer has a note | toggles hybrid; discards unsaved work on exit (**P1**) |
+| `Mod+E` | anywhere a writer has a note | toggles hybrid; discards unsaved work on exit (**P1**) |
 | `Mod+S` | hybrid, caret in the page | save; `Saved` toast |
 | `Esc` | language chip | restores the old language, focus returns to the code |
 | `Enter` | language chip | commits, focus returns to the code |
@@ -748,7 +748,7 @@ or setting-only.
 | **E1d** | `#edit-bar .eb:active` colour → `--text-on-accent` | Same 2.61:1 failure while pressed (`foundations.md` §3.6 lists `:604`) | Dark only; the press is transient |
 | **E2** | `aria-pressed="true\|false"` on `#hybrid-toggle`, set on enter/exit | The toggle's state is visual only (`shell-frame.md` §9.3) | None |
 | **E3** | `aria-label="Note content editor"` on `#viewer-content` while active; removed on exit | The editable region has no accessible name | None |
-| **E4** | `aria-keyshortcuts="Control+Shift+E Meta+Shift+E"` on `#hybrid-toggle` | The chord is not announced | None |
+| **E4** | `aria-keyshortcuts="Control+E Meta+E"` on `#hybrid-toggle` | The chord is not announced | None |
 | **E5** | On the explicit Close/Done path, exit returns focus to `#hybrid-toggle` (not on a tab switch or tab close); the toggle's `aria-label` switches between "Enter WYSIWYG mode" and "Exit WYSIWYG mode" | Removing `contenteditable` strands focus on a non-editable div, and a pressed toggle still named for entry reads wrong | Keyboard users see the toggle's ring; the name matches the action |
 | **E6** | `.nb-list-grip:active` colour → `--text-on-accent` | A surface token used as a label; the label token is the correct name | Dark shifts 1a1b1f → 14151a |
 | **E7** | Coarse pointer: 44 × 44 hit box for the grip and table chip | 24 px misses the 44 px floor (`foundations.md` §10.4) | None; the hit box grows left and vertically |
@@ -767,7 +767,7 @@ pressed.
 | C1 | Comment promises a block hover highlight; the rule only sets a radius | `style.css:2742-2755` | No hover highlight ships. Do not implement the comment. |
 | C2 | Phone surface says list grips are desktop-only; §4.7.2 and the code put them on touch | `hybrid-editing.md` phone surface vs §4.7.2; `list-edit.js:631-632` | Shipped wins: grips are present on the phone. Correct the architecture sentence. |
 | C3 | The active toggle's hover loses its fill by specificity | `style.css:202` vs `:2685-2688` | E1c. |
-| C4 | Desktop topbar toggle and `Mod+Shift+E` discard unsaved work with no prompt, while Close prompts | `hybrid.js:9035-9039`, `:7302-7303` | Shipped. P1 proposes routing both through Close. |
+| C4 | Desktop topbar toggle and `Mod+E` discard unsaved work with no prompt, while Close prompts | `hybrid.js:9035-9039`, `:7302-7303` | Shipped. P1 proposes routing both through Close. |
 | C5 | `.nb-te-open` rest border is `--border` (1.39:1 dark / 1.27:1 light), below the 3:1 control-boundary floor; the shipped docs require `--border-strong` | `style.css:825`; `controls.md` §2.4 | P5. The glyph carries the affordance today, so this is drift, not a blocker. |
 | C6 | `#hybrid-toggle` is ≈ 21 px tall on desktop, under the 24 px floor | `style.css:2680-2684`, `:192-201` | P6: grow to `--control-h-sm` with no visual box change beyond 3 px. |
 
@@ -826,7 +826,7 @@ exception.
 
 | # | Proposal | Why | Cost |
 |---|---|---|---|
-| **P1** | Route the desktop topbar `✎` and `Mod+Shift+E` through the Close prompt | Two exit paths silently discard unsaved work while the visible Close button asks (`hybrid.js:9035-9039`, `:7302-7303`) | One call-site change; the toggle stops being a one-press flip when dirty |
+| **P1** | Route the desktop topbar `✎` and `Mod+E` through the Close prompt | Two exit paths silently discard unsaved work while the visible Close button asks (`hybrid.js:9035-9039`, `:7302-7303`) | One call-site change; the toggle stops being a one-press flip when dirty |
 | **P2** | A block handle for every block (drag to reorder; menu on click) | Only list items can be reordered by drag; a Word-like editor normally moves any block | New overlay, serialization for arbitrary subtrees, full keyboard parity, block-level undo; a second list-drag-sized module |
 | **P3** | A hover wash on the hovered block | Makes the caret target obvious; the shipped comment claims it exists | Chrome over prose, flicker while moving the mouse, and the user likes the current quiet page |
 | **P4** | Align the overlay controls' `outline-offset` from `1px` to `var(--focus-offset)` | One ring idiom | A 1 px visual shift on two controls; risks clipping at the viewer edge |

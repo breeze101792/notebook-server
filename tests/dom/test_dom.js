@@ -5618,18 +5618,18 @@ function check(label, cond, extra) {
     check("html-live key bridge: script is injected into the frame",
       /postMessage/.test(srcdoc) && /__nbHtmlPreviewKey/.test(srcdoc));
 
-    // End-to-end: a bridged Ctrl+E reaches the real shortcut handler and
-    // calls NB.viewer.toggleEdit (spied so the test does not actually
-    // enter edit mode). This is the bug the bridge fixes.
+    // End-to-end: a bridged Ctrl+Shift+E reaches the real shortcut
+    // handler and calls NB.viewer.toggleEdit (spied so the test does not
+    // actually enter edit mode). This is the bug the bridge fixes.
     const origToggle = window.NB.viewer.toggleEdit;
     let toggleCalls = 0;
     window.NB.viewer.toggleEdit = function () { toggleCalls++; };
     window.dispatchEvent(new window.MessageEvent("message", {
-      data: { __nbHtmlPreviewKey: true, key: "e", ctrlKey: true },
+      data: { __nbHtmlPreviewKey: true, key: "E", ctrlKey: true, shiftKey: true },
       source: liveFrame,
     }));
     await tick(20);
-    check("html-live key bridge: bridged Ctrl+E fires toggleEdit",
+    check("html-live key bridge: bridged Ctrl+Shift+E fires toggleEdit",
       toggleCalls === 1, "calls=" + toggleCalls);
     window.NB.viewer.toggleEdit = origToggle;
   }
@@ -26134,7 +26134,7 @@ function check(label, cond, extra) {
 
   console.log("== shortcuts ==");
   // The non-vim app keymap (Settings -> Shortcuts). Defaults:
-  // Mod+S save, / openSearch, Mod+E toggleEdit, Mod+Shift+E toggleHybrid,
+  // Mod+S save, / openSearch, Mod+Shift+E toggleEdit, Mod+E toggleHybrid,
   // Alt+H/L tabPrev/Next, Mod+Shift+T toggleTopbar, Mod+comma openSettings.
   // Active when VIM mode is off and no modal is up.
   const sc = window.NB.shortcuts;
@@ -26146,8 +26146,8 @@ function check(label, cond, extra) {
     sc.getDefaults().openSearch === "/" &&
     sc.getDefaults().tabPrev === "Alt+H" &&
     sc.getDefaults().tabNext === "Alt+L" &&
-    sc.getDefaults().toggleEdit === "Mod+E" &&
-    sc.getDefaults().toggleHybrid === "Mod+Shift+E" &&
+    sc.getDefaults().toggleEdit === "Mod+Shift+E" &&
+    sc.getDefaults().toggleHybrid === "Mod+E" &&
     sc.getDefaults().windowCycle === "Mod+W" &&
     sc.getDefaults().toggleTopbar === "Mod+Shift+T" &&
     sc.getDefaults().openSettings === "Mod+comma");
@@ -26171,8 +26171,8 @@ function check(label, cond, extra) {
     openSearch: "/",
     tabPrev: "Alt+H",
     tabNext: "Alt+L",
-    toggleEdit: "Ctrl+E",
-    toggleHybrid: "Ctrl+Shift+E",
+    toggleEdit: "Ctrl+Shift+E",
+    toggleHybrid: "Ctrl+E",
     windowCycle: "Ctrl+W",
     toggleTopbar: "Ctrl+Shift+T",
     openSettings: "Ctrl+Comma",
@@ -29770,12 +29770,12 @@ function check(label, cond, extra) {
   // keys then). Enter edit mode and drop CM focus so the shell keymap
   // is live for the navigation tests below.
   const enterEditShell = async () => {
-    if (cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(20); }
+    if (cmIsHidden()) { pressKey("e", { ctrlKey: true, shiftKey: true }); await tick(20); }
     blurActive();
     await tick(10);
   };
   const exitEditShell = async () => {
-    if (!cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(20); }
+    if (!cmIsHidden()) { pressKey("e", { ctrlKey: true, shiftKey: true }); await tick(20); }
   };
 
   // Boot state: VIM is off by default.
@@ -29926,7 +29926,7 @@ function check(label, cond, extra) {
     activeWin() && activeWin().dataset.vimWindow === "sidebar",
     activeWin() && activeWin().dataset.vimWindow);
 
-  // Editor window: Ctrl+E toggles edit mode (focuses CodeMirror).
+  // Editor window: Ctrl+Shift+E toggles edit mode (focuses CodeMirror).
   // Esc is VIM's insert->normal mode key and is owned by the
   // CodeMirror vim keymap while the editor has focus -- it does NOT
   // exit edit mode. (i / e used to enter edit mode; now reserved
@@ -29947,10 +29947,10 @@ function check(label, cond, extra) {
   pressKey("i");
   await tick(20);
   check("vim: 'i' in preview does NOT enter edit mode (VIM key reserved)", cmIsHidden());
-  // Ctrl+E enters edit mode.
-  pressKey("e", { ctrlKey: true });
+  // Ctrl+Shift+E enters edit mode.
+  pressKey("e", { ctrlKey: true, shiftKey: true });
   await tick(20);
-  check("vim: Ctrl+E enters edit mode (cm-host shown)", !cmIsHidden());
+  check("vim: Ctrl+Shift+E enters edit mode (cm-host shown)", !cmIsHidden());
   // While CM has focus, Esc is VIM's mode switch (insert -> normal),
   // NOT an exit-edit-mode signal. Press Esc and confirm we're still
   // in edit mode (cm-host still shown).
@@ -30009,14 +30009,14 @@ function check(label, cond, extra) {
     window.NB.cmEditor.hasFocus(),
     "hasFocus=" + window.NB.cmEditor.hasFocus() +
     " activeElement=" + (window.document.activeElement && window.document.activeElement.tagName));
-  // Ctrl+E exits edit mode (toggle).
-  pressKey("e", { ctrlKey: true });
+  // Ctrl+Shift+E exits edit mode (toggle).
+  pressKey("e", { ctrlKey: true, shiftKey: true });
   await tick(20);
-  check("vim: Ctrl+E exits edit mode (toggle from edit)", cmIsHidden());
+  check("vim: Ctrl+Shift+E exits edit mode (toggle from edit)", cmIsHidden());
   // And back in.
-  pressKey("e", { ctrlKey: true });
+  pressKey("e", { ctrlKey: true, shiftKey: true });
   await tick(20);
-  check("vim: Ctrl+E re-enters edit mode (toggle)", !cmIsHidden());
+  check("vim: Ctrl+Shift+E re-enters edit mode (toggle)", !cmIsHidden());
 
   // --- editor wrap (TODO: "vim mode should impl with wrap") ---
   // Long lines wrap instead of overflowing horizontally
@@ -30083,9 +30083,9 @@ function check(label, cond, extra) {
   await tick(20);
 
   // Drop back to preview for the rest of the block.
-  pressKey("e", { ctrlKey: true });
+  pressKey("e", { ctrlKey: true, shiftKey: true });
   await tick(20);
-  check("vim: Ctrl+E exits edit mode (cleanup)", cmIsHidden());
+  check("vim: Ctrl+Shift+E exits edit mode (cleanup)", cmIsHidden());
 
   // Editor window (preview): j/k scroll the viewer one line. We can't
   // measure the line height exactly in jsdom but scrolling a known
@@ -30183,7 +30183,7 @@ function check(label, cond, extra) {
 
     // Alt+L in edit mode with a CLEAN editor: just exits edit mode
     // and switches tabs (no prompt).
-    pressKey("e", { ctrlKey: true });              // enter edit mode
+    pressKey("e", { ctrlKey: true, shiftKey: true });              // enter edit mode
     await tick(20);
     check("vim: Alt+H/L edit-mode-clean precondition: in edit mode",
       !cmIsHidden());
@@ -30201,7 +30201,7 @@ function check(label, cond, extra) {
     // stub confirm() to return true (save). The save fires a fetch
     // (already stubbed) and then endEdit() runs. Verify the tab
     // switched and we're out of edit mode.
-    pressKey("e", { ctrlKey: true });              // back into edit mode
+    pressKey("e", { ctrlKey: true, shiftKey: true });              // back into edit mode
     await tick(20);
     // Capture the original content so we can restore it after the
     // test (the dirty + save replaces the file on disk, and the
@@ -30235,7 +30235,7 @@ function check(label, cond, extra) {
     // tests (outline headings) see the original headings.
     await window.NB.tabs.activate("notes/a.md");
     await tick(20);
-    pressKey("e", { ctrlKey: true });
+    pressKey("e", { ctrlKey: true, shiftKey: true });
     await tick(20);
     cmSetValue(originalContent);
     await tick(10);
@@ -30247,7 +30247,7 @@ function check(label, cond, extra) {
     } finally {
       window.confirm = origConfirm2;
     }
-    pressKey("e", { ctrlKey: true });
+    pressKey("e", { ctrlKey: true, shiftKey: true });
     await tick(20);
     window.NB.sidebar.setVimCursor("notes/a.md");
     await tick(10);
@@ -30424,10 +30424,10 @@ function check(label, cond, extra) {
   pressKey("Escape");
   await tick(20);
   check("vim: Esc inside CM does NOT exit edit mode (VIM key)", !cmIsHidden());
-  // Ctrl+E exits edit mode.
-  pressKey("e", { ctrlKey: true });
+  // Ctrl+Shift+E exits edit mode.
+  pressKey("e", { ctrlKey: true, shiftKey: true });
   await tick(20);
-  check("vim: Ctrl+E exits edit mode (after editbar test)", cmIsHidden());
+  check("vim: Ctrl+Shift+E exits edit mode (after editbar test)", cmIsHidden());
 
   // T opens the search box (focuses the search input). The shell
   // keymap is live only while editing, so enter edit mode first.
@@ -30521,7 +30521,7 @@ function check(label, cond, extra) {
   // state after each key.
   {
     // Enter edit mode and focus CodeMirror.
-    if (cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(30); }
+    if (cmIsHidden()) { pressKey("e", { ctrlKey: true, shiftKey: true }); await tick(30); }
     const cmView = window.NB.cmEditor.view();
     const cm5 = cmView && window.CM6.getCM(cmView);
 
@@ -30656,7 +30656,7 @@ function check(label, cond, extra) {
   }
   // (c) :q! force-quits a dirty buffer with no confirm prompt.
   {
-    if (cmIsHidden()) { pressKey("e", { ctrlKey: true }); await tick(30); }
+    if (cmIsHidden()) { pressKey("e", { ctrlKey: true, shiftKey: true }); await tick(30); }
     cmSetValue("# File A\n\nDIRTY EDIT\n");
     await tick(10);
     const dirty = window.NB.viewer.isDirty(window.NB.tabs.getActive());
@@ -41675,7 +41675,8 @@ function check(label, cond, extra) {
     window.NB.viewer.toggleEdit = function () { toggleCalls++; };
     try {
       window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
-        key: "e", code: "KeyE", ctrlKey: true, bubbles: true, cancelable: true,
+        key: "E", code: "KeyE", ctrlKey: true, shiftKey: true,
+        bubbles: true, cancelable: true,
       }));
       await tick(20);
     } finally {

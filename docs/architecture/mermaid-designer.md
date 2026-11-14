@@ -156,7 +156,7 @@ builder used by both `ensureInitialized` and `designerMermaid()`.
 
 `#designer-overlay` MUST carry `class="settings-overlay"`. `modalIsOpen()` is a
 hardcoded selector duplicated in `shortcuts.js`, `vimnav.js`,
-`table-select.js`; without that class, Mod+Shift+E / Mod+E / Mod+S /
+`table-select.js`; without that class, Mod+E / Mod+Shift+E / Mod+S /
 Ctrl+, fire under the modal and can tear down the hybrid session. Do not add a
 fourth copy of `modalIsOpen`.
 
