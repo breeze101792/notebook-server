@@ -4737,6 +4737,47 @@
     return null;
   }
 
+  /* The blank line the caret sits in, or null. A blank line is a
+   * top-level paragraph with no content: only editing artifacts (the
+   * caret line box, whitespace) are left. A formatted empty line (a
+   * heading, bullet, quote line, task item) is claimed earlier by the
+   * marker strip or the empty-item rule, so only a plain paragraph
+   * reaches here. */
+  function blankLineAtCaret() {
+    if (!active) return null;
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+    const range = sel.getRangeAt(0);
+    let node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    if (!node || !viewerContentEl.contains(node)) return null;
+    if (insideProtectedBlock(node)) return null;
+    const p = node.closest ? node.closest("p") : null;
+    if (!p || p.parentElement !== viewerContentEl) return null;
+    return blockHasNoContent(p) ? p : null;
+  }
+
+  /* A delete key on a blank line removes that line and puts the caret
+   * back on the nearest line above (or the next line when the blank line
+   * is the first block). The blank line is the whole unit: the key never
+   * claims a neighbour, so a rule, fence, table, or heading beside it is
+   * left untouched. Without this the engine keeps the blank line and
+   * pulls the block below into it (a heading loses its marker, a rule is
+   * deleted) and the rule/atomic claims remove the block above.
+   * Returns true when the key was claimed. */
+  function removeBlankLineAtCaret(p) {
+    if (!p || !p.parentElement) return false;
+    const prevHost = caretHostBeside(p, -1);
+    const nextHost = prevHost ? null : caretHostBeside(p, 1);
+    const host = prevHost || nextHost;
+    if (!host) return false;
+    p.remove();
+    viewerContentEl.focus({ preventScroll: true });
+    caretToEdge(host, !!prevHost);
+    onContentChange();
+    return true;
+  }
+
   /* Remove a task checkbox and its class before the item leaves the list,
    * so the marker never reaches the paragraph. */
   function stripTaskItemMarker(li) {
@@ -5520,6 +5561,22 @@
         !e.isComposing) {
       const target = blockMarkerStripTarget(e.key);
       if (target && stripBlockMarker(target)) {
+        e.preventDefault();
+        return;
+      }
+    }
+    // A blank line is a line, not a block: a delete key on it removes
+    // that line and returns the caret to the line above. It never claims
+    // a neighbour -- the rule/atomic branches below would delete the
+    // block above, and the engine would keep the line and pull the block
+    // below into it, losing that block's type. A formatted empty line
+    // was claimed by the marker strip just above, so one press peels the
+    // format and the next removes the line.
+    if ((e.key === "Backspace" || e.key === "Delete") &&
+        !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey &&
+        !e.isComposing) {
+      const blank = blankLineAtCaret();
+      if (blank && removeBlankLineAtCaret(blank)) {
         e.preventDefault();
         return;
       }

@@ -1187,6 +1187,15 @@ The edges where the engine cannot merge safely are implemented:
   in two; a stray `<hr>` under the emptied item goes with the line, and a
   one-item empty list keeps the marker-strip result.
   `listForwardDeleteBoundary` / `joinSingleItemListForward`.
+- **Blank line.** An empty paragraph is a line, not a block: Delete and
+  Backspace on it remove that line and put the caret at the end of the nearest
+  line above (at the start of the next line when the blank line is the first
+  block). The claim runs before the rule and atomic claims, so a rule, fence,
+  table, or heading beside the blank line is never consumed; the engine would
+  otherwise keep the line and pull the block below into it, losing that
+  block's type (a heading's `##`, a rule). A formatted empty line is peeled by
+  the marker strip first and removed by the next press (`blankLineAtCaret` /
+  `removeBlankLineAtCaret`).
 - **Whole note.** Ctrl+A + Delete/Backspace, Ctrl+X, or Shift+Delete over the
   entire note replaces the root with one `p[data-hybrid-caret="1"]`, so the next
   typed character is plain text and an empty save never emits a stray heading

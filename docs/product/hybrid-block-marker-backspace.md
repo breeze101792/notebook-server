@@ -132,6 +132,14 @@ Rules that fall out of the table:
   strip would lift it to a paragraph and split the list in two. A stray
   horizontal rule left under the emptied item (a dash run that parsed as an
   `<hr>`) goes with it. A one-item empty list still strips to a paragraph.
+- A blank line is a line, not a block: a delete key whose caret sits on an
+  empty paragraph removes that paragraph and puts the caret at the end of the
+  nearest line above (at the start of the next line when it is the first
+  block). The key never claims a neighbour. Without this rule the engine keeps
+  the blank line and pulls the block below into it (a heading loses its
+  marker, a rule is deleted), and the rule/atomic claims delete the block
+  above. A formatted empty line is peeled first (the marker strip) and removed
+  by the next press (`blankLineAtCaret` / `removeBlankLineAtCaret`).
 
 ## 6. Write-back and history
 
@@ -164,6 +172,7 @@ Rules that fall out of the table:
 | Clear formatting (`Mod+\`) | Unchanged; it is the multi-block, inline-inclusive action. This gesture is one block and marker-only. Do not implement it through `clearFormatting` (it keeps inputs, so a checkbox would survive). |
 | Delete at a block end (forward merge) | Unchanged between text blocks. At the end of a paragraph, heading, or list item's own content immediately before a list, a list-boundary guard claims the key: refused for a multi-item list, a clean merge for a one-item list (the task checkbox is dropped, never stranded). A child with its own block content is refused; an empty top-level paragraph before the list is removed and the list kept. An empty item inside a multi-item list is removed as a line on Delete or Backspace, keeping one list; a stray rule under the emptied item goes with it. |
 | Rules, atomic blocks, emptied fences, table selections, whole-note clear | Unchanged; the trigger excludes them and the guards are disjoint. |
+| Blank line (an empty paragraph) | A delete key removes that paragraph and returns the caret to the line above; it does not consume a rule, fence, heading, or table beside it. A formatted empty line is peeled first, then removed. |
 | Source (CM6) and preview modes | Unchanged; the gesture is hybrid-only. |
 
 Implementation order in `onEnterKey`: after the fence/table/whole-note/list
@@ -191,6 +200,7 @@ task edge merge cannot shadow it.
 | 15 | Caret at S of a task item (before the checkbox) | Not this gesture; behavior unchanged. Recommended follow-up: Delete at S removes the checkbox (marker to the right), symmetric with Backspace at T. |
 | 16 | Holding Backspace | One layer per key repeat; after the first, the block is plain, so further repeats hit native merge. |
 | 17 | Only block in the note | Marker removed, empty paragraph; an empty save writes no marker. |
+| 18 | Blank line between two blocks, either key | The line is removed; the caret lands at the end of the nearest line above; both neighbours keep their type and bytes. |
 
 ## 9. Acceptance criteria (Given/When/Then)
 
@@ -258,6 +268,13 @@ task edge merge cannot shadow it.
     the previous item's end (Backspace). A stray horizontal rule left under the
     emptied item is removed with it. A one-item empty list still strips to one
     empty paragraph.
+21. **Blank line.** Given a blank line between two blocks (the empty paragraph
+    an Enter creates), when Delete or Backspace on it, then that paragraph is
+    removed, the caret is at the end of the nearest line above, and both
+    neighbours are unchanged: a heading below keeps its `##`, a rule or fence
+    beside the line is not deleted, and the saved bytes are the source without
+    the blank line. A blank line as the first block returns the caret to the
+    start of the next block; a lone blank line is left alone.
 
 ## 10. Open decisions
 

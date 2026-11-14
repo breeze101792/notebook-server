@@ -1938,6 +1938,78 @@ async function main() {
         emptyItem.items[0] === "a" && emptyItem.items[1] === "b" &&
         emptyItem.paras === 0, JSON.stringify(emptyItem));
 
+    // A blank line is a line, not a block: a delete key on the line an
+    // Enter just created removes only that line. The block below keeps
+    // its type (the engine used to pull a heading into the line and drop
+    // its marker) and the block above keeps its bytes (the rule/atomic
+    // claims used to delete a rule or a fence past the line).
+    await boot("# B\n\nhello\n\n## Title\n");
+    await placeCaretInText("hello", "hello".length);
+    await page.keyboard.press("Enter");
+    await sleep(150);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    let blankLine = await page.evaluate(() => {
+      const heading = document.querySelector("#viewer-content h2");
+      return {
+        heading: heading ? heading.textContent.replace(/\u200B/g, "") : null,
+        paras: Array.from(document.querySelectorAll("#viewer-content > p"))
+          .map((p) => p.textContent.replace(/\u200B/g, "").trim()),
+      };
+    });
+    check("blank line: Delete keeps the heading below the line",
+      blankLine.heading === "Title" && blankLine.paras.length === 1 &&
+        blankLine.paras[0] === "hello", JSON.stringify(blankLine));
+    await page.keyboard.type("X");
+    await sleep(200);
+    check("blank line: typing continues on the previous line",
+      (await page.evaluate(() => {
+        const p = document.querySelector("#viewer-content > p");
+        return p ? p.textContent.replace(/\u200B/g, "") : "";
+      })) === "helloX");
+    await page.keyboard.press("Control+s");
+    check("blank line: the heading keeps its marker on save",
+      await waitForFile((md) => /## Title/.test(md) && /helloX/.test(md)),
+      JSON.stringify(readNote()));
+
+    await boot("# B\n\nhello\n\n---\n\nbye\n");
+    await placeCaretInText("hello", "hello".length);
+    await page.keyboard.press("Enter");
+    await sleep(150);
+    await page.keyboard.press("Delete");
+    await sleep(250);
+    blankLine = await page.evaluate(() => ({
+      rules: document.querySelectorAll("#viewer-content hr").length,
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("blank line: Delete keeps the rule below the line",
+      blankLine.rules === 1 && /bye/.test(blankLine.text),
+      JSON.stringify(blankLine));
+    await page.keyboard.press("Control+s");
+    check("blank line: the rule survives the save",
+      await waitForFile((md) => /---/.test(md) && /bye/.test(md)),
+      JSON.stringify(readNote()));
+
+    await boot("# B\n\nhello\n\n```\nx\n```\n");
+    await placeCaretInText("hello", "hello".length);
+    await page.keyboard.press("Enter");
+    await sleep(150);
+    await page.keyboard.press("Backspace");
+    await sleep(250);
+    blankLine = await page.evaluate(() => ({
+      pres: document.querySelectorAll("#viewer-content pre").length,
+      text: document.getElementById("viewer-content").textContent
+        .replace(/\u200B/g, ""),
+    }));
+    check("blank line: Backspace keeps the fence below the line",
+      blankLine.pres === 1 && /hello/.test(blankLine.text),
+      JSON.stringify(blankLine));
+    await page.keyboard.press("Control+s");
+    check("blank line: the fence survives the save",
+      await waitForFile((md) => /```/.test(md) && /hello/.test(md)),
+      JSON.stringify(readNote()));
+
     // Table structural deletes moved from the block context menu into the
     // "Edit table" modal. The same refusal rules live on its toolbar.
     const openTableEditor = async (cellSelector = "#viewer-content td") => {

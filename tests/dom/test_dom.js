@@ -14722,6 +14722,94 @@ function check(label, cond, extra) {
           !vc.querySelector(":scope > p"),
           "html=" + vc.innerHTML);
       }
+      // A blank line is a line, not a block: a delete key on it removes
+      // that line and returns the caret to the line above. The blank line
+      // is the whole unit, so the block beside it keeps its type and its
+      // bytes -- the engine would pull the block below into the line and
+      // the rule/atomic claims would delete the block above.
+      const blankAfter = (el) => {
+        const p = doc.createElement("p");
+        const br = doc.createElement("br");
+        br.setAttribute("data-hybrid-caret-br", "1");
+        p.appendChild(br);
+        el.after(p);
+        caret(p, 1);
+        return p;
+      };
+      const caretAtEndOf = (el) => {
+        const sel = window.getSelection();
+        if (!sel.isCollapsed || !sel.anchorNode || !el) return false;
+        const tail = doc.createRange();
+        tail.selectNodeContents(el);
+        try {
+          tail.setStart(sel.anchorNode, sel.anchorOffset);
+        } catch (_) {
+          return false;
+        }
+        return tail.toString().replace(/[\s\u200B]/g, "") === "";
+      };
+      await loadNote("hello\n\nworld\n");
+      {
+        const paras = vc.querySelectorAll(":scope > p");
+        const blank = blankAfter(paras[0]);
+        const ev = key(blank, "Delete");
+        const left = vc.querySelectorAll(":scope > p");
+        check("hybrid blank line: Delete removes the line and keeps both paragraphs",
+          ev.defaultPrevented && !blank.isConnected && left.length === 2 &&
+          left[0].textContent === "hello" && left[1].textContent === "world",
+          "html=" + vc.innerHTML);
+        check("hybrid blank line: the caret returns to the previous line",
+          caretAtEndOf(left[0]), "anchor=" +
+          (window.getSelection().anchorNode || {}).nodeName);
+        check("hybrid blank line: the save keeps both paragraphs",
+          norm(md()) === "hello world", JSON.stringify(md()));
+      }
+      await loadNote("hello\n\n## Title\n");
+      {
+        const blank = blankAfter(vc.querySelector(":scope > p"));
+        const ev = key(blank, "Delete");
+        check("hybrid blank line: Delete does not pull the heading into the line",
+          ev.defaultPrevented && !!vc.querySelector("h2") &&
+          vc.querySelector("h2").textContent === "Title" &&
+          norm(md()) === "hello ## Title",
+          "html=" + vc.innerHTML + " md=" + JSON.stringify(md()));
+      }
+      await loadNote("alpha\n\n---\n\nomega\n");
+      {
+        const blank = blankAfter(vc.querySelector("hr"));
+        const ev = key(blank, "Backspace");
+        const alpha = Array.from(vc.querySelectorAll(":scope > p"))
+          .find((p) => p.textContent === "alpha");
+        check("hybrid blank line: Backspace after a rule keeps the rule",
+          ev.defaultPrevented && !!vc.querySelector("hr") && !blank.isConnected &&
+          !!alpha && caretAtEndOf(alpha), "html=" + vc.innerHTML);
+        check("hybrid blank line: the rule survives the save",
+          /---/.test(md()), JSON.stringify(md()));
+      }
+      await loadNote("hello\n\n```\nx\n```\n");
+      {
+        const blank = blankAfter(vc.querySelector("pre"));
+        const ev = key(blank, "Backspace");
+        check("hybrid blank line: Backspace after a fence keeps the fence",
+          ev.defaultPrevented && !!vc.querySelector("pre") && !blank.isConnected,
+          "html=" + vc.innerHTML);
+        check("hybrid blank line: the fence survives the save",
+          /```/.test(md()) && /x/.test(md()), JSON.stringify(md()));
+      }
+      // One press peels the line's own format, the next removes the line.
+      await loadNote("###\n\nworld\n");
+      {
+        const h = vc.querySelector("h3");
+        caret(h, 0);
+        const first = key(h, "Delete");
+        const emptied = paragraph();
+        const second = key(emptied || vc, "Delete");
+        check("hybrid blank line: the first press peels the format, the second the line",
+          first.defaultPrevented && second.defaultPrevented && !!emptied &&
+          !emptied.isConnected && !vc.querySelector("h3") &&
+          norm(md()) === "world",
+          "html=" + vc.innerHTML + " md=" + JSON.stringify(md()));
+      }
     }
 
     // --- AC7/AC8: link create -------------------------------------------
