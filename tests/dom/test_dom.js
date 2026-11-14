@@ -19454,9 +19454,24 @@ function check(label, cond, extra) {
     check("table view: clicking the icon opens the toolbar",
       toolbarEl().hidden === false && window.NB.tableView.toolbarOpen === true &&
       toggleEl().getAttribute("aria-expanded") === "true");
-    check("table view: the opened toolbar offers Rows, Columns and Reset",
+    check("table view: the opened toolbar offers Copy, Copy image, Rows, Columns and Reset",
       Array.from(toolbarEl().querySelectorAll(".nb-tv-btn"))
-        .map((b) => b.textContent).join(",") === "Rows,Columns,Reset");
+        .map((b) => b.textContent).join(",") ===
+          "Copy,Copy image,Rows,Columns,Reset");
+    // The box is always the icon's size (the toolbar is out of flow), so
+    // opening must leave the box's own position untouched; only the
+    // toolbar carries an inline `left`, and only while it is open.
+    const boxPos = () => controlsEl().style.left + "|" + controlsEl().style.top;
+    const openBoxPos = boxPos();
+    check("table view: the open toolbar is positioned with an inline left",
+      Number.isFinite(parseFloat(toolbarEl().style.left)),
+      "left=" + JSON.stringify(toolbarEl().style.left));
+    toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+    check("table view: opening the toolbar does not move the control box",
+      boxPos() === openBoxPos, "open=" + openBoxPos + " closed=" + boxPos());
+    check("table view: closing the toolbar clears its inline left",
+      toolbarEl().style.left === "",
+      "left=" + JSON.stringify(toolbarEl().style.left));
     // A pointerdown elsewhere dismisses everything and drops the anchor.
     window.NB.tableView.reveal(t0);
     toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
@@ -19499,8 +19514,6 @@ function check(label, cond, extra) {
       };
       const origRect = window.Element.prototype.getBoundingClientRect;
       const paneEl = $("viewer");
-      const origPaneW = Object.getOwnPropertyDescriptor(
-        window.Element.prototype, "clientWidth");
       window.Element.prototype.getBoundingClientRect = function () {
         return rectFor(this);
       };
@@ -19522,10 +19535,152 @@ function check(label, cond, extra) {
           top >= 200, "top=" + top);
       } finally {
         window.Element.prototype.getBoundingClientRect = origRect;
-        if (origPaneW) {
-          Object.defineProperty(window.Element.prototype, "clientWidth", origPaneW);
-        }
+        // Own properties on #viewer, so delete them: restoring a prototype
+        // descriptor here leaves the stub in place for every later test.
+        delete paneEl.clientWidth;
+        delete paneEl.clientHeight;
       }
+    }
+
+    // --- (2c) a toolbar popover opens to the RIGHT of its button -------
+    // The toolbar is a vertical column, so a below-anchored chooser would
+    // cover the buttons under it. Same rect trick as above: the pane is
+    // 800x600, a toolbar button is x=90..194 at y=202..226, and the pop
+    // falls back to POP_MIN_W (180px) because jsdom measures nothing.
+    {
+      const rectFor = (el) => {
+        if (el.tagName === "TH" || el.tagName === "TD") {
+          const cell = Array.from(el.parentNode.cells).indexOf(el);
+          return { left: 120 + cell * 100, right: 220 + cell * 100,
+            top: 200, bottom: 228, width: 100, height: 28,
+            x: 120 + cell * 100, y: 200, toJSON() {} };
+        }
+        if (el.classList && el.classList.contains("nb-tv-btn")) {
+          return { left: 90, right: 194, top: 202, bottom: 226, width: 104,
+            height: 24, x: 90, y: 202, toJSON() {} };
+        }
+        return { left: 0, right: 800, top: 0, bottom: 600, width: 800,
+          height: 600, x: 0, y: 0, toJSON() {} };
+      };
+      const origRect = window.Element.prototype.getBoundingClientRect;
+      const paneEl = $("viewer");
+      window.Element.prototype.getBoundingClientRect = function () {
+        return rectFor(this);
+      };
+      Object.defineProperty(paneEl, "clientWidth",
+        { configurable: true, get: () => 800 });
+      Object.defineProperty(paneEl, "clientHeight",
+        { configurable: true, get: () => 600 });
+      try {
+        window.NB.tableView.reveal(t0);
+        const popEl = openChooser("Rows");
+        check("table view: a toolbar popover opens to the right of its button",
+          !!popEl &&
+          parseFloat(popEl.style.left) === 194 + 4 &&
+          parseFloat(popEl.style.top) === 202,
+          popEl ? "left=" + popEl.style.left + " top=" + popEl.style.top : "no pop");
+        // The gutter here is 90px wide, so the open toolbar right-aligns
+        // with the icon and grows left into it (24 - the 104px CSS min
+        // width). The icon's own box must not move.
+        check("table view: with room in the gutter the toolbar grows left",
+          toolbarEl().style.left === "-80px" &&
+          Math.round(parseFloat(controlsEl().style.left)) === 90,
+          "toolbarLeft=" + toolbarEl().style.left +
+          " boxLeft=" + controlsEl().style.left);
+        // A gutter too narrow (first cell at x=10) cannot hold it: the
+        // toolbar is flushed with the icon's left edge instead.
+        const narrowRect = (el) => {
+          const r = rectFor(el);
+          return (el.tagName === "TH" || el.tagName === "TD")
+            ? Object.assign({}, r, { left: 10, right: 110 }) : r;
+        };
+        window.Element.prototype.getBoundingClientRect = function () {
+          return narrowRect(this);
+        };
+        window.NB.tableView.reveal(t0);
+        check("table view: a gutter too narrow for the toolbar flushes it right",
+          toolbarEl().style.left === "0px" &&
+          Math.round(parseFloat(controlsEl().style.left)) === 4,
+          "toolbarLeft=" + JSON.stringify(toolbarEl().style.left) +
+          " boxLeft=" + controlsEl().style.left);
+      } finally {
+        window.Element.prototype.getBoundingClientRect = origRect;
+        delete paneEl.clientWidth;
+        delete paneEl.clientHeight;
+      }
+      window.NB.tableView.reveal(t0);
+    }
+
+    // --- (2d) a low icon: the column flips ABOVE it --------------------
+    // The icon must never move -- the ✕ has to stay under the pointer that
+    // clicked it -- so the open column flips above the icon when it cannot
+    // fit below. The header sits at y=360..388 in a 400px pane, and jsdom
+    // measures nothing, so the toolbar's height is stubbed at 130px.
+    {
+      // Mutable so the second case can move the header up and shorten the
+      // pane without re-stubbing the whole rect source.
+      let headerTop = 360, paneH = 400;
+      const rectFor = (el) => {
+        if (el.tagName === "TH" || el.tagName === "TD") {
+          const cell = Array.from(el.parentNode.cells).indexOf(el);
+          return { left: 120 + cell * 100, right: 220 + cell * 100,
+            top: headerTop, bottom: headerTop + 28, width: 100, height: 28,
+            x: 120 + cell * 100, y: headerTop, toJSON() {} };
+        }
+        return { left: 0, right: 800, top: 0, bottom: paneH, width: 800,
+          height: paneH, x: 0, y: 0, toJSON() {} };
+      };
+      const origRect = window.Element.prototype.getBoundingClientRect;
+      const paneEl = $("viewer");
+      window.Element.prototype.getBoundingClientRect = function () {
+        return rectFor(this);
+      };
+      Object.defineProperty(paneEl, "clientWidth",
+        { configurable: true, get: () => 800 });
+      Object.defineProperty(paneEl, "clientHeight",
+        { configurable: true, get: () => paneH });
+      Object.defineProperty(toolbarEl(), "offsetHeight",
+        { configurable: true, get: () => 130 });
+      try {
+        // (2c) leaves the toolbar open: close it so this block starts from
+        // a known closed state and the first click opens.
+        window.NB.tableView.setControlsOpen(false);
+        window.NB.tableView.reveal(t0);
+        const closedPos = controlsEl().style.left + "|" + controlsEl().style.top;
+        toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+        const openPos = controlsEl().style.left + "|" + controlsEl().style.top;
+        check("table view: a low icon does not move when the toolbar flips",
+          openPos === closedPos, "closed=" + closedPos + " open=" + openPos);
+        check("table view: the toolbar flips above the icon",
+          Number.isFinite(parseFloat(toolbarEl().style.top)) &&
+          parseFloat(toolbarEl().style.top) < 0,
+          "top=" + JSON.stringify(toolbarEl().style.top));
+        toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+        check("table view: closing clears both inline toolbar offsets",
+          toolbarEl().style.left === "" && toolbarEl().style.top === "",
+          "left=" + JSON.stringify(toolbarEl().style.left) +
+          " top=" + JSON.stringify(toolbarEl().style.top));
+        // Flip floor: high in a short pane the pane's top edge is the
+        // larger term, so the flip stops there instead of clearing the
+        // icon by its own height (icon top 102 in a 200px pane).
+        headerTop = 100;
+        paneH = 200;
+        window.NB.tableView.reveal(t0);
+        toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+        const boxTop = parseFloat(controlsEl().style.top);
+        check("table view: the flip is floored at the pane's top edge",
+          parseFloat(toolbarEl().style.top) === 4 - boxTop &&
+          parseFloat(toolbarEl().style.top) > -(6 + 130),
+          "top=" + JSON.stringify(toolbarEl().style.top) +
+          " boxTop=" + boxTop);
+      } finally {
+        window.Element.prototype.getBoundingClientRect = origRect;
+        delete paneEl.clientWidth;
+        delete paneEl.clientHeight;
+        delete toolbarEl().offsetHeight;
+      }
+      window.NB.tableView.hide();
+      window.NB.tableView.reveal(t0);
     }
 
     // --- (3) column hide is class-based and restorable -----------------
@@ -19576,6 +19731,366 @@ function check(label, cond, extra) {
       "t0=" + t0.outerHTML.slice(0, 120));
     toggleCheck(rowInputs[0], false);
     await tick(10);
+    // A pointer inside a chooser belongs to the toolbar that owns it: the
+    // document-level pointerdown must not tear either down under the click.
+    rowInputs[0].dispatchEvent(new window.Event("pointerdown", { bubbles: true }));
+    toggleCheck(rowInputs[0], true);
+    await tick(10);
+    check("table view: a click inside the chooser keeps the toolbar and chooser up",
+      window.NB.tableView.toolbarOpen === true &&
+      !!$("viewer").querySelector(".nb-tv-pop") &&
+      sessionOf(t0).sourceRows[0].classList.contains("nb-tv-hide-row"),
+      "open=" + window.NB.tableView.toolbarOpen +
+      " pop=" + !!$("viewer").querySelector(".nb-tv-pop"));
+    toggleCheck(rowInputs[0], false);
+    await tick(10);
+
+    // --- (3c) Copy: the visible table as TSV + HTML --------------------
+    // The payload is built from the live DOM, which is what the user sees:
+    // a sort physically reorders the <tr> nodes and the hidden classes
+    // exclude rows and columns. jsdom ships no rich clipboard, so
+    // copyTable() takes the text-only path and its toast proves it ran.
+    {
+      window.NB.tableView.resetTable(t0);
+      const sCopy = sessionOf(t0);
+      window.NB.tableView.applyState(t0, sCopy, {
+        sig: sCopy.sig, bodySig: sCopy.bodySig, ordinal: sCopy.ordinal,
+        hiddenRows: [1], hiddenCols: [1],
+      });
+      await tick(10);
+      const payload = window.NB.tableView.tablePayload(t0);
+      check("table view copy: tablePayload returns TSV + HTML",
+        !!payload && typeof payload.tsv === "string" &&
+        typeof payload.html === "string",
+        JSON.stringify(payload && payload.tsv));
+      check("table view copy: a hidden row and a hidden column are excluded",
+        !!payload && payload.tsv === "Name\nbeta\ngamma\ndelta\nepsilon",
+        JSON.stringify(payload && payload.tsv));
+      check("table view copy: the header row is <th> and body rows are <td>",
+        !!payload && payload.html.indexOf("<th>Name</th>") !== -1 &&
+        payload.html.indexOf("<td>beta</td>") !== -1 &&
+        payload.html.indexOf("<th>beta</th>") === -1 &&
+        payload.html.indexOf("Qty") === -1,
+        JSON.stringify(payload && payload.html).slice(0, 160));
+      check("table view copy: the header menu chevron is not in the TSV",
+        !!payload && payload.tsv.indexOf("\u25BE") === -1 &&
+        payload.tsv.split("\n")[0] === "Name",
+        JSON.stringify(payload && payload.tsv.split("\n")[0]));
+      // A sort moves the <tr> nodes, so DOM order is the visible order.
+      window.NB.tableView.resetTable(t0);
+      window.NB.tableView.cycleSort(t0, 0);   // Name asc
+      const sorted = window.NB.tableView.tablePayload(t0);
+      check("table view copy: the payload follows the DOM (sorted) order",
+        !!sorted &&
+        sorted.tsv.split("\n").slice(1)
+          .map((line) => line.split("\t")[0]).join(",") === namesOf(t0).join(",") &&
+        sorted.tsv.split("\n")[1] === "alpha\t10",
+        JSON.stringify(sorted && sorted.tsv));
+      const writesBefore = __clipboard.writes;
+      const started = window.NB.tableView.copyTable(t0);
+      await tick(20);
+      check("table view copy: copyTable returns the payload it started writing",
+        !!started && started.tsv === sorted.tsv,
+        JSON.stringify(started && started.tsv));
+      check("table view copy: the text-only path writes the TSV",
+        __clipboard.writes === writesBefore + 1 &&
+        __clipboard.lastText === sorted.tsv,
+        "writes=" + (__clipboard.writes - writesBefore) +
+        " text=" + JSON.stringify(__clipboard.lastText));
+      const copyToast = window.document.querySelector(".toast");
+      check("table view copy: the text-only path reports 'Copied table as text'",
+        !!copyToast && copyToast.classList.contains("show") &&
+        /Copied table as text/.test(copyToast.textContent),
+        copyToast ? "text=" + JSON.stringify(copyToast.textContent) : "no toast");
+      check("table view copy: the button and its toolbar stay outside #viewer-content",
+        !!toolbarEl() && !vcTV.contains(toolbarEl()) &&
+        Array.from(toolbarEl().querySelectorAll(".nb-tv-btn")).length === 5 &&
+        vcTV.querySelectorAll(".nb-tv-btn,.nb-tv-pop").length === 0,
+        "buttons in content=" + vcTV.querySelectorAll(".nb-tv-btn").length);
+      window.NB.tableView.resetTable(t0);
+    }
+
+    // --- (3d) the rich clipboard path ----------------------------------
+    // The guarded ClipboardItem branch: one item carrying text/plain (TSV)
+    // and text/html (a <table>). A rejected write falls through to
+    // writeText. Stubs mirror the copy-image block at :5206.
+    {
+      const rich = { calls: 0, items: null, reject: false };
+      const realWrite = window.navigator.clipboard.write;
+      const realClipboardItem = window.ClipboardItem;
+      const realSecure = window.isSecureContext;
+      window.navigator.clipboard.write = async (items) => {
+        rich.calls++;
+        rich.items = items;
+        if (rich.reject) throw new Error("denied (stub)");
+      };
+      window.ClipboardItem = class ClipboardItemStub {
+        constructor(parts) { this.parts = parts; }
+      };
+      window.isSecureContext = true;
+      // jsdom's Blob has no .text()/.arrayBuffer(), so read it via
+      // FileReader (the idiom used by the image tests).
+      const readBlob = (b) => new Promise((resolve, reject) => {
+        const fr = new window.FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = () => reject(fr.error);
+        fr.readAsText(b);
+      });
+      try {
+        const payload = window.NB.tableView.tablePayload(t0);
+        window.NB.tableView.copyTable(t0);
+        await tick(20);
+        const item = rich.items && rich.items[0];
+        const plain = item && item.parts["text/plain"];
+        const html = item && item.parts["text/html"];
+        check("table view copy: the rich path writes one ClipboardItem",
+          rich.calls === 1 && rich.items.length === 1 &&
+          item instanceof window.ClipboardItem && !!plain && !!html,
+          "calls=" + rich.calls + " items=" +
+          (rich.items ? rich.items.length : "null"));
+        check("table view copy: the item carries the TSV as text/plain",
+          !!plain && plain.type === "text/plain" &&
+          (await readBlob(plain)) === payload.tsv,
+          plain ? "type=" + plain.type : "no blob");
+        check("table view copy: the item carries the <table> as text/html",
+          !!html && html.type === "text/html" &&
+          (await readBlob(html)) === payload.html &&
+          payload.html.indexOf("<th>") !== -1,
+          html ? "type=" + html.type : "no blob");
+        const richToast = window.document.querySelector(".toast");
+        check("table view copy: the rich path reports 'Copied table'",
+          !!richToast && /Copied table$/.test(richToast.textContent),
+          richToast ? "text=" + JSON.stringify(richToast.textContent) : "no toast");
+        // A rejected rich write must fall back to the TSV as text.
+        rich.reject = true;
+        const writesBefore = __clipboard.writes;
+        window.NB.tableView.copyTable(t0);
+        await tick(20);
+        check("table view copy: a rejected rich write falls back to writeText",
+          rich.calls === 2 && __clipboard.writes === writesBefore + 1 &&
+          __clipboard.lastText === payload.tsv,
+          "calls=" + rich.calls + " text=" + JSON.stringify(__clipboard.lastText));
+      } finally {
+        if (realWrite === undefined) delete window.navigator.clipboard.write;
+        else window.navigator.clipboard.write = realWrite;
+        if (realClipboardItem === undefined) delete window.ClipboardItem;
+        else window.ClipboardItem = realClipboardItem;
+        if (realSecure === undefined) delete window.isSecureContext;
+        else window.isSecureContext = realSecure;
+      }
+    }
+
+    // --- (3e) Copy image: the PNG snapshot ----------------------------
+    // The snapshot is built from the live DOM with the view chrome stripped
+    // and the live look carried in a <style>; the rasterizer itself lives in
+    // copy-image.js and is stubbed here (jsdom has no canvas).
+    {
+      window.NB.tableView.resetTable(t0);
+      const sImg = sessionOf(t0);
+      window.NB.tableView.applyState(t0, sImg, {
+        sig: sImg.sig, bodySig: sImg.bodySig, ordinal: sImg.ordinal,
+        hiddenRows: [1], hiddenCols: [1],
+      });
+      window.NB.tableView.cycleSort(t0, 0);   // active sort in the live DOM
+      await tick(10);
+      Object.defineProperty(t0, "scrollWidth", { configurable: true, value: 500 });
+      Object.defineProperty(t0, "offsetHeight", { configurable: true, value: 200 });
+      // The page colour behind the table comes from the live cascade; jsdom
+      // resolves no theme, so the body's background is stubbed. line-height
+      // is stubbed on a body cell for the same reason.
+      const realGCS = window.getComputedStyle;
+      const pageBg = "rgb(30, 30, 34)";
+      const lineHeight = "21px";
+      const tvHeaderRow = t0.tHead.rows[0];
+      // The same row tableSnapshotCss picks: first visible body row.
+      const styledRow = Array.from(t0.rows).find((row) =>
+        row !== tvHeaderRow && !row.classList.contains("nb-tv-hide-row"));
+      const styledBodyCell = styledRow && styledRow.cells[0];
+      window.getComputedStyle = function (el, pseudo) {
+        const real = realGCS.call(window, el, pseudo);
+        if (el === window.document.body) {
+          return {
+            getPropertyValue: (prop) =>
+              prop === "background-color" ? pageBg : real.getPropertyValue(prop),
+          };
+        }
+        if (el === styledBodyCell) {
+          return {
+            getPropertyValue: (prop) =>
+              prop === "line-height" ? lineHeight : real.getPropertyValue(prop),
+          };
+        }
+        return real;
+      };
+      const htmlBefore = t0.outerHTML;
+      // Row boxes are the size source: a row is as wide as its VISIBLE cells
+      // (a hidden cell is display:none in the browser), and the hidden row is
+      // made the widest so skipping it is observable.
+      const stubRowRects = () => {
+        Array.from(t0.rows).forEach((row) => {
+          Object.defineProperty(row, "getBoundingClientRect", {
+            configurable: true,
+            value: () => {
+              const w = row.classList.contains("nb-tv-hide-row") ? 999 : 100 *
+                Array.from(row.cells)
+                  .filter((c) => !c.classList.contains("nb-tv-hide-col")).length;
+              return { width: w, height: 28, left: 10, right: 10 + w, top: 0,
+                bottom: 28, x: 10, y: 0, toJSON() {} };
+            },
+          });
+        });
+      };
+      try {
+        // Unmeasured rows (jsdom's default): the scrollWidth estimate.
+        const snapFallback = window.NB.tableView.tableImageSnapshot(t0);
+        check("table view copy image: unmeasured rows fall back to scrollWidth",
+          !!snapFallback && snapFallback.width === 500 + 1 + 48 &&
+          snapFallback.height === 200 + 48,
+          snapFallback ? "w=" + snapFallback.width + " h=" + snapFallback.height : "null");
+        stubRowRects();
+        const snap = window.NB.tableView.tableImageSnapshot(t0);
+        // Two columns, one hidden: the widest visible row is one cell wide,
+        // plus the collapsed-border slack (1) and the frame inset (48).
+        check("table view copy image: the snapshot is a source plus a box",
+          !!snap && typeof snap.source === "string" &&
+          snap.width === 1 * 100 + 1 + 48 && snap.height === 200 + 48,
+          snap ? "w=" + snap.width + " h=" + snap.height : "null");
+        check("table view copy image: the width comes from the widest visible row",
+          !!snap && snap.width !== 500 + 48 && snap.width !== 999 + 48,
+          snap ? "w=" + snap.width : "null");
+        check("table view copy image: the snapshot carries the live look as <style>",
+          !!snap && snap.source.indexOf("<style>") === 0 &&
+          /border-collapse:\s*collapse/.test(snap.source) &&
+          snap.source.indexOf("line-height:" + lineHeight) !== -1,
+          snap ? snap.source.slice(0, 160) : "null");
+        check("table view copy image: hidden rows and columns are dropped",
+          !!snap && snap.source.indexOf("alpha") === -1 &&
+          snap.source.indexOf("Qty") === -1 &&
+          snap.source.indexOf("nb-tv-hide") === -1,
+          snap ? snap.source.slice(0, 200) : "null");
+        check("table view copy image: the chevron glyph is dropped, the slot kept",
+          !!snap && snap.source.indexOf("\u25BE") === -1 &&
+          snap.source.indexOf("nb-tv-head-menu") !== -1 &&
+          snap.source.indexOf("th .nb-tv-head-menu{") !== -1 &&
+          snap.source.indexOf("role=") === -1 &&
+          snap.source.indexOf("aria-label") === -1,
+          snap ? snap.source.slice(0, 400) : "null");
+        check("table view copy image: the visible header and body cells are kept",
+          !!snap && snap.source.indexOf("Name") !== -1 &&
+          snap.source.indexOf("beta") !== -1,
+          snap ? snap.source.slice(0, 200) : "null");
+        check("table view copy image: the sorted header's view chrome is dropped",
+          !!snap && snap.source.indexOf("aria-sort") === -1 &&
+          snap.source.indexOf("nb-tv-sorted") === -1 &&
+          snap.source.indexOf("tabindex") === -1,
+          snap ? snap.source.slice(0, 200) : "null");
+        check("table view copy image: the page background leads the stylesheet",
+          !!snap &&
+          snap.source.indexOf("<style>html,body{background:" + pageBg + ";}") === 0,
+          snap ? snap.source.slice(0, 100) : "null");
+        // Each surviving row keeps an inline background: hidden rows are gone
+        // from the clone, so nth-child would stripe the rest differently.
+        const holder = window.document.createElement("template");
+        if (snap) holder.innerHTML = snap.source;
+        const clonedRows = Array.from(holder.content.querySelectorAll("tr"));
+        check("table view copy image: every visible row carries its background inline",
+          clonedRows.length === 5 &&
+          clonedRows.every((tr) => tr.style.background === pageBg),
+          "rows=" + clonedRows.length + " first=" +
+          (clonedRows[0] ? JSON.stringify(clonedRows[0].style.background) : "none"));
+        check("table view copy image: the live table is never modified",
+          t0.outerHTML === htmlBefore);
+        // The frame inset is owned by copy-image.js, not duplicated here.
+        const realInset = window.NB.copyButton.snapshotInset;
+        window.NB.copyButton.snapshotInset = 10;
+        const insetSnap = window.NB.tableView.tableImageSnapshot(t0);
+        window.NB.copyButton.snapshotInset = realInset;
+        check("table view copy image: the frame inset comes from copy-image.js",
+          !!insetSnap && insetSnap.width === 1 * 100 + 1 + 2 * 10 &&
+          realInset === 24,
+          "inset=" + realInset + " width=" + (insetSnap && insetSnap.width));
+        // A hidden column is display:none, so every visible row narrows with
+        // it and the snapshot follows.
+        window.NB.tableView.applyState(t0, sImg, {
+          sig: sImg.sig, bodySig: sImg.bodySig, ordinal: sImg.ordinal,
+          hiddenRows: [1], hiddenCols: [],
+        });
+        const snapWide = window.NB.tableView.tableImageSnapshot(t0);
+        check("table view copy image: hiding a column narrows the snapshot",
+          !!snapWide && snapWide.width === 2 * 100 + 1 + 48 &&
+          snapWide.width > snap.width,
+          "hidden=" + (snap && snap.width) +
+          " visible=" + (snapWide && snapWide.width));
+        // The click path: one call to the shared rasterizer, with our name,
+        // box and toast, and the note DOM untouched.
+        window.NB.tableView.resetTable(t0);
+        window.NB.tableView.reveal(t0);
+        if (!window.NB.tableView.toolbarOpen) {
+          toggleEl().dispatchEvent(new window.Event("click", { bubbles: true }));
+        }
+        const realCopyHtml = window.NB.copyButton.copyHtmlToPng;
+        const imageCalls = [];
+        window.NB.copyButton.copyHtmlToPng = (source, opts) => {
+          imageCalls.push({ source, opts });
+          return Promise.resolve();
+        };
+        try {
+          const imageBtn = Array.from(toolbarEl().querySelectorAll(".nb-tv-btn"))
+            .find((b) => b.textContent === "Copy image");
+          imageBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+          await tick(20);
+          check("table view copy image: the button calls the shared rasterizer once",
+            imageCalls.length === 1, "calls=" + imageCalls.length);
+          const call = imageCalls[0] || { opts: {} };
+          check("table view copy image: it passes the width only, no height",
+            call.opts.name === "table.png" && call.opts.width > 0 &&
+            !("height" in call.opts) &&
+            call.opts.message === "Table copied as image" &&
+            call.opts.failMessage === "Could not copy the table as an image",
+            JSON.stringify(call.opts));
+          check("table view copy image: it passes the snapshot source",
+            typeof call.source === "string" && call.source.indexOf("<style>") === 0 &&
+            call.source.indexOf("Name") !== -1,
+            String(call.source).slice(0, 80));
+        } finally {
+          window.NB.copyButton.copyHtmlToPng = realCopyHtml;
+        }
+        // No rasterizer at all: report it, never throw.
+        const savedCopyButton = window.NB.copyButton;
+        delete window.NB.copyButton;
+        let missingThrew = false;
+        try {
+          Array.from(toolbarEl().querySelectorAll(".nb-tv-btn"))
+            .find((b) => b.textContent === "Copy image")
+            .dispatchEvent(new window.Event("click", { bubbles: true }));
+        } catch (e) { missingThrew = true; }
+        await tick(10);
+        const imageToast = window.document.querySelector(".toast");
+        check("table view copy image: a missing rasterizer notifies without throwing",
+          !missingThrew && !!imageToast &&
+          /Could not copy the table as an image/.test(imageToast.textContent),
+          "threw=" + missingThrew + " text=" +
+          (imageToast ? JSON.stringify(imageToast.textContent) : "no toast"));
+        window.NB.copyButton = savedCopyButton;
+        // A table with no measured box at all: no snapshot, a toast, false.
+        const blank = window.document.createElement("table");
+        blank.innerHTML = "<tr><td>x</td></tr>";
+        const imageRet = window.NB.tableView.copyTableImage(blank);
+        await tick(10);
+        const blankToast = window.document.querySelector(".toast");
+        check("table view copy image: an unmeasured table notifies and returns false",
+          imageRet === false && !!blankToast &&
+          /Could not copy the table as an image/.test(blankToast.textContent),
+          "ret=" + imageRet + " text=" +
+          (blankToast ? JSON.stringify(blankToast.textContent) : "no toast"));
+      } finally {
+        window.getComputedStyle = realGCS;
+        Array.from(t0.rows).forEach((row) => { delete row.getBoundingClientRect; });
+        delete t0.scrollWidth;
+        delete t0.offsetHeight;
+      }
+      window.NB.tableView.resetTable(t0);
+    }
 
     // --- (4) the last visible column cannot be hidden ------------------
     // Apply a state that hides column 1, leaving only column 0 visible,

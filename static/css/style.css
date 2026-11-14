@@ -1120,14 +1120,16 @@ body.nb-list-drag #viewer-content { user-select: none; }
 }
 .nb-tv-overlay:empty { display: none; }
 
-/* The control row sits above the table. Only the small icon is shown on
- * hover; clicking it reveals the toolbar beside the icon. Both share one
- * absolutely-positioned box so the icon does not shift when it opens. */
+/* The control column sits in the table's left gutter. Only the small icon
+ * is shown on hover; clicking it reveals a vertical toolbar below the
+ * icon. The box is always the ICON's size because the toolbar is out of
+ * flow, so opening it never moves the icon; the toolbar floats over the
+ * table when the gutter is too narrow to hold it. */
 .nb-tv-controls {
+  --nb-tv-gap: 6px;       /* icon -> toolbar gap (TOOLBAR_GAP in JS) */
   position: absolute;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
   pointer-events: auto;   /* only this box takes pointers; overlay is none */
 }
 .nb-tv-controls[hidden] { display: none; }
@@ -1152,8 +1154,14 @@ body.nb-list-drag #viewer-content { user-select: none; }
 }
 
 .nb-tv-toolbar {
+  position: absolute;     /* out of flow: the box stays the icon's size */
+  top: calc(100% + var(--nb-tv-gap));
+  /* `left` is set in JS: right-aligned with the icon when the gutter can
+   * hold it, else flush with the icon's left edge over the table. */
   display: flex;
+  flex-direction: column;
   gap: 2px;
+  min-width: 104px;
   padding: 2px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -1161,8 +1169,8 @@ body.nb-list-drag #viewer-content { user-select: none; }
   box-shadow: 0 6px 24px rgba(0,0,0,.35);   /* matches .nb-drag-proxy */
 }
 .nb-tv-toolbar[hidden] { display: none; }
-.nb-tv-toolbar[hidden] { display: none; }
 .nb-tv-btn {
+  width: 100%;
   padding: 2px 8px;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -1171,6 +1179,7 @@ body.nb-list-drag #viewer-content { user-select: none; }
   font-family: inherit;
   font-size: .76rem;
   line-height: 1.5;
+  text-align: left;
   white-space: nowrap;
   cursor: pointer;
 }

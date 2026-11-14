@@ -16,9 +16,17 @@
  *     static mode blocks external subresources (images, @import, url(),
  *     web fonts), so script/canvas/animation output and remote assets are
  *     not captured.
+ *     An SVG that renders through <foreignObject> (Mermaid flowcharts and
+ *     class diagrams do) is loaded from a data: URL, because Chromium and
+ *     WebKit taint the canvas for the blob: form; every other SVG stays on
+ *     blob:. The rule itself lives on svgToPngBlob.
  *     When the clipboard image write is unavailable (insecure context,
  *     unsupported browser, denied permission, or a failed rasterize), it
  *     downloads the PNG instead.
+ *     The preview table-view's "Copy image" action reuses this same
+ *     rasterizer (copyHtmlToPng), so this file stays the single owner of
+ *     PNG copying and of the snapshot frame's inset; only the size, the
+ *     file name and the two toast messages differ.
  *
  * Why a MutationObserver: the renderer modules replace their <pre> with a
  * container asynchronously, after the viewer already emitted
@@ -69,10 +77,11 @@
   const SVG_NS = "http://www.w3.org/2000/svg";
   const XHTML_NS = "http://www.w3.org/1999/xhtml";
   const SVG_MIME = "image/svg+xml;charset=utf-8";
-  // Data-URL prefix for the html-live snapshot. Chromium/WebKit taint the
-  // canvas for an SVG-with-foreignObject loaded from blob:, so this path
-  // must not use a blob URL.
+  // Data-URL prefix for every SVG that contains a <foreignObject>. Chromium
+  // and WebKit taint the canvas for the blob: form, so both SVG paths pick
+  // their URL from the rule documented on svgToPngBlob.
   const SVG_DATA_URL_PREFIX = "data:image/svg+xml;charset=utf-8,";
+  const FOREIGN_OBJECT_RE = /foreignObject/;
   const PNG_MIME = "image/png";
 
   // Namespaces that XMLSerializer already knows how to declare; attributes in
@@ -125,6 +134,9 @@
   // The reset is a stylesheet (not inline), placed before the source, so a
   // source's own `html`/`body`/`:root` rules win and its `<style>` after it
   // still overrides the base.
+  // The frame's per-side inset, exported as snapshotInset: the body border
+  // plus its padding below. A caller sizing an image must add 2 * this.
+  const SNAPSHOT_INSET = 12 + 12;
   const SNAPSHOT_RESET =
     "html{margin:0;padding:0;height:100%;box-sizing:border-box;" +
     "background:" + CANVAS_BG + ";font-family:system-ui,sans-serif;overflow:hidden}" +
@@ -244,6 +256,12 @@
   // promise that never settles, which would hang the copy forever; on
   // timeout we fall through to the download fallback.
   const CLIPBOARD_TIMEOUT_MS = 3000;
+  // Bound on the measuring iframe (see measureSnapshotHeight): a frame that
+  // never loads must reject, not hang the copy.
+  const MEASURE_TIMEOUT_MS = 5000;
+  // Body children that render nothing, skipped when the measured height is
+  // read (the snapshot source's own <style> lands in the body).
+  const UNRENDERED_TAGS = ["STYLE", "LINK", "META", "SCRIPT", "TEMPLATE", "TITLE", "BASE"];
 
   const COPIED_MESSAGE = "Diagram copied as image";
   const DOWNLOAD_MESSAGE = "Image clipboard unavailable \u2014 downloaded PNG";
@@ -386,10 +404,17 @@
   }
 
   /* svgToPngBlob(svgEl) -> Promise<Blob>.
-   * The executor runs synchronously, so the clone, serialization, object
-   * URL, and <img> setup all happen before the caller's next line -- the
-   * clipboard write can then be called inside the user gesture with this
-   * promise as the ClipboardItem value (Safari requires that shape). */
+   * The executor runs synchronously, so the clone, serialization, URL and
+   * <img> setup all happen before the caller's next line -- the clipboard
+   * write can then be called inside the user gesture with this promise as
+   * the ClipboardItem value (Safari requires that shape).
+   *
+   * URL rule, stated once for every SVG rasterize: a blob: URL for a plain
+   * SVG, a data: URL whenever the SVG carries a <foreignObject>. Chromium
+   * and WebKit taint the canvas for a foreignObject SVG loaded from blob:
+   * (canvas.toBlob then throws SecurityError) while both allow the data:
+   * form; plain SVGs stay on blob: because a data: URL has length limits.
+   * If the chosen form fails to load, the other one is tried once. */
   function svgToPngBlob(svgEl) {
     return new Promise((resolve, reject) => {
       let objectUrl = null;
@@ -413,24 +438,44 @@
         reject(err);
         return;
       }
-      const svgBlob = new Blob([xml], { type: SVG_MIME });
-      objectUrl = URL.createObjectURL(svgBlob);
-      const img = new Image();
-      img.onload = () => {
-        drawToBlob(img, prepared.width, prepared.height).then(
-          (blob) => { cleanup(); resolve(blob); },
-          (err) => { cleanup(); reject(err); },
-        );
+      const needsDataUrl = FOREIGN_OBJECT_RE.test(xml) ||
+        !!prepared.el.querySelector("foreignObject");
+      let dataTried = false;
+      let blobTried = false;
+      let img = null;
+      const attempt = (asDataUrl) => {
+        if (asDataUrl) dataTried = true;
+        else blobTried = true;
+        if (img) {
+          img.onload = null;
+          img.onerror = null;
+        }
+        cleanup();
+        img = new Image();
+        img.onload = () => {
+          drawToBlob(img, prepared.width, prepared.height).then(
+            (blob) => { cleanup(); resolve(blob); },
+            (err) => { cleanup(); reject(err); },
+          );
+        };
+        img.onerror = () => {
+          if (!dataTried) { attempt(true); return; }
+          if (!blobTried) { attempt(false); return; }
+          cleanup();
+          reject(new Error("SVG image failed to load"));
+        };
+        if (asDataUrl) {
+          img.src = SVG_DATA_URL_PREFIX + encodeURIComponent(xml);
+          return;
+        }
+        objectUrl = URL.createObjectURL(new Blob([xml], { type: SVG_MIME }));
+        img.src = objectUrl;
       };
-      img.onerror = () => { cleanup(); reject(new Error("SVG image failed to load")); };
-      img.src = objectUrl;
+      attempt(needsDataUrl);
     });
   }
 
-  /* buildHtmlSnapshotSvg(source, width, height) -> SVGSVGElement.
-   * Wrap the card's stored source in an SVG <foreignObject> so it can go
-   * through the same Image -> canvas path the SVG diagrams use.
-   *
+  /* buildSnapshotDocument(source) -> { html, body }.
    * The source is parsed into an inert <template> first: template content is
    * not connected, so its <script>s never run and its images are never
    * fetched. It is then placed inside a real XHTML html>head>body document,
@@ -441,23 +486,16 @@
    * HTML parse, so its <style>/<link>/<meta> and body content land flat
    * inside <body>, after the head reset -- matching the preview's cascade.
    *
+   * Shared by the SVG build and the measuring iframe, so the reset and the
+   * measured layout cannot drift apart.
+   *
    * Serializing html/head/body into foreignObject content is valid XHTML and
    * is rendered (with CSS matching) by Chromium and Firefox. Attribute names
    * illegal in XML are stripped first (see sanitizeXmlAttributes) so a single
    * framework binding cannot break the load. */
-  function buildHtmlSnapshotSvg(source, width, height) {
+  function buildSnapshotDocument(source) {
     const t = document.createElement("template");
     t.innerHTML = source;
-    const svg = document.createElementNS(SVG_NS, "svg");
-    svg.setAttribute("width", String(width));
-    svg.setAttribute("height", String(height));
-    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
-    const fo = document.createElementNS(SVG_NS, "foreignObject");
-    fo.setAttribute("x", "0");
-    fo.setAttribute("y", "0");
-    fo.setAttribute("width", String(width));
-    fo.setAttribute("height", String(height));
-
     const html = document.createElementNS(XHTML_NS, "html");
     const head = document.createElementNS(XHTML_NS, "head");
     const style = document.createElementNS(XHTML_NS, "style");
@@ -473,10 +511,78 @@
     sanitizeXmlAttributes(body);
     html.appendChild(head);
     html.appendChild(body);
+    return { html, body };
+  }
 
-    fo.appendChild(html);
+  /* buildHtmlSnapshotSvg(source, width, height) -> SVGSVGElement.
+   * Wrap the snapshot document in an SVG <foreignObject> so it can go through
+   * the same Image -> canvas path the SVG diagrams use. */
+  function buildHtmlSnapshotSvg(source, width, height) {
+    const svg = document.createElementNS(SVG_NS, "svg");
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
+    svg.setAttribute("viewBox", "0 0 " + width + " " + height);
+    const fo = document.createElementNS(SVG_NS, "foreignObject");
+    fo.setAttribute("x", "0");
+    fo.setAttribute("y", "0");
+    fo.setAttribute("width", String(width));
+    fo.setAttribute("height", String(height));
+    fo.appendChild(buildSnapshotDocument(source).html);
     svg.appendChild(fo);
     return svg;
+  }
+
+  /* measureSnapshotHeight(source, width) -> Promise<number>.
+   * The snapshot's own layout does not always match the live box it came
+   * from (a table's line-height, wrapping and hidden rows all re-flow), so
+   * the caller that cannot supply a height gets the rendered one: the same
+   * document, mounted in a hidden same-origin iframe at the target width.
+   * Resolves to the content element's height plus the frame inset, or
+   * rejects when the frame never loads (never hangs). */
+  function measureSnapshotHeight(source, width) {
+    return new Promise((resolve, reject) => {
+      const doc = new XMLSerializer().serializeToString(
+        buildSnapshotDocument(source).html);
+      const frame = document.createElement("iframe");
+      frame.setAttribute("aria-hidden", "true");
+      frame.setAttribute("tabindex", "-1");
+      frame.style.cssText = "position:absolute;left:-20000px;top:0;border:0;" +
+        "width:" + width + "px;height:10px;";
+      let settled = false;
+      const cleanup = () => {
+        clearTimeout(timer);
+        frame.remove();
+      };
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(new Error("Snapshot measure failed to load"));
+      };
+      const timer = setTimeout(fail, MEASURE_TIMEOUT_MS);
+      frame.onload = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        let height = 0;
+        try {
+          const body = frame.contentDocument && frame.contentDocument.body;
+          // The source's own <style> sits in the body of the serialized
+          // document, so the first RENDERED child is the content element.
+          const content = body && Array.from(body.children).find((n) =>
+            UNRENDERED_TAGS.indexOf(n.tagName) === -1);
+          // scrollHeight is content + padding, so it is short by the border.
+          height = (content && content.getBoundingClientRect().height) ||
+            (body ? body.scrollHeight + SNAPSHOT_INSET : 0);
+        } catch (_) { /* cross-origin or detached: reject below */ }
+        cleanup();
+        if (height > 0) resolve(Math.ceil(height) + 2 * SNAPSHOT_INSET);
+        else reject(new Error("Snapshot measured no height"));
+      };
+      frame.onerror = fail;
+      frame.srcdoc = doc;
+      document.body.appendChild(frame);
+    });
   }
 
   /* htmlToPngBlob(source, width, height) -> Promise<Blob>.
@@ -485,11 +591,12 @@
    * on any failure -- invalid size, XML serialization, image load, or a
    * tainted canvas -- and a rejection surfaces the failure message; only a
    * clipboard-write failure/timeout falls back to the download.
+   * `height` is optional: without it the snapshot is measured first, so the
+   * frame always equals what is drawn (see measureSnapshotHeight).
    *
-   * Loaded from a data: URL, NOT a blob: URL: Chromium and WebKit taint the
-   * canvas for an SVG containing <foreignObject> loaded from blob: (so
-   * canvas.toBlob throws SecurityError), while both allow the data-URL form.
-   * svgToPngBlob stays on blob: -- those diagrams emit no foreignObject.
+   * Loaded through the data: URL form that foreignObject content requires
+   * (the URL rule is on svgToPngBlob): Chromium and WebKit taint the canvas
+   * for the blob: form of such an SVG.
    *
    * This is a STATIC snapshot: no script runs (inert template + image
    * document), and an SVG loaded as an <img> renders in secure static mode,
@@ -499,24 +606,35 @@
    * blank/fallback. Local system fonts and inline data:/gradients work. */
   function htmlToPngBlob(source, width, height) {
     return new Promise((resolve, reject) => {
-      if (!(width > 0 && height > 0)) {
+      if (!(width > 0)) {
         reject(new Error("Invalid snapshot size"));
         return;
       }
-      let xml;
-      try {
-        const svg = buildHtmlSnapshotSvg(source, width, height);
-        xml = new XMLSerializer().serializeToString(svg);
-      } catch (err) {
-        reject(err);
+      const render = (h) => {
+        if (!(h > 0)) {
+          reject(new Error("Invalid snapshot size"));
+          return;
+        }
+        let xml;
+        try {
+          const svg = buildHtmlSnapshotSvg(source, width, h);
+          xml = new XMLSerializer().serializeToString(svg);
+        } catch (err) {
+          reject(err);
+          return;
+        }
+        const img = new Image();
+        img.onload = () => {
+          drawToBlob(img, width, h).then(resolve, reject);
+        };
+        img.onerror = () => reject(new Error("HTML snapshot failed to load"));
+        img.src = SVG_DATA_URL_PREFIX + encodeURIComponent(xml);
+      };
+      if (height > 0) {
+        render(height);
         return;
       }
-      const img = new Image();
-      img.onload = () => {
-        drawToBlob(img, width, height).then(resolve, reject);
-      };
-      img.onerror = () => reject(new Error("HTML snapshot failed to load"));
-      img.src = SVG_DATA_URL_PREFIX + encodeURIComponent(xml);
+      measureSnapshotHeight(source, width).then(render, reject);
     });
   }
 
@@ -565,17 +683,24 @@
     return outcome;
   }
 
-  /* copyBlobToPng(blobPromise, name) -- shared tail of both image-copy
-   * paths: hand the PNG blob to the system clipboard, or fall back to the
-   * download (then a new tab) when the clipboard image write is
-   * unavailable, fails, or never settles. Exactly one toast fires per
-   * outcome.
+  /* copyBlobToPng(blobPromise, name, message, failMessage) -- shared tail of
+   * both image-copy paths: hand the PNG blob to the system clipboard, or
+   * fall back to the download (then a new tab) when the clipboard image
+   * write is unavailable, fails, or never settles. Exactly one toast fires
+   * per outcome; `message` overrides the success toast and `failMessage`
+   * the failure toast for a caller with its own wording (the table-view
+   * action); they default to COPIED_MESSAGE and FAIL_MESSAGE.
    *
    * blobPromise must already exist. The caller creates it synchronously
    * inside the click handler, so the write below can happen inside the user
    * gesture (Safari); only the await is bounded. The no-op catch swallows a
    * late rejection after we have already timed out and moved on. */
-  async function copyBlobToPng(blobPromise, name) {
+  async function copyBlobToPng(blobPromise, name, message, failMessage) {
+    const failure = failMessage || FAIL_MESSAGE;
+    // A failed rasterize must not surface as an unhandled rejection (the
+    // clipboard write and the fallback both attach later); the await below
+    // still sees the same rejection and reports it.
+    blobPromise.catch(() => {});
     if (clipboardAvailable()) {
       const writePromise = navigator.clipboard.write([
         new ClipboardItem({ [PNG_MIME]: blobPromise }),
@@ -591,7 +716,7 @@
       ]);
       clearTimeout(clipTimer);
       if (outcome === "ok") {
-        notify(COPIED_MESSAGE);
+        notify(message || COPIED_MESSAGE);
         return;
       }
       // "fail" or "timeout": fall through to the download fallback. A
@@ -603,34 +728,44 @@
       const blob = await blobPromise;
       const outcome = downloadBlob(blob, name);
       if (outcome === "opened") notify(OPEN_TAB_MESSAGE);
-      else if (outcome === "failed") notify(FAIL_MESSAGE, "warn");
+      else if (outcome === "failed") notify(failure, "warn");
       else notify(DOWNLOAD_MESSAGE);
     } catch (_) {
-      notify(FAIL_MESSAGE, "warn");
+      notify(failure, "warn");
     }
   }
 
-  /* copySvgToPng(svgEl, { name }) -- rasterize an SVG diagram to a PNG and
-   * copy it, falling back to the download path. The blob promise is built
-   * synchronously, before any await (see copyBlobToPng). */
+  /* copySvgToPng(svgEl, { name, message, failMessage }) -- rasterize an SVG
+   * diagram to a PNG and copy it, falling back to the download path. The
+   * blob promise is built synchronously, before any await (see
+   * copyBlobToPng). */
   async function copySvgToPng(svgEl, opts) {
     const name = (opts && opts.name) || FALLBACK_NAME;
-    if (!svgEl) { notify(FAIL_MESSAGE, "warn"); return; }
+    if (!svgEl) {
+      notify((opts && opts.failMessage) || FAIL_MESSAGE, "warn");
+      return;
+    }
     const blobPromise = svgToPngBlob(svgEl);
-    return copyBlobToPng(blobPromise, name);
+    return copyBlobToPng(blobPromise, name, opts && opts.message,
+      opts && opts.failMessage);
   }
 
-  /* copyHtmlToPng(source, { name, width, height }) -- rasterize an
-   * html-live card's stored source to a PNG and copy it, with the same
-   * download fallback. The blob promise is built synchronously, before any
-   * await (see copyBlobToPng). */
+  /* copyHtmlToPng(source, { name, width, height, message, failMessage }) --
+   * rasterize an html-live card's stored source to a PNG and copy it, with
+   * the same download fallback. Also the preview table-view's Copy image
+   * path, which passes its own name and both toast messages. The blob
+   * promise is built synchronously, before any await (see copyBlobToPng). */
   async function copyHtmlToPng(source, opts) {
     const name = (opts && opts.name) || FALLBACK_NAME;
-    if (!source) { notify(FAIL_MESSAGE, "warn"); return; }
+    if (!source) {
+      notify((opts && opts.failMessage) || FAIL_MESSAGE, "warn");
+      return;
+    }
     const width = opts && opts.width;
     const height = opts && opts.height;
     const blobPromise = htmlToPngBlob(source, width, height);
-    return copyBlobToPng(blobPromise, name);
+    return copyBlobToPng(blobPromise, name, opts && opts.message,
+      opts && opts.failMessage);
   }
 
   /* htmlPreviewSize(container) -> { width, height }.
@@ -853,6 +988,7 @@
   NB.copyButton = {
     attachTextCopy, attachImageCopy, attachHtmlImageCopy, copySvgToPng, copyHtmlToPng,
     scan,
+    snapshotInset: SNAPSHOT_INSET,
   };
 
   if (document.readyState === "loading") {

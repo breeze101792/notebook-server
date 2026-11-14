@@ -257,7 +257,7 @@ fourth, and never combine two on one row:
 | Markdown `#edit-bar` desktop | `flex-wrap: wrap` (`style.css:576`) | It is the only bar with two rows of horizontal room; wrapping keeps every control one click away |
 | Markdown `#edit-bar` phone | horizontal scroll, `Save`/`Done` sticky at the left (`:7101`–`:7134`) | The bar must never become two rows over the reader |
 | Edit-window bar | horizontal scroll + a right-edge mask on `.is-scrollable` (`edit-window-guide.md` §3.2) | A second row would move the grid mid-edit |
-| Table-view in-reader toolbar | no overflow: one icon opens a popover (`style.css:940`) | It floats over a table |
+| Table-view in-reader toolbar | no overflow: one icon opens a vertical menu that floats over the table (`style.css:1156`) | It is a transient menu over a table |
 
 A group is `role="group"` with an `aria-label`; the toolbar is `role="toolbar"` with its own.
 Separators are `aria-hidden`. A toolbar never contains a text field.

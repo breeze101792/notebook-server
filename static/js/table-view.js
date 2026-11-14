@@ -3,8 +3,14 @@
  * Preview mode shows a small icon in the table's left gutter when the
  * pointer is over the table or focus is inside it. Left placement keeps
  * the icon clear of a heading directly above the table. Clicking the
- * icon opens a toolbar with hide rows,
- * hide columns, and reset. Clicking a column TITLE toggles the sort
+ * icon opens a VERTICAL toolbar column under it: copy, hide rows, hide
+ * columns, and reset. The toolbar is out of flow, so the icon never
+ * moves when it opens: the toolbar grows left into the gutter, or right
+ * over the table when the gutter is too narrow. The chooser popovers open
+ * to the RIGHT of their button, because a below-anchored popover would
+ * cover the buttons stacked under it; a header cell's menu still opens
+ * below its chevron.
+ * Clicking a column TITLE toggles the sort
  * (ascending <-> descending, first click ascending) and shows a small
  * menu icon at the right edge of that header cell; clicking that icon
  * opens the header menu (sort actions + hide column). Title clicks
@@ -27,6 +33,10 @@
  *   - Live preview (`viewer:rendered` with `live:true`) must show the
  *     original table: sessions are dropped and never rebuilt there,
  *     because the textarea -- not the DOM -- is the source of truth.
+ *   - Copy reads the live DOM as the user sees it (DOM order, i.e. the
+ *     sorted order, with hidden rows and columns excluded) and writes
+ *     only to the clipboard. It creates no session state, stores nothing,
+ *     and adds no node to the content.
  *
  * The overlay is a child of #viewer, deliberately OUTSIDE
  * #viewer-content (matching table-edit.js): turndown's clone and the
@@ -52,15 +62,44 @@
 
   const GRACE_MS = 120;        // hide delay after the pointer leaves a table
   const EDGE_SAFE = 4;         // min gap a control keeps from a #viewer edge
-  const TOOLBAR_H = 28;        // fallback toolbar height before first measure
   const TOGGLE_H = 24;         // icon hit target (must match its CSS size)
   const TOGGLE_W = 24;         // icon hit target width (must match its CSS size)
   const TOGGLE_GAP = 6;        // table left -> icon right
-  const TOOLBAR_GAP = 6;       // icon/toolbar gap inside the .nb-tv-controls
+  const TOOLBAR_GAP = 6;       // icon/toolbar gap (mirrors --nb-tv-gap in CSS)
+  const TOOLBAR_MIN_W = 104;   // fallback width (must match its CSS min-width)
   const POP_GAP = 4;           // anchor cell bottom -> popover top
   const POP_MIN_W = 180;       // fallback popover width before first measure
   const LABEL_MAX = 28;        // chars of a row/column label before the ellipsis
   const SIG_SEP = "\u0001";    // header signature separator
+
+  const COPY_DONE_MSG = "Copied table";
+  const COPY_TEXT_MSG = "Copied table as text";
+  const COPY_FAIL_MSG = "Could not copy the table";
+
+  const COPY_IMAGE_LABEL = "Copy image";
+  const COPY_IMAGE_TITLE = "Copy the table as an image";
+  const COPY_IMAGE_NAME = "table.png";
+  const COPY_IMAGE_DONE_MSG = "Table copied as image";
+  const COPY_IMAGE_FAIL_MSG = "Could not copy the table as an image";
+  // The header menu slot's metrics, mirroring .nb-tv-head-menu in style.css.
+  // Only a fallback: the live icon's computed box is used when it exists,
+  // because that box is part of each header cell's min-content width and
+  // drives the auto table layout.
+  const HEAD_MENU_W_FALLBACK = "16px";
+  const HEAD_MENU_H_FALLBACK = "16px";
+  const HEAD_MENU_GAP_FALLBACK = "6px";
+  // copy-image.js owns the snapshot frame's inset (its reset gives the body a
+  // 12px border and 12px padding per side); this is only the fallback for a
+  // page that did not load that module.
+  const IMAGE_INSET_PER_SIDE_FALLBACK = 24;
+  // A border-collapse table's outer borders sit outside the cell widths, so
+  // its natural width is a pixel past the row box. The frame needs that room:
+  // one pixel short and the table is constrained and its text re-wraps.
+  const IMAGE_BORDER_SLACK = 1;
+  // Last-resort page colour when nothing on the ancestor chain paints.
+  const SNAPSHOT_FALLBACK_BG = "#ffffff";
+  // A computed background that paints nothing.
+  const TRANSPARENT_BG_RE = /^(?:transparent|rgba?\(\s*0,\s*0,\s*0,\s*0\s*\))$/;
 
   // Header menu icon: ONE down chevron. It doubles as the sort indicator,
   // and the direction is shown by rotating the SAME glyph in CSS -- never
@@ -552,16 +591,275 @@
     closePop();
   }
 
+  /* --- copy ------------------------------------------------------- */
+
+  /* Cell text with the view chrome stripped: textContent alone would leak
+   * the header chevron glyph and collapse "foo<br>bar" to "foobar". */
+  function cellCopyText(cell) {
+    const clone = cell.cloneNode(true);
+    clone.querySelectorAll("." + HEAD_MENU_CLASS).forEach((n) => n.remove());
+    clone.querySelectorAll("br").forEach((br) => br.replaceWith(" "));
+    clone.querySelectorAll("img").forEach((img) => img.replaceWith(img.alt || ""));
+    return normText(clone.textContent);
+  }
+
+  /* { tsv, html } for the table as the user sees it, or null. DOM order is
+   * the visible order (a sort physically moves the <tr> nodes) and the
+   * hidden classes are excluded, so the copy matches the view. The HTML is
+   * a detached <table> with <th> in the header row: no manual escaping. */
+  function tablePayload(table) {
+    if (!table) return null;
+    const header = (table.tHead && table.tHead.rows[0]) || table.rows[0];
+    if (!header) return null;
+    const rows = Array.from(table.rows)
+      .filter((row) => !row.classList.contains(HIDE_ROW_CLASS));
+    if (rows.indexOf(header) === -1) return null;
+    const out = document.createElement("table");
+    const lines = [];
+    rows.forEach((row) => {
+      const cells = Array.from(row.cells)
+        .filter((cell) => !cell.classList.contains(HIDE_COL_CLASS));
+      if (!cells.length) return;
+      const isHead = row === header;
+      const tr = document.createElement("tr");
+      const texts = cells.map((cell) => {
+        const text = cellCopyText(cell);
+        const outCell = document.createElement(isHead ? "th" : "td");
+        outCell.textContent = text;
+        tr.appendChild(outCell);
+        return text;
+      });
+      lines.push(texts.join("\t"));
+      out.appendChild(tr);
+    });
+    if (!lines.length) return null;
+    return { tsv: lines.join("\n"), html: out.outerHTML };
+  }
+
+  /* Copy the visible table as TSV plus HTML when the async clipboard takes
+   * rich data, else as TSV alone. There is no user selection behind this
+   * button, so there is no native Ctrl+C path to fall back on. Returns the
+   * payload (or null) once the write has started. */
+  function copyTable(table) {
+    const payload = tablePayload(table);
+    if (!payload) return null;
+    const done = () => notify(COPY_DONE_MSG);
+    const fallback = () => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(payload.tsv).then(
+          () => notify(COPY_TEXT_MSG),
+          () => notify(COPY_FAIL_MSG));
+        return;
+      }
+      notify(COPY_FAIL_MSG);
+    };
+    try {
+      if (window.ClipboardItem && navigator.clipboard &&
+          navigator.clipboard.write && window.isSecureContext) {
+        const item = new window.ClipboardItem({
+          "text/plain": new Blob([payload.tsv], { type: "text/plain" }),
+          "text/html": new Blob([payload.html], { type: "text/html" }),
+        });
+        navigator.clipboard.write([item]).then(done, fallback);
+        return payload;
+      }
+    } catch (_) { /* fall through to the text-only path */ }
+    fallback();
+    return payload;
+  }
+
+  /* One computed-style value, or "" when the property is absent (jsdom, a
+   * detached node). The snapshot mirrors the live table, so nothing in the
+   * injected stylesheet is a colour of our own. */
+  function computedValue(node, prop) {
+    const cs = (node && window.getComputedStyle) ? window.getComputedStyle(node) : null;
+    return (cs && cs.getPropertyValue(prop)) || "";
+  }
+
+  /* A computed value interpolated into the injected <style>. The only free
+   * text is font-family, but a "</style>" must never be able to appear, so
+   * the markup significants are escaped (entities are not decoded in a
+   * <style>, so `&` must be left alone). */
+  function cssValue(value) {
+    return String(value).replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  /* The page colour behind the table: the nearest painted ancestor, from the
+   * table itself up through <body> and <html> (which paints the canvas).
+   * Without it the snapshot's only backdrop is copy-image's white page, and
+   * dark-theme text renders light-on-white. */
+  function pageBackground(table) {
+    let node = table;
+    while (node) {
+      const bg = computedValue(node, "background-color");
+      if (bg && !TRANSPARENT_BG_RE.test(bg)) return bg;
+      node = node.parentElement;
+    }
+    return SNAPSHOT_FALLBACK_BG;
+  }
+
+  /* A row's own painted background, or the page colour showing through. */
+  function rowBackground(row, pageBg) {
+    const bg = computedValue(row, "background-color");
+    return (bg && !TRANSPARENT_BG_RE.test(bg)) ? bg : pageBg;
+  }
+
+  /* The PNG snapshot's stylesheet, rebuilt from the LIVE table's computed
+   * style so the image matches the theme in force. The page colour comes
+   * first so it overrides copy-image's reset; row stripes are inline on the
+   * cloned rows (see tableImageSnapshot), because the hidden rows are gone
+   * and nth-child would recount them. The table keeps its NATURAL width and
+   * the header menu slot is reproduced, so the columns land where the live
+   * table's do and the text wraps the same way. */
+  function tableSnapshotCss(table, pageBg) {
+    const headerRow = (table.tHead && table.tHead.rows[0]) || table.rows[0];
+    const headCell = headerRow && headerRow.cells[0];
+    const firstBodyRow = Array.from(table.rows).find((row) =>
+      row !== headerRow && !row.classList.contains(HIDE_ROW_CLASS));
+    const bodyCell = firstBodyRow && firstBodyRow.cells[0];
+    let css = "html,body{background:" + cssValue(pageBg) + ";}";
+    // The header menu slots are kept in the clone, so the table's NATURAL
+    // width is the live table's; it must stay auto so the columns land
+    // exactly where the live ones do (forcing the frame width redistributes
+    // them by a pixel or two).
+    css += "table{border-collapse:collapse;";
+    ["color", "font-family", "font-size"].forEach((prop) => {
+      const v = computedValue(table, prop);
+      if (v) css += prop + ":" + cssValue(v) + ";";
+    });
+    // The snapshot lays the rows out itself, so the row height must follow
+    // the live table's line-height (a body cell, else the header cell).
+    const lineHeight = computedValue(bodyCell, "line-height") ||
+      computedValue(headCell, "line-height");
+    if (lineHeight) css += "line-height:" + cssValue(lineHeight) + ";";
+    css += "}th,td{";
+    const border = computedValue(headCell, "border-top-color");
+    if (border) css += "border:1px solid " + cssValue(border) + ";";
+    const pad = ["padding-top", "padding-right", "padding-bottom", "padding-left"]
+      .map((prop) => computedValue(headCell, prop));
+    if (pad.every(Boolean)) css += "padding:" + pad.map(cssValue).join(" ") + ";";
+    css += "}";
+    // The header menu slot is KEPT in the clone (its box drives each header
+    // cell's min-content width): reproduce its empty, invisible box from the
+    // live icon so the columns keep the live table's widths.
+    const icon = table.querySelector("." + HEAD_MENU_CLASS);
+    css += "th .nb-tv-head-menu{display:inline-block;visibility:hidden;" +
+      "width:" + cssValue(computedValue(icon, "width") || HEAD_MENU_W_FALLBACK) + ";" +
+      "height:" + cssValue(computedValue(icon, "height") || HEAD_MENU_H_FALLBACK) + ";" +
+      "margin-left:" +
+      cssValue(computedValue(icon, "margin-left") || HEAD_MENU_GAP_FALLBACK) + ";}";
+    return css;
+  }
+
+  /* The rendered width of the widest VISIBLE row, or 0 when the rows are
+   * unmeasured (jsdom). The table is display:block (style.css), so its
+   * scrollWidth is the pane width and would pad the image with white bands;
+   * a row's box is the table's content width. A hidden column is
+   * display:none, so it drops out of every row's box by itself. */
+  function visibleRowWidth(table) {
+    let width = 0;
+    Array.from(table.rows).forEach((row) => {
+      if (row.classList.contains(HIDE_ROW_CLASS)) return;
+      const r = row.getBoundingClientRect();
+      if (r && r.width > width) width = r.width;
+    });
+    return Math.ceil(width);
+  }
+
+  /* The snapshot frame's total inset, owned by copy-image.js (the 12px
+   * border + 12px padding per side of its reset); the literal is only a
+   * fallback for a page that did not load that module. */
+  function imageInset() {
+    const perSide = (NB.copyButton && NB.copyButton.snapshotInset) ||
+      IMAGE_INSET_PER_SIDE_FALLBACK;
+    return 2 * perSide;
+  }
+
+  /* { source, width, height } for the visible table as a PNG snapshot, or
+   * null when the table has no measured box (jsdom). The clone never enters
+   * the document: hidden rows/columns, the chevron glyph and every control
+   * attribute are dropped -- but the slot boxes stay, because their width
+   * sizes the columns -- each row keeps its live background inline, and the
+   * live look travels with it as a <style> prefix. */
+  function tableImageSnapshot(table) {
+    if (!table) return null;
+    const rowWidth = visibleRowWidth(table);
+    // Unmeasured rows (jsdom): keep the old scrollWidth estimate so the box
+    // stays sane rather than zero.
+    const measured = rowWidth > 0 ? rowWidth : table.scrollWidth;
+    const h = Math.ceil(table.offsetHeight);
+    if (!(measured > 0 && h > 0)) return null;
+    const w = Math.ceil(measured + IMAGE_BORDER_SLACK);
+    const pageBg = pageBackground(table);
+    const clone = table.cloneNode(true);
+    clone.querySelectorAll("." + HIDE_ROW_CLASS).forEach((n) => n.remove());
+    clone.querySelectorAll("." + HIDE_COL_CLASS).forEach((n) => n.remove());
+    // The header menu spans stay as EMPTY, invisible slots: their fixed box
+    // is part of each header cell's min-content width, so removing them
+    // would redistribute the auto table layout and wrap differently from
+    // the live table. The glyph goes, and so does every control attribute.
+    clone.querySelectorAll("." + HEAD_MENU_CLASS).forEach((n) => {
+      n.textContent = "";
+      ["role", "aria-label", "aria-haspopup", "aria-expanded", "title"]
+        .forEach((attr) => n.removeAttribute(attr));
+    });
+    clone.querySelectorAll("." + SORTED_CLASS)
+      .forEach((n) => n.classList.remove(SORTED_CLASS));
+    ["aria-sort", "tabindex", "aria-expanded"].forEach((attr) => {
+      clone.querySelectorAll("[" + attr + "]")
+        .forEach((n) => n.removeAttribute(attr));
+    });
+    // One inline background per surviving row, matched in DOM order to the
+    // live rows it came from, so both the theme's stripe colours and the
+    // hidden-row removal survive (nth-child would recount the stripes).
+    const liveRows = Array.from(table.rows)
+      .filter((row) => !row.classList.contains(HIDE_ROW_CLASS));
+    Array.from(clone.rows).forEach((row, i) => {
+      const live = liveRows[i];
+      row.style.background = live ? rowBackground(live, pageBg) : pageBg;
+    });
+    return {
+      source: "<style>" + tableSnapshotCss(table, pageBg) + "</style>" +
+        clone.outerHTML,
+      width: w + imageInset(),
+      height: h + imageInset(),
+    };
+  }
+
+  /* Copy the visible table as a PNG through copy-image.js's rasterizer, the
+   * single owner of PNG copying. Only the WIDTH is ours: the snapshot's own
+   * layout (line-height, wrapping, hidden rows) decides the height, so the
+   * rasterizer measures it rather than trusting the live table's box.
+   * Returns the snapshot, or false when there is nothing to draw or no
+   * rasterizer, and reports the failure. */
+  function copyTableImage(table) {
+    const snap = tableImageSnapshot(table);
+    if (!snap || !NB.copyButton || !NB.copyButton.copyHtmlToPng) {
+      notify(COPY_IMAGE_FAIL_MSG);
+      return false;
+    }
+    NB.copyButton.copyHtmlToPng(snap.source, {
+      name: COPY_IMAGE_NAME,
+      width: snap.width,
+      message: COPY_IMAGE_DONE_MSG,
+      failMessage: COPY_IMAGE_FAIL_MSG,
+    });
+    return snap;
+  }
+
   /* --- overlay geometry ------------------------------------------- */
 
-  /* Position the controls in the table's LEFT gutter, vertically centred
-   * on the header row. Anchored to cell rects, not the <table> box (the
-   * box is display:block and full width, so its rect would strand the
-   * controls at the pane edge). Left placement keeps the icon off any
-   * heading directly above the table; the header row is the top of the
-   * table, so the title sits above the icon's band. When the pane is too
-   * narrow for a left gutter the box is clamped inside the pane. The whole
-   * row is measured, so growing the toolbar on click keeps it on screen. */
+  /* Position the icon in the table's LEFT gutter, vertically centred on the
+   * header row. Anchored to cell rects, not the <table> box (the box is
+   * display:block and full width, so its rect would strand the controls at
+   * the pane edge). Left placement keeps the icon off any heading directly
+   * above the table; the header row is the top of the table, so the title
+   * sits above the icon's band. When the pane is too narrow for a left
+   * gutter the icon is clamped inside the pane.
+   * The geometry is the CLOSED one, always: the toolbar is out of flow, so
+   * the box is TOGGLE_W wide, opening the toolbar cannot move the icon, and
+   * the icon stays under the pointer that clicked it. The toolbar flips
+   * above the icon when it cannot fit below (see placeToolbar). */
   function placeControls(table) {
     if (!controls) return;
     const session = sessions.get(table);
@@ -586,28 +884,67 @@
       headerBottom = headerTop + TOGGLE_H;   // unmeasured header (jsdom)
     }
     const V = paneSize();
-    const w = controls.offsetWidth || TOGGLE_W;
-    const h = controls.offsetHeight || TOGGLE_H;
-    // Left gutter: the box's right edge lands TOGGLE_GAP short of the
+    // Left gutter: the icon's right edge lands TOGGLE_GAP short of the
     // table's left edge. Clamped so a flush/narrow table stays on screen.
-    const left = clamp(contentLeft - w - TOGGLE_GAP, EDGE_SAFE,
-      V.w - w - EDGE_SAFE);
-    // Centre the icon on the header row; never allow a title above the
-    // table to be covered, which left placement guarantees.
-    let top = headerTop + (headerBottom - headerTop - h) / 2;
+    const left = clamp(contentLeft - TOGGLE_W - TOGGLE_GAP, EDGE_SAFE,
+      V.w - TOGGLE_W - EDGE_SAFE);
+    let top = headerTop + (headerBottom - headerTop - TOGGLE_H) / 2;
     if (top < EDGE_SAFE) top = EDGE_SAFE;   // top-clipping fallback
     controls.style.left = Math.round(left) + "px";
     controls.style.top = Math.round(top) + "px";
+    if (toolbarOpen) placeToolbar();
   }
 
-  /* Position a popover below its anchor cell (or toolbar button),
-   * clamped into the pane; flip above when it would overflow the bottom
-   * of the pane. */
+  /* Place the open toolbar against the icon. It is out of flow, so it may
+   * overlap the table. Preferring right alignment with the icon grows it
+   * left into the gutter; when the gutter cannot hold it, it is flushed
+   * with the icon's left edge and grows right over the table. Either way
+   * it stays inside the pane.
+   * Vertically it hangs below the icon (CSS `top`); when that would reach
+   * past the pane's bottom it flips ABOVE the icon instead, so the icon --
+   * and the close glyph the user just clicked -- never moves. */
+  function placeToolbar() {
+    if (!toolbar || !toolbarOpen) return;
+    const V = paneSize();
+    const boxLeft = parseFloat(controls.style.left) || 0;
+    const boxTop = parseFloat(controls.style.top) || 0;
+    const tw = toolbar.offsetWidth || TOOLBAR_MIN_W;
+    const th = toolbar.offsetHeight || 0;
+    let left = TOGGLE_W - tw;
+    if (boxLeft + left < EDGE_SAFE) left = 0;
+    left = clamp(left, EDGE_SAFE - boxLeft, V.w - boxLeft - EDGE_SAFE);
+    toolbar.style.left = Math.round(left) + "px";
+    if (V.h > 0 && boxTop + TOGGLE_H + TOOLBAR_GAP + th > V.h - EDGE_SAFE) {
+      // Above the icon, floored at the pane's top edge.
+      const above = -(TOOLBAR_GAP + th);
+      toolbar.style.top = Math.round(
+        Math.max(above, EDGE_SAFE - boxTop)) + "px";
+    } else {
+      toolbar.style.top = "";
+    }
+  }
+
+  /* Position a popover beside its anchor, clamped into the pane. An anchor
+   * in the toolbar column (a chooser button) opens to the RIGHT, because a
+   * below-anchored panel would cover the buttons under it; when the pane's
+   * right edge is in the way it falls back to the below/above placement. A
+   * header cell's menu icon keeps that below/above placement: flip above
+   * when the panel would overflow the bottom. */
   function placePopover(anchor, pop) {
     const r = toOverlay(anchor.getBoundingClientRect());
     const V = paneSize();
     const w = pop.offsetWidth || POP_MIN_W;
     const h = pop.offsetHeight || 0;
+    if (toolbar && toolbar.contains(anchor)) {
+      const right = r.right + POP_GAP;
+      if (right + w <= V.w - EDGE_SAFE) {
+        pop.style.left = Math.round(
+          clamp(right, EDGE_SAFE, V.w - w - EDGE_SAFE)) + "px";
+        pop.style.top = Math.round(
+          clamp(r.top, EDGE_SAFE, V.h - h - EDGE_SAFE)) + "px";
+        return;
+      }
+    }
     const left = clamp(r.left, EDGE_SAFE, V.w - w - EDGE_SAFE);
     let top = r.bottom + POP_GAP;
     if (top + h > V.h - EDGE_SAFE) {
@@ -649,6 +986,21 @@
   function buildToolbar() {
     if (!toolbar) return;
     toolbar.textContent = "";
+    const copyBtn = mkBtn("Copy", "Copy the visible table");
+    copyBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closePop();
+      const table = activeTable;
+      if (!table || !copyTable(table)) notify(COPY_FAIL_MSG);
+    });
+    const imageBtn = mkBtn(COPY_IMAGE_LABEL, COPY_IMAGE_TITLE);
+    imageBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      closePop();
+      const table = activeTable;
+      if (!table) { notify(COPY_IMAGE_FAIL_MSG); return; }
+      copyTableImage(table);
+    });
     const rowsBtn = mkBtn("Rows", "Choose visible rows");
     rowsBtn.setAttribute("aria-haspopup", "true");
     rowsBtn.setAttribute("aria-expanded", "false");
@@ -664,7 +1016,7 @@
       const table = activeTable;
       if (table) resetTable(table);
     });
-    toolbar.append(rowsBtn, colsBtn, resetBtn);
+    toolbar.append(copyBtn, imageBtn, rowsBtn, colsBtn, resetBtn);
   }
 
   function closePop() {
@@ -679,19 +1031,24 @@
     openPop = null;
   }
 
-  /* Open/close the toolbar without losing the icon. The control row is
-   * re-measured because opening widens it, and a wider row can cross the
-   * pane's right edge on a table flush against it. Closing also clears
-   * the explicit-open flag so a pending grace hide may proceed. */
+  /* Open/close the toolbar without losing the icon. The toolbar is out of
+   * flow, so only its own placement is recomputed on open; closing clears
+   * that inline `left` so a stale offset cannot leak into the next open.
+   * Closing also clears the explicit-open flag so a pending grace hide may
+   * proceed. */
   function setControlsOpen(open) {
     if (!toolbar || !toggle) return;
     toolbarOpen = !!open;
     if (toolbarOpen) {
       buildToolbar();
       toolbar.hidden = false;
+      placeToolbar();
     } else {
+      closePop();          // a chooser owned by a toolbar button goes too
       toolbar.hidden = true;
       toolbar.textContent = "";
+      toolbar.style.left = "";
+      toolbar.style.top = "";
     }
     buildToggle();
     if (activeTable) placeControls(activeTable);
@@ -702,6 +1059,8 @@
     toolbarOpen = false;
     toolbar.hidden = true;
     toolbar.textContent = "";
+    toolbar.style.left = "";
+    toolbar.style.top = "";
     buildToggle();
   }
 
@@ -924,9 +1283,12 @@
     if (!viewerEl || !viewerContentEl || !table) return;
     if (lastRenderLive || (NB.hybrid && NB.hybrid.isActive()) || viewerEl.hidden) return;
     // Merged cells: no controls. Show the same kind of note table-edit
-    // shows, anchored to the table's rect (there is no session).
+    // shows, anchored to the table's rect (there is no session). Any
+    // chooser or open toolbar from the previous table goes with them.
     if (NB.hybrid && NB.hybrid.tableHasSpans && NB.hybrid.tableHasSpans(table)) {
       if (activeTable === table && controls && !controls.hidden) return;
+      closePop();
+      hideToolbar();
       hideControls();
       activeTable = table;
       if (!overlay.querySelector(".nb-tv-note")) {
@@ -1140,28 +1502,42 @@
     }
   }
 
-  /* A pointerdown anywhere outside the controls dismisses everything:
-   * an open popover and an open toolbar. The controls themselves and a
+  /* A pointerdown anywhere outside the controls dismisses everything: an
+   * open popover and an open toolbar. The controls themselves and a
    * popover's own anchor (the header menu icon, or a toolbar button) are
-   * exempt, so their own click toggles the popover instead. */
+   * exempt, so their own click toggles the popover instead, and a pointer
+   * INSIDE a chooser belongs to the toolbar that owns it -- dismissing the
+   * toolbar there would tear the chooser out from under the click. */
   function onDocPointerDown(e) {
     const inControls = controls && controls.contains(e.target);
     const inPop = openPop && openPop.el && openPop.el.contains(e.target);
     const onAnchor = openPop && openPop.anchor && openPop.anchor.contains(e.target);
     if (openPop && !inPop && !onAnchor && !inControls) closePop();
-    if (toolbarOpen && !inControls) {
+    if (toolbarOpen && !inControls && !inPop) {
       setControlsOpen(false);
       activeTable = null;
       hideControls();
     }
   }
 
+  /* Escape closes the topmost layer: the open popover first (focus back to
+   * its anchor), then the toolbar itself when focus is in the toolbar or on
+   * the icon (focus back to the icon). */
   function onDocKey(e) {
-    if (!openPop || e.key !== "Escape") return;
+    if (e.key !== "Escape") return;
+    if (openPop) {
+      e.preventDefault();
+      const anchor = openPop.anchor;
+      closePop();
+      if (anchor && anchor.focus) anchor.focus({ preventScroll: true });
+      return;
+    }
+    const active = document.activeElement;
+    if (!toolbarOpen || !active) return;
+    if (active !== toggle && !toolbar.contains(active)) return;
     e.preventDefault();
-    const anchor = openPop.anchor;
-    closePop();
-    if (anchor && anchor.focus) anchor.focus({ preventScroll: true });
+    setControlsOpen(false);
+    if (toggle && toggle.focus) toggle.focus({ preventScroll: true });
   }
 
   /* --- build / wire ----------------------------------------------- */
@@ -1172,16 +1548,16 @@
     viewerScrollEl = document.getElementById("viewer-scroll");
     if (!viewerEl || !viewerContentEl || !viewerScrollEl) return;
     overlay = el("div", "nb-tv-overlay");
-    // One control row in the table's LEFT gutter: the always-on icon plus
-    // the toolbar it opens. Keeping both in one absolutely-positioned box
-    // means the icon never moves when the toolbar appears, and a left
-    // gutter keeps the icon off any heading directly above the table.
+    // One control column in the table's LEFT gutter: the always-on icon
+    // plus the vertical toolbar it opens. The toolbar is absolutely
+    // positioned inside this box, so the box is always the icon's size and
+    // the icon never moves; a left gutter keeps the icon off any heading
+    // directly above the table.
     controls = el("div", "nb-tv-controls");
     controls.hidden = true;
     toggle = el("button", "nb-tv-toggle");
     toggle.type = "button";
     toggle.textContent = TOGGLE_GLYPH;
-    toggle.setAttribute("aria-haspopup", "true");
     toggle.setAttribute("aria-expanded", "false");
     toggle.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -1198,6 +1574,10 @@
     });
     toolbar = el("div", "nb-tv-toolbar");
     toolbar.hidden = true;
+    // A labelled group, not role="toolbar": all four buttons are tab stops,
+    // and a toolbar role would promise a single stop with arrow-key moves.
+    toolbar.setAttribute("role", "group");
+    toolbar.setAttribute("aria-label", "Table view");
     controls.append(toggle, toolbar);
     overlay.appendChild(controls);
     // A child of #viewer, outside the contenteditable subtree: preview
@@ -1239,6 +1619,10 @@
     resetTable,
     tearDownForEdit,
     cycleSort,
+    tablePayload,
+    copyTable,
+    tableImageSnapshot,
+    copyTableImage,
     canInteract,
     get activeTable() { return activeTable; },
     get sessions() { return sessions; },

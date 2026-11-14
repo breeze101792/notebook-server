@@ -143,7 +143,9 @@ first line by ≈3.8 px; the band is px and the button rem. P17 records the repa
 
 Copy behaviour is owned by `copy-image.js` (`attachTextCopy`, `:684-729`): raw
 `textContent` with every `.code-copy-btn` removed, the label flips to `Copied!` for
-1200 ms, and one polite toast fires (`copy-image.js:61-66`, `:248`).
+1200 ms, and one polite toast fires (`copy-image.js:61-66`, `:248`). The preview table-view's
+`Copy image` action reuses the same file's `copyHtmlToPng` (`copy-image.js:724-738`), so PNG
+copying has one owner.
 
 ### 2.4 No-language fence
 
@@ -260,36 +262,48 @@ as inventory only; where the two differ, this section wins and P17 carries the 2
 
 The controls are view-only: they never touch the Markdown source. They are a child of
 `#viewer`, outside `#viewer-content`, and are torn down before hybrid editing
-(`table-view.js:14-30`).
+(`table-view.js:1-77`).
 
 **The icon.** A 24 × 24 button in the table's left gutter, vertically centred on the
 header row, 6 px from the table, at least 4 px from the pane edge
-(`table-view.js:55-61`, `:557-600`). It is `--bg-elev`, `1px --border`, radius 4,
+(`table-view.js:63-99`, `:853-898`). It is `--bg-elev`, `1px --border`, radius 4,
 `--fg-muted`, glyph `≡` (`U+2261`). Hover is `--accent-soft` + `--fg`; focus-visible is a
-2 px `--accent` outline at 1 px offset (`style.css:940-957`). It is hidden until the
+2 px `--accent` outline at 1 px offset (`style.css:1137-1155`). It is hidden until the
 pointer is over the table or focus is inside it; scrolling or resizing hides it again and the next
-hover/focus re-reveals it (`table-view.js:1221-1222`). Clicking opens the toolbar; the glyph
-becomes `✕` and `aria-expanded` flips (`table-view.js:635-650`).
+hover/focus re-reveals it (`table-view.js:1601-1602`). Clicking opens the toolbar; the glyph
+becomes `✕` and `aria-expanded` flips (`table-view.js:772-781`).
 
-**The toolbar.** A flex row, 2 px padding, 2 px gap, `--bg-elev`, `1px --border`,
-radius 6, shadow `0 6px 24px rgba(0,0,0,.35)` (`style.css:959-986`). Three buttons:
-`Rows`, `Columns`, `Reset` (`table-view.js:651-663`).
+**The toolbar.** A vertical column under the icon: `flex-direction: column`, `min-width:
+104px`, buttons left aligned, 2 px padding, 2 px gap, `--bg-elev`, `1px --border`,
+radius 6, shadow `0 6px 24px rgba(0,0,0,.35)` (`style.css:1156-1190`). Five buttons:
+`Copy`, `Copy image`, `Rows`, `Columns`, `Reset` (`table-view.js:986-1015`). The toolbar is
+out of flow (`position: absolute` in `.nb-tv-controls`), so the control box is always the
+icon's 24 px and opening never moves the icon. It hangs 6 px below the icon and is placed
+right-aligned with it, growing left into the gutter; when the gutter is too narrow it
+flushes with the icon's left edge and floats over the table instead, always inside the pane
+(`table-view.js:906-928`). When the open column would overflow the bottom of the pane it
+opens ABOVE the icon instead, so the icon itself never moves.
 
 | Button | Popover |
 |---|---|
-| Rows | One checkbox per **body** row, label `#N — <first cell>` truncated at 28 characters (`table-view.js:782-805`). Empty: `No body rows` (`.nb-tv-empty`, `:1032-1036`). |
-| Columns | One checkbox per header column, label `#N — <header>`. Hiding the last visible column is refused with the toast `At least one column must stay visible` (`table-view.js:810-823`). |
-| Reset | Clears sort and every hidden row/column, restores source order (`table-view.js:660-663`, `:544-552`). |
+| Copy | Writes the table as the user sees it to the clipboard: TSV `text/plain` plus an HTML `<table>` (`<th>` header, `<td>` body) `text/html`. Sorted DOM order; hidden rows and columns are excluded; the header chevron, `<br>` and `<img>` never reach the text (`table-view.js:610-707`). Toast `Copied table`; text-only fallback `Copied table as text`; `Could not copy the table` when the clipboard refuses. |
+| Copy image | Rasterizes the same visible table to a PNG and writes it to the clipboard. Width comes from the widest visible row (so a hidden column narrows the image) plus a 24 px inset per side; height is MEASURED from the snapshot's own layout, so the frame never clips a row and never leaves a dead band (`table-view.js:714-849`, `copy-image.js:500-607`). The clone keeps each header menu icon's fixed 16 px slot as an empty invisible spacer, because that box is part of the live column widths; with it the columns, wrapping and row heights match the live table. Colours, font, line-height and paddings are read from computed styles, so both themes render correctly. Toast `Table copied as image`; when the image clipboard is unavailable it downloads `table.png` instead. |
+| Rows | One checkbox per **body** row, label `#N — <first cell>` truncated at 28 characters (`table-view.js:1142-1169`). Empty: `No body rows` (`.nb-tv-empty`, `style.css:1237-1241`). |
+| Columns | One checkbox per header column, label `#N — <header>`. Hiding the last visible column is refused with the toast `At least one column must stay visible` (`table-view.js:1171-1185`). |
+| Reset | Clears sort and every hidden row/column, restores source order (`table-view.js:1003-1009`, `:583-592`). |
 
 **The popover.** `min-width: 180px`, `max-height: 320px`, `overflow: auto`, 4 px padding,
 `--bg-elev`, `1px --border`, radius 6, the same shadow, `z-index: 8`
-(`style.css:987-999`). Items are 4px 8px, `.8rem`, full width, left aligned, hover
-`--accent-soft`, focus-visible inset 2 px ring (`style.css:1000-1015`).
+(`style.css:1192-1203`). Items are 4px 8px, `.8rem`, full width, left aligned, hover
+`--accent-soft`, focus-visible inset 2 px ring (`style.css:1205-1226`). A toolbar button's
+popover opens to the right of its button and clamps into the pane, falling back to the
+below/above placement when the right edge is in the way; a header-cell menu keeps the
+below/above placement (`table-view.js:933-960`).
 
 **Sorting.** Clicking a header **title** toggles ascending → descending → ascending; it
-never clears (`table-view.js:858-865`). A different column starts ascending. `Clear sort`
+never clears (`table-view.js:1220-1227`). A different column starts ascending. `Clear sort`
 exists only in that column's header menu. There is exactly one sorted column; the active
-`<th>` carries `aria-sort` and `.nb-tv-sorted` (`table-view.js:424-433`).
+`<th>` carries `aria-sort` and `.nb-tv-sorted` (`table-view.js:468-477`).
 
 The header's own menu icon is a 16 × 16 fixed box with one chevron `▾` (`U+25BE`), 6 px
 after the title, reserved with `visibility: hidden` so revealing it never shifts the
@@ -298,20 +312,20 @@ column, and while its menu is open (`style.css:1093-1096`). The sorted icon turn
 `--accent` and rotates 180° for ascending; descending keeps 0° (`style.css:1106-1112`).
 This one glyph is the only sort indicator; do not add a second arrow.
 
-Sorting rules (`table-view.js:436-458`): empty cells sort last in both directions; a
+Sorting rules (`table-view.js:480-497`): empty cells sort last in both directions; a
 column is numeric only when both compared non-empty values are numeric; otherwise the
 `Intl.Collator` is used; ties keep source order.
 
 **Persistence.** Per file, per table, in `localStorage` under `nb:tableView` (or
 `nb:<workspace>:tableView`). The record is applied only when the header signature, the
 body hash, and the table ordinal all match; otherwise it is ignored, not deleted. The
-state never enters the note, an export, or the hybrid round-trip (`table-view.js:1-50`).
+state never enters the note, an export, or the hybrid round-trip (`table-view.js:1-77`).
 
 ### 3.4 Merged cells
 
 A table with any `colspan`/`rowspan` gets no session, no icon, no toolbar
-(`table-view.js:326-337`). Hovering it shows one note anchored to the table's top-left
-(`table-view.js:912-936`):
+(`table-view.js:369-373`). Hovering it shows one note anchored to the table's top-left
+(`table-view.js:1282-1302`):
 
 > Merged cells: table view controls are unavailable
 
@@ -744,15 +758,18 @@ and the reason the band is reserved in every fence.
   explicit `scope="col"` is safer. §9.6 E4 adds it after render, with no visual change.
 - The table has no `<caption>` unless the author writes raw HTML. A caption is the
   native accessible name; do not generate one.
-- The preview toggle is a native button with `aria-haspopup="true"` and
-  `aria-expanded` (`table-view.js:635-650`). The toolbar buttons are native buttons.
-  The column menu is `role="menu"` with `menuitemradio` items. The Rows/Columns chooser
-  is `role="menu"` in the shipped code but contains native checkbox labels; §9.6 E5
-  changes that container to `role="group"` with an `aria-label`.
+- The preview toggle is a native button carrying `aria-expanded`, and its label flips
+  with the state (`table-view.js:976-985`). The toolbar is `role="group"` with
+  `aria-label="Table view"`, not `role="toolbar"`: all five buttons are tab stops and
+  there is no arrow-key movement, so the group shape is the honest one. `Esc` while focus
+  is in the toolbar or on the toggle closes it and returns focus to the toggle
+  (`table-view.js:1526-1544`). The column menu is `role="menu"` with `menuitemradio` items.
+  The Rows/Columns chooser is `role="menu"` in the shipped code but contains native
+  checkbox labels; §9.6 E5 changes that container to `role="group"` with an `aria-label`.
 - The header menu icon is the keyboard path: `tabindex="0"`, `role="button"`,
   `aria-haspopup`, `aria-expanded`, and `aria-label="Column menu"`
-  (`table-view.js:365-374`). `Enter`/`Space` opens; `Esc` closes and returns focus to the
-  anchor (`table-view.js:1118-1146`).
+  (`table-view.js:405-415`). `Enter`/`Space` opens; `Esc` closes and returns focus to the
+  anchor (`table-view.js:1526-1544`).
 - Header cells themselves are not tabbable. The `thead th:focus-visible` rule
   (`style.css:1059-1062`) is therefore unreachable. Do not remove it; it becomes live if
   cells gain a tab stop.
@@ -1073,8 +1090,8 @@ rules and before the phone query; the phone overrides stay inside the query at t
 
 /* ---------- preview controls ---------- */
 .nb-tv-overlay { position: absolute; inset: 0; z-index: var(--content-tv-z); pointer-events: none; }
-.nb-tv-controls { position: absolute; display: flex; align-items: center;
-  gap: var(--content-tv-gap); pointer-events: auto; }
+.nb-tv-controls { --nb-tv-gap: var(--content-tv-gap); position: absolute; display: flex;
+  flex-direction: column; pointer-events: auto; }
 .nb-tv-controls[hidden] { display: none; }
 .nb-tv-toggle {
   width: var(--content-tv-toggle);
@@ -1092,8 +1109,13 @@ rules and before the phone query; the phone overrides stay inside the query at t
 .nb-tv-toggle:hover { background: var(--accent-soft); color: var(--text-primary); }
 .nb-tv-toggle:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
 .nb-tv-toolbar {
+  position: absolute;   /* out of flow: the box stays the icon's size */
+  top: calc(100% + var(--nb-tv-gap));
+  left: 0;              /* set in JS: right-aligned with the icon, or flushed */
   display: flex;
+  flex-direction: column;
   gap: var(--content-tv-toolbar-gap);
+  min-width: 104px;
   padding: var(--content-tv-toolbar-pad);
   background: var(--surface-raised);
   border: var(--stroke-1) solid var(--border);
@@ -1102,6 +1124,7 @@ rules and before the phone query; the phone overrides stay inside the query at t
 }
 .nb-tv-toolbar[hidden] { display: none; }
 .nb-tv-btn {
+  width: 100%;
   padding: var(--content-tv-btn-pad-block) var(--content-tv-btn-pad-inline);
   border: var(--stroke-1) solid transparent;
   border-radius: var(--radius-xs);
@@ -1110,6 +1133,7 @@ rules and before the phone query; the phone overrides stay inside the query at t
   font-family: inherit;
   font-size: var(--content-tv-btn-size);
   line-height: var(--lh-normal);
+  text-align: left;
   white-space: nowrap;
   cursor: pointer;
 }
@@ -1341,7 +1365,7 @@ Each is testable and names the file or test that observes it.
 | AC5 | Long lines wrap; no code fence scrolls horizontally | `style.css:3268-3288` | `scrollWidth === clientWidth` on every fence at 390 and in the wide desktop reader |
 | AC6 | The error box has a warn border, warn head, and a source `<pre>` with no band | `style.css:3429-3466` | `.mermaid-error` exists after a bad mermaid fence; no `data-fence-lang`; source text equals the fence body |
 | AC7 | A table pans inside the reader, not the page | `style.css:3760`, `:2386` | A 12-column table has `scrollWidth > clientWidth` on the table and the page does not scroll horizontally |
-| AC8 | The preview controls appear on hover/focus and expose Rows, Columns, Reset | `static/js/table-view.js:631-663` | `.nb-tv-toggle` visible; toolbar hidden until click; three buttons in that order; `aria-expanded` flips |
+| AC8 | The preview controls appear on hover/focus and expose Copy, Copy image, Rows, Columns, Reset | `static/js/table-view.js:986-1015` | `.nb-tv-toggle` visible; toolbar hidden until click; five buttons in that order, stacked in a column; `aria-expanded` flips; opening never moves the icon |
 | AC9 | Sorting is one column, shown by the rotated chevron and `aria-sort`; a title click never clears | `table-view.js:424-433`, `:858-865`; `style.css:1106-1112` | Only one `th[aria-sort]`; ascending icon is rotated 180°; two title clicks end at descending, not unsorted |
 | AC10 | Hiding is class-based and the last column cannot be hidden | `table-view.js:387-409`, `:810-823` | Hidden row has `.nb-tv-hide-row`; no node is removed; the refusal toast appears |
 | AC11 | A merged table shows the exact note and no controls | `table-view.js:912-936`; `style.css:1038-1049` | Text `Merged cells: table view controls are unavailable`; no `.nb-tv-controls` |
@@ -1357,12 +1381,14 @@ Each is testable and names the file or test that observes it.
 | AC21 | The phone hides preview table controls and does not need a modifier | `style.css:7497-7499` | `.nb-tv-controls`, `.nb-tv-toolbar`, `.nb-tv-head-menu` are `display: none` |
 | AC22 | The mockup is self-contained and shows both themes | `docs/ui/content-blocks-mockup.html` | Opening it offline makes zero network requests; both `data-theme` values render |
 | AC23 | The a11y additions add no pixels at rest | `static/css/style.css`, `static/js/*` | E1/E2/E4/E5 add attributes only; E3 paints a ring on `:focus-visible` only |
+| AC24 | Copy writes the visible table as TSV plus an HTML `<table>` | `table-view.js:599-696` | A hidden row and a hidden column are absent from both flavours; the header row is `<th>`, body rows `<td>`; sorted DOM order; the header chevron is absent; toast `Copied table` (or the text-only fallback) |
+| AC25 | Copy image writes the visible table as a PNG | `table-view.js:714-849`, `copy-image.js:500-607` | A hidden row and a hidden column are absent from the snapshot; the width is the widest visible row plus the 24 px inset and the height is measured from the snapshot; the drawn table's height and column widths match the live table, no row is clipped and no dead band remains; no chevron glyph is drawn; toast `Table copied as image`; the PNG downloads as `table.png` when the image clipboard is unavailable |
 
 Existing tests that already cover part of this set:
 
 - `tests/dom/test_dom.js` — `== blocks registry ==` (`:5841`), code copy
   (`:3808-3850`), Mermaid error (`:4021-4092`), figure sizing
-  (`:5990-6265`), table view (`:18936-19470`), table select (`:19839-20040`).
+  (`:5990-6265`), table view (`:19337-20395`), table select (`:20397-20842`).
 - `tests/browser/test_figure_sizing_browser.js` — the real layout matrix, the export and
   hybrid seams.
 - `tests/browser/test_ai_blocks_browser.js` — the six fences in a reply, WaveDrom skipped,
