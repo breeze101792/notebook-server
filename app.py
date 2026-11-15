@@ -101,6 +101,12 @@ WORKSPACE_NAME_MAX = 60
 WORKSPACE_ID_SLUG_MAX = 32
 WORKSPACE_ID_SUFFIX_BYTES = 2        # 4 hex chars: short, still collision-free
 WORKSPACE_STATE_MAX_BYTES = 256 * 1024
+# One message for both cap checks (the body's state and the merged result),
+# so the two cannot drift apart.
+_STATE_TOO_LARGE = "state exceeds %d bytes" % WORKSPACE_STATE_MAX_BYTES
+# `base` is capped with the same limit: a base larger than a stored entry can
+# never match one, so it can only cost a merge. Named after its field.
+_BASE_TOO_LARGE = "base exceeds %d bytes" % WORKSPACE_STATE_MAX_BYTES
 # The registry holds at most WORKSPACE_MAX_COUNT entries of a name and a
 # path, so 64 KiB is generous. The cap exists because the file is parsed on
 # every request and on the request hook: json.load on a huge document raises
@@ -120,6 +126,10 @@ _WORKSPACE_SCOPED_CONFIG_KEYS = (
     "recentFiles", "bookmarks", "pinnedFolders",
     "sessions", "activeSessionId",
 )
+# The two top-level maps that hold the scoped state and its per-workspace
+# sync revision. Server-owned end to end: a whole-blob POST must never write
+# them, or one stale page would clobber another device's state and rev.
+_CONFIG_STATE_KEYS = ("workspaceState", "workspaceStateRev")
 
 # On first run, if DATA_DIR doesn't exist, the contents of this folder are
 # copied into it. Ship a tiny starter notebook under notebook.template/ so
@@ -1383,6 +1393,27 @@ def _read_public_config():
     return cfg if isinstance(cfg, dict) else {}
 
 
+def _read_stored_config():
+    """Read config.json for a read-modify-write, raising instead of masking.
+
+    _read_public_config() folds every failure into {}, which is right for a
+    first-paint read and wrong before a rewrite: re-attaching that empty dict
+    would drop every workspace's state. Raises OSError or ValueError.
+
+    A missing file is the one exception: first run has no config.json yet, so
+    it reads as an empty config. An unreadable or unparseable file still
+    raises, because there is state on disk that must not be overwritten.
+    """
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except FileNotFoundError:
+        return {}
+    if not isinstance(cfg, dict):
+        raise ValueError("config.json is not a JSON object")
+    return cfg
+
+
 def _boot_workspaces():
     """First-paint workspace values for the shell.
 
@@ -1520,33 +1551,136 @@ def _render_index():
     return render_template("index.html", boot=state, asset_v=asset_version())
 
 
-def _fold_legacy_workspace_state(cfg):
-    """Merge legacy top-level content keys under workspaceState["default"].
+def _workspace_state_rev(cfg, wid):
+    """One workspace's sync revision; 0 for anything unusable.
 
-    Idempotent: a workspace-aware blob has no legacy keys left, so this
-    returns False. Runs on every config POST so a whole-blob write that
-    still carries the old shape cannot strand those keys at the top level
-    forever. The inbound top-level value wins over an existing default
-    entry because the POST is the client's authoritative current state.
+    The map is server-owned but hand-editable, and blobs written before sync
+    shipped have no such key, so a missing, non-integer, negative or bool
+    value must read as 0 instead of breaking every client's sync.
     """
-    if not isinstance(cfg, dict):
-        return False
-    legacy = {key: cfg[key] for key in _WORKSPACE_SCOPED_CONFIG_KEYS
-              if key in cfg}
-    if not legacy:
-        return False
-    state = cfg.get("workspaceState")
-    if not isinstance(state, dict):
-        state = {}
-    default = state.get(WORKSPACE_DEFAULT_ID)
-    if not isinstance(default, dict):
-        default = {}
-    default.update(legacy)
-    state[WORKSPACE_DEFAULT_ID] = default
-    cfg["workspaceState"] = state
-    for key in legacy:
-        cfg.pop(key, None)
-    return True
+    if not isinstance(cfg, dict) or not isinstance(wid, str):
+        return 0
+    revs = cfg.get("workspaceStateRev")
+    if not isinstance(revs, dict):
+        return 0
+    rev = revs.get(wid)
+    if isinstance(rev, bool) or not isinstance(rev, int) or rev < 0:
+        return 0
+    return rev
+
+
+def _json_size(value):
+    """Encoded byte length of a JSON value, the unit of the state cap."""
+    return len(json.dumps(value).encode("utf-8"))
+
+
+def _usable(session):
+    """True for a mergeable session: a dict with a non-empty string id."""
+    return (isinstance(session, dict)
+            and isinstance(session.get("id"), str)
+            and bool(session["id"]))
+
+
+def _session_key(session):
+    """What counts as "changed" for the merge: the name and the open files.
+
+    A per-session `activeFile` is deliberately excluded. It tracks which tab
+    a device has open, so counting it would let one peer's tab click discard
+    a tab another peer added to the same session.
+    """
+    files = session.get("openFiles")
+    if not isinstance(files, list):
+        files = []
+    return (session.get("name"), tuple(files))
+
+
+def _session_list(state):
+    """`state["sessions"]` as a list, or [] when it is absent or not a list.
+
+    The list is client data and hand-editable, so a POST can carry any JSON
+    type there. A non-list must merge as "no sessions" rather than raise
+    TypeError and turn a bad request into a 500.
+    """
+    sessions = state.get("sessions") if isinstance(state, dict) else None
+    return sessions if isinstance(sessions, list) else []
+
+
+def _merge_sessions(current, base, incoming):
+    """Three-way merge of the `sessions` list, keyed by session id.
+
+    Per session, not per entry: two clients that changed different sessions
+    both keep their change, and one that changed the same session settles on
+    its own copy. Pure, no I/O. Order is `incoming` first, then resurrected
+    and peer-only entries in the order the server holds them.
+    """
+    cur = {s["id"]: s for s in _session_list(current) if _usable(s)}
+    bas = {s["id"]: s for s in _session_list(base) if _usable(s)}
+    inc = {s["id"]: s for s in _session_list(incoming) if _usable(s)}
+    out = []
+    # Walk the id map, not the raw list: a repeated id is one session, and it
+    # keeps the first position with the last copy the client sent.
+    for sid in inc:
+        if sid not in cur:
+            if sid in bas and _session_key(inc[sid]) == _session_key(bas[sid]):
+                continue                # server deleted it, untouched here
+            out.append(inc[sid])        # added, or edited a deleted one
+        elif _session_key(inc[sid]) == _session_key(bas.get(sid, {})):
+            out.append(cur[sid])        # client left it: server wins
+        else:
+            out.append(inc[sid])        # client edited it: client wins
+    for sid, record in bas.items():     # client deletions
+        if sid in inc:
+            continue
+        if sid in cur and _session_key(cur[sid]) != _session_key(record):
+            out.append(cur[sid])        # server changed it: resurrect
+    for sid, record in cur.items():     # sessions the client never saw
+        if sid not in inc and sid not in bas:
+            out.append(record)
+    return out
+
+
+def _merge_workspace_state(current, base, incoming):
+    """Three-way merge of one workspace's UI state against the client's base.
+
+    `base` is the state the client started from. Scalars and the device
+    hints take the client's copy, the session list is merged per session,
+    and a list field the client did not touch keeps the server's copy. Pure
+    and deterministic: the response of a write is this function's result, so
+    a stale client converges instead of overwriting the server.
+    """
+    current = current if isinstance(current, dict) else {}
+    base = base if isinstance(base, dict) else {}
+    incoming = incoming if isinstance(incoming, dict) else {}
+    out = dict(current)
+    out.update(incoming)                # scalars and hints: last writer wins
+    out["sessions"] = _merge_sessions(current, base, incoming)
+    for key in ("pinnedFiles", "bookmarks", "recentFiles", "pinnedFolders"):
+        out[key] = (current.get(key) if incoming.get(key) == base.get(key)
+                    else incoming.get(key))
+    return out
+
+
+def _drop_workspace_state(wid):
+    """Delete a removed workspace's state and rev in one config.json write.
+
+    Best effort, like save_workspaces(): a read failure skips the cleanup
+    rather than writing a blob the server could not parse. An entry for a
+    workspace that no longer exists is unreachable; a clobbered config is
+    not.
+    """
+    try:
+        with _CONFIG_LOCK:
+            cfg = _read_stored_config()
+            changed = False
+            for key in _CONFIG_STATE_KEYS:
+                entries = cfg.get(key)
+                if isinstance(entries, dict) and wid in entries:
+                    del entries[wid]
+                    changed = True
+            if changed:
+                atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2))
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("could not drop workspace state: %s\n" % exc)
 
 
 def _migrate_workspace_state(cfg):
@@ -1612,23 +1746,31 @@ def info():
 @app.route("/api/config", methods=["POST"])
 @admin_required
 def set_config():
-    """Replace config.json with the POSTed blob.
+    """Replace config.json with the POSTed blob, minus the server-owned state.
 
-    Held under _CONFIG_LOCK: set_workspace_state() and the startup migration
-    read-modify-write the same file, and without the lock two writers can
-    each read the old blob and silently lose the other's update. Legacy
-    top-level content keys in the blob are folded under
-    workspaceState["default"] first, so a whole-blob POST cannot strand
-    them.
+    Held under _CONFIG_LOCK: set_workspace_state(), remove_workspace() and
+    the startup migration read-modify-write the same file, and without the
+    lock two writers can each read the old blob and silently lose the
+    other's update. The per-workspace state and its revisions are stripped
+    from the body and re-attached from disk, so this route can change chrome
+    preferences but never a session, a bookmark or a pin: those belong to
+    POST /api/workspace-state, which merges a stale write instead of
+    clobbering it. A stored file that cannot be read refuses the POST,
+    because there would be no state to re-attach.
     """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return err("Expected a JSON object body", 400)
-    _fold_legacy_workspace_state(data)
     try:
         with _CONFIG_LOCK:
+            stored = _read_stored_config()
+            for key in _CONFIG_STATE_KEYS + _WORKSPACE_SCOPED_CONFIG_KEYS:
+                data.pop(key, None)
+            for key in _CONFIG_STATE_KEYS:
+                if key in stored:
+                    data[key] = stored[key]
             atomic_write(CONFIG_FILE, json.dumps(data, indent=2))
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         return err("Could not write config: %s" % exc, 500,
                    code="write_failed")
     return jsonify({"ok": True})
@@ -1738,7 +1880,9 @@ def remove_workspace(workspace_id):
 
     The default entry is not removable, and any session sitting on the
     removed workspace is cleared so the next request falls back to the
-    default instead of 404ing on a stale id.
+    default instead of 404ing on a stale id. The workspace's saved UI state
+    and its revision go with it, so nothing is left behind for a later
+    workspace id to pick up.
     """
     items = load_workspaces()
     entry = next((e for e in items if e["id"] == workspace_id), None)
@@ -1748,66 +1892,127 @@ def remove_workspace(workspace_id):
         return err("The default workspace can't be removed", 400,
                    code="default_not_removable")
     save_workspaces([e for e in items if e["id"] != workspace_id])
+    _drop_workspace_state(workspace_id)
     if session.get("workspace") == workspace_id:
         session.pop("workspace", None)
     return jsonify({"ok": True})
 
 
-@app.route("/api/workspace-state", methods=["POST"])
-@workspace_admin_required
-def set_workspace_state():
-    """Merge per-workspace UI state into config.json.
+@app.route("/api/workspace-state", methods=["GET"])
+@read_login_required
+def get_workspace_state():
+    """Read one workspace's UI state, conditionally on its revision.
 
-    Body: {"id": "...", "state": {...}}. Stored under
-    config.json -> workspaceState -> <id>; every other key, including the
-    other workspaces' state, is preserved. `state` must be a JSON object and
-    is capped at WORKSPACE_STATE_MAX_BYTES: this route takes an admin
-    credential (cookie or bearer) and the whole blob is re-read at every
-    boot. The merge runs under _CONFIG_LOCK so a concurrent set_config or
-    startup migration cannot lose this update.
-
-    Gated with workspace_admin_required rather than admin_required: it
-    writes a server-owned file, so with auth off it must obey the same
-    loopback rule as the registry mutations.
+    A viewer may read: the state is the shared session list and pins the
+    reader sees anyway. The conditional is the `rev` query parameter, not an
+    ETag, so it matches the ifModifiedSince style of GET /api/file; an equal
+    rev answers 304 with no body, which is what the 3 s client poll costs
+    when nothing changed.
     """
-    data, error = expect_json("id", "state", code="bad_body")
-    if error:
-        return error
-    wid = data.get("id")
-    state = data.get("state")
+    wid = request.args.get("id")
     if not isinstance(wid, str) or not wid.strip():
         return err("id must be a non-empty string", 400, code="bad_body")
     wid = wid.strip()
     if resolve_workspace(wid) is None:
         return err("Unknown workspace", 404, code="unknown_workspace")
+    cfg = _read_public_config()
+    rev = _workspace_state_rev(cfg, wid)
+    stored_rev = (request.args.get("rev") or "").strip()
+    # Digits only, and bounded: int() would also accept "+7" and "1_0", and a
+    # very long digit string raises on Python's int-conversion limit.
+    if (len(stored_rev) <= 10 and stored_rev.isascii() and
+            stored_rev.isdigit() and int(stored_rev) == rev):
+        return ("", 304)
+    state = cfg.get("workspaceState")
+    entry = state.get(wid) if isinstance(state, dict) else None
+    return jsonify({"ok": True, "id": wid, "rev": rev,
+                    "state": entry if isinstance(entry, dict) else {}})
+
+
+@app.route("/api/workspace-state", methods=["POST"])
+@workspace_admin_required
+def set_workspace_state():
+    """Merge per-workspace UI state into config.json and bump its revision.
+
+    Body: {"id": "...", "state": {...}, "base": {...}}. `state` replaces the
+    stored entry only when `base` matches it; otherwise the two are merged
+    three ways, so a client that started from an older state cannot drop a
+    session a peer added in between. `base` is required: a page that cannot
+    say what it started from is refused instead of overwriting newer data.
+    There is no conflict status, because the merged result is the response.
+
+    Stored under config.json -> workspaceState -> <id>, with the new
+    revision under workspaceStateRev -> <id> in the same lock and the same
+    write. `state` and `base` are capped at WORKSPACE_STATE_MAX_BYTES because
+    the whole blob is re-read at every boot. Gated with
+    workspace_admin_required rather than admin_required: it writes a
+    server-owned file, so with auth off it must obey the same loopback rule as
+    the registry mutations.
+    """
+    data, error = expect_json("id", "state", "base", code="bad_body")
+    if error:
+        return error
+    wid = data.get("id")
+    state = data.get("state")
+    base = data.get("base")
+    if not isinstance(wid, str) or not wid.strip():
+        return err("id must be a non-empty string", 400, code="bad_body")
     if not isinstance(state, dict):
         return err("state must be a JSON object", 400, code="bad_body")
+    if not isinstance(base, dict):
+        return err("base must be a JSON object", 400, code="bad_body")
+    wid = wid.strip()
+    too_large = err(_STATE_TOO_LARGE, 400, code="state_too_large")
+    # Bound both what the client sent and what the merge would store: a stale
+    # base can bring server sessions back into the result.
+    if _json_size(state) > WORKSPACE_STATE_MAX_BYTES:
+        return too_large
+    # A base over the cap can never equal a stored entry, so refuse it before
+    # spending a merge on it.
+    if _json_size(base) > WORKSPACE_STATE_MAX_BYTES:
+        return err(_BASE_TOO_LARGE, 400, code="base_too_large")
+    if resolve_workspace(wid) is None:
+        return err("Unknown workspace", 404, code="unknown_workspace")
     with _CONFIG_LOCK:
-        cfg = _read_public_config()
-        workspace_state = cfg.get("workspaceState")
+        # DELETE /api/workspaces/<id> can land between the lookup above and
+        # this lock and clean up the entry; writing now would re-create it.
+        if resolve_workspace(wid) is None:
+            return err("Unknown workspace", 404, code="unknown_workspace")
+        # The strict reader, not _read_public_config(): attaching this body to
+        # a config that failed to parse would drop every other workspace's
+        # state and every global preference.
+        try:
+            cfg = _read_stored_config()
+        except (OSError, ValueError) as exc:
+            return err("Could not write config: %s" % exc, 500,
+                       code="write_failed")
+        # A present-but-unusable map is a read failure too, not an empty map.
+        workspace_state = cfg.get("workspaceState", {})
         if not isinstance(workspace_state, dict):
-            workspace_state = {}
-        # Forward-compatibility guard: a page loaded before sessions shipped
-        # posts the old key set, and replacing the entry would drop every
-        # other session. A current client always sends both keys, so a
-        # deliberate change, including a deletion, is never blocked.
-        existing = workspace_state.get(wid)
-        if isinstance(existing, dict) and "sessions" in existing:
-            for key in ("sessions", "activeSessionId"):
-                if key not in state:
-                    state[key] = existing[key]
-        encoded = json.dumps(state)
-        if len(encoded.encode("utf-8")) > WORKSPACE_STATE_MAX_BYTES:
-            return err("state exceeds %d bytes" % WORKSPACE_STATE_MAX_BYTES,
-                       400, code="state_too_large")
-        workspace_state[wid] = state
+            return err("Could not write config: workspaceState is not a JSON "
+                       "object", 500, code="write_failed")
+        revs = cfg.get("workspaceStateRev", {})
+        if not isinstance(revs, dict):
+            return err("Could not write config: workspaceStateRev is not a "
+                       "JSON object", 500, code="write_failed")
+        stored = workspace_state.get(wid)
+        if not isinstance(stored, dict):
+            stored = {}
+        merged = state if base == stored else _merge_workspace_state(
+            stored, base, state)
+        if _json_size(merged) > WORKSPACE_STATE_MAX_BYTES:
+            return too_large
+        rev = _workspace_state_rev(cfg, wid) + 1
+        workspace_state[wid] = merged
+        revs[wid] = rev
         cfg["workspaceState"] = workspace_state
+        cfg["workspaceStateRev"] = revs
         try:
             atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2))
         except OSError as exc:
             return err("Could not write config: %s" % exc, 500,
                        code="write_failed")
-    return jsonify({"ok": True, "id": wid})
+    return jsonify({"ok": True, "id": wid, "rev": rev, "state": merged})
 
 
 # --------------------------------------------------------------------------- #

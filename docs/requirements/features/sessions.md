@@ -727,3 +727,81 @@ feature.
    accepted.** The tab bar carries no session label, so a closed view leaves the
    owner with no on-screen marker of which session is active. Accepted in v1 to
    keep the tab bar unchanged.
+
+---
+
+## 10. Cross-device sync (designed 2026-11-15)
+
+**Status:** Designed, not implemented. Supersedes the persistence half of §3 and
+§7 AC58: the shared state is still stored on the server, but it is now also
+re-read while the page is open, and the split between shared and device-local
+state is a product rule, not an implementation detail.
+
+**Goal.** The owner uses the same notebook from a laptop and a second browser or
+host. Sessions, their tabs and their order must be identical everywhere without a
+reload. What a person is currently looking at stays with that browser.
+
+### 10.1 The split
+
+| Set | Owner | Members |
+| --- | --- | --- |
+| **Shared** | the server, one copy per workspace | session ids, names and order; each session's unpinned tab list; pinned tabs; bookmarks; recent files; pinned folders |
+| **Device-local** | the browser | the active session; the active tab of the active session; unsaved buffers and drafts; edit/hybrid state; scroll position. (`activeView`, the side-panel tab, is a global setting, not device-local.) |
+
+The split is the whole feature. A rule that moves a member from one set to the
+other is a design change, not a refactor.
+
+### 10.2 Rules
+
+1. **S1 — One writer.** Only `POST /api/workspace-state` changes the shared set.
+   `POST /api/config` neither reads nor writes it.
+2. **S2 — The server is authoritative.** A shared change from any client becomes
+   visible on every open client within one sync interval.
+3. **S3 — A remote change is structural.** It adds or removes tabs and sessions.
+   It never activates a tab, opens a file, or switches the session.
+4. **S4 — An unsaved buffer is never discarded by a remote change.** A tab with
+   unsaved edits stays open locally even when its session or tab was removed
+   elsewhere, and is re-published on the next write.
+5. **S5 — A stale client cannot overwrite a newer state.** The server merges the
+   client's change into the newer state instead of replacing it: a session the
+   client did not touch keeps the server's copy, a session it changed keeps the
+   client's, and a session added by either side survives. The response carries
+   the merged state, so both devices converge.
+6. **S6 — Selection is per device.** A page load restores the session and tab
+   that device last used, when they still exist.
+7. **S7 — Polling, not push.** The server pushes nothing. A client polls on a
+   fixed interval and pauses while its tab is hidden.
+
+### 10.3 Acceptance criteria
+
+| ID | Criterion | Verifies |
+| --- | --- | --- |
+| AC63 | With the same workspace open in two browsers, creating a session with two tabs in one makes the row and both tabs appear in the other within 5 s, with no reload. | S1, S2 |
+| AC64 | The peer does not switch to the new session, activate a tab, or open a file when it appears. Its active session and active tab are unchanged. | S3, S6 |
+| AC65 | Closing a clean tab in one browser removes it from the other's strip within 5 s. Closing a tab that has unsaved edits in the other browser leaves that tab on that browser, with its dot, and the session is re-published so the row and tab survive on both screens. | S3, S4, S5 |
+| AC66 | Renaming a session updates the peer's row and top-bar session name within 5 s. The peer's active session is unchanged. | S2, S3 |
+| AC67 | Deleting a session in one browser removes the row on the peer when that peer holds no unsaved buffer from it. If it does, the peer keeps the row and republishes the session, so the row survives on both screens until that buffer is saved and its tab closed. | S4, S5 |
+| AC68 | A fresh page on device B lands on the session and tab B last used, not on the ones device A used last, when both still exist. If either is gone, B falls back to the server's active session, then the first session. | S6 |
+| AC69 | Two browsers change two different sessions at the same moment. Both changes survive. | S5 |
+| AC70 | A client whose write is based on an older state is merged, not refused. A session the client did not touch keeps the newer copy; the client's own change survives; both devices show the same result after one round trip. | S5 |
+| AC71 | While the tab is hidden, no state requests are sent. On return, one runs immediately and the page catches up within 2 s. | S7 |
+| AC72 | A viewer-role page receives live updates and sends no state write. | S1 |
+| AC73 | The phone shell, and a page whose server lacks the endpoint, start no sync and make no repeating request. | S7 |
+
+### 10.4 Out of scope
+
+Cursor and selection position, drafts across devices, open edit windows, scroll
+position, the active side-panel view, and any state shared across workspaces.
+Server push (SSE or WebSocket) is out of scope: the poll is the chosen transport.
+
+### 10.5 Assumptions
+
+- **A6 — One workspace at a time.** Sync is per workspace and follows the page's
+  bound workspace; a workspace switch reloads the page, so no cross-workspace
+  merge exists.
+- **A7 — A 3 s interval is acceptable.** The perceived lag of a peer update is at
+  most one interval; the interval is a named constant, not a magic number.
+- **A8 — The last writer wins inside one session.** Two devices editing the same
+  session's tab list at the same instant settle on one list. Merging is per
+  session, not per tab. A deletion applies only to a session the other side did
+  not touch.

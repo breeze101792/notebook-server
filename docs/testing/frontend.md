@@ -366,7 +366,10 @@ links, debounced search and hit marking, the phone config gate (merged
 `recentFiles` only; no `openFiles`/`activeFile`/`lastFile`/
 `sidebarCollapsed` writes), settings (theme/text size are server-wide,
 excluded surfaces, sign out only with auth), and `canWrite()` across auth
-off / no session / viewer / admin.
+off / no session / viewer / admin. `recentFiles` is a workspace-state key, so a
+phone page writes it through `/api/workspace-state` (merged and versioned like
+the desktop) and `POST /api/config` keeps the server's copy; the phone still
+does not poll.
 
 The jsdom mobile block is green, including the acceptance checks for search
 Retry, the desktop-only Bookmarks empty state, deleted-Continue Home
@@ -376,6 +379,67 @@ to fire on a fetch rejection only, never on HTTP 4xx/5xx, so a 401 produces
 phone boot path (a `?file=` deep link wins over resume; a bad link keeps its
 address) and the history invariant: cold-boot deep link and resume both back
 to Home, and A → B → back shows A with A's URL.
+
+### Cross-device sync (`== workspace sync ==`)
+
+**Designed, not implemented.** Design:
+[`architecture/sessions.md`](../architecture/sessions.md) §17. The jsdom suite
+drives the apply path and the write path directly; it does not wait on the poll.
+
+- **The harness cannot see the write path today, and must be changed first.**
+  The shell `<html>` has no `data-workspace` (`tests/dom/test_dom.js:173`), so
+  `NB.workspaceId()` is `""` (`api.js:11-13`) and `scheduleWorkspaceState()`
+  returns at its first line (`app.js:529`). No `POST /api/workspace-state` ever
+  leaves the harness, so "no write" assertions would pass for the wrong reason.
+  The sync block must set `document.documentElement.dataset.workspace =
+  "default"` for its duration and restore it afterwards, and the fake router
+  (`tests/dom/test_dom.js:1898`) must answer `GET`/`POST /api/workspace-state`.
+  The 304 gate is `rev`, so the fake must keep a rev and a stored state, and
+  `GET /api/config` must return `workspaceState` + `workspaceStateRev` for
+  `default` so `applyConfig` seeds `wsRev` and `base`.
+- **Why the loop still stays off elsewhere.** No workspace id on the harness
+  shell. The second gate — a `{}` response has no numeric `rev` — is for a real
+  page talking to a server that lacks the endpoint.
+- **Seams.** `NB.sync.tick()` runs one pass and resolves `{ok, rev}`;
+  `status()` reports `{running, paused, rev, delayMs, lastAt, lastError}`;
+  `pause()/resume()` gate it. `NB.tabs.applyRemoteState({sessions, pinnedFiles,
+  known})` resolves `{applied, kept, diverged}` and is driven directly.
+- **Apply cases.** A remote add appends without activating; a remote remove
+  closes a clean tab; a dirty one is kept, returned in `kept`, and republished by
+  exactly one POST; a removed **active** clean tab activates its neighbour and
+  emits exactly one `tabs:changed` (the flag must span the `await` in
+  `activate()` — this is the case that catches a flag cleared too early); a
+  remote rename updates the Sessions row; a reorder rewrites `sessionOrder`; a
+  pin added remotely moves the tab into the pinned prefix; a session deleted
+  remotely disappears, unless it holds a dirty hidden path, in which case it is
+  kept and republished; an identical projection is a no-op that emits nothing; a
+  malformed or empty `sessions` list is refused, never turned into a synthesised
+  `Main` session; `activeSessionId` and the active tab are unchanged after every
+  apply except the neighbour case.
+- **Write cases.** A write sends `base` = the boot/ACK state and the response's
+  `state` is applied; a merge that brings in a peer session is applied and
+  produces no second POST; an `activeFile`-only response applies nothing and
+  queues no write; the first boot write carries the rev from `/api/config`, so
+  it is never an unconditional replace.
+- **Ordering and recovery.** A response whose `rev` is below the current one is
+  ignored by both the poll and the write (the out-of-order chain: poll starts,
+  a write lands, the older poll response arrives last); a first probe that fails
+  with a transport error still arms the loop, and `resume()` starts a chain that
+  never armed; a page that loads with `visibilityState === "hidden"` sends
+  nothing until its first `visibilitychange`. Implemented by the `sync:` checks
+  at the end of the block: the stale poll keeps `wsRev` and the omitted tab and
+  emits nothing; the stale write keeps the strip and applies no peer session;
+  the backoff case waits out `status().delayMs` and counts the wrapper's GETs,
+  so it asserts the timer, not just the flag; the hidden case waits one full
+  interval before it asserts no GET.
+- **Bad peer data.** A session path with no file behind it is dropped; an
+  unregistered `§` id is dropped; a name over 40 characters is capped and a
+  duplicate name is never renamed; a `sessions` value that is not a list is
+  refused. A remote apply while the tree cache is empty drops nothing, because
+  an unloaded tree means "unknown", not "gone". Concretely: an empty cache keeps
+  a **remote** path the tree does not know (the same state with the tree loaded
+  drops it), while a clean tab the peer omits is still removed — that is a peer
+  removal (§17.6 step 5), not a tree-driven drop.
 
 ## The Playwright browser suite
 

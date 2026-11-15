@@ -290,9 +290,28 @@ config POST:
 `app.js` writes this through a debounced `persistConfig()`
 (`app.js`).
 
+**Cross-device sync (designed, not implemented).** The sync extension
+([`sessions.md`](sessions.md) §17) reads this state while the page is open, not
+only at boot. The split is:
+
+| Set | Keys | Read back by a poll |
+| --- | --- | --- |
+| Shared | `sessions` (ids, names, order, `openFiles`), `pinnedFiles`, `bookmarks`, `recentFiles`, `pinnedFolders` | yes |
+| Hints | `activeFile`, `openFiles`, `lastFile`, `activeSessionId`, `sessions[].activeFile` | never — written for the ACP preamble and for a first load |
+| Device-local | the active session and active tab | held in `localStorage` (§ below) |
+
+Two consequences for anyone touching this state:
+
+- `POST /api/config` no longer carries it. The server strips `workspaceState`,
+  `workspaceStateRev` and every scoped key from a whole-blob POST and re-attaches
+  its own copy, so `/api/workspace-state` is the only writer.
+- A poll that changes nothing in the shared projection must not touch `cfg`,
+  emit `config:changed`, or write. `activeFile`-only traffic is the common case:
+  every tab click on a peer changes it.
+
 ### `localStorage`
 
-Five keys, all namespaced:
+Seven keys, all namespaced:
 
 | Key | Owner | Contents |
 | --- | --- | --- |
@@ -301,14 +320,17 @@ Five keys, all namespaced:
 | `nb:aiChat` | `ai.js` | Versioned AI transcript (conversation + tool flags + newest prompt). Over-size image data URLs are replaced by a placeholder; **Clear** removes the key. |
 | `nb:mobileResume` | `mobile.js` | Last file and scroll position for the phone Home screen. |
 | `nb:captureDraft` | `mobile.js` | Quick-capture draft, kept across a 401. |
+| `nb:activeSession` | `app.js` | **Planned** (sync §17.8). The session this device last had on screen. Written from the `tabs:changed` listener, skipped while a remote state is being applied. |
+| `nb:activeFile` | `app.js` | **Planned** (sync §17.8). The active tab this device last had in that session. Same write rule. |
 
-Three of the keys are workspace-scoped with the `nb:<ws>:<base>` prefix:
-`nb:tableView`, `nb:mobileResume`, and `nb:captureDraft` keep the legacy
-unprefixed name on the default workspace (and on a page without one) and
-become `nb:<workspace id>:<base>` on every other workspace, so per-device
-state does not leak between roots (`table-view.js` `storageKey()`,
-`mobile.js` `workspaceKey()`). Sign-out clears every variant, not just the
-current workspace's (`auth.js` `clearDeviceLocalState()`).
+Five of the keys are workspace-scoped with the `nb:<ws>:<base>` prefix:
+`nb:tableView`, `nb:mobileResume`, `nb:captureDraft`, `nb:activeSession` and
+`nb:activeFile` keep the legacy unprefixed name on the default workspace (and on
+a page without one) and become `nb:<workspace id>:<base>` on every other
+workspace, so per-device state does not leak between roots (`table-view.js`
+`storageKey()`, `mobile.js` `workspaceKey()`). Sign-out clears every variant, not
+just the current workspace's (`auth.js` `clearDeviceLocalState()`, whose
+`DEVICE_LOCAL_KEY_RE` names both new keys).
 
 `nb:tableView` data never reaches the note, the server, or an export.
 

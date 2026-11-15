@@ -12,8 +12,10 @@ must never be able to carry credentials, choose a command to run
 (`acp.json`), or point the server at an arbitrary folder
 (`workspaces.json`).
 
-The server stores `config.json` with no schema validation, except that a POST
-folds legacy top-level content keys under `workspaceState.default` (see
+The server stores `config.json` with no schema validation. One rule applies on
+every write: the per-workspace state (`workspaceState` and `workspaceStateRev`)
+is server-owned and only `/api/workspace-state` writes it, so a whole-blob POST
+carries it through unchanged (see
 [per-workspace state](#per-workspace-state)). The authoritative schema lives
 in the frontend. `boot_state()` in `app.py` sanitizes a small subset for the
 first page paint.
@@ -141,13 +143,17 @@ pre-workspace format and the fallback for a page without a workspace.
 | --- | --- |
 | `lastFile` | The file opened most recently (`app.js`, desktop); re-keyed on a rename/move |
 | `recentFiles` | Array for the Quick open view (`app.js`); re-keyed on a rename/move |
-| `openFiles` | **Mirror** of the active session's live strip, pinned tabs included; the full tab sets live in `sessions` (`app.js`) |
-| `activeFile` | **Mirror** of the active session's selected tab (`app.js`) |
+| `openFiles` | **Mirror** of the active session's live strip, pinned tabs included; written as a hint and never applied by a poll, because the active strip is device-local (`app.js`) |
+| `activeFile` | **Mirror** of the active session's selected tab; written as the ACP preamble hint and never applied by a poll (`app.js`) |
 | `pinnedFiles` | Array of pinned tabs; workspace-global and shared by every session (`app.js`) |
 | `sessions` | Named tab groups for this workspace, each with its own unpinned tabs and active tab (see [Sessions](#sessions)) |
-| `activeSessionId` | The session whose tabs the strip is showing; always one of `sessions[].id` |
+| `activeSessionId` | The session this device last had on screen; a fallback for a page with no device-local value, never applied by a poll |
 | `bookmarks` | Ordered array of bookmarked paths; missing files are pruned on tree refresh (`app.js`) |
 | `pinnedFolders` | Pinned folder paths shown in the Pinned view |
+
+> **Status — designed, not implemented (sync §17).** The `workspaceStateRev`
+> map, the merge on write and the `/api/config` strip are not in the code yet.
+> See [`architecture/sessions.md`](../architecture/sessions.md) §17.2.
 
 ### Per-workspace state
 
@@ -168,7 +174,8 @@ pre-workspace format and the fallback for a page without a workspace.
       "activeFile": "README.md"
     },
     "work-1a2b": {"lastFile": "plan.md", "openFiles": ["plan.md"], "activeFile": "plan.md"}
-  }
+  },
+  "workspaceStateRev": { "default": 7, "work-1a2b": 2 }
 }
 ```
 
@@ -176,10 +183,13 @@ pre-workspace format and the fallback for a page without a workspace.
 | --- | --- |
 | Scoped keys | `lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `sessions`, `activeSessionId`, `recentFiles`, `bookmarks`, `pinnedFolders`. Everything else is global and stays top-level. |
 | Read overlay | The client loads `config.json`, then overlays `workspaceState.<active id>` on top of the top-level values. A missing field falls back to the top-level copy, so the first load after a migration shows the same session. |
-| Write path | `POST /api/workspace-state` with `{id, state}` replaces that entry under `_CONFIG_LOCK` and preserves every other entry and unrelated key. `state` must be a JSON object and is capped at 256 KiB (`WORKSPACE_STATE_MAX_BYTES`). When the stored entry already has `sessions`, a body that omits `sessions`/`activeSessionId` keeps the stored values: a page loaded before this feature must not delete the other sessions. A current client always sends both. |
-| Whole-blob POST | `POST /api/config` replaces the file, so the client merges a fresh read first and carries the whole `workspaceState` map through. The server also folds any stray top-level scoped keys under `workspaceState.default` on every POST. |
+| Write path | `POST /api/workspace-state` with `{id, state, base}` replaces that entry under `_CONFIG_LOCK` and preserves every other entry and unrelated key. `state` and `base` must be JSON objects; `state` is capped at 256 KiB (`WORKSPACE_STATE_MAX_BYTES`). When `base` equals the stored entry the state is stored verbatim; when it differs the server merges per session (a session the client did not change keeps the server's copy) and returns the merged state. The route answers `{ok, id, rev, state}`. A missing `base` is **400** `bad_body` and a `base` over the cap is **400** `base_too_large`; there is no conflict status. The stored file is read strictly: an unreadable or unparseable `config.json`, or a state map that is not an object, answers 500 `write_failed` and writes nothing. |
+| Rev map | `workspaceStateRev` is a sibling map of non-negative integers, one per state entry, bumped on every accepted write. The server owns it; a client-supplied copy is discarded. Missing reads as `0`. It is the conditional for `GET /api/workspace-state?id=…&rev=…` (304 when equal). It is not a write precondition: the write merges. |
+| Whole-blob POST | `POST /api/config` is **not** a state writer. It removes `workspaceState`, `workspaceStateRev` and every scoped key from the body, then re-attaches the stored maps unchanged. It no longer folds legacy scoped keys; the startup migration below is the only fold. If the stored file cannot be read, the POST is refused with 500 `write_failed` instead of dropping the maps. |
+| Single writer | Only `/api/workspace-state` writes `workspaceState` or `workspaceStateRev`. `DELETE /api/workspaces/<id>` removes that workspace's entry and rev under the same lock. Any other write path is a defect. |
 | Startup migration | `_migrate_config_at_startup()` moves legacy top-level scoped keys under `workspaceState.default` once per process start, under `_CONFIG_LOCK`. A blob that already has `workspaceState` is left alone. The migration is best effort and deliberately never runs from `GET /api/config`, so a read never writes a server-owned file. |
-| Viewer and anonymous | `POST /api/workspace-state` requires workspace admin (admin, or a loopback peer while auth is off). A viewer or the unauthenticated shell reads the server copy and does not queue a write. |
+| Viewer and anonymous | `POST /api/workspace-state` requires workspace admin (admin, or a loopback peer while auth is off). A viewer or the unauthenticated shell reads the server copy, polls it for live updates, and does not queue a write. |
+| Client sync | An open page polls `GET /api/workspace-state` every 3 s, paused while hidden, and applies the shared half of the state. The active session and active tab are device-local (`localStorage`). See [`architecture/sessions.md`](../architecture/sessions.md) §17. |
 
 ### Sessions
 

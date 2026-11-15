@@ -181,7 +181,7 @@ The store is in-process, so it resets on restart and is best-effort.
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
 | GET | `/api/config` | read | Returns the stored `config.json` verbatim. Missing or corrupt file returns `{}`. The one-shot workspace-state migration runs at server startup, not on this read, so a GET never writes a server-owned file. |
-| POST | `/api/config` | admin | Body must be a JSON object. Stores it verbatim with no schema validation, except that legacy top-level content keys (`lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`) are folded under `workspaceState.default` first. 400 if not an object, 500 on write failure. |
+| POST | `/api/config` | admin | **Planned change (sync §17.2):** the state keys are stripped and the stored maps re-attached. Today the body is stored with legacy scoped keys folded into `workspaceState.default`. Body must be a JSON object. Stores it with no schema validation, **except** that `workspaceState`, `workspaceStateRev` and every per-workspace content key (`lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`, `sessions`, `activeSessionId`) are removed from the body and the stored `workspaceState`/`workspaceStateRev` are re-attached unchanged. `/api/workspace-state` is the only writer of that state. 400 if not an object, 500 on write failure. |
 | GET | `/api/info` | read | `{data_dir, config_dir, workspace}`: the active workspace root, the config folder, and the active workspace id. For the default root, `data_dir` is the unresolved `DATA_DIR` string. |
 
 ### Workspaces
@@ -198,7 +198,8 @@ limits, and the trust boundary are in
 | PATCH | `/api/workspaces/<id>` | workspace admin | `{name}` | `{workspace: {...}}`. Renaming never changes the id or the path. |
 | DELETE | `/api/workspaces/<id>` | workspace admin | — | `{ok: true}`. Removes the entry only; the folder and notes stay on disk. The default is not removable. |
 | POST | `/api/workspaces/active` | read | `{id}` | `{ok: true, active: "<id>"}`. Stores the id in the signed session. A viewer may switch too. |
-| POST | `/api/workspace-state` | workspace admin | `{id, state}` | `{ok: true, id}`. Merges `state` under `workspaceState.<id>` in `config.json`, preserving other entries and unrelated keys. `state` is capped at 256 KiB. |
+| POST | `/api/workspace-state` | workspace admin | `{id, state, base}` | **Planned (sync §17.2).** `{ok: true, id, rev, state}`. Stores `state` under `workspaceState.<id>`, preserving other entries and unrelated keys; `state` is capped at 256 KiB. `base` is the state the client started from: when it differs from the stored entry the server **merges** the two instead of replacing (per session, three-way) and returns the merged state. A missing `base` is refused with 400 `bad_body`, which is what stops a stale page from overwriting newer data; a `base` over 256 KiB is 400 `base_too_large`. An unreadable `config.json`, or a stored state map that is not an object, is 500 `write_failed` with nothing written. See [Per-workspace state](#per-workspace-state). |
+| GET | `/api/workspace-state` | read | — | **Planned (sync §17.2).** `?id=<wid>[&rev=<int>]`. **304** with an empty body when `rev` equals the stored rev; otherwise `{ok: true, id, rev, state}`, with `state: {}` for an entry never written. 400 `bad_body` without an `id`, 404 `unknown_workspace` for an id no workspace has. |
 
 **Resolution.** `_bind_workspace()` runs as a `before_request` hook and binds
 the request's root to `g.data_dir` and its id to `g.workspace_id`. It reads
@@ -215,11 +216,11 @@ twelve data routes: `/api/tree`, `/api/ls`, `GET /api/file`, `POST /api/file`,
 `/api/delete`, `/api/search`, `/api/graph`. An unauthenticated caller gets the
 route's **401** instead, so the 404 never reveals that an id exists. A
 presented bearer token counts as authenticated for this decision. The 404 never
-fires on login, auth, the workspace routes, config, info, or the SPA shell;
-those fall back to the default root. `/api/ai/chat` is the exception: an
-explicit `workspace` id in the request body that names no workspace is a
-**404** `unknown_workspace`, because there the id is a selector the caller
-chose, not ambient session state.
+fires on login, auth, config, info, or the SPA shell; those fall back to the
+default root. Two routes are exceptions, because there the id is a selector the
+caller chose rather than ambient session state: an explicit `workspace` id in
+`/api/ai/chat` that names no workspace, and an `id` on
+`GET`/`POST /api/workspace-state`.
 
 **Permissions.** Any authenticated role may list workspaces and switch. Add,
 rename, and remove require admin; with auth off they require a loopback peer and
@@ -237,7 +238,7 @@ Workspace routes add a stable `code` to the shared error body:
 
 | Code | Status | Meaning |
 | --- | --- | --- |
-| `bad_body` | 400 | Body is not a JSON object, a required field is missing, `id` is not a non-empty string, or `state` is not an object. |
+| `bad_body` | 400 | Body is not a JSON object, a required field (`id`, `state`, `base`) is missing, `id` is not a non-empty string, `state`/`base` is not an object, or the `id` query parameter is missing on `GET /api/workspace-state`. |
 | `name_empty` | 400 | Name is missing or blank. |
 | `name_too_long` | 400 | Name is over 60 characters. |
 | `name_duplicate` | 400 | Another workspace has that name, compared case-insensitively. |
@@ -250,15 +251,59 @@ Workspace routes add a stable `code` to the shared error body:
 | `too_many` | 400 | Registry already holds 32 workspaces. |
 | `default_not_removable` | 400 | DELETE targeted the default workspace. |
 | `state_too_large` | 400 | Serialised `state` exceeds 256 KiB. |
+| `base_too_large` | 400 | Serialised `base` exceeds 256 KiB; it can never equal a stored entry, so the request is refused before the lock. |
 | `unknown_workspace` | 404 | No workspace has that id. |
 | `timeout` | 504 | The `/api/graph` scan exceeded the scan deadline; no partial graph is returned. |
 | `not_admin` | 403 | Caller is a viewer. |
 | `loopback_required` | 403 | Auth is off and the registry change is not a local, non-proxied request. |
 | `write_failed` | 500 | `config.json` could not be written. |
 
+
 The frontend maps these codes to the dialog field and message
 (`ERROR_FIELD_BY_CODE`, `static/js/workspaces.js`); unknown codes fall back to
 the prose.
+
+> **Status — designed, not implemented (sync §17).** This route pair changes
+> together: the `workspaceStateRev` map, the conditional read, the `base`-and-merge
+> write, and the `/api/config` strip all land in one change. Until then the route
+> replaces the entry with no version, `GET` does not exist, and `/api/config`
+> folds legacy keys. See
+> [`architecture/sessions.md`](../architecture/sessions.md) §17.2.
+
+#### Per-workspace state
+
+`config.json` holds two sibling maps:
+
+```json
+"workspaceState":    { "default": { "sessions": [], "pinnedFiles": [] } },
+"workspaceStateRev": { "default": 7 }
+```
+
+| Rule | Contract |
+| --- | --- |
+| Rev type | One non-negative integer per workspace id. Missing, non-integer, or negative reads as `0`. |
+| Rev owner | The server. A `workspaceStateRev` in any request body is discarded. |
+| Rev bump | `+1` on every accepted `POST /api/workspace-state`, written under the same `_CONFIG_LOCK` and `atomic_write` as the state. |
+| Conditional read | `GET /api/workspace-state?id=<wid>&rev=<int>` answers **304** with an empty body when the rev matches. No `ETag` is used; the query parameter is the conditional, matching the `ifModifiedSince` parameter of `GET /api/file`. |
+| Write | `POST` carries `{state, base}`. `base` equal to the stored entry stores `state` verbatim; a different `base` stores the three-way merge and returns it. There is no conflict status: a stale write is merged, not rejected. Both fields are capped at 256 KiB. The stored file is read strictly: an unreadable or unparseable `config.json`, or a state map that is not an object, refuses the write instead of replacing it. |
+| Merge unit | Per session, keyed by `sessions[].id`. A session the client did not change takes the server's copy; a session it changed takes the client's; a session either side added survives. List fields (`pinnedFiles`, `bookmarks`, `recentFiles`, `pinnedFolders`) take the client's copy when it differs from `base`, else the server's. Scalars take the client's. |
+| Delete | A session in `base`, absent from the request, and untouched on the server is dropped; if the server changed it, the server's copy is kept. |
+| Rev regression | Impossible through the API. `POST /api/config` re-attaches the stored map, and no route accepts a client rev. |
+| Single writer | Only `/api/workspace-state` writes either map; `DELETE /api/workspaces/<id>` removes that workspace's entry and rev under the same lock. |
+| Corrupt read | If `config.json` cannot be read when `POST /api/config` runs, the POST is refused with 500 `write_failed` rather than dropping every workspace's state. |
+
+```bash
+# Read: 304 while nothing changed, then the state after a peer writes.
+curl -sS -i 'http://localhost:5000/api/workspace-state?id=default&rev=7'
+
+# Write: base is the state this client started from. A peer's newer session
+# survives the merge; the response carries both the merged state and the new rev.
+curl -sS -X POST http://localhost:5000/api/workspace-state \
+  -H 'Content-Type: application/json' \
+  -d '{"id": "default", "base": {"sessions": []},
+       "state": {"sessions": [{"id": "main", "name": "Main", "openFiles": [], "activeFile": null}]}}'
+# {"ok": true, "id": "default", "rev": 8, "state": {"sessions": [ ... ]}}
+```
 
 ### Auth
 

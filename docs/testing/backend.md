@@ -4,12 +4,12 @@
 Flask app through Flask's test client, so every test exercises the real
 routing, decorators, path resolution, and write path.
 
-The suite currently holds **498 test methods across 52 test-bearing classes**.
+The suite currently holds **538 test methods across 53 test-bearing classes**.
 The file has 56 `class` statements; four of them hold no tests: the shared
 bases `BaseTest` and `WorkspaceTestBase`, and the two loopback stubs
 `_StubOpenAIHandler` and `_StubWebHandler`. The first table below maps the core
 route/file classes; the second accounts for every other class, so the two tables
-sum to the 498 total. Workspace coverage has its own table in the
+sum to the 538 total. Workspace coverage has its own table in the
 multi-workspace section.
 
 Run it:
@@ -144,7 +144,7 @@ a session helper (`set_session_workspace`), a `file_stamp` no-write assertion
 three route tables the resolution and cache tests share (`DATA_ROUTE_CALLS`
 for the twelve gated data routes, `NON_DATA_ROUTE_CALLS` for the
 shell/auth/registry-level routes that must not 404 on an unknown id, and
-`PUBLIC_ROUTE_CALLS` for the routes that answer any caller). Eight classes
+`PUBLIC_ROUTE_CALLS` for the routes that answer any caller). Ten classes
 cover the feature:
 
 | Class | Tests | Covers |
@@ -155,7 +155,9 @@ cover the feature:
 | `TestWorkspaceResolution` | 13 | `X-Notebook-Workspace` selects the tree and `/api/info` root and `active`; an unknown header or a stale session id 404s with `code: unknown_workspace` on the twelve gated data routes only and never on `/api/config`, `/api/info`, `/api/workspaces`, `/api/workspaces/active`, `/api/login`, `/api/auth`, `/api/ai/config` or the shell; unauthenticated callers get 401 for both a real and an unknown id (no id oracle); session switch; header beats session; bad switch ids; removing the active workspace clears the session; shell boot carries the active id and name; a folder deleted after registration is listed as `available: false` and serves an empty tree instead of failing |
 | `TestWorkspaceDataIsolation` | 2 | A file written through one root is absent from the default tree, and deleting a same-named file in workspace B leaves the default copy intact |
 | `TestWorkspacePathGuards` | 4 | Delete/move/copy of a non-default root refused; delete of the default root refused; `../` traversal refused for delete/move/copy, file write, file read and `ls` in a non-default root and in the default root |
-| `TestWorkspaceConfigState` | 17 | The legacy migration runs from `_migrate_config_at_startup`, moving the seven content keys into `workspaceState.default` (persisted, unrelated keys kept) and is idempotent by mtime; `GET /api/config` is read-only and returns the stored shape unchanged; `POST /api/config` folds stray legacy top-level keys into `workspaceState.default` and preserves other workspaces' entries; existing `workspaceState` left alone; empty config untouched; workspace-state merge keeps other entries and unrelated keys; non-object/missing/oversized bodies rejected (400 with `bad_body` / `state_too_large`), the exact cap accepted, and a failed config write is a 500 with `write_failed` |
+| `TestWorkspaceConfigState` | 17 | The legacy migration runs from `_migrate_config_at_startup`, moving the seven content keys into `workspaceState.default` (persisted, unrelated keys kept) and is idempotent by mtime; `GET /api/config` is read-only and returns the stored shape unchanged; workspace-state write keeps other entries and unrelated keys; non-object/missing/oversized bodies rejected (400 with `bad_body` / `state_too_large`), the exact cap accepted, and a failed config write is a 500 with `write_failed`. **Must change with sync §17.2:** the existing folding assertions (`tests/test_app.py:6853`, `:6876`) become assertions that `POST /api/config` strips `workspaceState`, `workspaceStateRev` and every scoped key and re-attaches the stored maps, and that a corrupt read refuses with 500 `write_failed`. The class asserts the *opposite* today, so the sync change cannot land without editing it. |
+| `TestWorkspaceStateSync` | 21 | Sync §17.2. `GET /api/workspace-state` returns `{ok, id, rev, state}`; **304 with an empty body** when `rev` equals the stored rev; `state: {}` and `rev: 0` for an entry never written; 400 `bad_body` without an `id`; 404 `unknown_workspace`; `POST` with `base` equal to the stored entry stores `state` verbatim and answers the **new** rev and the stored state; a stale `base` merges per session (both sides' changes survive, a same-session edit takes the client's copy, a delete applies only to an untouched session, an add from either side survives); a replay is idempotent but still bumps the rev; a missing `base` is 400 `bad_body` and writes nothing; the rev is monotonic across a `POST /api/config` (never regresses); deleting a workspace removes its state entry and rev; a viewer may GET and is refused POST; the 304 and the 200 both carry `no-store` and `Vary`; a `base` over `WORKSPACE_STATE_MAX_BYTES` is 400 `base_too_large` with nothing written, and that check runs **before** the workspace lookup (an unknown id with an oversized base is 400, not 404); a `state` under the cap whose merged result exceeds it is 400 `state_too_large` with nothing written, leaving the entry and the rev as they were. |
+| `TestWorkspaceStateMerge` | 18 | The pure merge (no HTTP): `_session_key` ignores `activeFile` and a non-list `openFiles`; every three-way rule (add from either side, same-session edit, delete untouched, resurrect a server-changed delete, peer-only session, order); the list-field rule; replay idempotence; non-dict and malformed inputs (a non-list `sessions` never raises); unusable and duplicate entries; `_workspace_state_rev` for missing, non-int, negative, bool and non-dict maps. |
 | `TestWorkspaceCacheHeaders` | 4 | Every gated read carries `Vary: X-Notebook-Workspace` plus `Cache-Control: no-store`; the data-route unknown-workspace 404s vary too, as do the non-data routes that answer an unknown id; `POST /api/workspace-state` varies |
 
 `POST /api/workspace-state` (`set_workspace_state`) is gated by
@@ -166,13 +168,21 @@ accepts a loopback peer only and refuses a request that carries any
 of this section recorded the opposite; that described the old
 `admin_required` gate, which the route no longer uses.
 
-Residual test gap: `TestWorkspacePermissions` asserts only the 403 status for
-the workspace-state call from a viewer — it does not assert the `not_admin`
-code — and no auth-off case asserts the loopback refusal on
+`TestWorkspaceStateSync` and `TestWorkspaceStateMerge` are the contract for the
+cross-device read/write pair ([`architecture/sessions.md`](../architecture/sessions.md)
+§17.2). Three rules they pin that are easy to lose in a refactor: a 304 carries
+no body, no route accepts a client-supplied `workspaceStateRev` (so a rev can
+never move backwards), and a stale write is **merged**, never rejected — a
+conflict status was designed out because it made the loser's own change vanish.
+The "fold stray legacy keys on POST" assertion now lives on
+`_migrate_config_at_startup`; `TestWorkspaceConfigState` asserts the inverted
+rule, that a whole-blob POST strips the state and re-attaches the stored maps.
+
+Residual test gap: no auth-off case asserts the loopback refusal on
 `/api/workspace-state` (the refusal cases cover only the three registry
 mutations; the workspace-state calls in `TestWorkspaceConfigState` run with
-auth off from loopback and are therefore allowed). The behaviour is correct in
-`app.py`; the assertions are thinner than for the sibling routes.
+auth off from loopback and are therefore allowed). The viewer refusal on the
+same route does assert `not_admin`.
 
 ## Related documentation
 

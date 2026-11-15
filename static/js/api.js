@@ -88,6 +88,9 @@
         error.code = data.code;
       }
       error.status = resp.status;
+      // The parsed body travels with the error, so a caller can read a
+      // refusal detail from it without re-reading the response.
+      error.body = data;
       throw error;
     }
     return data;
@@ -139,8 +142,18 @@
     deleteWorkspace: (id) =>
       request("DELETE", "/api/workspaces/" + encodeURIComponent(id)),
     setActiveWorkspace: (id) => request("POST", "/api/workspaces/active", { id }),
-    saveWorkspaceState: (id, state) =>
-      request("POST", "/api/workspace-state", { id, state }),
+    // Versioned workspace state. The `rev` query parameter is the
+    // conditional: an equal rev answers 304 with no body, matching the
+    // ifModifiedSince style above instead of an ETag.
+    getWorkspaceState: (id, rev) => {
+      let url = "/api/workspace-state?id=" + encodeURIComponent(id);
+      if (Number.isInteger(rev)) url += "&rev=" + encodeURIComponent(String(rev));
+      return request("GET", url, undefined, { notModified: { notModified: true } });
+    },
+    // `base` is the state this client started from; the server merges a
+    // stale write against it and answers with the state it now holds.
+    saveWorkspaceState: (id, state, base) =>
+      request("POST", "/api/workspace-state", { id, state, base }),
     getAuthStatus: () => request("GET",  "/api/auth"),
     login:         (password)  => request("POST", "/api/login",  { password }),
     logout:        () => request("POST", "/api/logout"),

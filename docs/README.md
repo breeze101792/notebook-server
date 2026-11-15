@@ -53,7 +53,7 @@ Start here depending on the job:
 | --- | --- |
 | [`architecture/backend.md`](architecture/backend.md) | Import-time path resolution and seeding, `safe_path` and atomic writes, the auth layer, workspaces, the AI proxy, and the design trade-offs. |
 | [`architecture/frontend.md`](architecture/frontend.md) | Script load order, the boot sequence, the `static/js/` modules, the code-block renderer registry, persistence, the service worker, and the UI surfaces. |
-| [`architecture/sessions.md`](architecture/sessions.md) | Session tab groups: the live-view ownership model, config shape, normalisation and migration, the swap algorithm and its tokens, file operations across stored sessions, the empty state, and test seams. |
+| [`architecture/sessions.md`](architecture/sessions.md) | Session tab groups: the live-view ownership model, config shape, normalisation and migration, the swap algorithm and its tokens, file operations across stored sessions, the empty state, and test seams. §17 is the designed cross-device sync (not implemented). |
 | [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the six special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
 | [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, and the open questions. |
 | [`architecture/context-menus.md`](architecture/context-menus.md) | The one shared `NB.menu` module: placement, keyboard, submenus, `onClose`, and the three pre-migration menus it replaced. |

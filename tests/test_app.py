@@ -6367,8 +6367,13 @@ class TestWorkspacePermissions(WorkspaceTestBase):
         r = admin.patch("/api/workspaces/" + wid, json={"name": "Bee"})
         self.assertEqual(r.status_code, 200)
         r = admin.post("/api/workspace-state",
-                       json={"id": wid, "state": {"lastFile": "a.md"}})
-        self.assertEqual(r.status_code, 200)
+                       json={"id": wid, "state": {"lastFile": "a.md"},
+                             "base": {}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["rev"], 1)
+        r = admin.get("/api/workspace-state?id=" + wid)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["state"], {"lastFile": "a.md"})
         r = admin.delete("/api/workspaces/" + wid)
         self.assertEqual(r.status_code, 200)
 
@@ -6403,10 +6408,13 @@ class TestWorkspacePermissions(WorkspaceTestBase):
             self.assertEqual(r.status_code, 403)
             self.assertEqual(r.get_json()["code"], "not_admin",
                              r.get_data(as_text=True))
-        # /api/workspace-state is gated by the plain admin decorator, whose
-        # 403 carries no `code`; see docs/testing/ for the reported gap.
-        r = viewer.post("/api/workspace-state", json={"id": wid, "state": {}})
+        # /api/workspace-state is gated by workspace_admin_required, which is
+        # the same wrapper as the three registry mutations, so its 403 names
+        # the code too.
+        r = viewer.post("/api/workspace-state",
+                        json={"id": wid, "state": {}, "base": {}})
         self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.get_json()["code"], "not_admin")
         # None of the refused calls changed the registry.
         self.assertEqual(
             len(admin.get("/api/workspaces").get_json()["workspaces"]), 2)
@@ -6795,7 +6803,7 @@ class TestWorkspacePathGuards(WorkspaceTestBase):
 
 
 class TestWorkspaceConfigState(WorkspaceTestBase):
-    """config.json: the startup migration, POST folding, and the state merge."""
+    """config.json: the startup migration, the scoped-key strip, and the state."""
 
     LEGACY = {
         "lastFile": "a.md",
@@ -6806,6 +6814,13 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         "bookmarks": ["a.md"],
         "pinnedFolders": ["notes"],
     }
+
+    def post_state(self, wid, state, base=None):
+        """POST /api/workspace-state with the versioned sync body shape."""
+        body = {"id": wid, "state": state}
+        if base is not None:
+            body["base"] = base
+        return self.post("/api/workspace-state", body)
 
     def test_startup_migration_moves_legacy_keys_once(self):
         cfg = dict(self.LEGACY)
@@ -6850,20 +6865,38 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.assertNotIn("workspaceState", data)
         self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
 
-    def test_post_config_folds_legacy_keys_into_the_default_state(self):
+    def test_post_config_strips_scoped_keys_and_keeps_the_stored_state(self):
+        # docs/architecture/sessions.md §17.2: the whole-blob route is no
+        # longer a state writer. A body carrying scoped keys loses them and
+        # the stored maps are re-attached, so no page can fold, clobber or
+        # reorder another device's sessions, bookmarks or pins.
+        self.write_config({
+            "workspaceState": {nb.WORKSPACE_DEFAULT_ID: {
+                "lastFile": "stored.md", "openFiles": ["stored.md"],
+            }},
+            "workspaceStateRev": {nb.WORKSPACE_DEFAULT_ID: 4},
+        })
         r = self.post("/api/config", {
             "theme": "light",
             "lastFile": "a.md",
             "openFiles": ["a.md"],
+            "workspaceState": {"b-0001": {"lastFile": "b.md"}},
+            "workspaceStateRev": {nb.WORKSPACE_DEFAULT_ID: 99},
         })
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         disk = self.read_config_file()
-        self.assertEqual(disk["workspaceState"],
-                         {nb.WORKSPACE_DEFAULT_ID: {"lastFile": "a.md",
-                                                    "openFiles": ["a.md"]}})
-        self.assertNotIn("lastFile", disk)
-        self.assertNotIn("openFiles", disk)
         self.assertEqual(disk["theme"], "light")
+        # The stored maps win; the body's copies are gone, not folded.
+        self.assertEqual(disk["workspaceState"], {
+            nb.WORKSPACE_DEFAULT_ID: {"lastFile": "stored.md",
+                                      "openFiles": ["stored.md"]},
+        })
+        self.assertEqual(disk["workspaceStateRev"],
+                         {nb.WORKSPACE_DEFAULT_ID: 4})
+        for key in ("lastFile", "openFiles", "activeFile", "pinnedFiles",
+                    "recentFiles", "bookmarks", "pinnedFolders",
+                    "sessions", "activeSessionId"):
+            self.assertNotIn(key, disk)
 
     SESSIONS = [
         {"id": "main", "name": "Main",
@@ -6873,25 +6906,33 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
          "activeFile": None},
     ]
 
-    def test_post_config_folds_sessions_into_the_default_state(self):
-        # A whole-blob POST from a page without a workspace must fold the
-        # session keys under workspaceState.default, like the other scoped
-        # keys (docs/architecture/sessions.md §11).
+    def test_post_config_keeps_the_stored_sessions_and_ignores_body_ones(self):
+        # A page loaded before the sync change cannot create, delete or
+        # reorder a session through the whole-blob route (§17.2).
+        self.write_config({
+            "workspaceState": {nb.WORKSPACE_DEFAULT_ID: {
+                "sessions": self.SESSIONS,
+                "activeSessionId": "main",
+            }},
+            "workspaceStateRev": {nb.WORKSPACE_DEFAULT_ID: 2},
+        })
         r = self.post("/api/config", {
             "theme": "light",
             "lastFile": "notes/b.md",
-            "sessions": self.SESSIONS,
-            "activeSessionId": "main",
+            "sessions": [{"id": "only", "name": "Only", "openFiles": [],
+                          "activeFile": None}],
+            "activeSessionId": "only",
         })
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         disk = self.read_config_file()
         self.assertEqual(disk["workspaceState"], {
             nb.WORKSPACE_DEFAULT_ID: {
-                "lastFile": "notes/b.md",
                 "sessions": self.SESSIONS,
                 "activeSessionId": "main",
             },
         })
+        self.assertEqual(disk["workspaceStateRev"],
+                         {nb.WORKSPACE_DEFAULT_ID: 2})
         for key in ("sessions", "activeSessionId", "lastFile"):
             self.assertNotIn(key, disk)
         self.assertEqual(disk["theme"], "light")
@@ -6907,23 +6948,31 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
             "openFiles": ["Welcome.md", "notes/a.md", "notes/b.md"],
             "activeFile": "notes/b.md",
         }
-        r = self.post("/api/workspace-state",
-                      {"id": "default", "state": state})
+        # Nothing is stored yet, so an empty base matches and the state is
+        # stored verbatim.
+        r = self.post_state("default", state, {})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        body = r.get_json()
+        self.assertEqual(body["ok"], True)
+        self.assertEqual(body["id"], "default")
+        self.assertEqual(body["rev"], 1)
+        self.assertEqual(body["state"], state)
         stored = self.read_config_file()["workspaceState"]["default"]
         self.assertEqual(stored["sessions"], self.SESSIONS)
         self.assertEqual(stored["activeSessionId"], "main")
-        # A current client always sends the keys, so the same shape
-        # round-trips unchanged on the next write.
-        r = self.post("/api/workspace-state",
-                      {"id": "default", "state": state})
+        # A current client sends the state it holds as `base`, so the same
+        # shape round-trips unchanged on the next write.
+        r = self.post_state("default", state, state)
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["rev"], 2)
+        self.assertEqual(r.get_json()["state"], state)
         self.assertEqual(
             self.read_config_file()["workspaceState"]["default"], state)
 
-    def test_workspace_state_keeps_sessions_when_an_old_client_omits_them(self):
-        # A tab loaded before sessions shipped posts the old key set. The
-        # server keeps the stored session fields and updates the rest.
+    def test_workspace_state_refuses_an_old_client_write_without_a_base(self):
+        # A tab loaded before sync posts the old body (no base). It is
+        # refused, which is what stops it from dropping the sessions it
+        # never saw; the stored entry is left untouched.
         self.write_config({
             "workspaceState": {"default": {
                 "sessions": self.SESSIONS,
@@ -6931,59 +6980,80 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
                 "lastFile": "notes/a.md",
             }},
         })
+        before = self.file_stamp(nb.CONFIG_FILE)
         r = self.post("/api/workspace-state",
                       {"id": "default", "state": {"lastFile": "notes/b.md"}})
-        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
-        entry = self.read_config_file()["workspaceState"]["default"]
-        self.assertEqual(entry["lastFile"], "notes/b.md")
-        self.assertEqual(entry["sessions"], self.SESSIONS)
-        self.assertEqual(entry["activeSessionId"], "main")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.get_json()["code"], "bad_body")
+        self.assertIn("base", r.get_json()["error"])
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
 
     def test_workspace_state_accepts_a_new_sessions_array(self):
         # A current client may replace the sessions (including deleting
-        # one); the guard must never block that.
-        self.write_config({
-            "workspaceState": {"default": {
-                "sessions": self.SESSIONS,
-                "activeSessionId": "main",
-            }},
-        })
+        # one); matching its base to the stored entry stores it verbatim.
+        stored = {"sessions": self.SESSIONS, "activeSessionId": "main"}
+        self.write_config({"workspaceState": {"default": dict(stored)}})
         new = [{"id": "only", "name": "Only", "openFiles": [],
                 "activeFile": None}]
-        r = self.post("/api/workspace-state", {
-            "id": "default",
-            "state": {"sessions": new, "activeSessionId": "only"},
-        })
+        state = {"sessions": new, "activeSessionId": "only"}
+        r = self.post_state("default", state, stored)
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["state"], state)
         entry = self.read_config_file()["workspaceState"]["default"]
         self.assertEqual(entry["sessions"], new)
         self.assertEqual(entry["activeSessionId"], "only")
 
     def test_workspace_state_does_not_invent_sessions_without_stored_ones(self):
-        # The guard is conditional on the stored entry having `sessions`;
-        # an old entry must not gain empty session keys.
-        self.write_config({
-            "workspaceState": {"default": {"lastFile": "notes/a.md"}},
-        })
-        r = self.post("/api/workspace-state",
-                      {"id": "default", "state": {"lastFile": "notes/b.md"}})
+        # A verbatim write must not gain empty session keys the client never
+        # sent: an entry written before sessions existed stays free of them.
+        stored = {"lastFile": "notes/a.md"}
+        self.write_config({"workspaceState": {"default": dict(stored)}})
+        r = self.post_state("default", {"lastFile": "notes/b.md"}, stored)
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         entry = self.read_config_file()["workspaceState"]["default"]
         self.assertEqual(entry, {"lastFile": "notes/b.md"})
 
-    def test_post_config_preserves_other_workspace_state(self):
+    def test_post_config_keeps_other_workspace_state(self):
+        # The body's copy of another workspace's entry is dropped: only that
+        # workspace's own state write may change it.
+        self.write_config({
+            "workspaceState": {
+                "b-0001": {"lastFile": "b.md", "openFiles": ["b.md"]},
+            },
+            "workspaceStateRev": {"b-0001": 7},
+        })
         r = self.post("/api/config", {
             "theme": "dark",
             "lastFile": "a.md",
             "workspaceState": {
-                "b-0001": {"lastFile": "b.md", "openFiles": ["b.md"]},
+                "b-0001": {"lastFile": "clobbered.md"},
+                "default": {"lastFile": "a.md"},
             },
         })
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
-        state = self.read_config_file()["workspaceState"]
-        self.assertEqual(state["b-0001"],
-                         {"lastFile": "b.md", "openFiles": ["b.md"]})
-        self.assertEqual(state[nb.WORKSPACE_DEFAULT_ID], {"lastFile": "a.md"})
+        cfg = self.read_config_file()
+        self.assertEqual(cfg["workspaceState"], {
+            "b-0001": {"lastFile": "b.md", "openFiles": ["b.md"]},
+        })
+        self.assertEqual(cfg["workspaceStateRev"], {"b-0001": 7})
+        self.assertNotIn("lastFile", cfg)
+
+    def test_post_config_refuses_a_corrupt_config_read(self):
+        # Re-attaching the state needs a readable file: an unparseable or
+        # non-object blob refuses the POST instead of dropping every
+        # workspace's state (§17.9).
+        for corrupt in ('{"workspaceState": [', "[]", '"text"'):
+            with self.subTest(corrupt=corrupt):
+                with open(nb.CONFIG_FILE, "w", encoding="utf-8") as f:
+                    f.write(corrupt)
+                before = self.file_stamp(nb.CONFIG_FILE)
+                r = self.post("/api/config", {"theme": "dark"})
+                self.assertEqual(r.status_code, 500,
+                                 r.get_data(as_text=True))
+                self.assertEqual(r.get_json()["code"], "write_failed")
+                self.assertIn("Could not write config",
+                              r.get_json()["error"])
+                self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
 
     def test_existing_workspace_state_is_left_alone(self):
         cfg = dict(self.LEGACY)
@@ -7014,49 +7084,73 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.write_config({
             "theme": "dark",
             "workspaceState": {"b-0001": {"lastFile": "b.md"}},
+            "workspaceStateRev": {"b-0001": 3},
         })
-        r = self.post("/api/workspace-state",
-                      {"id": "default", "state": {"lastFile": "a.md"}})
+        r = self.post_state("default", {"lastFile": "a.md"}, {})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
-        self.assertEqual(r.get_json(), {"ok": True, "id": "default"})
+        self.assertEqual(r.get_json(), {
+            "ok": True, "id": "default", "rev": 1,
+            "state": {"lastFile": "a.md"},
+        })
         disk = self.read_config_file()
         self.assertEqual(disk["theme"], "dark")
         self.assertEqual(disk["workspaceState"]["b-0001"],
                          {"lastFile": "b.md"})
         self.assertEqual(disk["workspaceState"]["default"],
                          {"lastFile": "a.md"})
-        # A second write replaces only its own entry.
-        self.post("/api/workspace-state",
-                  {"id": "default", "state": {"lastFile": "c.md"}})
+        self.assertEqual(disk["workspaceStateRev"],
+                         {"b-0001": 3, "default": 1})
+        # A second write replaces only its own entry and bumps only its own
+        # rev.
+        self.post_state("default", {"lastFile": "c.md"},
+                        {"lastFile": "a.md"})
         disk = self.read_config_file()
         self.assertEqual(disk["workspaceState"]["default"],
                          {"lastFile": "c.md"})
         self.assertEqual(disk["workspaceState"]["b-0001"],
                          {"lastFile": "b.md"})
+        self.assertEqual(disk["workspaceStateRev"], {"b-0001": 3, "default": 2})
 
     def test_workspace_state_rejects_bad_bodies(self):
-        r = self.post("/api/workspace-state", {"id": "default"})
+        r = self.post("/api/workspace-state", {"id": "default", "base": {}})
         self.assertEqual(r.status_code, 400)
         self.assertIn("Missing required field: state", r.get_json()["error"])
         self.assertEqual(r.get_json()["code"], "bad_body")
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {}})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("Missing required field: base", r.get_json()["error"])
+        self.assertEqual(r.get_json()["code"], "bad_body")
         for bad in ([1], "x", 3, None):
             r = self.post("/api/workspace-state",
-                          {"id": "default", "state": bad})
+                          {"id": "default", "state": bad, "base": {}})
             self.assertEqual(r.status_code, 400, "state=%r" % (bad,))
             self.assertEqual(r.get_json()["error"],
                              "state must be a JSON object")
             self.assertEqual(r.get_json()["code"], "bad_body")
-        r = self.post("/api/workspace-state", {"id": "", "state": {}})
-        self.assertEqual(r.status_code, 400)
-        r = self.post("/api/workspace-state", {"id": "ghost", "state": {}})
+            r = self.post("/api/workspace-state",
+                          {"id": "default", "state": {}, "base": bad})
+            self.assertEqual(r.status_code, 400, "base=%r" % (bad,))
+            self.assertEqual(r.get_json()["error"],
+                             "base must be a JSON object")
+            self.assertEqual(r.get_json()["code"], "bad_body")
+        for bad_id in ("", "   ", 3, None):
+            r = self.post("/api/workspace-state",
+                          {"id": bad_id, "state": {}, "base": {}})
+            self.assertEqual(r.status_code, 400, "id=%r" % (bad_id,))
+            self.assertEqual(r.get_json()["code"], "bad_body")
+        r = self.post("/api/workspace-state",
+                      {"id": "ghost", "state": {}, "base": {}})
         self.assertEqual(r.status_code, 404)
         self.assertEqual(r.get_json()["error"], "Unknown workspace")
         self.assertEqual(r.get_json()["code"], "unknown_workspace")
+        # No refused body wrote anything.
+        self.assertFalse(os.path.isfile(nb.CONFIG_FILE) and
+                         "workspaceState" in self.read_config_file())
 
     def test_workspace_state_rejects_a_body_over_the_cap(self):
         big = "a" * (nb.WORKSPACE_STATE_MAX_BYTES + 1)
-        r = self.post("/api/workspace-state",
-                      {"id": "default", "state": {"blob": big}})
+        r = self.post_state("default", {"blob": big}, {})
         self.assertEqual(r.status_code, 400)
         self.assertIn("state exceeds %d bytes" % nb.WORKSPACE_STATE_MAX_BYTES,
                       r.get_json()["error"])
@@ -7066,17 +7160,644 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
     def test_workspace_state_accepts_a_body_at_the_cap(self):
         # The cap is on the encoded state alone; land just under it.
         payload = "a" * (nb.WORKSPACE_STATE_MAX_BYTES - 32)
-        r = self.post("/api/workspace-state",
-                      {"id": "default", "state": {"blob": payload}})
+        r = self.post_state("default", {"blob": payload}, {})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
 
     def test_workspace_state_write_failure_is_500(self):
         with mock.patch.object(nb, "atomic_write", side_effect=OSError("full")):
-            r = self.post("/api/workspace-state",
-                          {"id": "default", "state": {"a": 1}})
+            r = self.post_state("default", {"a": 1}, {})
         self.assertEqual(r.status_code, 500)
         self.assertIn("Could not write config", r.get_json()["error"])
         self.assertEqual(r.get_json()["code"], "write_failed")
+
+
+class TestWorkspaceStateMerge(BaseTest):
+    """The cross-device merge primitives, driven with no HTTP at all.
+
+    docs/architecture/sessions.md §17.2: `_merge_workspace_state` answers a
+    stale write instead of rejecting it, so every rule below is a behaviour
+    a conflict status used to hide.
+    """
+
+    def session(self, sid, name, files, active=None):
+        return {"id": sid, "name": name, "openFiles": list(files),
+                "activeFile": active}
+
+    def state(self, sessions, active="main", **extra):
+        out = {"sessions": sessions, "activeSessionId": active}
+        out.update(extra)
+        return out
+
+    def merge(self, current, base, incoming):
+        return nb._merge_workspace_state(current, base, incoming)
+
+    def test_session_key_ignores_the_per_session_active_file(self):
+        one = {"id": "main", "name": "Main", "openFiles": ["a.md"],
+               "activeFile": "a.md"}
+        other = {"id": "main", "name": "Main", "openFiles": ["a.md"],
+                 "activeFile": "b.md"}
+        self.assertEqual(nb._session_key(one), nb._session_key(other))
+        # The name and the open list are what count.
+        self.assertNotEqual(nb._session_key(one),
+                            nb._session_key(dict(one, name="Renamed")))
+        self.assertNotEqual(nb._session_key(one),
+                            nb._session_key(dict(one, openFiles=[])))
+
+    def test_session_key_treats_a_non_list_open_files_as_empty(self):
+        self.assertEqual(nb._session_key({"name": "N", "openFiles": "a.md"}),
+                         ("N", ()))
+        self.assertEqual(nb._session_key({"name": "N", "openFiles": None}),
+                         ("N", ()))
+        self.assertEqual(nb._session_key({}), (None, ()))
+
+    def test_two_clients_changing_different_sessions_keep_both(self):
+        main = self.session("main", "Main", ["a.md"])
+        reading = self.session("reading", "Reading", ["b.md"])
+        base = self.state([main, reading])
+        current = self.state([self.session("main", "Main", ["a.md", "c.md"]),
+                              reading])
+        # The client adds a tab to `reading` only.
+        incoming = self.state([main,
+                               self.session("reading", "Reading",
+                                            ["b.md", "d.md"])])
+        out = self.merge(current, base, incoming)
+        self.assertEqual([s["id"] for s in out["sessions"]],
+                         ["main", "reading"])
+        self.assertEqual(out["sessions"][0]["openFiles"], ["a.md", "c.md"])
+        self.assertEqual(out["sessions"][1]["openFiles"], ["b.md", "d.md"])
+
+    def test_a_same_session_edit_takes_the_client_copy(self):
+        base = self.state([self.session("main", "Main", ["a.md"])])
+        current = self.state([self.session("main", "Main", ["a.md", "c.md"])])
+        incoming = self.state([self.session("main", "Main", ["a.md", "x.md"])])
+        out = self.merge(current, base, incoming)
+        self.assertEqual(out["sessions"][0]["openFiles"], ["a.md", "x.md"])
+
+    def test_a_session_the_client_did_not_touch_takes_the_server_copy(self):
+        base = self.state([self.session("main", "Main", ["a.md"])])
+        current = self.state([self.session("main", "Main", ["a.md", "c.md"])])
+        incoming = self.state([self.session("main", "Main", ["a.md"])])
+        self.assertEqual(self.merge(current, base, incoming)["sessions"][0],
+                         current["sessions"][0])
+
+    def test_a_delete_of_an_untouched_session_applies(self):
+        main = self.session("main", "Main", ["a.md"])
+        reading = self.session("reading", "Reading", ["b.md"])
+        base = self.state([main, reading])
+        current = base
+        out = self.merge(current, base, self.state([main]))
+        self.assertEqual([s["id"] for s in out["sessions"]], ["main"])
+
+    def test_a_delete_of_a_session_the_server_changed_is_resurrected(self):
+        main = self.session("main", "Main", ["a.md"])
+        reading = self.session("reading", "Reading", ["b.md"])
+        base = self.state([main, reading])
+        current = self.state([main,
+                              self.session("reading", "Reading",
+                                           ["b.md", "d.md"])])
+        out = self.merge(current, base, self.state([main]))
+        self.assertEqual([s["id"] for s in out["sessions"]],
+                         ["main", "reading"])
+        self.assertEqual(out["sessions"][1]["openFiles"], ["b.md", "d.md"])
+
+    def test_a_session_added_by_either_side_survives(self):
+        main = self.session("main", "Main", ["a.md"])
+        base = self.state([main])
+        extra = self.session("extra", "Extra", ["c.md"])
+        # Added by the client.
+        out = self.merge(base, base, self.state([main, extra]))
+        self.assertEqual([s["id"] for s in out["sessions"]],
+                         ["main", "extra"])
+        # Added by a peer after the client's base: the client never saw it.
+        out = self.merge(self.state([main, extra]), base, base)
+        self.assertEqual([s["id"] for s in out["sessions"]],
+                         ["main", "extra"])
+        self.assertEqual(out["sessions"][1]["openFiles"], ["c.md"])
+
+    def test_an_active_file_move_is_never_a_change(self):
+        base = self.state([self.session("main", "Main",
+                                        ["a.md", "b.md"], "a.md")])
+        # A peer clicked the other tab: same name, same list.
+        current = self.state([self.session("main", "Main",
+                                           ["a.md", "b.md"], "b.md")])
+        incoming = self.state([self.session("main", "Main",
+                                            ["a.md", "b.md"], "a.md")])
+        out = self.merge(current, base, incoming)
+        self.assertEqual(out["sessions"][0]["activeFile"], "b.md")
+        # The same move plus a real edit does take the client's copy.
+        incoming = self.state([self.session("main", "Main",
+                                            ["a.md", "b.md", "c.md"], "c.md")])
+        out = self.merge(current, base, incoming)
+        self.assertEqual(out["sessions"][0]["openFiles"],
+                         ["a.md", "b.md", "c.md"])
+        self.assertEqual(out["sessions"][0]["activeFile"], "c.md")
+
+    def test_the_merged_order_is_incoming_then_resurrected_then_peer_only(self):
+        def s(sid, name=None):
+            return self.session(sid, name or sid.title(), [sid + ".md"])
+        base = self.state([s("a"), s("b")])
+        # The client adds `x` and deletes `b`; meanwhile the server edited
+        # `b` (resurrected) and a peer added `d` (peer-only).
+        current = self.state([s("a"), s("b", "B2"), s("d")])
+        incoming = self.state([s("x"), s("a")])
+        out = self.merge(current, base, incoming)
+        self.assertEqual([x["id"] for x in out["sessions"]],
+                         ["x", "a", "b", "d"])
+        self.assertEqual(out["sessions"][2]["name"], "B2")
+
+    def test_list_fields_keep_the_server_copy_when_the_client_did_not_touch_them(self):
+        base = {"pinnedFiles": ["old.md"], "bookmarks": ["b.md"],
+                "recentFiles": ["r.md"], "pinnedFolders": ["notes"]}
+        current = {"pinnedFiles": ["peer.md"], "bookmarks": ["b2.md"],
+                   "recentFiles": ["r2.md"], "pinnedFolders": ["peer-folder"]}
+        incoming = {"pinnedFiles": ["mine.md"], "bookmarks": ["b.md"],
+                    "recentFiles": ["r.md"], "pinnedFolders": ["notes"]}
+        out = self.merge(current, base, incoming)
+        self.assertEqual(out["pinnedFiles"], ["mine.md"])       # touched
+        self.assertEqual(out["bookmarks"], ["b2.md"])           # untouched
+        self.assertEqual(out["recentFiles"], ["r2.md"])
+        self.assertEqual(out["pinnedFolders"], ["peer-folder"])
+        # A list the client dropped outright still differs from its base.
+        out = self.merge(current, base, {"bookmarks": []})
+        self.assertEqual(out["bookmarks"], [])
+        # Scalars and the device hints take the client's copy.
+        out = self.merge(dict(current, activeFile="peer.md", theme="dark"),
+                         dict(base, activeFile="peer.md"),
+                         {"activeFile": "mine.md", "lastFile": "mine.md"})
+        self.assertEqual(out["activeFile"], "mine.md")
+        self.assertEqual(out["lastFile"], "mine.md")
+        self.assertEqual(out["theme"], "dark")
+
+    def test_a_replay_is_idempotent(self):
+        state = self.state([self.session("main", "Main", ["a.md"])],
+                           activeFile="a.md",
+                           pinnedFiles=["Welcome.md"], bookmarks=["a.md"],
+                           recentFiles=["a.md"], pinnedFolders=["notes"])
+        self.assertEqual(self.merge(state, state, state), state)
+        # The route-level replay is asserted in TestWorkspaceStateSync; a
+        # state missing the four list fields gains them explicitly (null),
+        # which the client's own snapshot never does.
+        partial = self.state([self.session("main", "Main", ["a.md"])])
+        out = self.merge(partial, partial, partial)
+        self.assertIsNone(out["bookmarks"])
+        self.assertIsNone(out["pinnedFiles"])
+        self.assertEqual(out["sessions"], partial["sessions"])
+
+    def test_non_dict_inputs_never_raise(self):
+        for current, base, incoming in (
+            (None, None, None),
+            ([], [], []),
+            ("x", 3, "y"),
+            ({"sessions": [None, 3, "x"]}, {}, {}),
+        ):
+            out = self.merge(current, base, incoming)
+            self.assertIsInstance(out, dict)
+            self.assertEqual(out["sessions"], [])
+
+    def test_a_non_list_sessions_value_never_raises(self):
+        # DEFECT (app.py:1595-1599, :1614): `_merge_sessions` iterates
+        # `current/base/incoming.get("sessions") or []`, so a truthy non-list
+        # raises TypeError. Both `base` and the stored entry are
+        # client/hand-editable, so a POST with base {"sessions": 5} is a 500.
+        for current, base, incoming in (
+            ({"sessions": 5}, {}, {}),
+            ({}, {"sessions": 5}, {}),
+            ({}, {}, {"sessions": 5}),
+            ({"sessions": "not-a-list"}, {}, {}),
+        ):
+            out = self.merge(current, base, incoming)
+            self.assertIsInstance(out, dict)
+            self.assertEqual(out["sessions"], [])
+
+    def test_unusable_session_entries_are_dropped(self):
+        main = self.session("main", "Main", ["a.md"])
+        junk = [None, "x", {"name": "no id"}, {"id": ""}, {"id": 3}]
+        base = {"sessions": junk + [main]}
+        # The junk is neither stored nor resurrected; the usable entry is.
+        out = self.merge(base, base, base)
+        self.assertEqual([s["id"] for s in out["sessions"]], ["main"])
+
+    def test_a_duplicate_session_id_yields_one_entry(self):
+        # DEFECT (app.py:1599-1600): the output loop walks the raw incoming
+        # list while `inc` is keyed by id, so a duplicate id is appended once
+        # per occurrence even though the merge is "per session, by id".
+        first = self.session("main", "First", ["a.md"])
+        second = self.session("main", "Second", ["b.md"])
+        out = self.merge({"sessions": []}, {"sessions": []},
+                         {"sessions": [first, second]})
+        self.assertEqual([s["id"] for s in out["sessions"]], ["main"])
+        self.assertEqual(out["sessions"][0]["name"], "Second")
+
+    def test_workspace_state_rev_reads_a_valid_entry(self):
+        cfg = {"workspaceStateRev": {"default": 7, "other": 0}}
+        self.assertEqual(nb._workspace_state_rev(cfg, "default"), 7)
+        self.assertEqual(nb._workspace_state_rev(cfg, "other"), 0)
+        self.assertEqual(nb._workspace_state_rev(cfg, "missing"), 0)
+
+    def test_workspace_state_rev_defaults_to_zero_for_unusable_values(self):
+        for revs in (None, [], "x",
+                     {"default": None}, {"default": "3"}, {"default": -1},
+                     {"default": True}, {"default": 1.5}, {}):
+            self.assertEqual(
+                nb._workspace_state_rev({"workspaceStateRev": revs},
+                                        "default"),
+                0, revs)
+        for cfg in (None, [], "x", {}):
+            self.assertEqual(nb._workspace_state_rev(cfg, "default"), 0)
+        self.assertEqual(
+            nb._workspace_state_rev({"workspaceStateRev": {"default": 2}}, 5),
+            0)
+
+
+class TestWorkspaceStateSync(WorkspaceTestBase):
+    """The versioned read/write pair: GET, POST, merge, rev and permissions.
+
+    docs/architecture/sessions.md §17.2 and the rows in
+    docs/testing/backend.md ("TestWorkspaceStateSync").
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.wid = nb.WORKSPACE_DEFAULT_ID
+
+    def session(self, sid, name, files, active=None):
+        return {"id": sid, "name": name, "openFiles": list(files),
+                "activeFile": active}
+
+    def post_state(self, state, base, wid=None):
+        return self.post("/api/workspace-state", {
+            "id": wid or self.wid, "state": state, "base": base,
+        })
+
+    def get_state(self, wid=None, rev=None):
+        url = "/api/workspace-state?id=" + (wid or self.wid)
+        if rev is not None:
+            url += "&rev=" + str(rev)
+        return self.client.get(url)
+
+    def stored(self, wid=None):
+        entry = self.read_config_file().get("workspaceState") or {}
+        return entry.get(wid or self.wid) or {}
+
+    def stored_rev(self, wid=None):
+        revs = self.read_config_file().get("workspaceStateRev") or {}
+        return revs.get(wid or self.wid)
+
+    def seed(self, state, rev=1):
+        cfg = self.read_config_file()
+        states = cfg.get("workspaceState")
+        states = dict(states) if isinstance(states, dict) else {}
+        states[self.wid] = state
+        cfg["workspaceState"] = states
+        revs = cfg.get("workspaceStateRev")
+        revs = dict(revs) if isinstance(revs, dict) else {}
+        revs[self.wid] = rev
+        cfg["workspaceStateRev"] = revs
+        self.write_config(cfg)
+
+    def test_get_round_trips_the_state_and_its_rev(self):
+        state = {"sessions": [self.session("main", "Main", ["a.md"])],
+                 "activeSessionId": "main", "pinnedFiles": ["Welcome.md"]}
+        self.assertEqual(self.post_state(state, {}).status_code, 200)
+        r = self.get_state()
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json(), {
+            "ok": True, "id": self.wid, "rev": 1, "state": state,
+        })
+
+    def test_get_answers_empty_state_and_zero_rev_for_an_unwritten_entry(self):
+        r = self.get_state()
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {
+            "ok": True, "id": self.wid, "rev": 0, "state": {},
+        })
+        # A registered workspace with no state answers the same way, and the
+        # read wrote nothing.
+        ws = self.register("B", self.make_root())
+        before = self.file_stamp(nb.CONFIG_FILE)
+        r = self.get_state(ws["id"])
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {
+            "ok": True, "id": ws["id"], "rev": 0, "state": {},
+        })
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+
+    def test_get_with_an_equal_rev_is_a_304_with_no_body(self):
+        self.post_state({"lastFile": "a.md"}, {})
+        r = self.get_state(rev=1)
+        self.assertEqual(r.status_code, 304)
+        self.assertEqual(r.data, b"")
+
+    def test_get_with_a_different_rev_answers_the_body(self):
+        self.post_state({"lastFile": "a.md"}, {})
+        for rev in (0, 2, 99):
+            r = self.get_state(rev=rev)
+            self.assertEqual(r.status_code, 200, "rev=%d" % rev)
+            self.assertEqual(r.get_json()["state"], {"lastFile": "a.md"})
+        # An unparseable conditional falls through to the full body instead
+        # of 500ing.
+        r = self.client.get(
+            "/api/workspace-state?id=%s&rev=abc" % self.wid)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["rev"], 1)
+
+    def test_get_without_an_id_is_400_bad_body(self):
+        for url in ("/api/workspace-state",
+                    "/api/workspace-state?id=",
+                    "/api/workspace-state?id=%20%20"):
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 400, url)
+            self.assertEqual(r.get_json()["code"], "bad_body", url)
+
+    def test_get_of_an_unknown_workspace_is_404(self):
+        r = self.get_state("ghost")
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["code"], "unknown_workspace")
+
+    def test_post_with_a_matching_base_stores_the_state_verbatim(self):
+        self.seed({"lastFile": "a.md"}, rev=5)
+        state = {"lastFile": "b.md", "openFiles": ["b.md"]}
+        r = self.post_state(state, {"lastFile": "a.md"})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json(), {
+            "ok": True, "id": self.wid, "rev": 6, "state": state,
+        })
+        # Verbatim: nothing from the previous entry survives.
+        self.assertEqual(self.stored(), state)
+        self.assertEqual(self.stored_rev(), 6)
+
+    def test_two_clients_changing_different_sessions_both_survive(self):
+        base = {"sessions": [self.session("main", "Main", ["a.md"]),
+                             self.session("reading", "Reading", ["b.md"])],
+                "activeSessionId": "main"}
+        self.seed(base, rev=1)
+        # Client A adds a tab to `main`.
+        a_state = dict(base, sessions=[
+            self.session("main", "Main", ["a.md", "c.md"]),
+            self.session("reading", "Reading", ["b.md"]),
+        ])
+        r = self.post_state(a_state, base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["rev"], 2)
+        # Client B, still on the shared base, adds a tab to `reading`.
+        b_state = dict(base, sessions=[
+            self.session("main", "Main", ["a.md"]),
+            self.session("reading", "Reading", ["b.md", "d.md"]),
+        ])
+        r = self.post_state(b_state, base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["rev"], 3)
+        # Both changes survive, and the response is what the server holds.
+        merged = r.get_json()["state"]
+        self.assertEqual([s["openFiles"] for s in merged["sessions"]],
+                         [["a.md", "c.md"], ["b.md", "d.md"]])
+        self.assertEqual(self.stored(), merged)
+
+    def test_a_same_session_edit_takes_the_clients_copy(self):
+        base = {"sessions": [self.session("main", "Main", ["a.md"])],
+                "activeSessionId": "main"}
+        self.seed(base, rev=1)
+        peer = dict(base, sessions=[
+            self.session("main", "Main", ["a.md", "peer.md"])])
+        self.assertEqual(self.post_state(peer, base).status_code, 200)
+        mine = dict(base, sessions=[
+            self.session("main", "Main", ["a.md", "mine.md"])])
+        r = self.post_state(mine, base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(
+            r.get_json()["state"]["sessions"][0]["openFiles"],
+            ["a.md", "mine.md"])
+        self.assertEqual(
+            self.stored()["sessions"][0]["openFiles"], ["a.md", "mine.md"])
+
+    def test_a_client_delete_of_an_untouched_session_applies(self):
+        main = self.session("main", "Main", ["a.md"])
+        reading = self.session("reading", "Reading", ["b.md"])
+        base = {"sessions": [main, reading], "activeSessionId": "main"}
+        self.seed(base, rev=1)
+        # A peer changes `main`, so the delete goes through the merge.
+        self.post_state(dict(base, sessions=[
+            self.session("main", "Main", ["a.md", "c.md"]), reading]), base)
+        r = self.post_state({"sessions": [main], "activeSessionId": "main"},
+                            base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual([s["id"] for s in self.stored()["sessions"]],
+                         ["main"])
+        # The peer's tab in `main` survived the client's untouched copy.
+        self.assertEqual(self.stored()["sessions"][0]["openFiles"],
+                         ["a.md", "c.md"])
+
+    def test_a_delete_of_a_session_the_server_changed_is_resurrected(self):
+        main = self.session("main", "Main", ["a.md"])
+        reading = self.session("reading", "Reading", ["b.md"])
+        base = {"sessions": [main, reading], "activeSessionId": "main"}
+        self.seed(base, rev=1)
+        self.post_state(dict(base, sessions=[
+            main, self.session("reading", "Reading", ["b.md", "d.md"])]),
+            base)
+        r = self.post_state({"sessions": [main], "activeSessionId": "main"},
+                            base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        stored = self.stored()
+        self.assertEqual([s["id"] for s in stored["sessions"]],
+                         ["main", "reading"])
+        self.assertEqual(stored["sessions"][1]["openFiles"], ["b.md", "d.md"])
+
+    def test_a_session_added_by_either_side_survives(self):
+        main = self.session("main", "Main", ["a.md"])
+        base = {"sessions": [main], "activeSessionId": "main"}
+        self.seed(base, rev=1)
+        extra = self.session("extra", "Extra", ["c.md"])
+        # Added by this client, from its base.
+        r = self.post_state(
+            dict(base, sessions=[main, extra]), base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertIn("extra", [s["id"] for s in self.stored()["sessions"]])
+        # A second client that never saw `extra` keeps it.
+        second_base = dict(base, sessions=[main, extra])
+        r = self.post_state(second_base, base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        ids = [s["id"] for s in self.stored()["sessions"]]
+        self.assertEqual(ids, ["main", "extra"])
+
+    def test_an_active_file_difference_alone_is_not_a_change(self):
+        base = {"sessions": [self.session("main", "Main",
+                                          ["a.md", "b.md"], "a.md")],
+                "activeSessionId": "main"}
+        self.seed(base, rev=1)
+        # A peer clicks the other tab: same name and list, new activeFile.
+        peer = {"sessions": [self.session("main", "Main",
+                                          ["a.md", "b.md"], "b.md")],
+                "activeSessionId": "main"}
+        r = self.post_state(peer, base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        # This client still reports its own active tab from the older base.
+        r = self.post_state(base, base)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        sessions = r.get_json()["state"]["sessions"]
+        self.assertEqual(sessions[0]["openFiles"], ["a.md", "b.md"])
+        self.assertEqual(sessions[0]["activeFile"], "b.md")
+
+    def test_post_without_a_base_is_400_and_writes_nothing(self):
+        self.seed({"lastFile": "a.md"}, rev=2)
+        before = self.file_stamp(nb.CONFIG_FILE)
+        for body in ({"id": self.wid, "state": {"lastFile": "b.md"}},
+                     {"id": self.wid, "state": {"lastFile": "b.md"},
+                      "base": None},
+                     {"id": self.wid, "state": {"lastFile": "b.md"},
+                      "base": []}):
+            r = self.post("/api/workspace-state", body)
+            self.assertEqual(r.status_code, 400, body)
+            self.assertEqual(r.get_json()["code"], "bad_body")
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.stored(), {"lastFile": "a.md"})
+        self.assertEqual(self.stored_rev(), 2)
+
+    def test_a_replay_is_idempotent_on_the_state_but_bumps_the_rev(self):
+        # A real client snapshot carries every state key, so a replay of the
+        # same base and state converges on the same entry.
+        base = {"sessions": [self.session("main", "Main", ["a.md"])],
+                "pinnedFiles": [], "bookmarks": [], "recentFiles": [],
+                "pinnedFolders": []}
+        self.seed(base, rev=1)
+        state = dict(base, sessions=[
+            self.session("main", "Main", ["a.md", "b.md"])])
+        first = self.post_state(state, base)
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.get_json()["rev"], 2)
+        replay = self.post_state(state, base)
+        self.assertEqual(replay.status_code, 200, replay.get_data(as_text=True))
+        self.assertEqual(replay.get_json()["rev"], 3)
+        self.assertEqual(replay.get_json()["state"], first.get_json()["state"])
+        self.assertEqual(self.stored(), first.get_json()["state"])
+
+    def test_the_rev_never_regresses_across_a_config_post(self):
+        self.post_state({"lastFile": "a.md"}, {})
+        self.assertEqual(self.stored_rev(), 1)
+        r = self.post("/api/config", {
+            "theme": "dark",
+            "workspaceStateRev": {self.wid: 99},
+            "workspaceState": {self.wid: {"lastFile": "clobbered.md"}},
+        })
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.stored_rev(), 1)
+        self.assertEqual(self.stored(), {"lastFile": "a.md"})
+        r = self.get_state(rev=1)
+        self.assertEqual(r.status_code, 304)
+        r = self.post_state({"lastFile": "b.md"}, {"lastFile": "a.md"})
+        self.assertEqual(r.get_json()["rev"], 2)
+
+    def test_deleting_a_workspace_drops_its_state_and_rev(self):
+        self.post_state({"lastFile": "default.md"}, {})
+        ws = self.register("B", self.make_root())
+        r = self.post_state({"lastFile": "b.md"}, {}, wid=ws["id"])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.stored(ws["id"]), {"lastFile": "b.md"})
+        self.assertEqual(self.stored_rev(ws["id"]), 1)
+        r = self.client.delete("/api/workspaces/" + ws["id"])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        cfg = self.read_config_file()
+        self.assertNotIn(ws["id"], cfg.get("workspaceState") or {})
+        self.assertNotIn(ws["id"], cfg.get("workspaceStateRev") or {})
+        # The other workspace is untouched.
+        self.assertEqual(self.stored(), {"lastFile": "default.md"})
+        self.assertEqual(self.stored_rev(), 1)
+
+    def test_a_viewer_may_get_and_is_refused_the_post(self):
+        import bcrypt as _bcrypt
+        nb._login_failures.clear()
+        with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
+            json.dump({
+                "secret": "workspace-test-secret-not-used-for-signing",
+                "admin_password_hash": _bcrypt.hashpw(
+                    b"sync-admin-pw", _bcrypt.gensalt(4)).decode(),
+                "viewer_password_hash": _bcrypt.hashpw(
+                    b"sync-viewer-pw", _bcrypt.gensalt(4)).decode(),
+            }, f)
+        admin = nb.app.test_client()
+        self.assertEqual(admin.post("/api/login",
+                                    json={"password": "sync-admin-pw"}
+                                    ).status_code, 200)
+        r = admin.post("/api/workspace-state",
+                       json={"id": self.wid, "base": {},
+                             "state": {"lastFile": "a.md"}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        viewer = nb.app.test_client()
+        self.assertEqual(viewer.post("/api/login",
+                                     json={"password": "sync-viewer-pw"}
+                                     ).status_code, 200)
+        r = viewer.get("/api/workspace-state?id=" + self.wid)
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["state"], {"lastFile": "a.md"})
+        before = self.file_stamp(nb.CONFIG_FILE)
+        r = viewer.post("/api/workspace-state",
+                        json={"id": self.wid, "base": {},
+                              "state": {"lastFile": "b.md"}})
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.get_json()["code"], "not_admin")
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+
+    def test_the_conditional_and_the_body_carry_no_store_and_vary(self):
+        self.post_state({"lastFile": "a.md"}, {})
+        for rev, status in ((1, 304), (0, 200)):
+            r = self.get_state(rev=rev)
+            self.assertEqual(r.status_code, status)
+            self.assertIn(nb.WORKSPACE_HEADER, r.headers.get("Vary", ""))
+            self.assertIn("no-store", r.headers.get("Cache-Control", ""))
+
+    def test_a_base_over_the_cap_is_400_before_the_workspace_lookup(self):
+        # A base larger than any stored entry can never match one, so the cap
+        # is checked before the merge and before the id is resolved: an
+        # unknown workspace earns 400/base_too_large, not the 404 its id
+        # alone would earn.
+        stored = {"lastFile": "stored.md"}
+        self.seed(stored, rev=3)
+        big = {"pad": "b" * (nb.WORKSPACE_STATE_MAX_BYTES + 1)}
+        before = self.file_stamp(nb.CONFIG_FILE)
+        for wid in (self.wid, "ghost"):
+            r = self.post_state({"lastFile": "sent.md"}, big, wid=wid)
+            self.assertEqual(r.status_code, 400, wid)
+            self.assertEqual(r.get_json()["code"], "base_too_large", wid)
+            self.assertIn(
+                "base exceeds %d bytes" % nb.WORKSPACE_STATE_MAX_BYTES,
+                r.get_json()["error"], wid)
+        # The same unknown id with a usable base is still a 404, so the
+        # assertion above is about the order of the two checks.
+        r = self.post_state({"lastFile": "sent.md"}, {}, wid="ghost")
+        self.assertEqual(r.status_code, 404)
+        self.assertEqual(r.get_json()["code"], "unknown_workspace")
+        # No refused body wrote anything.
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.stored(), stored)
+        self.assertEqual(self.stored_rev(), 3)
+
+    def test_a_merge_that_grows_past_the_cap_is_400(self):
+        # Each half is under the cap on its own; the merge carries both keys,
+        # so only the merged size can catch it.
+        pad = nb.WORKSPACE_STATE_MAX_BYTES - 4096
+        stored = {"sessions": [self.session("main", "Main", ["a.md"])],
+                  "activeSessionId": "main",
+                  "serverPad": "s" * pad}
+        self.assertLessEqual(nb._json_size(stored),
+                             nb.WORKSPACE_STATE_MAX_BYTES)
+        state = {"sessions": [self.session("main", "Main", ["a.md"])],
+                 "activeSessionId": "main",
+                 "clientPad": "c" * pad}
+        self.assertLessEqual(nb._json_size(state),
+                             nb.WORKSPACE_STATE_MAX_BYTES)
+        self.assertGreater(
+            nb._json_size(nb._merge_workspace_state(stored, {}, state)),
+            nb.WORKSPACE_STATE_MAX_BYTES)
+        self.seed(stored, rev=7)
+        before = self.file_stamp(nb.CONFIG_FILE)
+        r = self.post_state(state, {})
+        self.assertEqual(r.status_code, 400, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["code"], "state_too_large")
+        self.assertIn("exceeds %d bytes" % nb.WORKSPACE_STATE_MAX_BYTES,
+                      r.get_json()["error"])
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.stored(), stored)
+        self.assertEqual(self.stored_rev(), 7)
 
 
 class TestWorkspaceCacheHeaders(WorkspaceTestBase):
@@ -7116,9 +7837,14 @@ class TestWorkspaceCacheHeaders(WorkspaceTestBase):
 
     def test_workspace_state_response_varies_too(self):
         r = self.post("/api/workspace-state",
-                      {"id": "default", "state": {"a": 1}})
+                      {"id": "default", "state": {"a": 1}, "base": {}})
         self.assertEqual(r.status_code, 200)
         self.assertIn(nb.WORKSPACE_HEADER, r.headers.get("Vary", ""))
+        # The new read is a gated read too: no-store plus the Vary.
+        r = self.client.get("/api/workspace-state?id=default")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(nb.WORKSPACE_HEADER, r.headers.get("Vary", ""))
+        self.assertIn("no-store", r.headers.get("Cache-Control", ""))
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 # Sessions — architecture and implementation contract
 
-Status: implemented. This is the document `build` implemented from; the
-verification record is in the commit that landed it.
+Status: §§1-16 are implemented; the verification record is in the commit that
+landed them. **§17 (cross-device sync) is designed and not yet implemented.**
 The product definition is
 [`requirements/features/sessions.md`](../requirements/features/sessions.md);
 the visual handoff, copy and CSS are [`ui/sessions.md`](../archive/ui/sessions.md).
@@ -426,6 +426,10 @@ cannot see. `isOpen` is active-session-only, which is exactly the test.
 
 ## 11. Persistence and the server
 
+> Superseded in part by §17: the write path, the `/api/config` interaction and
+> the read side change. This section stays as the record of what shipped before
+> the cross-device extension.
+
 **Client.** `app.js`:
 
 - `WORKSPACE_STATE_KEYS` (`app.js`) gains `"sessions"` and
@@ -587,10 +591,10 @@ Existing seams (`getOpen`, `isOpen`, `getActive`, `restore`, `togglePin`,
 
 Verification:
 
-- **DOM (`npm test`, `tests/dom/test_dom.js`)**: add the `#sessions-view` host
-  to the harness shell (around `tests/dom/test_dom.js`), eval
-  `static/js/sessions.js` after `tabs.js` (around `:2335`), and update the source
-  regex that asserts the old boot filter (`:21225-21227`). Cases: migration;
+- **DOM (`npm test`, `tests/dom/test_dom.js`)**: the `#sessions-view` host
+  (`:237`) and the `sessions.js` eval after `tabs.js` (`:2433`) are in place; the
+  old boot-filter source assertion has been replaced by the table-select tests.
+  Cases: migration;
   pinned union on boot; per-session active tab; swap with a stashed draft; close
   last tab keeps another session's draft; empty session after reload; the view
   renders rows/counts/dots and marks the active row; the row menu renames and
@@ -622,3 +626,639 @@ Verification:
 - No drag-reorder of sessions in v1; the list order is the creation order.
 - Deleting a session is per-row; its buffers close only for paths no other
   session or pin still holds.
+
+---
+
+
+## 17. Cross-device sync (designed 2026-11-15, not implemented)
+
+Product rules: [`requirements/features/sessions.md`](../requirements/features/sessions.md)
+§10. This section owns the mechanism, the call order, and the failure matrix, and
+it **supersedes §11's write path**. §11 stays as the record of what shipped
+before this extension; where the two disagree, this section wins.
+
+> **Status.** Nothing in this section is implemented. The routes, the `rev` map,
+> the merge, and the client loop are all new. Every other document that marks a
+> row as part of this feature says so next to the row.
+
+The shared set is stored today. What is missing is a **versioned read**, a
+**merge on the write**, and a client that **re-reads while it is open**:
+
+1. one writer — `/api/workspace-state` and nothing else;
+2. a server-side three-way merge, so two clients that changed different sessions
+   both keep their change;
+3. a 3 s conditional poll per open page, so every client converges.
+
+A client never merges. It sends what it has plus the state it started from; the
+server merges and returns the result. That keeps the hard logic in one tested
+Python function instead of in a browser that cannot be exercised in CI.
+
+### 17.1 What syncs
+
+| Key (`WORKSPACE_STATE_KEYS`) | Shared | Device-local |
+| --- | --- | --- |
+| `sessions` | ids, names, order, `openFiles`, per-session `activeFile` | the active session's own live view |
+| `pinnedFiles` | yes | — |
+| `bookmarks`, `recentFiles`, `pinnedFolders` | yes | — |
+| `openFiles`, `activeFile` | written as hints, never applied | the active tab |
+| `lastFile` | written as a hint, never applied | — |
+| `activeSessionId` | written as a fallback, never applied | the active session |
+
+`activeFile` stays a write-only hint so `_acp_context_preamble`
+(`app.py:2870-2906`) still names the note the owner was last reading. It is
+never applied from a poll, so a peer's tab click cannot move this reader.
+
+### 17.2 Server contract
+
+Five changes in `app.py`. All writes stay under `_CONFIG_LOCK`.
+
+**`workspaceStateRev`** — a new top-level map in `config.json`, sibling to
+`workspaceState`:
+
+```json
+{ "workspaceState": { "default": { "...": "..." } },
+  "workspaceStateRev": { "default": 7 } }
+```
+
+| Rule | Detail |
+| --- | --- |
+| Type | one non-negative `int` per workspace id; missing, non-int, or negative reads as `0` |
+| Owner | the server only. A client-supplied `workspaceStateRev` is discarded on every route |
+| Bump | `+1` on every accepted `POST /api/workspace-state`, in the same lock and the same `atomic_write` as the state |
+| Delete | `remove_workspace()` drops the entry and its rev in the same lock, so a removed workspace leaves nothing behind |
+| Lifetime | otherwise permanent for the life of the entry |
+
+`_workspace_state_rev(cfg, wid) -> int` is the one reader; it never raises.
+
+**`GET /api/workspace-state`** — new, `@read_login_required`:
+
+```
+GET /api/workspace-state?id=<wid>[&rev=<int>]
+```
+
+| Case | Response |
+| --- | --- |
+| `id` missing or not a string | 400 `{error, code: "bad_body"}` |
+| unknown workspace id | 404 `{error, code: "unknown_workspace"}` |
+| `rev` present and equal to the stored rev | **304**, empty body |
+| otherwise | 200 `{ok: true, id, rev, state}`; `state` is `{}` for an entry that was never written |
+
+The route is already in `_GATED_READ_PATHS` (`app.py:173-176`), so it answers
+`Cache-Control: no-store, private`. No `ETag`: the conditional is the `rev`
+query parameter, matching the existing `ifModifiedSince` style
+(`api.js:102-105`). A 304 must not carry a body.
+
+**`POST /api/workspace-state`** — the body changes shape:
+
+```
+POST /api/workspace-state
+{"id": "<wid>", "state": {...}, "base": {...}}
+```
+
+`base` is the exact state this client started from: the boot `/api/config`
+entry, or the `state` returned by the previous GET or POST. It is required.
+
+| Case | Response |
+| --- | --- |
+| `id`, `state`, or `base` missing or not an object | 400 `{error, code: "bad_body"}` |
+| `state` over `WORKSPACE_STATE_MAX_BYTES` | 400 `{error, code: "state_too_large"}` |
+| `base` over `WORKSPACE_STATE_MAX_BYTES` | 400 `{error, code: "base_too_large"}` — a base that large can never equal a stored entry, and parsing it costs memory for nothing |
+| unknown workspace | 404 `unknown_workspace` |
+| the workspace is removed between the id check and the write | 404 `unknown_workspace`, re-checked under the lock, so a removed workspace is never re-created |
+| `config.json` unreadable, or its `workspaceState`/`workspaceStateRev` not objects | 500 `write_failed`; nothing is written, so a corrupt file cannot be replaced with one workspace's state |
+| `base` equals the stored entry | store `state` unchanged |
+| `base` differs from the stored entry | store `_merge_workspace_state(stored, base, state)` |
+| success | 200 `{ok: true, id, rev, state}` with the **new** rev and the **stored** state after the write |
+
+There is no 409 and no client-side retry: a stale write is merged, and the
+response tells the client what the server now holds. A client that sends no
+`base` is refused, which is what stops a page loaded before this change from
+posting a stale session list over newer data.
+
+**`_merge_workspace_state(current, base, incoming) -> dict`** — a pure function,
+no I/O, unit-tested on its own:
+
+```python
+def usable(s):
+    return isinstance(s, dict) and isinstance(s.get("id"), str) and s["id"]
+
+def session_key(s):                          # what counts as "changed"
+    return (s.get("name"), tuple(s.get("openFiles") or []))
+
+def merge_state(current, base, incoming):
+    out = dict(current)
+    out.update(incoming)                     # hints and scalars: last writer wins
+    out["sessions"] = merge_sessions(current, base, incoming)
+    for key in ("pinnedFiles", "bookmarks", "recentFiles", "pinnedFolders"):
+        # a list the client did not touch takes the server's copy
+        out[key] = current.get(key) if incoming.get(key) == base.get(key) \
+                   else incoming.get(key)
+    return out
+
+
+def merge_sessions(current, base, incoming):
+    cur = {s["id"]: s for s in current.get("sessions") or [] if usable(s)}
+    bas = {s["id"]: s for s in base.get("sessions") or [] if usable(s)}
+    inc = {s["id"]: s for s in incoming.get("sessions") or [] if usable(s)}
+    out = []
+    for sid in [s["id"] for s in incoming.get("sessions") or [] if usable(s)]:
+        if sid not in cur:                   # the server has no such session
+            if sid in bas and session_key(inc[sid]) == session_key(bas[sid]):
+                continue                     # server deleted it, client did not touch it
+            out.append(inc[sid])             # client added it, or edited a deleted one
+        elif session_key(inc[sid]) == session_key(bas.get(sid, {})):
+            out.append(cur[sid])             # client did not touch it: server wins
+        else:
+            out.append(inc[sid])             # client edited it: client wins
+    for sid, record in bas.items():           # client deletions
+        if sid in inc:
+            continue
+        if sid in cur and session_key(cur[sid]) != session_key(record):
+            out.append(cur[sid])             # server changed it: resurrect the server copy
+    for sid, record in cur.items():           # sessions the client never saw
+        if sid not in inc and sid not in bas:
+            out.append(record)
+    return out
+```
+
+| Rule | Meaning |
+| --- | --- |
+| Session granularity | Two clients that changed different sessions both keep their change. Two that changed the same session settle on one (requirements A8). |
+| Add | A session in `incoming` that `base` did not have is kept. |
+| Delete | A session in `base`, absent from `incoming`, and untouched on the server is dropped. If the server changed it in between, the server's copy is kept. |
+| Edit | A session the client changed wins over the server's copy; a session the client did not change takes the server's copy. |
+| What counts as changed | The name or the unpinned `openFiles` list. A per-session `activeFile` difference alone is **not** a change, so a peer clicking a tab can never discard a tab another peer added to that session. |
+| Peer-only | A session the server has that the client never saw (added by a peer after its `base`) is kept. |
+| Order | `incoming` order first, then resurrected and peer-only entries in their existing order. Deterministic. |
+| Non-session keys | List fields: the client's copy if it differs from `base`, else the server's. Scalars: `incoming`. |
+| Idempotence | `merge_state(s, s, s) == s`. A replayed write changes nothing but the rev. |
+
+**`POST /api/config`** — stops being a state writer:
+
+1. Inside `_CONFIG_LOCK`, read the stored file. If the read fails or the result
+   is not a dict, refuse the whole POST with 500 `write_failed` — never replace
+   a file whose state cannot be re-attached.
+2. Delete from the incoming body: `workspaceState`, `workspaceStateRev`, and
+   every key in `_WORKSPACE_SCOPED_CONFIG_KEYS`.
+3. Re-attach the stored `workspaceState` and `workspaceStateRev`.
+4. `atomic_write` the result.
+
+Consequences, all deliberate:
+
+- `_fold_legacy_workspace_state(data)` is **removed from this route**. The
+  startup migration (`_migrate_config_at_startup`, `app.py:1573`) still folds a
+  legacy file once at boot; a POST no longer folds or clobbers.
+- The whole-blob route can no longer create, delete or reorder a session, a
+  bookmark, or a pin. That is the transition cost for a page loaded before this
+  change; its state writes are refused by the missing `base` and its config
+  writes lose the state keys. The shell replaces itself on the next load.
+- A page with no workspace id never persists scoped state. It could not reach
+  `/api/workspace-state` before either (see §17.11).
+
+Single-writer invariant: **only `set_workspace_state()` writes `workspaceState`
+or `workspaceStateRev`; `remove_workspace()` deletes one entry of each under the
+same lock.** Any other write path is a defect.
+
+### 17.3 Client transport (`static/js/api.js`)
+
+| Change | Contract |
+| --- | --- |
+| `request()` error shape | before throwing, attach the parsed body: `error.body = data`. Additive; every existing caller keeps `code` and `status` (`api.js:84-91`). |
+| `getWorkspaceState(id, rev)` | `GET /api/workspace-state?id=…&rev=…` with `{notModified: {notModified: true}}`. Resolves to `{notModified:true}` on 304, else `{ok, id, rev, state}`. `rev` is omitted when it is not a finite integer. |
+| `saveWorkspaceState(id, state, base)` | `POST` with the same body shape as §17.2. Resolves to `{ok, id, rev, state}`. A 400 is a programming error and surfaces through `error.code`. |
+
+### 17.4 The sync loop (`static/js/app.js`, `NB.sync`)
+
+A new labelled section beside `flushWorkspaceState`. No new file: every input
+(`cfg`, `workspaceStateSnapshot`, `workspaceId`) is module-private to `app.js`.
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| `WORKSPACE_SYNC_MS` | `3000` | Poll interval while visible; also the initial `wsSyncDelay` |
+| `WORKSPACE_SYNC_MAX_MS` | `30000` | Backoff ceiling after repeated failures |
+
+Module state, with its initial value:
+
+| Name | Initial | Meaning |
+| --- | --- | --- |
+| `wsRev` | `0` | Last rev the server reported |
+| `wsRevKnown` | `false` | Whether `wsRev` came from the server for this workspace |
+| `wsBootLoaded` | `false` | Whether the boot `/api/config` fetch succeeded; no write or poll before it does |
+| `lastAckKey` | `""` | `stateKey()` of the last state the **server** acknowledged |
+| `lastServerState` | `null` | The state object that `lastAckKey` was computed from; becomes the next `base` |
+| `wsSyncDelay` | `WORKSPACE_SYNC_MS` | Current delay; doubles on failure |
+| `wsSyncTimer`, `wsSyncPaused`, `wsSyncing` | `null`, `false`, `false` | Timer handle, hidden-tab gate, in-flight gate |
+
+Two helpers, different jobs:
+
+```js
+// The dirty check: the whole state, in a fixed key order.
+function stateKey(s) {
+  const out = {};
+  for (const k of WORKSPACE_STATE_KEYS) out[k] = (s || {})[k];
+  return JSON.stringify(out);
+}
+```
+
+`stateKey` replaces the raw `JSON.stringify(workspaceStateSnapshot())`
+comparisons (`app.js:534-535`), so key order and absent keys cannot produce a
+false diff. `syncProjection` (§17.5) is the narrower one: it drops the
+device-local hints and the per-session `activeFile`, and decides whether a remote
+state changes anything on screen.
+
+| Function | Contract |
+| --- | --- |
+| `start()` | Async, idempotent, resolves `true` when the chain is armed and `false` when it is not. Not armed when `isPhoneMode()`, `workspaceId()` is empty, or `wsBootLoaded` is false. Otherwise it runs one `syncOnce()` first and arms only when that returns `ok` without `unsupported` — a server without the endpoint is probed once and then left alone. |
+| `stop()` | Clears the timer; a later `start()` may follow. |
+| `pause()` / `resume()` | Set/clear `wsSyncPaused`. `resume()` ticks immediately. Used by the visibility handler. |
+| `tick()` | One pass now. Resolves `{ok, rev}`; `{ok:false, unsupported:true}` when the server has no such endpoint. |
+| `status()` | `{running, paused, rev, delayMs, lastAt, lastError}` — diagnostics and tests. |
+
+One pass:
+
+```js
+async function syncOnce() {
+  if (!workspaceId() || isPhoneMode() || !wsBootLoaded || wsSyncPaused || wsSyncing)
+    return {ok: true, rev: wsRev};
+  wsSyncing = true;
+  try {
+    const res = await NB.api.getWorkspaceState(workspaceId(), wsRevKnown ? wsRev : undefined);
+    if (res && res.notModified) return {ok: true, rev: wsRev};
+    if (!res || typeof res.rev !== "number") return {ok: false, rev: wsRev, unsupported: true};
+    wsRev = res.rev;
+    wsRevKnown = true;
+    await applyRemoteWorkspaceState(res.state || {});
+    wsSyncDelay = WORKSPACE_SYNC_MS;
+    return {ok: true, rev: wsRev};
+  } catch (e) {
+    wsLastError = e;
+    wsSyncDelay = Math.min(wsSyncDelay * 2, WORKSPACE_SYNC_MAX_MS);
+    return {ok: false, rev: wsRev};
+  } finally {
+    wsSyncing = false;
+  }
+}
+```
+
+Scheduling is a `setTimeout` chain, not `setInterval`, so a slow response never
+stacks requests. Three rules around it:
+
+- **A response older than `wsRev` is ignored.** The poll and the write use
+  different queues, so their responses can land out of order; adopting the older
+  one would regress the revision and drop tabs. `syncOnce` and
+  `flushWorkspaceState` both drop a response whose `rev` is below the current
+  one.
+- **A transport failure still arms the chain.** `start()` returns `false` only
+  for a gate or a server without the endpoint; a failed first probe arms the
+  backoff, so a page that booted before the network came up recovers on its own.
+  `resume()` starts the chain if it never armed.
+- **A page that starts hidden does not poll.** The initial pause is
+  `document.visibilityState === "hidden"`, so a page restored into a background
+  tab waits for its first `visibilitychange`.
+- **A queued or in-flight write pauses the poll.** The write's response is the
+  merged state, so a poll during that window would adopt the server's copy over
+  a change that has not been sent yet.
+- **Adoptions are serialised.** One promise chain runs every apply, so a poll
+  response and a write response that arrive together cannot rebuild the tab
+  model twice from each other's intermediate state.
+- **A 404 or 405 from the probe is `unsupported`.** A server without the route
+  answers one way or the other; a dropped connection is a transport failure and
+  uses the backoff.
+
+Wiring:
+
+- `applyConfig()` seeds the sync from the boot payload, before any write:
+  `wsRev = cfg.workspaceStateRev?.[wid] ?? 0`, `wsRevKnown = !!cfg.workspaceStateRev`,
+  `lastServerState = cfg.workspaceState?.[wid] ?? {}`,
+  `lastAckKey = stateKey(lastServerState)`, `wsBootLoaded = true` — on every call
+  that received a server object, including the empty one after a failed fetch,
+  where `wsBootLoaded` stays `false`.
+- `boot()` calls `await NB.sync.start()` **after** `NB.tabs.restore()` and after
+  the deep-link block (`app.js:1113-1138`). Because the boot seeding happened in
+  `applyConfig`, the restore's own `tabs:changed` write already carries the right
+  `base`; nothing is unconditional.
+- `visibilitychange`: hidden → `pause()`; visible → `resume()`.
+- `window` `online` → `resume()`.
+- The phone never polls (`start()` returns false) but still writes; its `base` is
+  the boot state, so the merge protects the other devices from it.
+
+### 17.5 Applying a remote state (`app.js`)
+
+```js
+async function applyRemoteWorkspaceState(state)   // resolves void
+```
+
+Used for both a poll response and the state a POST returns, so a merge result
+takes exactly one path.
+
+1. **Fingerprint gate.** Compare the synced projection of `state` with the same
+   projection of `cfg`:
+
+   ```js
+   function syncProjection(s) {
+     return JSON.stringify({
+       pinnedFiles:   s.pinnedFiles   || [],
+       bookmarks:     s.bookmarks     || [],
+       recentFiles:   s.recentFiles   || [],
+       pinnedFolders: s.pinnedFolders || [],
+       sessions: (s.sessions || []).map(x => [x.id, x.name, x.openFiles || []]),
+     });
+   }
+   ```
+
+   `sessions[].activeFile`, `activeFile`, `openFiles`, `lastFile` and
+   `activeSessionId` are excluded, so a peer's tab click does no work here. When
+   the projections are equal:
+
+   - `lastServerState = state` (the next `base` is current);
+   - leave `lastAckKey` alone — nothing local changed, and recomputing it from
+     the peer's `activeFile` would make the next save look dirty and echo it
+     back;
+   - return.
+
+2. Copy the **shared** keys only — `sessions`, `pinnedFiles`, `bookmarks`,
+   `recentFiles`, `pinnedFolders`. Do **not** copy `openFiles`, `activeFile`,
+   `lastFile` or `activeSessionId`: they are this device's hints, and copying a
+   peer's would publish them back on the next local event.
+
+   The write path moves `lastAckKey` to the state it is about to send before
+   the request, and restores it if the request fails. Without that, a later
+   unrelated save (a theme, a pane width) would see the state as dirty and
+   repost it, bumping the rev and waking every peer for nothing.
+
+   The `known` predicate passed to the model must accept every path while the
+   file tree has not loaded. An empty tree means "not loaded yet", not "every
+   path is gone": filtering against it would drop a whole workspace from one
+   failed `/api/tree` and then republish the erasure to every other device.
+3. `lastServerState = state` (the next `base`), then
+   `lastAckKey = stateKey(workspaceStateSnapshot())` — the key of the state as
+   just adopted, **before** the model is rebuilt.
+4. `applyingRemote = true`, then `await NB.tabs.applyRemoteState(...)` in a
+   `try`, `finally { applyingRemote = false }`. The flag must span the `await`:
+   the apply may call `activate()`, which is async and emits `tabs:changed` after
+   its own `await` (`tabs.js:880-924`). The `tabs:changed` listener returns early
+   while `applyingRemote` is true.
+5. Rebuild `cfg.sessions = NB.tabs.snapshot()` and `cfg.pinnedFiles = <model
+   pins>`, then call `scheduleWorkspaceState()`. It compares `stateKey(cfg)` with
+   `lastAckKey` and writes only when they differ, so this one call covers every
+   case where the model could not adopt the server's copy verbatim: a kept dirty
+   tab, a kept session, a pin move the model refused, **and** a remote path the
+   sanitiser dropped. The result is at most one republish, and the next poll is
+   clean. `diverged` is what the tests assert; it does not gate the write.
+6. Side effects — **do not call `applyConfig`** (it would re-run `applyTheme`,
+   `applyFontSize` and `mermaid.reinit`, `app.js:431-438`):
+   `NB.bookmarks.set(cfg.bookmarks)`, `NB.sidebar.setPinnedFolders(cfg.pinnedFolders)`,
+   then `NB.evt.emit("config:changed", cfg, {remote: true})`.
+
+### 17.6 Applying a remote state to the tab model (`tabs.js`)
+
+```js
+await NB.tabs.applyRemoteState({ sessions, pinnedFiles, known })
+// -> { applied: boolean, kept: [path], diverged: boolean }
+```
+
+**This is not `installSessionState`.** That function is a boot path: it assumes an
+empty viewer, replaces every set wholesale, bumps no token, and closes nothing
+(`tabs.js:1598-1635`). Reusing it at runtime orphans dirty buffers and lets an
+in-flight `activate()` overwrite `activePath` (`tabs.js:921`).
+
+Steps, in order:
+
+1. `!Array.isArray(sessions) || sessions.length === 0` →
+   `{applied:false, kept:[], diverged:false}`. The runtime path never synthesises
+   a session; an empty list is "no data", not the first boot.
+2. **Sanitise, do not normalise.** A new function
+   `sanitiseRemoteSessions(raw, known, activeId)`, separate from
+   `normaliseSessions` (§4), because that one is a boot repair: a non-empty array
+   of unusable entries makes it synthesise a `Main` session (`tabs.js:365-371`),
+   it renames duplicate names (`tabs.js:373-386`), regenerates duplicate ids
+   (`tabs.js:354-357`), and drops entries past the cap (`tabs.js:415-423`). At
+   runtime those rules would rewrite a peer's data. The remote rules are:
+
+   | Rule | Behaviour |
+   | --- | --- |
+   | Entry unusable (not a dict, no non-empty string `id`) | drop the entry |
+   | Duplicate id | keep the first, drop the rest |
+   | `openFiles` | strings that pass `known`, deduped, order kept, capped at 40 |
+   | Pinned path in a session | drop it (§9: pinned wins) |
+   | Name | trimmed and capped at `SESSION_NAME_MAX`; empty or non-string → `Session N`. Duplicates are never renamed: that would rewrite a peer's data. |
+   | Unregistered `§` id | dropped, like the boot path: a `§` id with no registered view would open a blank pane |
+   | Order | as received |
+   | Cap | 20 entries, keeping the active session |
+   | Result empty after sanitising | `{applied:false}` — never a synthesised session |
+
+   `known` comes from the caller, so a peer's path that no longer exists is
+   dropped exactly as at boot (`app.js:1074`).
+3. No-op gate: compare the sanitised projection with the current `snapshot()`
+   projection (same shape as §17.5). Equal →
+   `{applied:false, kept:[], diverged:false}`.
+4. **Pins.** Replace the `pinned` Set with the sanitised set. A path that becomes
+   unpinned is inserted into the active session's unpinned section; a path that
+   becomes pinned is removed from every stored record (§9). A dirty path is never
+   dropped by a pin move.
+5. **The active session's tab list.** `serverList` = the sanitised record for
+   `activeSessionId`, or `[]` when absent. For each live unpinned path not in
+   `serverList`:
+
+   | Condition | Action |
+   | --- | --- |
+   | `NB.viewer.isDirty(path)` | keep; add to `kept`; `diverged = true` |
+   | `NB.hybrid.isActive()` and `path === activePath` | keep; `diverged = true` |
+   | an `activate()` is in flight for `path` | keep; `diverged = true` |
+   | otherwise | `dropTab(path)` — the tested primitive, so cache, draft, conflict flag, watcher baseline, frozen width and special-tab `onClose` follow the existing last-close rules (`tabs.js:813-827`) |
+
+   For each path in `serverList` not live and not pinned: append to `ordered`,
+   `openSet.add(path)`, capped at `SESSION_FILES_MAX`. **Never** `activate()` it
+   and never fetch it; the viewer loads it when the user clicks the tab.
+
+   The local active tab does not change, with one exception: if it was dropped
+   (clean, not hybrid, no activation in flight), pick the neighbour with
+   `pickNeighbor` and `activate` it. That is a local consequence of a removal,
+   not a remote activation, and it is the only activation an apply performs.
+6. **The active session was deleted remotely.** Keep it, its name, its order
+   position and its live strip, and set `diverged = true` so step 5 of §17.5
+   republishes it. There is no "local-only" session: the republish makes it a
+   normal session again, and a peer that still holds an unsaved buffer from it
+   keeps it on both sides until that buffer is saved or closed.
+7. **Inactive sessions.** Replace `storedSessions`, `sessionNames` and
+   `sessionOrder` from the sanitised list, with three exceptions:
+   - the active session is kept at its position (step 6), because it is the live
+     view and `sessionOrder` must still name `activeSessionId`;
+   - a session the server deleted that still holds a dirty hidden path is kept,
+     and `diverged = true`;
+   - `activeSessionId` is never added to `storedSessions` (§2).
+8. `render()`, then `emitChanged(true)`. `emitChanged(remote)` adds
+   `remote: !!remote` to the payload; the 23 existing call sites are unchanged.
+9. If the strip is now empty, `NB.viewer.showSessionEmpty()` (not `clear()`).
+
+Invariants after any call: `openSet` equals `new Set(ordered)`; `activeSessionId`
+is in `sessionOrder`; `storedSessions` has no `activeSessionId` key; every live
+unpinned path is either in the active session's list or in `kept`.
+
+`applyRemoteState` never calls `swapTo`, never calls `open`, and never prompts.
+`confirm()` from a background poll is a defect. The only `activate()` it may
+perform is the neighbour of a removed clean active tab (§17.6 step 5).
+
+### 17.7 Write path (`app.js`)
+
+`flushWorkspaceState` changes in four ways:
+
+1. **No captured snapshot.** `wsPendingState` is deleted (`app.js:171, 544`).
+   The body is serialized at send time from `cfg`, and `base` is
+   `lastServerState || {}`.
+2. **Adopt the response.** On success: `wsRev = res.rev; wsRevKnown = true;`
+   then `await applyRemoteWorkspaceState(res.state)`.
+3. **No retry loop and no blind re-post.** If the merge changed a session this
+   client did not touch, the apply converges the model; if the model diverged,
+   §17.5 step 5 schedules exactly one republish. There is no 409 to handle.
+4. **No write before boot.** `scheduleWorkspaceState()` returns early while
+   `wsBootLoaded` is false, so a failed boot fetch can never post a DEFAULTS
+   state over the server's.
+
+A viewer or the unauthenticated shell never queues a write (unchanged,
+`app.js:530-533`) but does poll, so it still sees live updates.
+
+### 17.8 Device-local selection and session ids
+
+Two `localStorage` keys, using the existing `nb:<ws>:<base>` convention
+(`table-view.js storageKey()`, `frontend.md` §5):
+
+| Key | Written | Read |
+| --- | --- | --- |
+| `nb:activeSession` | the `tabs:changed` listener, skipped while `applyingRemote` | boot, before normalisation |
+| `nb:activeFile` | the same listener, same rule | boot, before normalisation |
+
+Boot preference (`app.js:1069-1087`):
+
+```
+sessions source      : cfg.sessions
+activeSessionId      : local `nb:activeSession` if it names an existing session,
+                       else cfg.activeSessionId
+activeFile override  : local `nb:activeFile` if it is in that session's list,
+                       else the server value
+```
+
+`auth.js` adds both names to `DEVICE_LOCAL_KEY_RE` (`auth.js:42-43`) so sign-out
+clears them with the other device-local keys.
+
+**Session ids must be unique across clients.** `generateSessionId`
+(`tabs.js:182-189`) is `Date.now()` plus a per-page counter, so two pages that
+create their first session in the same millisecond produce the same id, and the
+merge would fold them into one session. It must use
+`crypto.randomUUID()` when available, else a random suffix
+(`Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8)`), and
+keep its existing "not already in `sessionOrder`" check.
+
+### 17.9 Failure and race matrix
+
+| Event | Result |
+| --- | --- |
+| Two clients change different sessions at once | The merge keeps both. Each response carries the merged state, so both converge (`requirements` AC69). |
+| Two clients change the same session at once | The second write's merge takes the client's copy for that session; both converge on it (A8). |
+| Two clients delete and edit the same session | The edited copy wins; a deletion only applies to a session the other side did not touch. |
+| Remote apply while hybrid is editing | Allowed. The active tab is kept, so the edit target never changes; the same apply schedules one republish if a peer removed it. |
+| Dirty path removed remotely | Kept, returned in `kept`, and republished by the same apply. |
+| Dirty path in a session removed remotely | The session is kept and republished. |
+| Active clean tab removed remotely | `dropTab`, then the neighbour is activated. The only activation an apply performs. |
+| Active tab removed while an `activate()` is in flight | Kept; the same apply schedules one republish. |
+| Apply between the fingerprint check and the model update | Impossible in one tab; the apply is awaited before the next pass can start (`wsSyncing`). |
+| A write lands while a poll is in flight | The poll is paused while a write is queued or in flight, and every apply runs on one serialised chain, so the two cannot interleave. A response older than `wsRev` is dropped by both paths, so an out-of-order arrival cannot regress the state. |
+| Boot restore's write | Carries the `base` seeded from `/api/config`, so a peer write between boot and the first save is merged, not lost. |
+| Page loaded before this change | Its `/api/workspace-state` write is refused (no `base`); its `/api/config` write loses the state keys. No clobber. |
+| Endpoint missing (older server) | `start()` resolves `false` after one probe; no timer, no repeated request. |
+| Phone shell | No poll; writes carry the boot `base`, so the merge protects the other devices. |
+| Hidden tab | No requests; one immediate poll on return. |
+| Server error or network down | Backoff from 3 s doubling to 30 s; recovery resets the delay. No user-visible error. |
+| 401 mid-poll | `request()` emits `auth:required` (`api.js:75-78`); the loop backs off. |
+| Corrupt `config.json` at a `POST /api/config` | The POST is refused (500 `write_failed`) rather than dropping every workspace's state. |
+| State over the cap | 400 `state_too_large`; `console.warn` once, as today. |
+| Hand-edited remote sessions | Sanitised per §17.6 step 2; never throws, never renames a peer's session. |
+
+### 17.10 Test seams
+
+`NB.sync` and `applyRemoteState` are the seams.
+
+**The DOM harness needs three changes before any sync test is meaningful**
+(`tests/dom/test_dom.js`):
+
+1. The shell `<html>` has no `data-workspace` (`test_dom.js:173`), so
+   `NB.workspaceId()` is `""` (`api.js:11-13`) and `scheduleWorkspaceState()`
+   returns immediately (`app.js:529`). The sync block must set
+   `document.documentElement.dataset.workspace = "default"` for its duration and
+   restore it afterwards.
+2. The fake router (`test_dom.js:1898`) must answer
+   `GET /api/workspace-state` (with `rev`, `state`, and a 304 when `rev` matches)
+   and `POST /api/workspace-state` (store `state`, bump `rev`, return both; for
+   the merge case, return a canned merged state). Without those routes no POST
+   can be observed and every "no write" assertion would pass for the wrong
+   reason.
+3. `GET /api/config` must return a body that carries `workspaceState` and
+   `workspaceStateRev` for `default`, so `applyConfig` seeds `wsRev` and `base`
+   the way the real server does.
+
+Outside that block the loop stays off for the real reason: no workspace id. The
+`{}`-has-no-`rev` rule is the second gate, for a server that lacks the endpoint.
+
+Server (`pytest`):
+
+| Case | Assertion |
+| --- | --- |
+| GET round-trip | `{ok, id, rev, state}`; `{}`/`0` for an entry never written |
+| GET conditional | 304 with an empty body on an equal rev; 200 on a different one |
+| GET validation | 400 `bad_body` without `id`; 404 `unknown_workspace` |
+| POST replace | `base` equal to the stored entry stores `state` verbatim and returns `rev + 1` |
+| POST merge | two clients changing different sessions: both survive |
+| POST merge, same session | the incoming copy wins |
+| POST delete/edit conflict | a delete applies only to an untouched session; an edited one is kept |
+| POST add | a session added by either side survives |
+| POST idempotent | replaying the same `base`/`state` changes only the rev |
+| POST without `base` | 400 `bad_body`; nothing written |
+| POST oversized | `state` over the cap is 400 `state_too_large`; `base` over the cap is 400 `base_too_large` before the workspace lookup; a merge that grows past the cap is 400 `state_too_large` |
+| `/api/config` | strips state keys and re-attaches the stored maps; a corrupt read refuses with 500 `write_failed` |
+| Rev monotonic | never regresses across a `/api/config` write or a merge |
+| Workspace delete | the state entry and its rev are removed |
+| Permissions | a viewer may GET and is refused POST; the 304 and the 200 carry `no-store` and `Vary` |
+
+DOM (`tests/dom/test_dom.js`, `== workspace sync ==`): a remote add appends
+without activating; a remote remove closes a clean tab; a dirty one is kept,
+returned in `kept`, and republished by exactly one POST; a removed active clean
+tab activates its neighbour and emits exactly one `tabs:changed`, not two; a
+remote rename updates the Sessions row; a reorder rewrites `sessionOrder`; a pin
+added remotely moves the tab into the pinned prefix; a session deleted remotely
+disappears, unless it holds a dirty hidden path, in which case it is kept and
+republished; an identical projection is a no-op that emits nothing; an
+`activeFile`-only change never calls `applyRemoteState` and never queues a write;
+`activeSessionId` and the active tab are unchanged after every apply except the
+neighbour case; a POST response that merges a peer session is applied and
+produces no second POST.
+
+Browser (`tests/browser/`): two contexts on one server converge on a tab add and
+on a session rename, and neither switches the other's active tab. Optional today;
+it is the only test that would catch a regression across the whole loop, so it
+is worth promoting to the core suite once the feature lands.
+
+### 17.11 Accepted limits
+
+- **Polling, not push.** A peer update is visible within one interval (3 s), not
+  instantly. SSE was rejected: one held connection and one thread per open
+  browser on the Flask dev server, plus proxy buffering.
+- **An `activeFile`-only peer write still fetches the full state.** It bumps the
+  rev, so the next poll is a 200, not a 304; the fingerprint gate then does no
+  work. Cheap, not free.
+- **Last writer wins inside one session.** Two devices that add a tab to the same
+  session in the same interval settle on one list (A8).
+- **The per-session `activeFile` is a shared hint.** Switching into a session on
+  device B may restore the tab device A used there. Only the *active* session's
+  tab is device-local.
+- **`recentFiles` lands on the next Recent activation.** That view re-reads on
+  activation (`activity.js:469`); it has no setter to call from an apply.
+- **A page without a workspace id persists no scoped state.** It could not reach
+  the workspace endpoint before either.
+- **A page loaded before this change stops persisting.** Its state write is
+  refused and its config write loses the state keys, by design; the shell
+  replaces itself on the next load.
+- **Writes need workspace admin.** With auth off, a non-loopback peer cannot
+  write, so the shared set is read-only from a remote host until auth is enabled.
+  This is the existing `workspace_admin_required` rule, unchanged.
+- **No sync across workspaces.** The page is bound to one workspace; switching
+  reloads.

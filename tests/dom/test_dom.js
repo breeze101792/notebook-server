@@ -112,6 +112,20 @@ function buildGraphStub() {
   return { nodes, edges };
 }
 let config = {};
+// Cross-device sync store for the fake /api/workspace-state routes
+// (docs/architecture/sessions.md §17). `wsState`/`wsRev` mirror the server's
+// workspaceState/workspaceStateRev for the one workspace the
+// `== workspace sync ==` block drives; `wsPosts` keeps every wire body so a
+// test can assert how many writes happened and what `base` each carried.
+// `wsGetOverride` answers a GET verbatim (a canned state, or "unsupported"
+// for a server without the endpoint); `wsMergedReply` is the canned state a
+// POST answers with, standing in for the server's three-way merge.
+const WS_TEST_ID = "default";
+let wsState = {};
+let wsRev = 0;
+let wsPosts = [];
+let wsGetOverride = null;
+let wsMergedReply = null;
 // /api/graph override. null -> buildGraphStub(); an object is returned
 // verbatim; the string "error" makes the stub answer 500 so the graph's
 // loading/empty/error/toast states can be driven deterministically.
@@ -1905,7 +1919,38 @@ window.fetch = async (url, opts) => {
   let body = {};
   if (p === "/api/config") {
     if (method === "POST") { config = JSON.parse(opts.body || "{}"); body = { ok: true }; }
-    else body = config;
+    // The sync maps are server-owned siblings of the chrome keys, so a boot
+    // with a workspace id seeds wsRev and the write `base` from them.
+    else body = Object.assign({}, config, {
+      workspaceState: { [WS_TEST_ID]: wsState },
+      workspaceStateRev: { [WS_TEST_ID]: wsRev },
+    });
+  } else if (p === "/api/workspace-state") {
+    const wid = u.searchParams.get("id") || "";
+    if (method === "POST") {
+      const d = JSON.parse(opts.body || "{}");
+      wsPosts.push(d);
+      // A canned reply stands in for the server's three-way merge; without
+      // one the store takes what the client sent, which is what a base that
+      // matched the stored entry does.
+      wsState = wsMergedReply
+        ? JSON.parse(JSON.stringify(wsMergedReply))
+        : JSON.parse(JSON.stringify((d && d.state) || {}));
+      wsRev += 1;
+      body = { ok: true, id: wid, rev: wsRev, state: wsState };
+    } else if (wsGetOverride === "unsupported") {
+      body = {};                       // a server without the endpoint
+    } else if (wsGetOverride) {
+      body = JSON.parse(JSON.stringify(wsGetOverride));
+    } else {
+      // The conditional is the `rev` query parameter, not an ETag.
+      const revArg = u.searchParams.get("rev");
+      if (revArg !== null && Number(revArg) === wsRev) {
+        return { status: 304, ok: false,
+          text: async () => "", json: async () => ({}) };
+      }
+      body = { ok: true, id: wid, rev: wsRev, state: wsState };
+    }
   } else if (p === "/api/tree") {
     body = { tree: TREE };
   } else if (p === "/api/file") {
@@ -41839,9 +41884,14 @@ function check(label, cond, extra) {
         c: cfgBody.sidebarCollapsed, sw: cfgBody.sidebarWidth,
         ow: cfgBody.outlineWidth,
       }));
-    check("mobile: phone config POST merges only recentFiles",
-      !!cfgBody && cfgBody.recentFiles[0] === "Welcome.md" &&
-      cfgBody.recentFiles.includes("old.md"),
+    // Cross-device sync moved `recentFiles` (and every other scoped key) to
+    // the workspace-state write (sessions.md §17.1): POST /api/config keeps
+    // the server's copy instead of folding or carrying the client's. This
+    // fixture page has no data-workspace, so the phone's own state write
+    // cannot be observed here; "== workspace sync ==" covers the write path.
+    check("mobile: the config POST leaves scoped state to the workspace write",
+      !!cfgBody && cfgBody.recentFiles[0] === "old.md" &&
+      cfgBody.recentFiles.indexOf("Welcome.md") < 0,
       cfgBody && cfgBody.recentFiles);
 
     // Activity taps and the drawer close control never persist a
@@ -43987,6 +44037,695 @@ function check(label, cond, extra) {
     await tbShut();
 
     window.NB.menu.close();
+  }
+
+  // ===================================================================
+  // Cross-device sync
+  // docs/architecture/sessions.md §17 and docs/testing/frontend.md
+  // ("Cross-device sync"). The apply path and the write path are driven
+  // directly; the 3 s poll is never waited on.
+  //
+  // Two harness limits, so a green run is not read for more than it shows:
+  // - The shell <html> has no data-workspace, so boot's applyConfig ran with
+  //   an empty workspace id. This block sets the id for its own duration and
+  //   seeds `base` with one poll (NB.sync.start) instead of from the boot
+  //   payload; GET /api/config still carries workspaceState/Rev, which is
+  //   what a page that boots on a workspace seeds from.
+  // - boot() is guarded by its own `booted` flag, so the device-local
+  //   preference cannot be re-booted in this window: the write is asserted
+  //   here and the boot wiring by a source assertion.
+  // ===================================================================
+  console.log("== workspace sync ==");
+  {
+    const S = window.NB.tabs;
+    const V = window.NB.viewer;
+    const SY = window.NB.sync;
+    const ls = window.localStorage;
+    const cfgNow = () => window.NB.app.getCfg();
+    const wsLogStart = fetchLog.length;
+    const sessState = (id, name, files, active) => ({
+      id, name, openFiles: files.slice(),
+      activeFile: active === undefined ? (files[0] || null) : active,
+    });
+    // Boot-style setup: a clean viewer, then restore() the state to assert.
+    const load = async (list, activeId, pins) => {
+      V.clear();
+      await S.restore([], null, null, pins || [], {
+        sessions: list.map(s => ({ id: s.id, name: s.name,
+          openFiles: s.openFiles.slice(), activeFile: s.activeFile })),
+        activeSessionId: activeId,
+        pinnedFiles: (pins || []).slice(),
+        migrated: false,
+      });
+      await tick(60);
+    };
+    // One remote apply, with the tabs:changed count observed.
+    const apply = async (sessions, pins) => {
+      let events = 0;
+      const onChanged = () => { events++; };
+      window.NB.evt.on("tabs:changed", onChanged);
+      try {
+        const res = await S.applyRemoteState({
+          sessions, pinnedFiles: pins || [], known: () => true });
+        return { res, events };
+      } finally {
+        window.NB.evt.off("tabs:changed", onChanged);
+      }
+    };
+    const openList = () => S.getOpen().join(",");
+    const sessionIds = () => S.getSessionList().map(s => s.id).join(",");
+
+    // --- applyRemoteState: the remote changes -------------------------
+    // A remote add appends the tab without activating it.
+    await load([sessState("main", "Main", ["notes/a.md"])], "main", []);
+    let r = await apply(
+      [sessState("main", "Main", ["notes/a.md", "notes/b.md"])], []);
+    check("sync apply: a remote add appends the tab",
+      openList() === "notes/a.md,notes/b.md", openList());
+    check("sync apply: a remote add does not activate it",
+      S.getActive() === "notes/a.md", String(S.getActive()));
+    check("sync apply: the add reports applied and nothing kept",
+      r.res.applied === true && r.res.kept.length === 0 &&
+      r.res.diverged === false, JSON.stringify(r.res));
+    check("sync apply: the add keeps the active session",
+      S.getActiveSessionId() === "main");
+
+    // A remote remove closes a clean tab.
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    r = await apply([sessState("main", "Main", ["notes/a.md"])], []);
+    check("sync apply: a remote remove closes the clean tab",
+      openList() === "notes/a.md" && !S.isOpen("notes/b.md"), openList());
+    check("sync apply: the remove is not a keep",
+      r.res.kept.length === 0 && r.res.diverged === false);
+    check("sync apply: the remove leaves the active tab alone",
+      S.getActive() === "notes/a.md", String(S.getActive()));
+
+    // A dirty tab is kept, reported, and stays active.
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"],
+      "notes/b.md")], "main", []);
+    V.setDraft("notes/b.md", { content: "unsaved bytes", mode: "source" });
+    check("sync apply: the fixture tab is dirty",
+      V.isDirty("notes/b.md") === true);
+    r = await apply([sessState("main", "Main", ["notes/a.md"], "notes/a.md")],
+      []);
+    check("sync apply: a dirty tab is kept",
+      S.isOpen("notes/b.md") && openList() === "notes/a.md,notes/b.md",
+      openList());
+    check("sync apply: the kept list and the flag report it",
+      r.res.kept.join(",") === "notes/b.md" && r.res.diverged === true,
+      JSON.stringify(r.res));
+    check("sync apply: the dirty tab stays the active tab",
+      S.getActive() === "notes/b.md", String(S.getActive()));
+    check("sync apply: the dirty buffer is still dirty",
+      V.isDirty("notes/b.md") === true);
+
+    // A removed active clean tab activates its neighbour, exactly one emit.
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    check("sync apply: the neighbour fixture starts on the first tab",
+      S.getActive() === "notes/a.md");
+    r = await apply([sessState("main", "Main", ["notes/b.md"], "notes/b.md")],
+      []);
+    check("sync apply: a removed active clean tab activates its neighbour",
+      S.getActive() === "notes/b.md" && openList() === "notes/b.md",
+      String(S.getActive()) + "/" + openList());
+    check("sync apply: the neighbour activation emits exactly one tabs:changed",
+      r.events === 1, String(r.events));
+
+    // A remote rename and reorder rewrites the Sessions model.
+    await load([sessState("s1", "One", ["notes/a.md"]),
+                sessState("s2", "Two", ["notes/c.md"])], "s1", []);
+    r = await apply([sessState("s2", "Second", ["notes/c.md"]),
+                     sessState("s1", "First", ["notes/a.md"])], []);
+    check("sync apply: a remote reorder rewrites sessionOrder",
+      sessionIds() === "s2,s1", sessionIds());
+    check("sync apply: a remote rename updates the row name",
+      S.getSessionList().map(s => s.name).join(",") === "Second,First",
+      S.getSessionList().map(s => s.name).join(","));
+    check("sync apply: the rename does not switch the active session",
+      S.getActiveSessionId() === "s1" && S.getActive() === "notes/a.md",
+      S.getActiveSessionId() + "/" + String(S.getActive()));
+
+    // A pin added remotely moves the tab into the pinned prefix.
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    r = await apply([sessState("main", "Main", ["notes/a.md"])],
+      ["notes/b.md"]);
+    check("sync apply: a remote pin moves the tab into the pinned prefix",
+      openList() === "notes/b.md,notes/a.md" && S.isPinned("notes/b.md"),
+      openList());
+    check("sync apply: the pinned path leaves the session list",
+      JSON.stringify(S.snapshot()[0].openFiles) === JSON.stringify(["notes/a.md"]),
+      JSON.stringify(S.snapshot()[0].openFiles));
+    check("sync apply: the pin keeps the active tab",
+      S.getActive() === "notes/a.md" && r.res.applied === true);
+
+    // A session deleted remotely disappears.
+    await load([sessState("s1", "One", ["notes/a.md"]),
+                sessState("s2", "Two", ["notes/c.md"])], "s1", []);
+    r = await apply([sessState("s1", "One", ["notes/a.md"])], []);
+    check("sync apply: a session deleted remotely disappears",
+      sessionIds() === "s1" && S.getActiveSessionId() === "s1", sessionIds());
+    check("sync apply: the surviving session keeps its tabs",
+      S.getActive() === "notes/a.md" && openList() === "notes/a.md");
+
+    // ... unless it still holds a dirty hidden path.
+    await load([sessState("s1", "One", ["notes/a.md"]),
+                sessState("s2", "Two", ["notes/c.md"])], "s1", []);
+    await S.swapTo("s2");
+    V.setDraft("notes/c.md", { content: "hidden unsaved bytes", mode: "source" });
+    await S.swapTo("s1");
+    await tick(40);
+    check("sync apply: the hidden session holds a dirty path",
+      V.isDirty("notes/c.md") === true && S.getActiveSessionId() === "s1",
+      "dirty=" + V.isDirty("notes/c.md") +
+      " active=" + S.getActiveSessionId());
+    r = await apply([sessState("s1", "One", ["notes/a.md"])], []);
+    check("sync apply: a deleted session with a dirty hidden path is kept",
+      sessionIds() === "s1,s2" && r.res.diverged === true,
+      sessionIds() + " diverged=" + r.res.diverged);
+    const keptRow = S.getSessionList().find(s => s.id === "s2");
+    check("sync apply: the kept session keeps its dirty file listed",
+      !!keptRow && keptRow.dirty === true,
+      JSON.stringify(keptRow));
+
+    // An empty or malformed sessions list is refused, never a Main session.
+    await load([sessState("s1", "One", ["notes/a.md"]),
+                sessState("s2", "Two", ["notes/c.md"])], "s1", []);
+    const beforeIds = sessionIds();
+    for (const bad of [[], undefined, { sessions: ["x", 3, { name: "no id" }] },
+                       { sessions: [{ id: "" }] }]) {
+      const res = await S.applyRemoteState(bad);
+      check("sync apply: a malformed sessions list is refused (" +
+        JSON.stringify(bad) + ")",
+        res.applied === false && res.kept.length === 0 &&
+        res.diverged === false, JSON.stringify(res));
+    }
+    check("sync apply: a refused apply synthesises no Main session",
+      sessionIds() === beforeIds && !S.getSessionList().some(s => s.name === "Main"),
+      sessionIds());
+    check("sync apply: a refused apply leaves the strip alone",
+      openList() === "notes/a.md" && S.getActive() === "notes/a.md",
+      openList());
+
+    // --- device-local selection: the write half ------------------------
+    // Cleared first so the assertion is about this block's tab change.
+    ls.removeItem("nb:activeSession");
+    ls.removeItem("nb:activeFile");
+    await load([sessState("main", "Main", ["notes/a.md"], "notes/a.md"),
+                sessState("two", "Two", ["notes/c.md"], "notes/c.md")],
+      "main", []);
+    await S.open("notes/b.md");
+    await tick(40);
+    check("device-local: nb:activeSession is written on a tab change",
+      ls.getItem("nb:activeSession") === "main",
+      String(ls.getItem("nb:activeSession")));
+    check("device-local: nb:activeFile is written on a tab change",
+      ls.getItem("nb:activeFile") === "notes/b.md",
+      String(ls.getItem("nb:activeFile")));
+    // The read half is boot-only and boot() is guarded, so the wiring is
+    // asserted instead of re-booting the window.
+    const appSrc = read("static/js/app.js");
+    check("device-local: boot prefers the local session and file",
+      /const sessionState = isPhoneMode\(\) \? null\s*\n\s*: NB\.tabs\.normaliseSessions\(bootSessionInput\(cfg, known\), known\);/
+        .test(appSrc) &&
+      /const localSession = readDeviceLocal\(DEVICE_ACTIVE_SESSION_KEY\)/
+        .test(appSrc) &&
+      /const localFile = readDeviceLocal\(DEVICE_ACTIVE_FILE_KEY\)/
+        .test(appSrc));
+
+    // --- NB.sync: the loop's own gates --------------------------------
+    const wsGets = () =>
+      fetchLog.filter(l => l.startsWith("GET /api/workspace-state")).length;
+    const wsWrites = () =>
+      fetchLog.filter(l => l.startsWith("POST /api/workspace-state")).length;
+    const lastBody = () => wsPosts[wsPosts.length - 1] || {};
+    const serverState = () => ({
+      sessions: JSON.parse(JSON.stringify(S.snapshot())),
+      pinnedFiles: S.getOpen().filter(p => S.isPinned(p)),
+      bookmarks: (cfgNow().bookmarks || []).slice(),
+      recentFiles: (cfgNow().recentFiles || []).slice(),
+      pinnedFolders: (cfgNow().pinnedFolders || []).slice(),
+      openFiles: S.getOpen().slice(),
+      activeFile: S.getActive(),
+      lastFile: cfgNow().lastFile,
+      activeSessionId: S.getActiveSessionId(),
+    });
+
+    // No workspace id: the loop is off and sends nothing.
+    delete window.document.documentElement.dataset.workspace;
+    const startWithoutId = await SY.start();
+    check("sync: start() is false with no workspace id",
+      startWithoutId === false && !window.NB.workspaceId() &&
+      SY.status().running === false && wsGets() === 0,
+      "gets=" + wsGets());
+
+    window.document.documentElement.dataset.workspace = WS_TEST_ID;
+    wsState = serverState();
+    wsRev = 0;
+    wsPosts = [];
+    wsGetOverride = null;
+    wsMergedReply = null;
+    const bootBase = JSON.parse(JSON.stringify(wsState));
+    const bootPayload = await window.NB.api.getConfig();
+    check("sync: /api/config carries the state maps that seed `base`",
+      !!bootPayload.workspaceState &&
+      !!bootPayload.workspaceState[WS_TEST_ID] &&
+      typeof bootPayload.workspaceStateRev[WS_TEST_ID] === "number",
+      Object.keys(bootPayload).join(","));
+    const getsBefore = wsGets();
+    const started = await SY.start();
+    check("sync: start() probes once and arms with a workspace id",
+      started === true && SY.status().running === true &&
+      wsGets() === getsBefore + 1, "gets=" + (wsGets() - getsBefore));
+    check("sync: status() reports the rev the server sent",
+      SY.status().rev === 0, String(SY.status().rev));
+
+    SY.pause();
+    check("sync: pause() sets the hidden gate", SY.status().paused === true);
+    const getsPaused = wsGets();
+    const pausedRes = await SY.tick();
+    check("sync: a paused tick sends nothing",
+      pausedRes.ok === true && wsGets() === getsPaused,
+      "gets=" + (wsGets() - getsPaused));
+    SY.resume();
+    check("sync: resume() clears the gate", SY.status().paused === false);
+    await tick(60);
+    check("sync: resume() polls immediately",
+      wsGets() === getsPaused + 1, "gets=" + (wsGets() - getsPaused));
+
+    // A server without the endpoint is probed once and left alone.
+    SY.stop();
+    check("sync: stop() disarms the loop", SY.status().running === false);
+    wsGetOverride = "unsupported";
+    const getsUnsupported = wsGets();
+    const unsupported = await SY.start();
+    check("sync: a {} response marks the endpoint unsupported and stops",
+      unsupported === false && SY.status().running === false &&
+      wsGets() === getsUnsupported + 1,
+      "gets=" + (wsGets() - getsUnsupported));
+    wsGetOverride = null;
+
+    // --- the write path ----------------------------------------------
+    // A local tab change sends one write whose base is the state this page
+    // started from (seeded by the first poll, since boot had no id).
+    const writesBefore = wsWrites();
+    await S.open("notes/e.md");
+    await tick(400);
+    check("sync write: a local tab change sends exactly one POST",
+      wsWrites() === writesBefore + 1,
+      "delta=" + (wsWrites() - writesBefore));
+    check("sync write: the body carries the workspace id",
+      lastBody().id === WS_TEST_ID, String(lastBody().id));
+    check("sync write: base is the state the page started from",
+      JSON.stringify(lastBody().base) === JSON.stringify(bootBase),
+      JSON.stringify(lastBody().base));
+    check("sync write: the state is the live model",
+      (lastBody().state.sessions || []).some(s => s.id === "main" &&
+        s.openFiles.indexOf("notes/e.md") >= 0),
+      JSON.stringify(lastBody().state.sessions));
+
+    // The POST's response is applied, and applying it writes nothing more.
+    await tick(400);
+    check("sync write: adopting the response produces no second POST",
+      wsWrites() === writesBefore + 1, "posts=" + wsWrites());
+
+    // A merge that brings in a peer session is applied and republished once
+    // at most: here the model adopts it verbatim, so there is no republish.
+    const writesMerge = wsWrites();
+    await S.open("notes/d.md");
+    // The write is debounced by 250 ms, so the canned merge can be built
+    // from the model the POST is about to send.
+    const mergedState = serverState();
+    mergedState.sessions.push({
+      id: "peer", name: "Peer", openFiles: ["notes/c.md"],
+      activeFile: "notes/c.md",
+    });
+    wsMergedReply = mergedState;
+    await tick(400);
+    check("sync merge: the merged peer session is applied",
+      S.getSessionList().some(s => s.id === "peer"), sessionIds());
+    check("sync merge: the merged response produces one POST",
+      wsWrites() === writesMerge + 1, "delta=" + (wsWrites() - writesMerge));
+    check("sync merge: the peer session carries its files",
+      JSON.stringify(S.getSessionList().find(s => s.id === "peer") &&
+        S.snapshot().find(s => s.id === "peer").openFiles) ===
+      JSON.stringify(["notes/c.md"]),
+      JSON.stringify(S.snapshot().find(s => s.id === "peer")));
+    await tick(400);
+    check("sync merge: the merged apply produces no second POST",
+      wsWrites() === writesMerge + 1, "posts=" + wsWrites());
+    check("sync merge: the active tab is untouched by the merge",
+      S.getActive() === "notes/d.md" && S.getActiveSessionId() === "main",
+      String(S.getActive()));
+    wsMergedReply = null;
+
+    // An activeFile-only peer write applies nothing and queues no write.
+    // A peer's write bumps the rev, so the next poll is a 200, not a 304.
+    const peerClick = JSON.parse(JSON.stringify(wsState));
+    peerClick.sessions[0].activeFile = "notes/e.md";   // a tab main also holds
+    peerClick.activeFile = "notes/e.md";
+    wsRev += 1;
+    wsGetOverride = { ok: true, id: WS_TEST_ID, rev: wsRev, state: peerClick };
+    const writesIdle = wsWrites();
+    const openIdle = openList();
+    const sessionsIdle = JSON.stringify(S.snapshot());
+    let appliedIdle = 0;
+    const onIdleChanged = () => { appliedIdle++; };
+    window.NB.evt.on("tabs:changed", onIdleChanged);
+    const idleRes = await SY.tick();
+    window.NB.evt.off("tabs:changed", onIdleChanged);
+    await tick(400);
+    check("sync: an activeFile-only response applies nothing",
+      idleRes.ok === true && openList() === openIdle &&
+      JSON.stringify(S.snapshot()) === sessionsIdle && appliedIdle === 0,
+      "open=" + openList() + " events=" + appliedIdle);
+    check("sync: an activeFile-only response queues no write",
+      wsWrites() === writesIdle, "delta=" + (wsWrites() - writesIdle));
+    check("sync: the poll still moves the write base forward",
+      (await (async () => {
+        const before = wsWrites();
+        await S.open("notes/c.md");
+        await tick(400);
+        const body = lastBody();
+        return wsWrites() === before + 1 && body.base &&
+          (body.base.sessions || [])[0] &&
+          body.base.sessions[0].activeFile === "notes/e.md";
+      })()),
+      JSON.stringify(lastBody().base && lastBody().base.sessions));
+    wsGetOverride = null;
+
+    // A dirty tab a peer removed is kept and republished by exactly one POST
+    // (§17.5 step 5): the model cannot adopt the server's copy, so the dirty
+    // check schedules one write and the next poll is clean.
+    await S.open("notes/b.md");
+    await tick(400);
+    V.setDraft("notes/b.md", { content: "local unsaved bytes", mode: "source" });
+    check("sync republish: the fixture tab is dirty and active",
+      V.isDirty("notes/b.md") === true && S.getActive() === "notes/b.md",
+      "dirty=" + V.isDirty("notes/b.md") + " active=" + S.getActive());
+    const peerRemoval = serverState();
+    peerRemoval.sessions[0].openFiles =
+      peerRemoval.sessions[0].openFiles.filter(p => p !== "notes/b.md");
+    peerRemoval.sessions[0].activeFile = "notes/a.md";
+    wsRev += 1;
+    wsGetOverride = { ok: true, id: WS_TEST_ID, rev: wsRev, state: peerRemoval };
+    const writesRepublish = wsWrites();
+    await SY.tick();
+    await tick(400);
+    check("sync republish: the removed dirty tab is kept",
+      S.isOpen("notes/b.md") && S.getActive() === "notes/b.md",
+      openList() + " active=" + String(S.getActive()));
+    check("sync republish: the keep schedules exactly one POST",
+      wsWrites() === writesRepublish + 1,
+      "delta=" + (wsWrites() - writesRepublish));
+    check("sync republish: the republished state lists the kept tab",
+      (lastBody().state.sessions || []).some(s => s.id === "main" &&
+        s.openFiles.indexOf("notes/b.md") >= 0),
+      JSON.stringify(lastBody().state.sessions));
+    await tick(400);
+    check("sync republish: the republish produces no second POST",
+      wsWrites() === writesRepublish + 1, "posts=" + wsWrites());
+    wsGetOverride = null;
+
+
+    // --- ordering, recovery, and bad peer data -------------------------
+    // docs/testing/frontend.md "Cross-device sync" ("Ordering and
+    // recovery", "Bad peer data") and sessions.md §17.4-§17.6.
+
+    // A stale poll response is dropped, not adopted (§17.4: the poll and the
+    // write use different queues, so an older poll can land last).
+    SY.stop();
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    await tick(400);
+    const staleRev = SY.status().rev;
+    wsGetOverride = { ok: true, id: WS_TEST_ID, rev: staleRev - 1,
+      state: Object.assign(serverState(), {
+        sessions: [sessState("main", "Main", ["notes/a.md"])],
+      }) };
+    let staleEmits = 0;
+    const onStaleChanged = () => { staleEmits++; };
+    window.NB.evt.on("tabs:changed", onStaleChanged);
+    const getsStale = wsGets();
+    const staleRes = await SY.tick();
+    await tick(80);
+    window.NB.evt.off("tabs:changed", onStaleChanged);
+    check("sync: the stale poll is fetched, not skipped",
+      wsGets() === getsStale + 1, "gets=" + (wsGets() - getsStale));
+    check("sync: a stale poll response does not move wsRev back",
+      SY.status().rev === staleRev && staleRes.rev === staleRev,
+      String(SY.status().rev) + " (was " + staleRev + ")");
+    check("sync: the tab a stale poll response omits stays open",
+      S.isOpen("notes/b.md") && openList() === "notes/a.md,notes/b.md",
+      openList());
+    check("sync: a stale poll response emits no tabs:changed",
+      staleEmits === 0, "events=" + staleEmits);
+    wsGetOverride = null;
+
+    // A stale write response is dropped the same way (§17.7).
+    SY.stop();
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    await tick(400);
+    const aheadRev = SY.status().rev + 5;
+    wsGetOverride = { ok: true, id: WS_TEST_ID, rev: aheadRev,
+      state: serverState() };
+    await SY.tick();
+    await tick(80);
+    wsGetOverride = null;
+    check("sync: the page holds the newer revision before the write",
+      SY.status().rev === aheadRev, String(SY.status().rev));
+    // The store now answers below what this page already holds, with a state
+    // that would add a peer session and drop the newest tab if it landed.
+    wsRev = aheadRev - 4;
+    const staleReply = serverState();
+    staleReply.sessions.push({ id: "stalepeer", name: "Stalepeer",
+      openFiles: ["notes/a.md"], activeFile: "notes/a.md" });
+    wsMergedReply = staleReply;
+    const writesStale = wsWrites();
+    await S.open("Welcome.md");
+    await tick(400);
+    check("sync: the stale-reply write still leaves the page",
+      wsWrites() === writesStale + 1, "delta=" + (wsWrites() - writesStale));
+    check("sync: a stale write response is not applied",
+      !S.getSessionList().some(s => s.id === "stalepeer"), sessionIds());
+    check("sync: a stale write response does not move wsRev back",
+      SY.status().rev === aheadRev, String(SY.status().rev));
+    check("sync: the strip survives a stale write response",
+      openList() === "notes/a.md,notes/b.md,Welcome.md", openList());
+    wsMergedReply = null;
+    wsRev = SY.status().rev;
+    wsState = serverState();
+    await tick(80);
+
+    // A transport failure still arms the chain (§17.4).
+    SY.stop();
+    await load([sessState("main", "Main", ["notes/a.md"])], "main", []);
+    await tick(400);
+    const pollMs = SY.status().delayMs;
+    const routerFetch = window.fetch;
+    const probe = { attempts: 0, fail: 1 };
+    window.fetch = (url, opts) => {
+      const isPoll = String(url).indexOf("/api/workspace-state") >= 0 &&
+        ((opts && opts.method) || "GET") === "GET";
+      if (isPoll) {
+        probe.attempts++;
+        if (probe.fail > 0) {
+          probe.fail--;
+          return Promise.reject(new TypeError("connection refused"));
+        }
+      }
+      return routerFetch(url, opts);
+    };
+    try {
+      const startedTransport = await SY.start();
+      check("sync: a failed first probe still resolves start() true",
+        startedTransport === true, String(startedTransport));
+      check("sync: a transport failure still arms the loop",
+        SY.status().running === true);
+      check("sync: the failed probe backs off past the poll interval",
+        SY.status().delayMs === pollMs * 2, String(SY.status().delayMs));
+      check("sync: the failed probe sent exactly one GET",
+        probe.attempts === 1, "attempts=" + probe.attempts);
+      const backoffMs = SY.status().delayMs;
+      await tick(backoffMs + 600);
+      check("sync: the backoff timer fires a second GET",
+        probe.attempts >= 2, "attempts=" + probe.attempts);
+      check("sync: the loop stays armed after the backoff retry",
+        SY.status().running === true);
+    } finally {
+      window.fetch = routerFetch;
+    }
+
+    // resume() starts a chain that never armed (§17.4).
+    SY.stop();
+    await tick(60);
+    const resumeGets = wsGets();
+    SY.resume();
+    await tick(80);
+    check("sync: resume() polls once immediately",
+      wsGets() === resumeGets + 1, "gets=" + (wsGets() - resumeGets));
+    check("sync: resume() arms the chain that never armed",
+      SY.status().running === true);
+    const resumeDelay = SY.status().delayMs;
+    await tick(resumeDelay + 600);
+    check("sync: the resumed chain sends its next poll",
+      wsGets() >= resumeGets + 2, "gets=" + (wsGets() - resumeGets));
+
+    // A page that starts hidden sends nothing until its first
+    // visibilitychange (§17.4).
+    SY.stop();
+    await tick(60);
+    Object.defineProperty(window.document, "visibilityState",
+      { value: "hidden", configurable: true });
+    Object.defineProperty(window.document, "hidden",
+      { value: true, configurable: true });
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    check("sync: hiding the page sets the paused gate",
+      SY.status().paused === true);
+    const hiddenGets = wsGets();
+    await SY.start();
+    const hiddenDelay = SY.status().delayMs;
+    await tick(hiddenDelay + 600);
+    check("sync: a page that starts hidden sends no poll",
+      wsGets() === hiddenGets, "gets=" + (wsGets() - hiddenGets));
+    Object.defineProperty(window.document, "visibilityState",
+      { value: "visible", configurable: true });
+    Object.defineProperty(window.document, "hidden",
+      { value: false, configurable: true });
+    window.document.dispatchEvent(new window.Event("visibilitychange"));
+    await tick(80);
+    check("sync: the first visibilitychange sends one poll",
+      wsGets() === hiddenGets + 1, "gets=" + (wsGets() - hiddenGets));
+    delete window.document.visibilityState;
+    SY.stop();
+
+    // The `known` filter must read an unloaded tree as "unknown", never as
+    // "every path is gone" (§17.5 step 2): filtering against an empty cache
+    // would drop a whole workspace and republish the erasure.
+    SY.stop();
+    const realGetTree = window.NB.sidebar.getTree;
+    // With the real tree loaded, a remote path the tree does not know is
+    // dropped, which is what makes the empty-cache case below meaningful.
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    await tick(400);
+    wsRev += 1;
+    wsGetOverride = { ok: true, id: WS_TEST_ID, rev: wsRev,
+      state: Object.assign(serverState(), {
+        sessions: [sessState("main", "Main",
+          ["notes/a.md", "notes/ghost-cache.md"])],
+      }) };
+    await SY.tick();
+    await tick(400);
+    check("sync: a loaded tree drops a remote path it does not know",
+      !S.isOpen("notes/ghost-cache.md"), openList());
+    // The same state with an empty cache drops nothing.
+    wsGetOverride = null;
+    wsRev = SY.status().rev;
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    await tick(400);
+    window.NB.sidebar.getTree = () => [];
+    const writesEmptyTree = wsWrites();
+    wsRev += 1;
+    wsGetOverride = { ok: true, id: WS_TEST_ID, rev: wsRev,
+      state: Object.assign(serverState(), {
+        sessions: [sessState("main", "Main",
+          ["notes/a.md", "notes/ghost-cache.md"])],
+      }) };
+    await SY.tick();
+    await tick(400);
+    check("sync: an empty tree cache keeps a remote path the tree omits",
+      S.isOpen("notes/ghost-cache.md") &&
+      openList() === "notes/a.md,notes/ghost-cache.md", openList());
+    check("sync: the empty-cache apply queues no write",
+      wsWrites() === writesEmptyTree, "delta=" + (wsWrites() - writesEmptyTree));
+    // The guard is about the `known` filter, not about removals: a peer that
+    // omits a clean tab still removes it with an empty cache (§17.6 step 5).
+    await load([sessState("main", "Main", ["notes/a.md", "notes/b.md"])],
+      "main", []);
+    await tick(400);
+    window.NB.sidebar.getTree = () => [];
+    const writesPeerRemove = wsWrites();
+    wsRev += 1;
+    wsGetOverride = { ok: true, id: WS_TEST_ID, rev: wsRev,
+      state: Object.assign(serverState(), {
+        sessions: [sessState("main", "Main", ["notes/a.md"])],
+      }) };
+    await SY.tick();
+    await tick(400);
+    check("sync: an empty tree cache still honours a peer's clean removal",
+      !S.isOpen("notes/b.md") && openList() === "notes/a.md", openList());
+    check("sync: a peer removal the model adopted queues no write",
+      wsWrites() === writesPeerRemove,
+      "delta=" + (wsWrites() - writesPeerRemove));
+    window.NB.sidebar.getTree = realGetTree;
+    wsGetOverride = null;
+    wsRev = SY.status().rev;
+
+    // Bad peer data (§17.6 step 2): sanitise, never normalise.
+    const san = (raw, active) =>
+      S.sanitiseRemoteSessions(raw, () => true, active || "s1");
+    const badSpecial = san({
+      pinnedFiles: ["§nope"],
+      sessions: [{ id: "s1", name: "One",
+        openFiles: ["§nope", "notes/a.md"], activeFile: "§nope" }],
+    });
+    check("sync: an unregistered § id is dropped from openFiles",
+      JSON.stringify(badSpecial.sessions[0].openFiles) ===
+      JSON.stringify(["notes/a.md"]),
+      JSON.stringify(badSpecial.sessions[0].openFiles));
+    check("sync: an unregistered § id is dropped from pinnedFiles",
+      badSpecial.pinnedFiles.length === 0,
+      JSON.stringify(badSpecial.pinnedFiles));
+    check("sync: a registered § tab id is kept",
+      JSON.stringify(san({ sessions: [{ id: "s1", name: "One",
+        openFiles: ["§graph"], activeFile: "§graph" }] })
+        .sessions[0].openFiles) === JSON.stringify(["§graph"]),
+      JSON.stringify(san({ sessions: [{ id: "s1", name: "One",
+        openFiles: ["§graph"], activeFile: "§graph" }] })
+        .sessions[0].openFiles));
+    const longName = "L".repeat(60);
+    const longOut = san({ sessions: [{ id: "s1", name: longName,
+      openFiles: [] }] });
+    check("sync: a 60-character name is capped at 40 and not renamed",
+      longOut.sessions[0].name.length === 40 &&
+      longOut.sessions[0].name === "L".repeat(40),
+      longOut.sessions[0].name.length + " chars");
+    const dupOut = san({ sessions: [
+      { id: "s1", name: "Dup", openFiles: [] },
+      { id: "s2", name: "Dup", openFiles: [] },
+    ] });
+    check("sync: a duplicate name is kept as-is, never renamed",
+      dupOut.sessions.map(s => s.name).join(",") === "Dup,Dup",
+      dupOut.sessions.map(s => s.name).join(","));
+    const numOut = san({ sessions: [
+      { id: "s1", name: "One", openFiles: [] },
+      { id: "s2", name: 7, openFiles: [] },
+    ] });
+    check("sync: a numeric name becomes Session N",
+      numOut.sessions[1].name === "Session 2", numOut.sessions[1].name);
+    check("sync: a sessions value that is not a list returns null",
+      ["nope", 42, {}, null, undefined].every(v => san(v) === null),
+      JSON.stringify(["nope", 42, {}, null, undefined].map(v => san(v))));
+
+    // --- leave no timer and no fetch log entry behind -----------------
+    SY.stop();
+    wsMergedReply = null;
+    wsGetOverride = null;
+    // The hidden-page case defines this own property; deleting it restores
+    // jsdom's prototype getter for every later reader.
+    delete window.document.visibilityState;
+    await tick(400);
+    delete window.document.documentElement.dataset.workspace;
+    fetchLog.length = wsLogStart;
+    check("sync: the block leaves the loop stopped and no workspace id",
+      SY.status().running === false && !window.NB.workspaceId());
+    check("sync: the block leaves no fetch log entry behind",
+      fetchLog.length === wsLogStart, String(fetchLog.length - wsLogStart));
   }
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");

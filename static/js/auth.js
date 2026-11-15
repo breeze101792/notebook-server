@@ -35,12 +35,14 @@
   let authStatus = null;
 
   // Device-local keys this app owns: the table overlays, the phone resume
-  // point, and the unsent capture draft. Each lives under the legacy name
-  // (`nb:<base>`, for the default workspace and a workspace-less page) or
-  // one namespaced variant per other workspace (`nb:<id>:<base>`). Sign-out
-  // clears every variant, not just the workspace the tab happens to be on.
+  // point, the unsent capture draft, and the active session / tab (which
+  // belong to this device, not to the shared workspace state). Each lives
+  // under the legacy name (`nb:<base>`, for the default workspace and a
+  // workspace-less page) or one namespaced variant per other workspace
+  // (`nb:<id>:<base>`). Sign-out clears every variant, not just the
+  // workspace the tab happens to be on.
   const DEVICE_LOCAL_KEY_RE =
-    /^nb:(?:.+:)?(?:tableView|mobileResume|captureDraft)$/;
+    /^nb:(?:.+:)?(?:tableView|mobileResume|captureDraft|activeSession|activeFile)$/;
 
   function clearDeviceLocalState() {
     try {

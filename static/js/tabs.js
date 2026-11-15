@@ -56,7 +56,6 @@
   const storedSessions = new Map();    // id -> { openFiles: [path], activeFile }
   let activeSessionId = "";
   let sessionToken = 0;                // guards an in-flight swapTo
-  let sessionSeq = 0;                  // id generator counter
 
   /* Special tabs: pseudo-paths that render in the tab bar like file tabs
    * but show a non-file view (graph, search) in the content area instead
@@ -179,11 +178,20 @@
     return { ok: true, code: "", name };
   }
 
+  /* Session ids must be unique across every client sharing a workspace: the
+   * server merge keys sessions by id, so two pages that created their first
+   * session in the same millisecond would be folded into one (sessions.md
+   * §17.8). A random id is the only portable guarantee. */
+  function randomSessionSuffix() {
+    const c = window.crypto;
+    if (c && typeof c.randomUUID === "function") return c.randomUUID();
+    return Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  }
+
   function generateSessionId(taken) {
     let id;
     do {
-      sessionSeq++;
-      id = SESSION_ID_PREFIX + Date.now().toString(36) + "-" + sessionSeq.toString(36);
+      id = SESSION_ID_PREFIX + randomSessionSuffix();
     } while (taken(id));
     return id;
   }
@@ -797,13 +805,14 @@
     else if (box.right > strip.right) listEl.scrollLeft += box.right - strip.right;
   }
 
-  function emitChanged() {
+  function emitChanged(remote) {
     NB.evt.emit("tabs:changed", {
       openFiles: ordered.slice(),
       activeFile: activePath,
       pinnedFiles: ordered.filter(p => pinned.has(p)),
       sessions: snapshot(),
       activeSessionId,
+      remote: !!remote,
     });
   }
 
@@ -877,10 +886,24 @@
    * bumps the token; a call that resumes with a stale token abandons
    * the switch and leaves the display to the newer call. */
   let activateToken = 0;
+  // The path an in-flight activate() is loading. A remote apply keeps that tab:
+  // dropping it would land the fetch on a path the strip no longer holds.
+  let pendingActivation = null;
   async function activate(path) {
     if (!openSet.has(path)) return;
     const token = ++activateToken;
     const isStale = () => token !== activateToken;
+    pendingActivation = path;
+    try {
+      await activateBody(path, isStale);
+    } finally {
+      if (pendingActivation === path && activateToken === token) pendingActivation = null;
+    }
+  }
+
+  /* The body of activate(), split out so the wrapper clears the in-flight
+   * marker on every exit path, including its own early returns. */
+  async function activateBody(path, isStale) {
     // A tab switch always exits edit mode (hybrid or plain editor). A
     // dirty file prompts to save; on Cancel, stay on the current tab in
     // edit mode. On OK, save then exit edit mode and proceed.
@@ -1634,6 +1657,223 @@
     installSession(activeSessionId);
   }
 
+  /* --- cross-device apply -------------------------------------------- */
+  /* The fingerprint a remote apply compares. The per-session `activeFile` is
+   * excluded, so a peer clicking a tab in a session is not a change here. */
+  function remoteProjection(sessions, pinnedFiles) {
+    return JSON.stringify({
+      pinnedFiles: pinnedFiles || [],
+      sessions: (sessions || []).map(s => [s.id, s.name, s.openFiles || []]),
+    });
+  }
+
+  /* Sanitise a peer's sessions: no synthesised session, no rename, no
+   * regenerated id, no reordering, no repair past what the model requires.
+   * Returns null when nothing usable is left, which the runtime path reads as
+   * "no data" rather than as a first boot. */
+  function sanitiseRemoteSessions(raw, known, activeId) {
+    const allows = (typeof known === "function") ? known : () => true;
+    const src = (raw && Array.isArray(raw.sessions)) ? raw.sessions : [];
+
+    // Pinned wins: a pin is never part of a session's list.
+    const pinSeen = new Set();
+    const pinnedFiles = [];
+    for (const p of ((raw && Array.isArray(raw.pinnedFiles)) ? raw.pinnedFiles : [])) {
+      if (typeof p !== "string" || !p || !allows(p) || pinSeen.has(p)) continue;
+      if (isSpecial(p) && !specialTabs.has(p)) continue;
+      pinSeen.add(p);
+      pinnedFiles.push(p);
+    }
+
+    const sessions = [];
+    const usedIds = new Set();
+    for (const entry of src) {
+      if (!entry || typeof entry !== "object") continue;
+      const id = (typeof entry.id === "string") ? entry.id : "";
+      if (!id || usedIds.has(id)) continue;      // duplicate: the first wins
+      usedIds.add(id);
+      const files = [];
+      for (const p of (Array.isArray(entry.openFiles) ? entry.openFiles : [])) {
+        if (typeof p !== "string" || !p) continue;
+        if (!allows(p) || pinSeen.has(p) || files.indexOf(p) >= 0) continue;
+        // A `§` id with no registered view would open a blank pane.
+        if (isSpecial(p) && !specialTabs.has(p)) continue;
+        if (files.length >= SESSION_FILES_MAX) continue;
+        files.push(p);
+      }
+      const rec = {
+        id,
+        // Capped like every other name; never renamed for a duplicate, because
+        // that would rewrite a peer's data. A non-string is not a name.
+        name: (typeof entry.name === "string" ? cleanSessionName(entry.name) : "")
+          || ("Session " + (sessions.length + 1)),
+        openFiles: files,
+        activeFile: (typeof entry.activeFile === "string") ? entry.activeFile : null,
+      };
+      fixSessionActive(rec, pinSeen);
+      sessions.push(rec);
+    }
+    if (!sessions.length) return null;
+
+    // Cap at 20 without dropping the active session.
+    let kept = sessions;
+    if (sessions.length > SESSION_MAX_COUNT) {
+      const ai = sessions.findIndex(s => s.id === activeId);
+      kept = (ai >= SESSION_MAX_COUNT)
+        ? sessions.slice(0, SESSION_MAX_COUNT - 1).concat([sessions[ai]])
+        : sessions.slice(0, SESSION_MAX_COUNT);
+    }
+    return { sessions: kept, pinnedFiles };
+  }
+
+  /* Adopt a server state while the page is live. Deliberately not
+   * installSessionState: that is a boot path which replaces every set
+   * wholesale, bumps no token and closes nothing, so at runtime it would
+   * orphan dirty buffers and let an in-flight activate() win the activePath.
+   * Never calls swapTo, never calls open, never prompts; the only activation
+   * it performs is the neighbour of a clean tab it removed. */
+  async function applyRemoteState(input) {
+    const req = input || {};
+    if (!Array.isArray(req.sessions) || !req.sessions.length) {
+      return { applied: false, kept: [], diverged: false };
+    }
+    const remote = sanitiseRemoteSessions(
+      { sessions: req.sessions, pinnedFiles: req.pinnedFiles },
+      req.known, activeSessionId);
+    if (!remote) return { applied: false, kept: [], diverged: false };
+
+    if (remoteProjection(remote.sessions, remote.pinnedFiles) ===
+        remoteProjection(snapshot(), ordered.filter(p => pinned.has(p)))) {
+      return { applied: false, kept: [], diverged: false };
+    }
+
+    // Pins replace. A path that becomes unpinned joins the active session's
+    // unpinned section; one that becomes pinned leaves every stored record.
+    // No buffer is closed by a pin move, so a dirty path survives it.
+    const nextPins = new Set(remote.pinnedFiles);
+    const released = new Set();
+    for (const p of pinned) if (!nextPins.has(p)) released.add(p);
+    pinned.clear();
+    for (const p of remote.pinnedFiles) {
+      pinned.add(p);
+      if (!openSet.has(p)) { ordered.push(p); openSet.add(p); }
+    }
+    for (const rec of storedSessions.values()) {
+      const before = (rec.openFiles || []).length;
+      rec.openFiles = (rec.openFiles || []).filter(p => !pinned.has(p));
+      if (rec.openFiles.length !== before) fixSessionActive(rec, pinned);
+    }
+    segment();
+
+    // The active session's list. A peer deleted that session: it keeps its
+    // live strip (below), so the local list stands in for the missing record.
+    const activeRec = remote.sessions.find(s => s.id === activeSessionId) || null;
+    const serverList = activeRec ? activeRec.openFiles
+      : ordered.filter(p => !pinned.has(p));
+    const serverSet = new Set(serverList);
+
+    const kept = [];
+    let diverged = false;
+    const hybridPath = (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive())
+      ? activePath : null;
+    const activeIdx = ordered.indexOf(activePath);
+    const dropped = [];
+    for (const p of ordered.slice()) {
+      if (pinned.has(p) || serverSet.has(p) || released.has(p)) continue;
+      if (NB.viewer && NB.viewer.isDirty && NB.viewer.isDirty(p)) {
+        kept.push(p);                 // unsaved edits outlive a peer's removal
+        diverged = true;
+        continue;
+      }
+      if (p === hybridPath || p === pendingActivation) {
+        diverged = true;
+        continue;
+      }
+      dropped.push(p);
+    }
+    const activeDropped = dropped.indexOf(activePath) >= 0;
+    for (const p of dropped) dropTab(p);
+    // A tab a peer added joins the strip without being activated; the viewer
+    // fetches it when the user clicks the tab.
+    for (const p of serverList) {
+      if (openSet.has(p) || pinned.has(p)) continue;
+      if (unpinnedCount() >= SESSION_FILES_MAX) break;
+      ordered.push(p);
+      openSet.add(p);
+    }
+    const neighbour = activeDropped ? pickNeighbor(activeIdx) : null;
+    if (activeDropped) activePath = neighbour;
+
+    // Rebuild the session metadata from the server's list, keeping the active
+    // session (the live view) and a deleted session that still holds a dirty
+    // hidden path, each at its old position.
+    const previousOrder = sessionOrder.slice();
+    const previousNames = new Map(sessionNames);
+    const previousRecords = new Map(storedSessions);
+    const serverIds = remote.sessions.map(s => s.id);
+    const inServer = new Set(serverIds);
+    const keptIds = new Set();
+    if (activeSessionId && !inServer.has(activeSessionId)) {
+      keptIds.add(activeSessionId);
+      diverged = true;
+    }
+    for (const [id, rec] of previousRecords) {
+      if (inServer.has(id) || id === activeSessionId || keptIds.has(id)) continue;
+      const dirty = (rec.openFiles || []).some(p => !isSpecial(p) &&
+        NB.viewer && NB.viewer.isDirty && NB.viewer.isDirty(p));
+      if (!dirty) continue;
+      keptIds.add(id);
+      diverged = true;
+    }
+    const nextOrder = serverIds.slice();
+    for (const id of previousOrder) {
+      if (!keptIds.has(id)) continue;
+      let at = 0;
+      for (let i = previousOrder.indexOf(id) - 1; i >= 0; i--) {
+        const j = nextOrder.indexOf(previousOrder[i]);
+        if (j >= 0) { at = j + 1; break; }
+      }
+      nextOrder.splice(at, 0, id);
+    }
+
+    sessionOrder = nextOrder;
+    sessionNames.clear();
+    storedSessions.clear();
+    const byId = new Map(remote.sessions.map(s => [s.id, s]));
+    for (const id of nextOrder) {
+      const rec = byId.get(id);
+      if (rec) {
+        sessionNames.set(id, rec.name);
+        if (id !== activeSessionId) {
+          storedSessions.set(id, {
+            openFiles: rec.openFiles.slice(),
+            activeFile: rec.activeFile || null,
+          });
+        }
+        continue;
+      }
+      sessionNames.set(id, previousNames.get(id) || id);
+      if (id !== activeSessionId) {
+        storedSessions.set(id, previousRecords.get(id) ||
+          { openFiles: [], activeFile: null });
+      }
+    }
+
+    // The strip is rebuilt wholesale, so an in-flight close animation and a
+    // width freeze belong to the old one.
+    finishGhosts();
+    frozenWidths = null;
+    render();
+    // The neighbour's activation renders and emits for the whole apply; a
+    // second emit here would make one apply look like two changes.
+    if (neighbour) await activate(neighbour);
+    else emitChanged(true);
+    if (!ordered.length && NB.viewer && NB.viewer.showSessionEmpty) {
+      NB.viewer.showSessionEmpty();
+    }
+    return { applied: true, kept, diverged };
+  }
+
   function getActive() { return activePath; }
   function getOpen() { return ordered.slice(); }
   function isOpen(path) { return openSet.has(path); }
@@ -1681,6 +1921,10 @@
     getActiveSessionId,
     snapshot,
     swapTo,
+    /* Cross-device apply (sessions.md §17.6): the runtime path a peer's state
+     * takes, and the sanitiser it uses, both exposed as test seams. */
+    applyRemoteState,
+    sanitiseRemoteSessions,
     createSession,
     createSessionFromTab,
     moveSession,

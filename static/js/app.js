@@ -25,12 +25,27 @@
     "lastFile", "openFiles", "activeFile", "pinnedFiles", "sessions",
     "activeSessionId", "recentFiles", "bookmarks", "pinnedFolders",
   ];
+  // The keys a poll may copy onto `cfg`. The rest of WORKSPACE_STATE_KEYS are
+  // this device's hints and are never applied from a remote state.
+  const WORKSPACE_SHARED_KEYS = [
+    "sessions", "pinnedFiles", "bookmarks", "recentFiles", "pinnedFolders",
+  ];
   // Views that exist only in the desktop shell. A saved `activeView` naming
   // one of them must fall back to Explorer on a phone, or the drawer would
   // open onto a hidden host.
   const PHONE_HIDDEN_VIEWS = ["ai", "sessions"];
   // Same debounce as the config write below.
   const WORKSPACE_SAVE_DELAY_MS = 250;
+  // Cross-device sync: the poll interval while the tab is visible, and the
+  // ceiling the delay doubles up to after repeated failures.
+  const WORKSPACE_SYNC_MS = 3000;
+  const WORKSPACE_SYNC_MAX_MS = 30000;
+  // Device-local selection keys: the active session and the active tab belong
+  // to one device, so they live in localStorage, not in the shared state. The
+  // default workspace keeps the unprefixed name (table-view.js convention).
+  const DEVICE_ACTIVE_SESSION_KEY = "activeSession";
+  const DEVICE_ACTIVE_FILE_KEY = "activeFile";
+  const DEFAULT_WORKSPACE_ID = "default";
 
   const DEFAULTS = {
     theme: "auto",
@@ -164,12 +179,36 @@
   // other's key.
   let configFlushQueue = Promise.resolve();
   // Per-workspace state has its own debounce: it goes to its own endpoint
-  // and must not be dragged into the global blob write. `wsPendingState` is
-  // the snapshot waiting on that debounce; `lastWorkspaceState` is the last
-  // one handed to the request queue (the dirty check).
+  // and must not be dragged into the global blob write.
   let wsSaveTimer = null;
-  let wsPendingState = "";
-  let lastWorkspaceState = "";
+  // Cross-device sync state. `wsRev` is the last rev the server reported for
+  // this workspace and `wsRevKnown` whether it came from the server at all;
+  // `lastServerState` is the base of the next write and `lastAckKey` the key
+  // of the state the server acknowledged. `wsBootLoaded` gates both the write
+  // and the poll: before a successful /api/config fetch there is no base.
+  let wsRev = 0;
+  let wsRevKnown = false;
+  let wsBootLoaded = false;
+  let lastAckKey = "";
+  let lastServerState = null;
+  let wsSyncDelay = WORKSPACE_SYNC_MS;
+  let wsSyncTimer = null;
+  // A page restored into a background tab must not poll before its first
+  // visibilitychange. `visibilityState`, not `hidden`, because jsdom reports
+  // hidden=true by default while its state is "prerender".
+  let wsSyncPaused = !!(typeof document !== "undefined" &&
+    document.visibilityState === "hidden");
+  let wsSyncing = false;
+  let wsSyncRunning = false;
+  let wsLastAt = 0;
+  let wsLastError = null;
+  let wsStartToken = 0;
+  let wsWriteInFlight = false;
+  // Adoptions are serialised through one chain: a poll response and a write
+  // response can arrive together, and two interleaved rebuilds would each see
+  // the other's intermediate model.
+  let remoteApplyChain = Promise.resolve();
+  let applyingRemote = false;
 
   // Role painted by the shell on <html data-role>. NB.pageRole normalises
   // the auth-off install (no session role, but full access) and an older
@@ -410,7 +449,12 @@
   }
 
   /* --- config persistence ------------------------------------------- */
-  function applyConfig(c) {
+  /* `serverFetched` says whether `c` is the body of a successful
+   * GET /api/config. The failed-fetch path passes {} and false, so the sync
+   * loop stays off: without a base a write could only guess. */
+  function applyConfig(c, serverFetched) {
+    const fetched = (serverFetched === undefined)
+      ? (!!c && typeof c === "object") : !!serverFetched;
     cfg = { ...DEFAULTS, ...c };
     // Overlay the active workspace's state. Missing fields fall back to the
     // legacy top-level copy already spread above, so the first load after
@@ -424,10 +468,19 @@
         }
       }
     }
-    // Baseline for the dirty check, so boot does not immediately rewrite the
-    // state the server just sent.
-    lastWorkspaceState = JSON.stringify(workspaceStateSnapshot());
-    wsPendingState = "";
+    // Seed the cross-device sync from the same payload, before any write:
+    // `lastAckKey` is the baseline for the dirty check, so boot does not
+    // immediately rewrite the state the server just sent, and
+    // `lastServerState` is the base the next write is merged against.
+    const stateMap = (c && typeof c.workspaceState === "object") ? c.workspaceState : null;
+    const revMap = (c && typeof c.workspaceStateRev === "object") ? c.workspaceStateRev : null;
+    const bootState = (stateMap && wsId && typeof stateMap[wsId] === "object")
+      ? stateMap[wsId] : {};
+    lastServerState = bootState;
+    lastAckKey = stateKey(bootState);
+    wsRev = (revMap && wsId && Number.isInteger(revMap[wsId])) ? revMap[wsId] : 0;
+    wsRevKnown = !!(revMap && wsId && Number.isInteger(revMap[wsId]));
+    wsBootLoaded = fetched;
     applyTheme(cfg.theme || "auto");
     applyFontSize(cfg.fontSize || "medium");
     applySettingsModalWidth(cfg.settingsModalWidth || "medium");
@@ -531,45 +584,322 @@
     // shell must not queue a write that can only be refused, and must not
     // mark the state dirty: the server copy is authoritative and unchanged.
     if (!canAdminWrite()) return;
-    const json = JSON.stringify(workspaceStateSnapshot());
-    if (json === lastWorkspaceState || json === wsPendingState) return;
-    wsPendingState = json;
+    // No write before boot: a failed /api/config fetch has no base, and
+    // posting DEFAULTS would overwrite the server's state.
+    if (!wsBootLoaded) return;
+    if (stateKey(workspaceStateSnapshot()) === lastAckKey) return;
     clearTimeout(wsSaveTimer);
     wsSaveTimer = setTimeout(flushWorkspaceState, WORKSPACE_SAVE_DELAY_MS);
   }
 
+  /* Send the state as it is now, with the state the server last acknowledged
+   * as the base; the server merges a stale write and answers with what it now
+   * holds. The response is applied, never re-posted: a merge that changed
+   * another session converges through applyRemoteWorkspaceState. */
   function flushWorkspaceState() {
+    wsSaveTimer = null;
     const id = workspaceId();
-    if (!id || !canAdminWrite()) return Promise.resolve();
-    const json = wsPendingState || JSON.stringify(workspaceStateSnapshot());
-    wsPendingState = "";
-    if (json === lastWorkspaceState) return Promise.resolve();
-    // Mark the snapshot as sent before the request, then clear the mark on
-    // failure: a dropped write must not look already saved.
-    lastWorkspaceState = json;
-    const state = JSON.parse(json);
-    const run = () => NB.api.saveWorkspaceState(id, state).catch((e) => {
-      if (lastWorkspaceState === json) lastWorkspaceState = "";
+    if (!id || !canAdminWrite() || !wsBootLoaded) return Promise.resolve();
+    const state = workspaceStateSnapshot();
+    const key = stateKey(state);
+    if (key === lastAckKey) return Promise.resolve();
+    const base = lastServerState || {};
+    // Move the ack to what is being sent, so an unrelated later save (theme,
+    // pane width) does not post this same state again. A failed write puts
+    // the old key back and the state stays dirty.
+    const previousAck = lastAckKey;
+    lastAckKey = key;
+    wsWriteInFlight = true;
+    const run = () => NB.api.saveWorkspaceState(id, state, base).then(async (res) => {
+      if (!res || typeof res.rev !== "number") return;
+      // A poll that started later may already have applied a newer state;
+      // adopting this older one would regress the revision and drop tabs.
+      if (wsRevKnown && res.rev < wsRev) return;
+      wsLastError = null;
+      await applyRemoteWorkspaceState(res.state || {});
+      wsRev = res.rev;
+      wsRevKnown = true;
+    }).catch((e) => {
+      if (lastAckKey === key) lastAckKey = previousAck;
+      wsLastError = e;
       console.warn("workspace state save failed", e);
+    }).then(() => {
+      wsWriteInFlight = false;
     });
-    // Same serial chain as the config write: a workspace flush and a
-    // read-merge-write config flush must never overlap, or the merged blob
-    // can carry a stale state map back over a newer one.
+    // Same serial chain as the config write: two writes must not overlap, or
+    // their responses can land out of order and move `lastServerState` back.
     configFlushQueue = configFlushQueue.then(run, run);
     return configFlushQueue;
   }
 
-  // Fold the active workspace's current state into a freshly read config.
-  // POST /api/config replaces the file verbatim, so the whole workspaceState
-  // map must be carried through or every other workspace's state is lost.
-  // Writing the active snapshot here also closes the race with the
-  // (independently debounced) /api/workspace-state write.
-  function mergeWorkspaceState(fresh, wsId) {
+  /* --- cross-device sync -------------------------------------------- */
+  /* A client never merges: it polls the versioned read with the rev it has,
+   * writes its own state with the base it started from, and adopts whatever
+   * the server answers. The loop is a setTimeout chain, not an interval, so a
+   * slow response never stacks requests. */
+
+  /* The dirty check: the whole state, in a fixed key order, so key order and
+   * absent keys cannot produce a false diff. */
+  function stateKey(s) {
+    const out = {};
+    for (const k of WORKSPACE_STATE_KEYS) out[k] = (s || {})[k];
+    return JSON.stringify(out);
+  }
+
+  /* The narrower fingerprint: the keys a peer's write changes on screen. It
+   * drops the device-local hints and the per-session `activeFile`, so a peer
+   * clicking a tab does no work here. */
+  function syncProjection(s) {
+    const src = (s && Array.isArray(s.sessions)) ? s.sessions : [];
+    const list = (v) => (Array.isArray(v) ? v : []);
+    return JSON.stringify({
+      pinnedFiles: list(s && s.pinnedFiles),
+      bookmarks: list(s && s.bookmarks),
+      recentFiles: list(s && s.recentFiles),
+      pinnedFolders: list(s && s.pinnedFolders),
+      sessions: src.map(x => [x && x.id, x && x.name, (x && x.openFiles) || []]),
+    });
+  }
+
+  /* Adopt a state the server returned, for both a poll response and the state
+   * a POST returns, so a merge result takes exactly one path. Copies the
+   * shared keys only: `openFiles`, `activeFile`, `lastFile` and
+   * `activeSessionId` are this device's hints, and publishing a peer's would
+   * move this reader. Deliberately does not call applyConfig, which would
+   * re-run applyTheme, applyFontSize and mermaid.reinit. */
+  function applyRemoteWorkspaceState(state) {
+    const run = () => adoptRemoteWorkspaceState(state);
+    remoteApplyChain = remoteApplyChain.then(run, run);
+    return remoteApplyChain;
+  }
+
+  async function adoptRemoteWorkspaceState(state) {
+    const next = (state && typeof state === "object") ? state : {};
+    // Nothing changed on screen. Keep the base current but leave the ack key
+    // alone: recomputing it from a peer's `activeFile` would make the next
+    // save look dirty and echo it back.
+    if (syncProjection(next) === syncProjection(cfg)) {
+      lastServerState = next;
+      return;
+    }
+    for (const key of WORKSPACE_SHARED_KEYS) {
+      cfg[key] = Array.isArray(next[key]) ? next[key] : [];
+    }
+    lastServerState = next;
+    // The key of the state as just adopted, before the model is rebuilt: a
+    // rebuild that could not take the server's copy verbatim rewrites it and
+    // schedules exactly one republish below.
+    lastAckKey = stateKey(workspaceStateSnapshot());
+    applyingRemote = true;
+    try {
+      if (NB.tabs && NB.tabs.applyRemoteState) {
+        const tree = (NB.sidebar && NB.sidebar.getTree) ? NB.sidebar.getTree() : [];
+        await NB.tabs.applyRemoteState({
+          sessions: cfg.sessions,
+          pinnedFiles: cfg.pinnedFiles,
+          // An empty tree means "not loaded yet", never "every path is gone":
+          // filtering against it would drop a whole workspace from one failed
+          // /api/tree and then republish the erasure.
+          known: (p) => isSpecialTab(p) || !tree.length || treeHas(tree, p),
+        });
+      }
+    } finally {
+      applyingRemote = false;
+    }
+    // The tab model is the truth for what is open here, so rebuild the two
+    // keys it owns; the dirty check decides whether one republish is due.
+    if (NB.tabs && NB.tabs.snapshot) {
+      const open = NB.tabs.getOpen ? NB.tabs.getOpen() : [];
+      cfg.sessions = NB.tabs.snapshot();
+      cfg.pinnedFiles = open.filter(p => NB.tabs.isPinned && NB.tabs.isPinned(p));
+    }
+    scheduleWorkspaceState();
+    if (NB.bookmarks && NB.bookmarks.set) NB.bookmarks.set(cfg.bookmarks || []);
+    if (NB.sidebar && NB.sidebar.setPinnedFolders) {
+      NB.sidebar.setPinnedFolders(cfg.pinnedFolders || []);
+    }
+    NB.evt.emit("config:changed", cfg, { remote: true });
+  }
+
+  /* One pass. `unsupported` is the answer to a server without the endpoint,
+   * so the caller stops instead of asking again every interval. */
+  async function syncOnce() {
+    if (!workspaceId() || isPhoneMode() || !wsBootLoaded || wsSyncPaused || wsSyncing) {
+      return { ok: true, rev: wsRev };
+    }
+    // A queued or in-flight local write answers with the merged state;
+    // polling now would apply the server's copy over an unsent change.
+    if (wsSaveTimer !== null || wsWriteInFlight) return { ok: true, rev: wsRev };
+    wsSyncing = true;
+    try {
+      const res = await NB.api.getWorkspaceState(
+        workspaceId(), wsRevKnown ? wsRev : undefined);
+      if (res && res.notModified) return { ok: true, rev: wsRev };
+      if (!res || typeof res.rev !== "number") {
+        return { ok: false, rev: wsRev, unsupported: true };
+      }
+      if (wsRevKnown && res.rev < wsRev) return { ok: true, rev: wsRev };
+      wsLastError = null;
+      await applyRemoteWorkspaceState(res.state || {});
+      // Only after the apply: a throw here must leave the rev where it was,
+      // or every later poll would 304 and the client would stop catching up.
+      wsRev = res.rev;
+      wsRevKnown = true;
+      wsSyncDelay = WORKSPACE_SYNC_MS;
+      return { ok: true, rev: wsRev };
+    } catch (e) {
+      wsLastError = e;
+      // A 404/405 is a server without the endpoint, not a transient failure:
+      // stop asking instead of backing off forever.
+      if (e && (e.status === 404 || e.status === 405)) {
+        return { ok: false, rev: wsRev, unsupported: true };
+      }
+      wsSyncDelay = Math.min(wsSyncDelay * 2, WORKSPACE_SYNC_MAX_MS);
+      return { ok: false, rev: wsRev };
+    } finally {
+      wsSyncing = false;
+      wsLastAt = Date.now();
+    }
+  }
+
+  function armSync() {
+    if (!wsSyncRunning || wsSyncPaused || wsSyncTimer !== null) return;
+    wsSyncTimer = setTimeout(syncTick, wsSyncDelay);
+  }
+
+  async function syncTick() {
+    wsSyncTimer = null;
+    const res = await syncOnce();
+    if (res.unsupported) { wsSyncRunning = false; return; }
+    armSync();
+  }
+
+  /* Async and idempotent. A phone, a workspace page without an id, and a page
+   * whose /api/config fetch failed keep the loop off; a server without the
+   * endpoint is probed once and then left alone. */
+  async function startSync() {
+    if (wsSyncRunning) return true;
+    if (!workspaceId() || isPhoneMode() || !wsBootLoaded) return false;
+    const token = ++wsStartToken;
+    const res = await syncOnce();
+    // stop() during the probe wins, and a hidden page arms nothing until it
+    // is shown.
+    if (token !== wsStartToken) return false;
+    if (res.unsupported) return false;
+    // A transport failure still arms the chain: the backoff is what recovers
+    // a page that booted before the network came up.
+    wsSyncRunning = true;
+    armSync();
+    return true;
+  }
+
+  function stopSync() {
+    wsStartToken++;
+    wsSyncRunning = false;
+    if (wsSyncTimer !== null) {
+      clearTimeout(wsSyncTimer);
+      wsSyncTimer = null;
+    }
+  }
+
+  function pauseSync() { wsSyncPaused = true; }
+
+  function resumeSync() {
+    wsSyncPaused = false;
+    // A page that booted offline never armed; coming back online starts it.
+    if (!wsSyncRunning) {
+      if (wsBootLoaded) void startSync();
+      return;
+    }
+    // One pass now, so a tab that was hidden catches up without waiting out
+    // the interval; then make sure a timer is armed (a hidden boot had none).
+    void syncOnce().then(armSync);
+  }
+
+  function syncStatus() {
+    return {
+      running: wsSyncRunning,
+      paused: wsSyncPaused,
+      rev: wsRev,
+      delayMs: wsSyncDelay,
+      lastAt: wsLastAt,
+      lastError: wsLastError,
+    };
+  }
+
+  // A hidden tab sends nothing; showing it again polls at once. Coming back
+  // online is the same catch-up.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseSync(); else resumeSync();
+  });
+  window.addEventListener("online", resumeSync);
+
+  /* --- device-local tab selection ------------------------------------ */
+  /* The active session and the active tab are one device's, so they are
+   * stored per workspace in localStorage with the convention table-view.js
+   * and mobile.js use. */
+  function deviceLocalKey(base) {
+    const id = workspaceId();
+    return (id && id !== DEFAULT_WORKSPACE_ID)
+      ? "nb:" + id + ":" + base : "nb:" + base;
+  }
+
+  function readDeviceLocal(base) {
+    try {
+      const value = localStorage.getItem(deviceLocalKey(base));
+      return (typeof value === "string") ? value : "";
+    } catch (e) { return ""; }
+  }
+
+  function writeDeviceLocal(base, value) {
+    try {
+      if (value) localStorage.setItem(deviceLocalKey(base), String(value));
+      else localStorage.removeItem(deviceLocalKey(base));
+    } catch (e) { /* storage unavailable */ }
+  }
+
+  /* The input for NB.tabs.normaliseSessions: the shared `sessions` with this
+   * device's active session and active tab preferred when they still name
+   * something that exists. A local choice that names nothing falls back to
+   * the shared value. */
+  function bootSessionInput(shared, known) {
+    const localSession = readDeviceLocal(DEVICE_ACTIVE_SESSION_KEY);
+    const localFile = readDeviceLocal(DEVICE_ACTIVE_FILE_KEY);
+    const raw = Array.isArray(shared.sessions) ? shared.sessions : [];
+    const pins = Array.isArray(shared.pinnedFiles) ? shared.pinnedFiles : [];
+    const namesSession = (id) => !!id &&
+      raw.some(s => s && typeof s === "object" && s.id === id);
+    const activeSessionId = namesSession(localSession)
+      ? localSession : shared.activeSessionId;
+    let sessions = raw;
+    if (localFile && known(localFile)) {
+      sessions = raw.map(s => {
+        if (!s || typeof s !== "object" || s.id !== activeSessionId) return s;
+        const files = Array.isArray(s.openFiles) ? s.openFiles : [];
+        if (files.indexOf(localFile) < 0 && pins.indexOf(localFile) < 0) return s;
+        return Object.assign({}, s, { activeFile: localFile });
+      });
+    }
+    return {
+      sessions,
+      activeSessionId,
+      openFiles: shared.openFiles,
+      activeFile: shared.activeFile,
+      pinnedFiles: shared.pinnedFiles,
+    };
+  }
+
+  /* Copy the global keys out of `cfg` onto a freshly read blob. The
+   * per-workspace state is not carried: the server owns it, strips any copy
+   * from this POST, and re-attaches its own. */
+  function mergeGlobalKeys(fresh, keyList) {
     const merged = (fresh && typeof fresh === "object") ? { ...fresh } : {};
-    const states = (merged.workspaceState && typeof merged.workspaceState === "object")
-      ? { ...merged.workspaceState } : {};
-    states[wsId] = workspaceStateSnapshot();
-    merged.workspaceState = states;
+    for (const key of keyList) {
+      if (key === "workspaceState" || key === "workspaceStateRev") continue;
+      if (WORKSPACE_STATE_KEYS.indexOf(key) >= 0) continue;
+      if (cfg[key] === undefined) delete merged[key];
+      else merged[key] = cfg[key];
+    }
     return merged;
   }
 
@@ -583,34 +913,22 @@
         // one, so theme + fontSize + recentFiles can share a debounce.
         if (!keyList.length) return Promise.resolve();
         return NB.api.getConfig().then((fresh) => {
-          const wsId = workspaceId();
-          let wrote = false;
-          const merged = (fresh && typeof fresh === "object") ? { ...fresh } : {};
-          for (const key of keyList) {
-            // Workspace-owned keys go through the workspace endpoint.
-            if (wsId && WORKSPACE_STATE_KEYS.indexOf(key) >= 0) continue;
-            if (cfg[key] === undefined) delete merged[key];
-            else merged[key] = cfg[key];
-            wrote = true;
-          }
+          const merged = mergeGlobalKeys(fresh, keyList);
+          const wrote = keyList.some((key) =>
+            !(workspaceId() && WORKSPACE_STATE_KEYS.indexOf(key) >= 0));
           if (!wrote) return undefined;
-          return NB.api.saveConfig(wsId ? mergeWorkspaceState(merged, wsId) : merged);
+          return NB.api.saveConfig(merged);
         }).catch(e => console.warn("config save failed", e));
       }
       const wsId = workspaceId();
       if (!wsId) {
         return NB.api.saveConfig(cfg).catch(e => console.warn("config save failed", e));
       }
-      // Workspace page: read-merge-write, so the global keys change without
-      // dropping the state map the server keeps alongside them.
+      // Workspace page: read-merge-write, so a global key changes without
+      // dropping one another client edited in between. The per-workspace
+      // state is not this route's to write.
       return NB.api.getConfig().then((fresh) => {
-        const merged = mergeWorkspaceState(fresh, wsId);
-        for (const key of Object.keys(cfg)) {
-          if (key === "workspaceState") continue;
-          if (WORKSPACE_STATE_KEYS.indexOf(key) >= 0) continue;
-          merged[key] = cfg[key];
-        }
-        return NB.api.saveConfig(merged);
+        return NB.api.saveConfig(mergeGlobalKeys(fresh, Object.keys(cfg)));
       }).catch(e => console.warn("config save failed", e));
     };
     configFlushQueue = configFlushQueue.then(run, run).then(() => {
@@ -712,12 +1030,19 @@
     // `openFiles`/`activeFile` stay mirrors of the active session; `sessions`
     // and `activeSessionId` are authoritative and arrive in the same payload.
     NB.evt.on("tabs:changed", ({ openFiles, activeFile, pinnedFiles, sessions, activeSessionId }) => {
+      // A remote apply rebuilds `cfg` from the model itself; taking the
+      // payload here would race that rebuild and republish the peer's state.
+      if (applyingRemote) return;
       if (isPhoneMode()) return;   // phone tabs are one note and never persist
       cfg.openFiles = openFiles;
       cfg.activeFile = activeFile;
       if (pinnedFiles) cfg.pinnedFiles = pinnedFiles;
       if (sessions) cfg.sessions = sessions;
       if (activeSessionId !== undefined) cfg.activeSessionId = activeSessionId;
+      // The active session and tab are this device's selection: keep them
+      // locally so a reload lands here rather than where a peer is.
+      writeDeviceLocal(DEVICE_ACTIVE_SESSION_KEY, activeSessionId);
+      writeDeviceLocal(DEVICE_ACTIVE_FILE_KEY, activeFile);
       persistConfig();
     });
 
@@ -1023,7 +1348,7 @@
       serverCfg = await NB.api.getConfig();
       applyConfig(serverCfg);
     } catch (e) {
-      applyConfig({});
+      applyConfig({}, false);
       // The shell already painted the saved panel; a failed fetch must not
       // reset it to DEFAULTS. Restore what applyConfig just overwrote.
       cfg.sidebarCollapsed = shellPanel.collapsed;
@@ -1073,14 +1398,10 @@
     // session stays empty.
     const known = (p) => isSpecialTab(p) || treeHas(tree, p);
     // Desktop only: the phone never restores or stores sessions, so it does
-    // not even normalise them.
-    const sessionState = isPhoneMode() ? null : NB.tabs.normaliseSessions({
-      sessions: cfg.sessions,
-      activeSessionId: cfg.activeSessionId,
-      openFiles: cfg.openFiles,
-      activeFile: cfg.activeFile,
-      pinnedFiles: cfg.pinnedFiles,
-    }, known);
+    // not even normalise them. The device-local active session and tab win
+    // over the shared ones while they still name something that exists.
+    const sessionState = isPhoneMode() ? null
+      : NB.tabs.normaliseSessions(bootSessionInput(cfg, known), known);
     const fallback = (sessionState && sessionState.migrated)
       ? (cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile
         : firstFilePath(tree) || null)
@@ -1141,6 +1462,9 @@
     } finally {
       if (NB.mobile && NB.mobile.endBoot) NB.mobile.endBoot();
     }
+    // Poll for peer changes only once the view is settled: a poll that ran
+    // earlier could apply a state under the boot restore.
+    await NB.sync.start();
   }
 
   function isSpecialTab(path) {
@@ -1250,6 +1574,17 @@
     const url = location.origin + location.pathname + "?file=" + encodeURIComponent(path);
     copyToClipboard(url).catch(() => {});
   }
+
+  /* Cross-device sync seam (sessions.md §17.10): `tick()` is one pass now,
+   * `status()` is the diagnostics shape. */
+  NB.sync = {
+    start: startSync,
+    stop: stopSync,
+    pause: pauseSync,
+    resume: resumeSync,
+    tick: syncOnce,
+    status: syncStatus,
+  };
 
   /* Tiny façade so other modules (settings.js) can read live config and
    * trigger a persist without reaching into our module-scoped state. */
