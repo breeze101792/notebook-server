@@ -67,6 +67,9 @@ One row is a wrapper plus two sibling buttons; a button cannot contain a button.
 | Dirty dot | 8 px accent dot; `aria-hidden`; the name carries `, unsaved changes` | `:8365-8374`; `sessions.js:452-465` |
 | Unpinned count | `--text-sm`, tabular, 2ch min, right; `--text-muted`; on the active row `--text-primary` | `:8375-8382` |
 | More | `⋯`, 24 × 24, always visible, radius 5; `aria-haspopup="menu"`, `aria-expanded` | `:8384-8412`; `sessions.js:468-490` |
+| Drag | the wrapper is `draggable` for an admin; while dragging, the wrapper dims to `--opacity-drag` | `sessions.js` `buildRow`; `style.css` sessions block |
+| Drop mark | a 2 px `--accent` line on the target row's top or bottom edge (`--stroke-2`), from the pointer's half of the row | `style.css` sessions block |
+| Empty-area drop | a 1 px dashed `--accent` outline on the list, meaning "move to the end" | `style.css` sessions block |
 
 The count is unpinned tabs only. Pinned tabs are shared, so counting them in every row would
 mislead. A row with zero unpinned tabs shows `0`.
@@ -74,19 +77,31 @@ mislead. A row with zero unpinned tabs shows `0`.
 **Row actions.** The row button switches; the `⋯` opens the row menu; right-click on the
 wrapper opens the same menu at the pointer. Enter and Space on the row switch natively.
 
+**Reorder.** An admin drags a row by its body — not by the `⋯` — and drops it on another
+row's top or bottom half to place it before or after, or on the empty area below the list
+to send it last. The order is shared workspace state: it persists and reaches other
+browsers like any other session change. A viewer gets no drag, and the row menu's Move up
+and Move down are disabled for them too, so the order is the admin's to change. For an
+admin the menu is the pointer-free path. A drop never switches sessions, and a drag that
+ends outside the list changes nothing.
+
 ---
 
 ## 4. Menus
 
-**Row menu** (`NB.menu`, two items):
+**Row menu** (`NB.menu`, four items):
 
 | Item | Rule |
 |---|---|
+| `Move up` | disabled on the first row and for a viewer |
+| `Move down` | disabled on the last row and for a viewer |
 | `Rename` | opens the name dialog in rename mode; disabled for a viewer |
-| `Delete` | confirm, then delete; hidden/disabled when it is the only session |
+| `Delete` | confirm, then delete; disabled when it is the only session, and for a viewer |
+
+Move up and Move down are the keyboard path for the same reorder the drag performs.
 
 The menu is placed 2 px under the button, flipped above when it would overflow, and
-clamped to an 8 px viewport margin (`sessions.js:39`, `:580-600`). It closes on `Esc`, an
+clamped to an 8 px viewport margin (`sessions.js:39`, `:671`). It closes on `Esc`, an
 outside click, or a second click on `⋯`.
 
 **Tab menu.** The tab's context menu gets `Move to session` with one item per session and
@@ -124,8 +139,8 @@ menu item is disabled with `The only session can’t be deleted.` (`sessions.js:
 | Header total | number of sessions, live; `20` max |
 | Row count | unpinned tab count, not pinned |
 | Dirty dot | any visible dirty tab in that session |
-| Order | insertion order; a new session appends; rename keeps position |
-| Sort | none; no drag reorder |
+| Order | insertion order by default; a new session appends; rename keeps position; a drag or the row menu changes it, and the change is shared and syncs |
+| Sort | none; no automatic ordering |
 
 The header total is a count, not a live region; it updates with the list. The dot is
 presentational; the row's accessible name carries the state.
@@ -138,7 +153,7 @@ presentational; the row's accessible name carries the state.
 |---|---|
 | One session | the row; Delete disabled with its title |
 | 20 sessions | `+` `aria-disabled`, cap note linked |
-| Viewer | rows switch; `+` and Rename/Delete disabled |
+| Viewer | rows switch; `+`, Move up/Move down and Rename/Delete disabled |
 | Dirty | dot on the row; header total unchanged |
 | Renaming | the dialog; list unchanged behind |
 | Empty | impossible: at least one session exists |
@@ -156,6 +171,7 @@ presentational; the row's accessible name carries the state.
 | Row | native button; `aria-current="true"` on the active session; `aria-describedby` none |
 | More | native button; `aria-haspopup="menu"`, `aria-expanded` |
 | Row menu | `role="menu"`; items `role="menuitem"`; one roving tab stop; arrows, Home/End, `Esc` |
+| Reorder | pointer drag only; the keyboard path is Move up / Move down in the row menu, so a drag needs no ARIA attribute |
 | Name dialog | dialog role, focus into the field, `Esc` cancels, focus returns to the opener |
 | Delete | native confirm; focus returns to the row or the `+` |
 
@@ -240,6 +256,8 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 | AC10 | The list scrolls, the header/footer stay | `style.css` | 20 rows scroll; header and footer fixed |
 | AC11 | 140 px keeps name, count and `⋯` | `style.css` | Name ellipsizes; the other two boxes hold |
 | AC12 | The mockup is self-contained | `sessions-mockup.html` | Opens offline, dark and light |
+| AC13 | An admin can drag a row before or after another row, or to the end, and the new order persists and syncs | `sessions.js`, `tabs.js` | Order changes in the model and in the next state write; the active session and its tabs are untouched |
+| AC14 | A viewer cannot reorder by drag; the row wrapper is not draggable and a drag leaves the order unchanged | `sessions.js` | `draggable` false; order unchanged |
 
 ---
 
@@ -247,7 +265,6 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 
 | # | Proposal | Why | Cost |
 |---|---|---|---|
-| P1 | Drag to reorder sessions | Insertion order only | New behaviour + persistence |
 | P2 | A row preview of the session's note names | Context | Copy density |
 | P3 | A colour or glyph per session | Faster recognition | New visual system |
 | P4 | Inline rename on double-click | One less dialog | Conflict with row switch |
@@ -260,5 +277,5 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 
 - A second Sessions list, a phone version, or a modal.
 - A new count rule that includes pinned tabs.
-- A drag-reorder without persistence.
+- A drag-reorder that does not persist and sync with the rest of the session order.
 - A different row shape from the shared list rules.

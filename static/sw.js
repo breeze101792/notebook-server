@@ -48,7 +48,10 @@
 /* Bumped v27 -> v28: cross-device session sync adds the /api/workspace-state
  * read and the client loop, so api.js and app.js must reach already installed
  * workers. */
-const CACHE = "notebook-v28";
+/* Bumped v28 -> v29: session rows are drag-reorderable and a sync response can
+ * no longer overwrite a newer local change, so sessions.js, tabs.js, app.js
+ * and style.css must reach already installed workers. */
+const CACHE = "notebook-v29";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

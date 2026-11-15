@@ -1192,6 +1192,32 @@
     return true;
   }
 
+  /* Move session `id` to land before/after `targetId`; `targetId === null`
+   * means the end of the list. Order is shared state, so render +
+   * emitChanged. The destination is read on the list with `id` already
+   * removed, so before/after is the same rule dragging up or down. */
+  function reorderSession(id, targetId, before) {
+    const from = sessionOrder.indexOf(id);
+    if (from < 0) return false;
+    if (targetId !== null) {
+      if (targetId === id || sessionOrder.indexOf(targetId) < 0) return false;
+    }
+    sessionOrder.splice(from, 1);
+    let at = sessionOrder.length;
+    if (targetId !== null) {
+      const to = sessionOrder.indexOf(targetId);
+      at = before ? to : to + 1;
+    }
+    if (at === from) {
+      sessionOrder.splice(from, 0, id);   // the row would land where it was
+      return false;
+    }
+    sessionOrder.splice(at, 0, id);
+    render();
+    emitChanged();
+    return true;
+  }
+
   function renameSession(id, name) {
     if (sessionOrder.indexOf(id) < 0) return { ok: false, code: "missing" };
     const check = validateSessionName(name, id);
@@ -1928,6 +1954,7 @@
     createSession,
     createSessionFromTab,
     moveSession,
+    reorderSession,
     renameSession,
     deleteSession,
     moveToSession,

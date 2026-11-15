@@ -44,6 +44,8 @@
   const POP_GAP = 6;
   const POP_MARGIN = 8;
   const ROW_SELECTOR = ".session-item";
+  const WRAP_SELECTOR = ".session-row-wrap";
+  const MORE_SELECTOR = ".session-more";
   const ACTION_NEW = "new";
   const NEW_LABEL = "New session…";
   const CHECK = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-check"/></svg>';
@@ -122,6 +124,11 @@
   let submitting = false;
   let opener = null;       // the control focus returns to on close
   let fromTabPath = null;  // set when the dialog was opened from a tab menu
+  let draggingSession = null;  // the row id a drag is currently carrying
+  // True when this gesture's pointer went down on the ⋯. `dragstart` fires on
+  // the wrapper (the drag source), never on the button, so the pointer-down
+  // target is the only place the handle can be told apart from the row body.
+  let dragFromMore = false;
 
   /* --- view construction --------------------------------------------- */
   /* Build the header, the list and the footnote once, at load. */
@@ -431,6 +438,9 @@
     const wrap = document.createElement("div");
     wrap.className = "session-row-wrap";
     wrap.dataset.sessionId = s.id;
+    // A viewer gets no drag, the same read-only rule rename/delete/move use.
+    // The ⋯ button is not a drag handle: dragstart refuses it.
+    wrap.draggable = isWritable();
 
     // A button cannot contain the actions button, so the two are siblings.
     const row = document.createElement("button");
@@ -501,6 +511,114 @@
     if (!listEl || !id) return null;
     return Array.from(listEl.querySelectorAll(".session-row-wrap"))
       .find((wrap) => wrap.dataset.sessionId === id) || null;
+  }
+
+  /* --- drag-to-reorder ------------------------------------------------- */
+  /* One delegated set on the list, the bookmarks pattern: the empty area
+   * below the rows accepts a drop, which lands the row last. The model call
+   * is NB.tabs.reorderSession, and the tabs:changed it emits re-renders the
+   * rows, so nothing here calls refresh(). */
+  function rowWrapAt(node) {
+    const wrap = node && node.closest ? node.closest(WRAP_SELECTOR) : null;
+    return wrap && wrap.dataset.sessionId ? wrap : null;
+  }
+
+  function overEmptyTail(e) {
+    if (!listEl) return false;
+    const rows = listEl.querySelectorAll(WRAP_SELECTOR);
+    const last = rows[rows.length - 1];
+    return !last || e.clientY > last.getBoundingClientRect().bottom;
+  }
+
+  function wireDnD() {
+    if (!listEl) return;
+
+    // Every drag starts with a pointer press; remember whether it was on the
+    // ⋯ so `dragstart` can refuse that gesture.
+    listEl.addEventListener("mousedown", (e) => {
+      dragFromMore = !!(e.target.closest && e.target.closest(MORE_SELECTOR));
+    });
+
+    listEl.addEventListener("dragstart", (e) => {
+      const fromMore = dragFromMore;
+      dragFromMore = false;
+      if (!isWritable() || fromMore) { e.preventDefault(); return; }
+      const wrap = rowWrapAt(e.target);
+      if (!wrap) { e.preventDefault(); return; }
+      draggingSession = wrap.dataset.sessionId;
+      wrap.classList.add("dragging");
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = "move";
+        try { e.dataTransfer.setData("text/plain", "session:" + draggingSession); }
+        catch (_) {}
+      }
+    });
+
+    listEl.addEventListener("dragover", (e) => {
+      if (!draggingSession) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+      clearDropMarks();
+      const wrap = rowWrapAt(e.target);
+      // Over the row being dragged: no mark, and the drop below is a no-op.
+      if (wrap && wrap.dataset.sessionId === draggingSession) return;
+      if (!wrap) {
+        // Only the space below the last row means "last"; the list's padding
+        // and row gaps are dead space, not an append target.
+        if (overEmptyTail(e)) listEl.classList.add("drop-empty");
+        return;
+      }
+      const rect = wrap.getBoundingClientRect();
+      const before = e.clientY < rect.top + rect.height / 2;
+      wrap.classList.add(before ? "drop-before" : "drop-after");
+    });
+
+    listEl.addEventListener("drop", (e) => {
+      if (!draggingSession) return;
+      e.preventDefault();
+      const wrap = rowWrapAt(e.target);
+      const fromId = draggingSession;
+      if (wrap && wrap.dataset.sessionId === fromId) {
+        // Dropped on itself: the order is already what the user asked for.
+        clearDragging();
+        return;
+      }
+      if (!wrap && !overEmptyTail(e)) {
+        // Released in dead space: not a reorder.
+        clearDragging();
+        return;
+      }
+      let targetId = null;
+      let before = true;
+      if (wrap) {
+        const rect = wrap.getBoundingClientRect();
+        targetId = wrap.dataset.sessionId;
+        before = e.clientY < rect.top + rect.height / 2;
+      }
+      clearDragging();
+      if (!NB.tabs || typeof NB.tabs.reorderSession !== "function") return;
+      try { NB.tabs.reorderSession(fromId, targetId, before); }
+      catch (err) { console.error("session reorder failed", err); }
+    });
+
+    // A real drag suppresses the click, so the row keeps switching sessions
+    // on tap without a guard here.
+    listEl.addEventListener("dragend", clearDragging);
+  }
+
+  function clearDropMarks() {
+    if (!listEl) return;
+    listEl.querySelectorAll(".drop-before,.drop-after")
+      .forEach((wrap) => wrap.classList.remove("drop-before", "drop-after"));
+    listEl.classList.remove("drop-empty");
+  }
+
+  function clearDragging() {
+    draggingSession = null;
+    if (!listEl) return;
+    listEl.querySelectorAll(".dragging")
+      .forEach((wrap) => wrap.classList.remove("dragging"));
+    clearDropMarks();
   }
 
   /* The header + is unavailable at the 20-session cap and for a viewer,
@@ -738,12 +856,12 @@
       {
         label: "Move up",
         disabled: !writable || idx <= 0,
-        handler: () => NB.tabs.moveSession(id, -1),
+        handler: () => { NB.tabs.moveSession(id, -1); focusMore(id); },
       },
       {
         label: "Move down",
         disabled: !writable || idx < 0 || idx >= sessions.length - 1,
-        handler: () => NB.tabs.moveSession(id, 1),
+        handler: () => { NB.tabs.moveSession(id, 1); focusMore(id); },
       },
       {
         label: ACTION_RENAME,
@@ -831,6 +949,14 @@
     if (next) text += " You’ll switch to “" + next.name + "”.";
     if (session.dirty) text += "\nUnsaved edits in its files will be lost.";
     return text;
+  }
+
+  /* The row menu closes on a pick, so the keyboard would otherwise fall to
+   * <body>; land it on the moved row's ⋯ so a second press is one key away. */
+  function focusMore(id) {
+    const wrap = rowById(id);
+    const more = wrap && wrap.querySelector(MORE_SELECTOR);
+    if (more) more.focus({ preventScroll: true });
   }
 
   function focusRow(id) {
@@ -1060,6 +1186,7 @@
   /* --- wiring ------------------------------------------------------------ */
 
   buildView();
+  wireDnD();
   wireDialog();
   wirePicker();
   refresh();

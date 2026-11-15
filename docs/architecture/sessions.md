@@ -290,6 +290,7 @@ dirty for `app.js` (`persistConfig`, `scheduleWorkspaceState`).
 | `createSessionFromTab(path, name)` | Same validation; create the record; `moveToSession(path, id)`; **do not switch** (requirements AC28). |
 | `renameSession(id, name)` | Any session. Validate, set the name, render, `emitChanged()`. Ids never change. |
 | `deleteSession(id)` | Refuse when `sessionOrder.length === 1`. The UI confirms first, covering the target session's `viewer.isDirty` files (and `NB.hybrid.isDirty()` when the target is active). **Active id:** bump the tokens, `await commitForTabSwitch()` (abort on `false`), `dropTab` every **unpinned** live path without prompting, delete the record/name/order entry, pick the previous session in order else the next, `installSession` it (no outgoing record to save), render, emit, activate or show the empty state. Pinned tabs stay. **Stored id:** remove the record/name/order entry **first**, then `closeStoredPath` each of its paths — which closes the viewer cache and the special tab only when no other session or pin still holds that path. Render, emit; the active session is untouched. |
+| `reorderSession(id, targetId, before)` | Move `id` before or after `targetId`; `targetId === null` appends. The destination index is computed after removing `id`, so both directions are correct. The active session, its tab and every stored record are untouched; only `sessionOrder` changes. `render()` + `emitChanged()`, so the order persists and syncs like any other shared change. Returns `false` when nothing moved. |
 | `moveToSession(path, id)` | `path` must be unpinned and live; `id` must be another session. **Do not call `viewer.close`** — the cache entry and any draft travel with the file. Remove from `ordered`/`openSet`; append to the target record **unless it already lists the path** (then the source copy is simply removed); fix the source's `activePath` (activate the neighbour, or show the empty state if the strip empties); render, emit. |
 | `hasStoredPath(path, exceptId)` | Internal: does an inactive session still list the path? Used by `dropTab`, `closeStoredPath` and `deleteSession` to keep a shared buffer alive. |
 
@@ -584,6 +585,7 @@ createSessionFromTab(path, name)
 renameSession(id, name)
 deleteSession(id)
 moveToSession(path, id)
+reorderSession(id, targetId, before)
 ```
 
 Existing seams (`getOpen`, `isOpen`, `getActive`, `restore`, `togglePin`,
@@ -594,7 +596,10 @@ Verification:
 - **DOM (`npm test`, `tests/dom/test_dom.js`)**: the `#sessions-view` host
   (`:237`) and the `sessions.js` eval after `tabs.js` (`:2433`) are in place; the
   old boot-filter source assertion has been replaced by the table-select tests.
-  Cases: migration;
+  Drag coverage: a row dragged above another lands before it in the model, the
+  DOM and `snapshot()`; a drop on the empty area appends; a viewer cannot drag;
+  a drag that starts on the `⋯` does nothing; every mark is cleared after
+  `dragend`; the new order reaches the state write. Cases: migration;
   pinned union on boot; per-session active tab; swap with a stashed draft; close
   last tab keeps another session's draft; empty session after reload; the view
   renders rows/counts/dots and marks the active row; the row menu renames and
@@ -623,7 +628,9 @@ Verification:
 - Drafts are in memory only and do not survive a reload (`requirements` §9).
 - The active session is named only in the Sessions view; with the panel on
   Explorer, Search, or collapsed, there is no session indicator.
-- No drag-reorder of sessions in v1; the list order is the creation order.
+- The list order is the creation order until someone reorders it; a drag or the
+  row menu changes it, and two clients that reorder at the same time settle on
+  one order (the writer's), like any other same-session change.
 - Deleting a session is per-row; its buffers close only for paths no other
   session or pin still holds.
 
@@ -908,6 +915,14 @@ stacks requests. Three rules around it:
   one would regress the revision and drop tabs. `syncOnce` and
   `flushWorkspaceState` both drop a response whose `rev` is below the current
   one.
+- **A response older than the local state is ignored too.** Both paths capture
+  `stateKey()` before the request. If the page changed while the request was in
+  flight — a rename, a tab added — the response carries a state that predates
+  that change, and applying it would silently erase the edit. The client keeps
+  the local model, adopts the response only as the next `base`, and the debounce
+  the local change already armed publishes it. A revision alone cannot catch
+  this: the response can be the newest the server has and still be older than
+  the unsent change.
 - **A transport failure still arms the chain.** `start()` returns `false` only
   for a gate or a server without the endpoint; a failed first probe arms the
   backoff, so a page that booted before the network came up recovers on its own.

@@ -203,7 +203,7 @@
   let wsLastAt = 0;
   let wsLastError = null;
   let wsStartToken = 0;
-  let wsWriteInFlight = false;
+  let wsWritesOutstanding = 0;   // queued or in flight; a counter, not a flag
   // Adoptions are serialised through one chain: a poll response and a write
   // response can arrive together, and two interleaved rebuilds would each see
   // the other's intermediate model.
@@ -609,22 +609,30 @@
     // the old key back and the state stays dirty.
     const previousAck = lastAckKey;
     lastAckKey = key;
-    wsWriteInFlight = true;
+    wsWritesOutstanding++;
     const run = () => NB.api.saveWorkspaceState(id, state, base).then(async (res) => {
       if (!res || typeof res.rev !== "number") return;
       // A poll that started later may already have applied a newer state;
       // adopting this older one would regress the revision and drop tabs.
       if (wsRevKnown && res.rev < wsRev) return;
       wsLastError = null;
-      await applyRemoteWorkspaceState(res.state || {});
+      // A local change landed while this write was in flight. Applying the
+      // response would erase it, so keep the local model and let the pending
+      // write publish it; the server's state becomes the next base.
+      lastServerState = res.state || {};
       wsRev = res.rev;
       wsRevKnown = true;
+      if (stateKey(workspaceStateSnapshot()) !== key) {
+        lastAckKey = stateKey(lastServerState);
+        return;
+      }
+      await applyRemoteWorkspaceState(res.state || {});
     }).catch((e) => {
       if (lastAckKey === key) lastAckKey = previousAck;
       wsLastError = e;
       console.warn("workspace state save failed", e);
     }).then(() => {
-      wsWriteInFlight = false;
+      wsWritesOutstanding = Math.max(0, wsWritesOutstanding - 1);
     });
     // Same serial chain as the config write: two writes must not overlap, or
     // their responses can land out of order and move `lastServerState` back.
@@ -729,8 +737,11 @@
     }
     // A queued or in-flight local write answers with the merged state;
     // polling now would apply the server's copy over an unsent change.
-    if (wsSaveTimer !== null || wsWriteInFlight) return { ok: true, rev: wsRev };
+    if (wsSaveTimer !== null || wsWritesOutstanding > 0) return { ok: true, rev: wsRev };
     wsSyncing = true;
+    // What the page held when the request left. If it moved on, the response
+    // is older than the local state and must not be applied over it.
+    const localKey = stateKey(workspaceStateSnapshot());
     try {
       const res = await NB.api.getWorkspaceState(
         workspaceId(), wsRevKnown ? wsRev : undefined);
@@ -740,6 +751,14 @@
       }
       if (wsRevKnown && res.rev < wsRev) return { ok: true, rev: wsRev };
       wsLastError = null;
+      if (stateKey(workspaceStateSnapshot()) !== localKey) {
+        // A local change outpaced this poll; keep it and update the base.
+        lastServerState = res.state || {};
+        lastAckKey = stateKey(lastServerState);
+        wsRev = res.rev;
+        wsRevKnown = true;
+        return { ok: true, rev: wsRev };
+      }
       await applyRemoteWorkspaceState(res.state || {});
       // Only after the apply: a throw here must leave the rev where it was,
       // or every later poll would 304 and the client would stop catching up.

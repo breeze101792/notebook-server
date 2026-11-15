@@ -351,8 +351,11 @@ dialog, `static/js/workspaces.js`, is the closest precedent). Visual design is
 | 25 sessions in config | Truncated to the first 20 | §4.5(4) |
 | Two sessions claim the same path | First keeps it; the second loses it | §4.5(6) |
 | Phone opens a note | Phone shell unchanged: one reader, one tab, no session control, no Sessions rail icon; desktop sessions are neither read nor written | `boot()`, §7 AC60 |
+| Drag a row and drop outside the list | Nothing changes; the marks and the dragging state clear | §11 AC74 |
+| Drop a row on itself | Nothing changes; the list stays as it was | §11 AC74 |
+| Two browsers reorder at once | Both converge on the order of the write the server accepted last | §11 AC74; §10 S5 |
 | Phone loads with a saved `activeView` of `sessions` | Explorer opens instead; no session UI is shown | §7 AC60 |
-| Viewer role uses the Sessions view | Switching works in memory; the `+`, Rename, Delete, and Move to session are disabled with a read-only reason; nothing persists | `workspace_admin_required`, `/api/workspace-state` |
+| Viewer role uses the Sessions view | Switching works in memory; the `+`, Move up/Move down, Rename, Delete, and Move to session are disabled with a read-only reason; nothing persists, and a row cannot be dragged | `workspace_admin_required`, `/api/workspace-state` |
 | Session state pushes the workspace state past 256 KiB | The write fails with `state_too_large`; the app keeps working, the change is lost on reload | `/api/workspace-state` |
 
 ---
@@ -720,9 +723,11 @@ feature.
    in-memory cache (`viewer.js`) and do not survive a page reload,
    exactly as today. Persisting drafts is out of scope and is not implied by
    session persistence.
-6. **No drag-reorder in v1.** Session order is creation order; the row list does
-   not accept drags and no reorder affordance exists. The state model keeps an
-   order, so a later revision can add it.
+6. **Reorder by drag, with the row menu as the keyboard path.** The order starts
+   as creation order; an admin drags a row before or after another row, or to the
+   empty area to send it last. The row menu's Move up and Move down do the same
+   without a pointer. The order is shared workspace state, so it persists and
+   reaches other browsers like any other session change. A viewer cannot reorder.
 7. **The active session is visible only while the Sessions view is open —
    accepted.** The tab bar carries no session label, so a closed view leaves the
    owner with no on-screen marker of which session is active. Accepted in v1 to
@@ -805,3 +810,15 @@ Server push (SSE or WebSocket) is out of scope: the poll is the chosen transport
   session's tab list at the same instant settle on one list. Merging is per
   session, not per tab. A deletion applies only to a session the other side did
   not touch.
+
+---
+
+## 11. Session reorder (added 2026-11-16)
+
+Extends §7. Drag-and-drop on the Sessions list, with the row menu as the
+pointer-free equivalent.
+
+| ID | Criterion | Verifies |
+| --- | --- | --- |
+| AC74 | An admin drags the third of three sessions onto the top half of the first row; the row lands first in the list, in `snapshot()`, and in the next state write. The active session, its strip and its active tab are unchanged. | §9 decision 6 |
+| AC75 | A viewer's rows are not draggable; a drag leaves the order unchanged. Dropping on the empty area below the rows appends the row. A drag that starts on the `⋯` button does nothing. | §9 decision 6 |

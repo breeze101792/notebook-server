@@ -120,12 +120,17 @@ let config = {};
 // `wsGetOverride` answers a GET verbatim (a canned state, or "unsupported"
 // for a server without the endpoint); `wsMergedReply` is the canned state a
 // POST answers with, standing in for the server's three-way merge.
+// `wsHoldPost`/`wsHoldGet` park one request of that route until the test
+// releases it, then answer with the state captured before a local change: the
+// "response older than the local state" race (sessions.md §17.4).
 const WS_TEST_ID = "default";
 let wsState = {};
 let wsRev = 0;
 let wsPosts = [];
 let wsGetOverride = null;
 let wsMergedReply = null;
+let wsHoldPost = null;    // { defer, state }, one request
+let wsHoldGet = null;     // { defer, state }, one request
 // /api/graph override. null -> buildGraphStub(); an object is returned
 // verbatim; the string "error" makes the stub answer 500 so the graph's
 // loading/empty/error/toast states can be driven deterministically.
@@ -1930,6 +1935,23 @@ window.fetch = async (url, opts) => {
     if (method === "POST") {
       const d = JSON.parse(opts.body || "{}");
       wsPosts.push(d);
+      if (wsHoldPost) {
+        // Park the write, then answer with the state the store held before
+        // the local change that is about to land (§17.4: the response can be
+        // the newest the server has and still be older than the unsent edit).
+        const hold = wsHoldPost;
+        wsHoldPost = null;
+        const held = JSON.parse(JSON.stringify(hold.state || {}));
+        wsState = held;
+        wsRev += 1;
+        const rev = wsRev;
+        return hold.defer.promise.then(() => {
+          const heldBody = { ok: true, id: wid, rev, state: held };
+          return { ok: true, status: 200,
+            text: async () => JSON.stringify(heldBody),
+            json: async () => heldBody };
+        });
+      }
       // A canned reply stands in for the server's three-way merge; without
       // one the store takes what the client sent, which is what a base that
       // matched the stored entry does.
@@ -1940,6 +1962,20 @@ window.fetch = async (url, opts) => {
       body = { ok: true, id: wid, rev: wsRev, state: wsState };
     } else if (wsGetOverride === "unsupported") {
       body = {};                       // a server without the endpoint
+    } else if (wsHoldGet) {
+      // Same park for a poll: a newer rev carrying a state older than the
+      // change made while the request was out.
+      const hold = wsHoldGet;
+      wsHoldGet = null;
+      const held = JSON.parse(JSON.stringify(hold.state || {}));
+      wsRev += 1;
+      const rev = wsRev;
+      return hold.defer.promise.then(() => {
+        const heldBody = { ok: true, id: wid, rev, state: held };
+        return { ok: true, status: 200,
+          text: async () => JSON.stringify(heldBody),
+          json: async () => heldBody };
+      });
     } else if (wsGetOverride) {
       body = JSON.parse(JSON.stringify(wsGetOverride));
     } else {
@@ -43212,6 +43248,219 @@ function check(label, cond, extra) {
     window.NB.sessions.refresh();
     await tick(20);
 
+    // --- 6b. drag-to-reorder ------------------------------------------
+    // docs/ui/sessions.md; the bookmarks drag test is the template: plain
+    // Events, with getBoundingClientRect stubbed on the target row so the
+    // vertical-midpoint rule is exercised. The model order, the DOM order
+    // and the snapshot must move together.
+    const ssList = () => $("sessions-list");
+    const ssDomIds = () => ssRows().map((r) => r.dataset.sessionId);
+    const ssStubRowRect = (wrap) => {
+      const orig = wrap.getBoundingClientRect.bind(wrap);
+      wrap.getBoundingClientRect = () => ({
+        width: 200, height: 24, left: 0, right: 200,
+        top: 100, bottom: 124, x: 0, y: 100, toJSON() {},
+      });
+      return orig;
+    };
+    // `targetId === null` drops on the list's empty area (lands the row
+    // last). The stub puts the target's midpoint at y = 112.
+    const ssDragRow = async (fromId, targetId, before) => {
+      const src = ssRow(fromId);
+      const wrap = targetId ? ssRow(targetId) : null;
+      const orig = wrap ? ssStubRowRect(wrap) : null;
+      const y = before ? 101 : 123;
+      const host = wrap || ssList();
+      src.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      for (const type of ["dragover", "drop"]) {
+        const ev = new window.Event(type, { bubbles: true });
+        Object.defineProperty(ev, "clientY", { value: y });
+        host.dispatchEvent(ev);
+      }
+      src.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+      if (wrap) wrap.getBoundingClientRect = orig;
+      await tick(20);
+    };
+
+    // Case 1: the third row dragged above the first.
+    await ssLoad([
+      { id: "s1", name: "One", openFiles: [], activeFile: null },
+      { id: "s2", name: "Two", openFiles: [], activeFile: null },
+      { id: "s3", name: "Three", openFiles: [], activeFile: null },
+    ], "s1");
+    check("sessions drag: admin rows are draggable",
+      ssRows().length === 3 && ssRows().every((r) => r.draggable === true),
+      ssRows().map((r) => r.draggable).join(","));
+    await ssDragRow("s3", "s1", true);
+    check("sessions drag: dragging the third above the first reorders the model",
+      ssIds().join(",") === "s3,s1,s2", ssIds().join(","));
+    check("sessions drag: the rows follow the new order",
+      ssDomIds().join(",") === "s3,s1,s2", ssDomIds().join(","));
+    check("sessions drag: the snapshot follows the new order",
+      ssSnap().map((s) => s.id).join(",") === "s3,s1,s2",
+      ssSnap().map((s) => s.id).join(","));
+    check("sessions drag: the active session does not change",
+      S.getActiveSessionId() === "s1", String(S.getActiveSessionId()));
+
+    // Case 2: the first row dragged below the last.
+    await ssDragRow("s3", "s2", false);
+    check("sessions drag: dragging the first below the last lands it last",
+      ssIds().join(",") === "s1,s2,s3" && ssDomIds().join(",") === "s1,s2,s3",
+      ssIds().join(",") + "/" + ssDomIds().join(","));
+
+    // Case 3: the empty area below the rows means "last", and the mark is
+    // cleared once the drop lands.
+    const ssEmptySrc = ssRow("s1");
+    ssEmptySrc.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+    const ssEmptyOver = new window.Event("dragover", { bubbles: true });
+    Object.defineProperty(ssEmptyOver, "clientY", { value: 5000 });
+    ssList().dispatchEvent(ssEmptyOver);
+    const ssEmptyMarked = ssList().classList.contains("drop-empty");
+    const ssEmptyDrop = new window.Event("drop", { bubbles: true });
+    Object.defineProperty(ssEmptyDrop, "clientY", { value: 5000 });
+    ssList().dispatchEvent(ssEmptyDrop);
+    ssEmptySrc.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    await tick(20);
+    check("sessions drag: a drop on the empty area lands the row last",
+      ssIds().join(",") === "s2,s3,s1", ssIds().join(","));
+    check("sessions drag: .drop-empty shows during the drag and clears after",
+      ssEmptyMarked && !ssList().classList.contains("drop-empty"),
+      "during=" + ssEmptyMarked +
+      " after=" + ssList().classList.contains("drop-empty"));
+
+    // Case 3b: a row dropped on itself is a no-op and shows no mark.
+    await ssLoad([
+      { id: "s1", name: "One", openFiles: [], activeFile: null },
+      { id: "s2", name: "Two", openFiles: [], activeFile: null },
+      { id: "s3", name: "Three", openFiles: [], activeFile: null },
+    ], "s1");
+    const ssSelf = ssRow("s2");
+    ssSelf.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+    const ssSelfOver = new window.Event("dragover", { bubbles: true });
+    Object.defineProperty(ssSelfOver, "clientY", { value: 101 });
+    ssSelf.dispatchEvent(ssSelfOver);
+    const ssSelfMarked = ssList().classList.contains("drop-empty") ||
+      ssSelf.classList.contains("drop-before") ||
+      ssSelf.classList.contains("drop-after");
+    const ssSelfDrop = new window.Event("drop", { bubbles: true });
+    Object.defineProperty(ssSelfDrop, "clientY", { value: 101 });
+    ssSelf.dispatchEvent(ssSelfDrop);
+    ssSelf.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    await tick(20);
+    check("sessions drag: a drop on itself changes nothing",
+      ssIds().join(",") === "s1,s2,s3" && !ssSelfMarked,
+      ssIds().join(",") + " marked=" + ssSelfMarked);
+
+    // Case 4: a viewer can switch but not drag.
+    window.document.documentElement.dataset.role = "viewer";
+    try {
+      await ssLoad([
+        { id: "s1", name: "One", openFiles: [], activeFile: null },
+        { id: "s2", name: "Two", openFiles: [], activeFile: null },
+      ], "s1");
+      check("sessions drag: a viewer's rows are not draggable",
+        ssRows().length === 2 && ssRows().every((r) => r.draggable === false),
+        ssRows().map((r) => r.draggable).join(","));
+      const ssViewerSrc = ssRow("s1");
+      const ssViewerTgt = ssRow("s2");
+      const ssViewerRect = ssStubRowRect(ssViewerTgt);
+      ssViewerSrc.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+      for (const type of ["dragover", "drop"]) {
+        const ev = new window.Event(type, { bubbles: true });
+        Object.defineProperty(ev, "clientY", { value: 101 });
+        ssViewerTgt.dispatchEvent(ev);
+      }
+      ssViewerSrc.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+      ssViewerTgt.getBoundingClientRect = ssViewerRect;
+      await tick(20);
+      check("sessions drag: a viewer's dragstart reorders nothing",
+        ssIds().join(",") === "s1,s2" && !ssList().querySelector(".dragging"),
+        ssIds().join(","));
+    } finally {
+      delete window.document.documentElement.dataset.role;
+    }
+
+    // Case 5: the ⋯ button is not a drag handle.
+    await ssLoad([
+      { id: "s1", name: "One", openFiles: [], activeFile: null },
+      { id: "s2", name: "Two", openFiles: [], activeFile: null },
+      { id: "s3", name: "Three", openFiles: [], activeFile: null },
+    ], "s1");
+    // The browser fires dragstart on the drag source (the wrapper), never on
+    // the button inside it, so the gesture is identified by the pointer-down
+    // target: press the ⋯, then drag the wrapper.
+    ssMore("s1").dispatchEvent(new window.Event("mousedown", { bubbles: true }));
+    ssRow("s1").dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+    for (const type of ["dragover", "drop"]) {
+      const ev = new window.Event(type, { bubbles: true });
+      Object.defineProperty(ev, "clientY", { value: 123 });
+      ssRow("s2").dispatchEvent(ev);
+    }
+    ssRow("s1").dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    await tick(20);
+    check("sessions drag: a drag that starts on the \u22ef reorders nothing",
+      ssIds().join(",") === "s1,s2,s3" && !ssList().querySelector(".dragging"),
+      ssIds().join(","));
+
+    // A drag released outside the list (dragend, no drop) changes nothing.
+    const ssOutSrc = ssRow("s2");
+    ssOutSrc.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+    ssOutSrc.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    await tick(20);
+    check("sessions drag: a drag with no drop leaves the order alone",
+      ssIds().join(",") === "s1,s2,s3" &&
+      !ssList().querySelector(".dragging,.drop-before,.drop-after") &&
+      !ssList().classList.contains("drop-empty"),
+      ssIds().join(","));
+
+    // Case 6: dragend clears every mark, and the click after a drag that
+    // never landed still switches sessions (no click guard).
+    const ssEndSrc = ssRow("s1");
+    const ssEndRect = ssStubRowRect(ssRow("s2"));
+    ssEndSrc.dispatchEvent(new window.Event("dragstart", { bubbles: true }));
+    const ssEndOver = new window.Event("dragover", { bubbles: true });
+    Object.defineProperty(ssEndOver, "clientY", { value: 101 });
+    ssRow("s2").dispatchEvent(ssEndOver);
+    const ssMarksDuring = ssEndSrc.classList.contains("dragging") &&
+      ssRow("s2").classList.contains("drop-before");
+    ssEndSrc.dispatchEvent(new window.Event("dragend", { bubbles: true }));
+    ssRow("s2").getBoundingClientRect = ssEndRect;
+    await tick(20);
+    check("sessions drag: dragend leaves no dragging or drop mark",
+      ssMarksDuring &&
+      !ssList().querySelector(".dragging,.drop-before,.drop-after") &&
+      !ssList().classList.contains("drop-empty"),
+      "during=" + ssMarksDuring);
+    ssRowBtn("s2").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(20);
+    check("sessions drag: a click after a drag still switches sessions",
+      S.getActiveSessionId() === "s2", String(S.getActiveSessionId()));
+
+    // Case 7: the order is persisted. This fixture page has no
+    // data-workspace, so the workspace-state route is off and the scoped
+    // key rides POST /api/config (sessions.md §17.2 puts it on
+    // /api/workspace-state on a workspace page).
+    await ssLoad([
+      { id: "s1", name: "One", openFiles: [], activeFile: null },
+      { id: "s2", name: "Two", openFiles: [], activeFile: null },
+      { id: "s3", name: "Three", openFiles: [], activeFile: null },
+    ], "s1");
+    await ssDragRow("s1", "s3", false);
+    await tick(350);
+    // This fixture has no data-workspace, so the write path is the whole-blob
+    // config POST. On a workspace page the same state travels through
+    // POST /api/workspace-state (`== workspace sync ==` covers that route).
+    const ssDragCfg = fetchLog.filter((x) => x.startsWith("POST /api/config")).pop() || "";
+    let ssDragCfgIds = "";
+    try {
+      const ssDragBody = JSON.parse(ssDragCfg.slice("POST /api/config ".length));
+      ssDragCfgIds = (ssDragBody.sessions || []).map((s) => s.id).join(",");
+    } catch (_) { /* no config write was recorded */ }
+    check("sessions drag: the new order is written to the config POST",
+      ssDragCfgIds === "s2,s3,s1" &&
+      ssSnap().map((s) => s.id).join(",") === "s2,s3,s1",
+      ssDragCfgIds || ssDragCfg);
+
     // --- 7. delete ---------------------------------------------------
     const ssCommitOrig = window.NB.viewer.commitForTabSwitch;
     await ssLoad([
@@ -44712,10 +44961,105 @@ function check(label, cond, extra) {
       ["nope", 42, {}, null, undefined].every(v => san(v) === null),
       JSON.stringify(["nope", 42, {}, null, undefined].map(v => san(v))));
 
+    // --- a response older than the local state is not applied ----------
+    // docs/architecture/sessions.md §17.4 (both "response older than ..."
+    // bullets) and §17.9. The write and the poll capture `stateKey()` before
+    // the request leaves. A change made while it is out makes the response
+    // older than the page, so it may only be adopted as the next `base`; the
+    // debounce the local change already armed publishes it.
+    const defer = () => {
+      let resolve;
+      const promise = new Promise((done) => { resolve = done; });
+      return { promise, resolve };
+    };
+    const ssName = (id) => {
+      const row = window.document.querySelector(
+        "#sessions-view .session-row-wrap[data-session-id=\"" + id +
+        "\"] .session-name");
+      return row ? row.textContent : "";
+    };
+
+    // A write response that predates a local change must not erase it.
+    SY.stop();
+    await load([sessState("main", "Main", ["notes/a.md"])], "main", []);
+    await tick(400);
+    const preWrite = serverState();
+    const postHold = defer();
+    wsHoldPost = { state: preWrite, defer: postHold };
+    const writesRace = wsWrites();
+    const created = await S.createSession("Alpha");
+    check("sync race: the fixture created a second session",
+      created.ok === true && !!created.id, JSON.stringify(created));
+    await tick(400);        // the 250 ms debounce leaves; the POST is held
+    check("sync race: the write is in flight and held",
+      wsWrites() === writesRace + 1, "delta=" + (wsWrites() - writesRace));
+    // The change the held write knows nothing about. It renames the stored
+    // session, which a stale apply replaces: an erased rename here is the
+    // reported regression (a reverted session rename).
+    const renameWrite = S.renameSession("main", "Renamed");
+    check("sync race: the rename is in the local model",
+      renameWrite.ok === true && ssName("main") === "Renamed",
+      String(ssName("main")));
+    postHold.resolve();
+    await tick(600);        // the response lands, then the debounce publishes
+    check("sync race: a write response does not erase the rename",
+      S.getSessionList().some(s => s.id === "main" && s.name === "Renamed") &&
+      (S.snapshot().find(s => s.id === "main") || {}).name === "Renamed",
+      JSON.stringify(S.snapshot().find(s => s.id === "main")));
+    check("sync race: the DOM still shows the renamed session",
+      ssName("main") === "Renamed", String(ssName("main")));
+    check("sync race: the armed debounce publishes it in one POST",
+      wsWrites() === writesRace + 2, "delta=" + (wsWrites() - writesRace));
+    check("sync race: the follow-up POST carries the rename",
+      ((lastBody().state || {}).sessions || []).some(s =>
+        s.id === "main" && s.name === "Renamed"),
+      JSON.stringify((lastBody().state || {}).sessions));
+    check("sync race: the held response becomes the follow-up base",
+      JSON.stringify(lastBody().base) === JSON.stringify(preWrite),
+      JSON.stringify(lastBody().base));
+
+    // A poll response that predates a local change must not erase it either.
+    SY.stop();
+    await load([sessState("main", "Main", ["notes/a.md"])], "main", []);
+    await tick(400);
+    const prePoll = serverState();
+    const getHold = defer();
+    wsHoldGet = { state: prePoll, defer: getHold };
+    const getsRace = wsGets();
+    const pendingPoll = SY.tick();
+    await tick(20);         // the GET is out; its response is held
+    check("sync race: the poll is in flight and held",
+      wsGets() === getsRace + 1, "delta=" + (wsGets() - getsRace));
+    const renamePoll = S.renameSession("main", "Renamed");
+    let pollEmits = 0;
+    const onPollChanged = () => { pollEmits++; };
+    window.NB.evt.on("tabs:changed", onPollChanged);
+    getHold.resolve();
+    const pollRes = await pendingPoll;
+    await tick(80);
+    window.NB.evt.off("tabs:changed", onPollChanged);
+    check("sync race: a poll response does not erase the rename",
+      renamePoll.ok === true && S.getSessionList()[0].name === "Renamed" &&
+      ssName("main") === "Renamed",
+      S.getSessionList().map(s => s.name).join(",") + "/" + ssName("main"));
+    check("sync race: a poll older than the local state applies nothing",
+      pollEmits === 0 && pollRes.ok === true, "events=" + pollEmits);
+    await tick(400);        // the rename's debounce publishes the local model
+    check("sync race: the held poll becomes the next write's base",
+      JSON.stringify(lastBody().base) === JSON.stringify(prePoll) &&
+      ((lastBody().state || {}).sessions || []).some(s =>
+        s.id === "main" && s.name === "Renamed"),
+      JSON.stringify(lastBody().base));
+
     // --- leave no timer and no fetch log entry behind -----------------
     SY.stop();
     wsMergedReply = null;
     wsGetOverride = null;
+    // A parked request would leave its fetch promise pending forever.
+    if (wsHoldPost) wsHoldPost.defer.resolve();
+    if (wsHoldGet) wsHoldGet.defer.resolve();
+    wsHoldPost = null;
+    wsHoldGet = null;
     // The hidden-page case defines this own property; deleting it restores
     // jsdom's prototype getter for every later reader.
     delete window.document.visibilityState;

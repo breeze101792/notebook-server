@@ -423,8 +423,13 @@ drives the apply path and the write path directly; it does not wait on the poll.
   it is never an unconditional replace.
 - **Ordering and recovery.** A response whose `rev` is below the current one is
   ignored by both the poll and the write (the out-of-order chain: poll starts,
-  a write lands, the older poll response arrives last); a first probe that fails
-  with a transport error still arms the loop, and `resume()` starts a chain that
+  a write lands, the older poll response arrives last). A response whose
+  *request* left before a local change is ignored too, for both paths: the
+  fake router parks the GET or the POST, the test renames a session, then
+  releases the older state, and asserts the rename survives in the model and
+  the DOM, that the poll applies nothing, and that the next write carries the
+  rename with the parked response as its `base`. A first probe that fails with
+  a transport error still arms the loop, and `resume()` starts a chain that
   never armed; a page that loads with `visibilityState === "hidden"` sends
   nothing until its first `visibilitychange`. Implemented by the `sync:` checks
   at the end of the block: the stale poll keeps `wsRev` and the omitted tab and
