@@ -78,7 +78,8 @@ The wallpaper classes are painted on `#viewer-content` (the page); `app.js`
 moves them to `#viewer-scroll` when the fixed mode is active.
 
 Only chrome values are embedded: theme, site title, font scale, pane
-widths, collapse state, the active side-panel view, and wallpaper classes.
+widths, collapse state, the active side-panel view, the activity-bar icon
+order, and wallpaper classes.
 Notebook content (`recentFiles`, `openFiles`, `bookmarks`) is never embedded,
 because the page is served before auth (`app.py`). When auth is on
 and no session exists, only the theme is embedded and everything else falls
@@ -249,6 +250,8 @@ schema is `DEFAULTS` in `app.js`:
 | `wallpaperIntensity` | `"subtle"` | subtle / medium / bold |
 | `wallpaperScroll` | `"scroll"` | scroll / fixed |
 | `activeView` | `"explorer"` | Active side-panel view (explorer / sessions / pinned / bookmarks / recent / search / ai) |
+| `sidebarOrder` | `[]` | Activity-bar icon order (view ids); unnamed views follow in registration order. Validated into the shell for first paint. |
+| `sidebarHidden` | `[]` | Activity-bar views whose icons are hidden (view ids). Validated into the shell for first paint; Settings still lists them for unhide. |
 | `sidebarWidth` | `240` | |
 | `outlineWidth` | `220` | |
 | `sidebarCollapsed` | `false` | |

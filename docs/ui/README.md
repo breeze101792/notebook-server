@@ -39,8 +39,9 @@ line. *Mockup* — the visual reference; the doc beside it is normative.
 | [`table-editor-mockup.html`](table-editor-mockup.html) | Mockup — **open this** | Grid, editing, selection, clipboard, sort, blocked, narrow and phone boards. |
 | [`diagram-designers.md`](diagram-designers.md) | Current spec — pre-implementation | The Mermaid and Graphviz/WaveDrom designers: stage, sidebar, inspector, states, Apply, keyboard, phone. AC1–AC18. |
 | [`diagram-designers-mockup.html`](diagram-designers-mockup.html) | Mockup — **open this** | Eight boards across both designer families, including compact and phone. |
-| [`settings-modal.md`](settings-modal.md) | Current spec — pre-implementation | Settings and its seven tabs: nav, rows, forms, lists, the font-size preview tiles, auth states, keyboard, phone. AC1–AC27. |
+| [`settings-modal.md`](settings-modal.md) | Current spec — pre-implementation | Settings and its seven tabs: nav, rows, forms, lists, the font-size preview tiles, auth states, keyboard, phone. AC1–AC28. |
 | [`settings-modal-mockup.html`](settings-modal-mockup.html) | Mockup — **open this** | Every tab, validation, admin/viewer and narrow boards, dark and light. |
+| [`activity-bar-order.md`](activity-bar-order.md) | Current spec — shipped control | The Settings → Appearance activity-bar list: grip drag, the `Hide` / `Unhide` toggle, hidden rows, the per-row view icon, the drop line, auto-scroll, focus and announcements, token mapping, conflicts C1–C11 and their resolution, AC1–AC15. |
 | [`dialogs.md`](dialogs.md) | Current spec — pre-implementation | Auth, workspace, session, export and the shared dialog frame, with validation, states and phone. AC1–AC14. |
 | [`dialogs-mockup.html`](dialogs-mockup.html) | Mockup — **open this** | Fifteen boards from sign-in to export progress, plus the toast. |
 | [`lightboxes.md`](lightboxes.md) | Current spec — pre-implementation | The four full-screen viewers: open/close, controls, gestures, states, keyboard and phone. AC1–AC18. |

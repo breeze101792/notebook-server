@@ -282,6 +282,7 @@ kbd { font-family: var(--font-mono); }
 .stage--measure { width: 390px; height: 320px; }
 .stage--spec { width: 660px; height: 1240px; padding: var(--space-4); overflow: auto; background: var(--surface-panel); }
 .stage--tiles { width: 660px; padding: var(--space-4); background: var(--surface-panel); }
+.stage--order { width: 660px; padding: var(--space-4); background: var(--surface-panel); }
 
 /* ==================================================================
    3. SETTINGS — shipped values, foundation tokens.
@@ -710,6 +711,58 @@ kbd { font-family: var(--font-mono); }
 }
 .shortcuts-footer .settings-label { display: none; }
 
+/* ---- activity-bar order editor (activity-bar-order.md §2-§3) ----
+   The grip is the only drag source and drag is the only reorder path.
+   The toggle is the row's only button. `.is-hover` / `.is-active` /
+   `.is-focus` are frozen states for the specimen boards; `.is-hidden`,
+   `.dragging`, `.drop-before` and `.drop-after` are the real classes. */
+.sidebar-order-list { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-1) 0 var(--space-4); }
+.sidebar-order-row {
+  display: flex; align-items: center; gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  position: relative;
+}
+.sidebar-order-grip {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: var(--control-h-sm); height: var(--control-h-sm);
+  color: var(--text-muted); cursor: grab; user-select: none; touch-action: none;
+}
+.sidebar-order-grip svg { display: block; width: var(--icon-sm); height: var(--icon-sm); }
+.sidebar-order-grip.is-hover { color: var(--text-primary); }
+.sidebar-order-grip.is-active { color: var(--accent); cursor: grabbing; }
+.sidebar-order-icon {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: var(--icon-sm); height: var(--icon-sm);
+  color: var(--text-muted);
+}
+.sidebar-order-icon svg { display: block; width: var(--icon-sm); height: var(--icon-sm); }
+.sidebar-order-label {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text-primary); font-size: var(--text-ui-lg);
+}
+.sidebar-order-actions { display: flex; align-items: center; gap: var(--space-hair); flex: 0 0 auto; }
+.sidebar-order-toggle { min-width: calc(var(--control-h-md) * 2); padding: 0 var(--space-2); }
+.settings-modal .sidebar-order-toggle.is-focus { outline: var(--focus-ring); outline-offset: 1px; }
+.sidebar-order-row.is-hidden { background: var(--surface-panel); }
+.sidebar-order-row.is-hidden .sidebar-order-label { color: var(--text-muted); }
+.sidebar-order-row.dragging { opacity: var(--opacity-disabled); }
+.sidebar-order-row.drop-before::before,
+.sidebar-order-row.drop-after::after {
+  content: ""; position: absolute; left: 0; right: 0;
+  height: var(--stroke-2); border-radius: var(--radius-pill);
+  background: var(--accent); pointer-events: none;
+}
+.sidebar-order-row.drop-before::before { top: calc(-1 * var(--space-1)); }
+.sidebar-order-row.drop-after::after { bottom: calc(-1 * var(--space-1)); }
+/* Specimen boards only: a list and a row take the full specimen width. */
+.spec-group .sidebar-order-list,
+.spec-group .sidebar-order-row { flex: 1 1 100%; }
+
+
 /* ---- ACP read-only panel ---- */
 .settings-ai-acp-row, .settings-ai-acp-info {
   background: var(--surface-raised);
@@ -849,6 +902,14 @@ kbd { font-family: var(--font-mono); }
     <symbol id="i-lock" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.2"/><path d="M5.6 7V5.5a2.4 2.4 0 0 1 4.8 0V7"/></g></symbol>
     <symbol id="i-sparkle" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2l1.4 4.6L14 8l-4.6 1.4L8 14l-1.4-4.6L2 8l4.6-1.4Z"/></g></symbol>
     <symbol id="i-info" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 7.2v4M8 5.2h.01"/></g></symbol>
+    <symbol id="i-explorer" viewBox="0 0 16 16"><path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.6 1.7h4.4A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-session" viewBox="0 0 16 16"><rect x="2.5" y="3.3" width="11" height="3.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="2.5" y="8.9" width="11" height="3.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 16 16"><path d="M6 2.5h4l-.6 3.2 2.1 2v1H4.5v-1l2.1-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M8 8.7v4.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-bookmark" viewBox="0 0 16 16"><path d="M4 2.8h8v10.4l-4-2.6-4 2.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.8V8l2.2 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="6.8" cy="6.8" r="4.3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10 10l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+    <symbol id="i-ai" viewBox="0 0 16 16"><path d="M8 2.2l1.3 3.5L12.8 7l-3.5 1.3L8 11.8 6.7 8.3 3.2 7l3.5-1.3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+    <symbol id="i-grip" viewBox="0 0 16 16"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01"/></g></symbol>
   </defs>
 </svg>
 
@@ -949,13 +1010,14 @@ kbd { font-family: var(--font-mono); }
 <!-- ============================================================== -->
 <section class="sec">
   <h2>2 · Appearance — light</h2>
-  <p class="lede">Three Interface controls, the two Modal size groups, and the four wallpaper
-    groups. Chip groups show rest, checked and focus; the Font size row is four preview tiles with
-    <code>M</code> selected, and its label carries the current px; switches show off and on.</p>
+  <p class="lede">Four Interface controls, the activity-bar order list, the two Modal size groups, and
+    the four wallpaper groups. Chip groups show rest, checked and focus; the Font size row is four
+    preview tiles with <code>M</code> selected, and its label carries the current px; switches show off
+    and on; the order list shows seven cards, one of them hidden. Its states live in §2c.</p>
 
   <div class="board">
-    <div class="board-head"><span class="dot"></span>Appearance · 1280 × 960 · light<span class="grow"></span><span class="size">three group titles with hairlines</span></div>
-    <div class="stage stage--960 theme-light">
+    <div class="board-head"><span class="dot"></span>Appearance · 1280 × 1660 · light<span class="grow"></span><span class="size">four group titles with hairlines</span></div>
+    <div class="stage stage--1660 theme-light">
       <div class="settings-overlay">
         <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b2-title" tabindex="-1">
           <div class="settings-header">
@@ -1008,6 +1070,52 @@ kbd { font-family: var(--font-mono); }
                   <input type="checkbox" id="b2-particles" checked>
                 </div>
 
+                <div class="settings-form-title">Activity bar</div>
+                <p class="settings-help" id="b2-order-help">Order of the side-bar icons. Drag a row by its handle to reorder it, and use Hide to remove a view from the activity bar. Unhide restores it.</p>
+                <div id="b2-order" class="sidebar-order-list" role="list" aria-label="Activity bar order" aria-describedby="b2-order-help">
+                  <div class="sidebar-order-row" role="listitem" data-view="explorer" aria-posinset="1" aria-setsize="7">
+                    <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                    <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-explorer"/></svg></span>
+                    <span class="sidebar-order-label">Explorer</span>
+                    <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Explorer" title="Hide Explorer">Hide</button></span>
+                  </div>
+                  <div class="sidebar-order-row" role="listitem" data-view="sessions" aria-posinset="2" aria-setsize="7">
+                    <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                    <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-session"/></svg></span>
+                    <span class="sidebar-order-label">Sessions</span>
+                    <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Sessions" title="Hide Sessions">Hide</button></span>
+                  </div>
+                  <div class="sidebar-order-row" role="listitem" data-view="pinned" aria-posinset="3" aria-setsize="7">
+                    <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                    <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg></span>
+                    <span class="sidebar-order-label">Pinned folders</span>
+                    <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Pinned folders" title="Hide Pinned folders">Hide</button></span>
+                  </div>
+                  <div class="sidebar-order-row" role="listitem" data-view="bookmarks" aria-posinset="4" aria-setsize="7">
+                    <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                    <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-bookmark"/></svg></span>
+                    <span class="sidebar-order-label">Bookmarks</span>
+                    <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Bookmarks" title="Hide Bookmarks">Hide</button></span>
+                  </div>
+                  <div class="sidebar-order-row is-hidden" role="listitem" data-view="recent" aria-posinset="5" aria-setsize="7">
+                    <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                    <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg></span>
+                    <span class="sidebar-order-label">Recent files</span>
+                    <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Unhide Recent files" title="Unhide Recent files">Unhide</button></span>
+                  </div>
+                  <div class="sidebar-order-row" role="listitem" data-view="search" aria-posinset="6" aria-setsize="7">
+                    <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                    <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+                    <span class="sidebar-order-label">Search</span>
+                    <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search" title="Hide Search">Hide</button></span>
+                  </div>
+                  <div class="sidebar-order-row" role="listitem" data-view="ai" aria-posinset="7" aria-setsize="7">
+                    <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                    <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-ai"/></svg></span>
+                    <span class="sidebar-order-label">AI Assistant</span>
+                    <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide AI Assistant" title="Hide AI Assistant">Hide</button></span>
+                  </div>
+                </div>
                 <div class="settings-form-title">Modal size</div>
                 <div class="settings-row">
                   <span class="settings-label">Settings modal width</span>
@@ -1114,6 +1222,273 @@ kbd { font-family: var(--font-mono); }
       </div>
     </div>
   </div>
+</section>
+
+<!-- ============================================================== -->
+<section class="sec">
+  <h2>2c · Activity bar order — default, hidden and drag active</h2>
+  <p class="lede">Seven cards in bar order, each with a 24 × 24 handle and one <code>Hide</code> /
+    <code>Unhide</code> button. The handle is the only drag source, and drag is the only way to
+    reorder: there is no arrow button and no keyboard reorder. The toggle is the row's only control
+    and the only keyboard stop. A hidden view keeps its row, its position and its handle — it leaves
+    the activity bar, not the order. The drop marker is a 2 px accent line in the 8 px gap.</p>
+
+  <div class="pair">
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>Default · dark<span class="grow"></span><span class="size">row 40 · gap 8 · list 328</span></div>
+      <div class="stage stage--order theme-dark">
+        <div class="spec">
+          <div class="spec-group">
+            <h3>All seven views in the bar</h3>
+            <p class="settings-help">Order of the side-bar icons. Drag a row by its handle to reorder it, and use Hide to remove a view from the activity bar. Unhide restores it.</p>
+              <div class="sidebar-order-list" role="list" aria-label="Activity bar order">
+                <div class="sidebar-order-row" role="listitem" data-view="explorer">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-explorer"/></svg></span>
+                  <span class="sidebar-order-label">Explorer</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Explorer" title="Hide Explorer">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="sessions">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-session"/></svg></span>
+                  <span class="sidebar-order-label">Sessions</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Sessions" title="Hide Sessions">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="pinned">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg></span>
+                  <span class="sidebar-order-label">Pinned folders</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Pinned folders" title="Hide Pinned folders">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="bookmarks">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-bookmark"/></svg></span>
+                  <span class="sidebar-order-label">Bookmarks</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Bookmarks" title="Hide Bookmarks">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="recent">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg></span>
+                  <span class="sidebar-order-label">Recent files</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Recent files" title="Hide Recent files">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="search">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+                  <span class="sidebar-order-label">Search</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search" title="Hide Search">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="ai">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-ai"/></svg></span>
+                  <span class="sidebar-order-label">AI Assistant</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide AI Assistant" title="Hide AI Assistant">Hide</button></span>
+                </div>
+              </div>
+            <p class="settings-note">Every button reads <code>Hide</code> and every card sits on <code>--surface-raised</code>. Grip 24 × 24 with a 14 px glyph, the view's own icon 14 × 14 at <code>--text-muted</code>, then the label; the button is 30 px tall with a 60 px min-width. The button still sets the row height at 40.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>One view hidden · light<span class="grow"></span><span class="size">is-hidden · panel face · muted label</span></div>
+      <div class="stage stage--order theme-light">
+        <div class="spec">
+          <div class="spec-group">
+            <h3>Recent files hidden, still third from the bottom</h3>
+              <div class="sidebar-order-list" role="list" aria-label="Activity bar order">
+                <div class="sidebar-order-row" role="listitem" data-view="explorer">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-explorer"/></svg></span>
+                  <span class="sidebar-order-label">Explorer</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Explorer" title="Hide Explorer">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="sessions">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-session"/></svg></span>
+                  <span class="sidebar-order-label">Sessions</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Sessions" title="Hide Sessions">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="pinned">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg></span>
+                  <span class="sidebar-order-label">Pinned folders</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Pinned folders" title="Hide Pinned folders">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="bookmarks">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-bookmark"/></svg></span>
+                  <span class="sidebar-order-label">Bookmarks</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Bookmarks" title="Hide Bookmarks">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row is-hidden" role="listitem" data-view="recent">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg></span>
+                  <span class="sidebar-order-label">Recent files</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Unhide Recent files" title="Unhide Recent files">Unhide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="search">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+                  <span class="sidebar-order-label">Search</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search" title="Hide Search">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="ai">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-ai"/></svg></span>
+                  <span class="sidebar-order-label">AI Assistant</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide AI Assistant" title="Hide AI Assistant">Hide</button></span>
+                </div>
+              </div>
+            <p class="settings-note">Announced on Hide: <em>Recent files hidden.</em> The card keeps its border, its height, its position, its handle and its clock icon; only the face (<code>--surface-panel</code>), the label colour (<code>--text-muted</code>) and the button word change. <code>sidebarOrder</code> is untouched, so Unhide restores the icon between Bookmarks and Search. The icon is gone from <code>#activity-bar</code> while this row reads <code>Unhide</code>.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pair">
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>Drag active · light<span class="grow"></span><span class="size">one dragged card · one 2 px line</span></div>
+      <div class="stage stage--order theme-light">
+        <div class="spec">
+          <div class="spec-group">
+            <h3>Bookmarks lifted, dropping above AI Assistant</h3>
+              <div class="sidebar-order-list" role="list" aria-label="Activity bar order">
+                <div class="sidebar-order-row" role="listitem" data-view="explorer">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-explorer"/></svg></span>
+                  <span class="sidebar-order-label">Explorer</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Explorer" title="Hide Explorer">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="sessions">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-session"/></svg></span>
+                  <span class="sidebar-order-label">Sessions</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Sessions" title="Hide Sessions">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="pinned">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-pin"/></svg></span>
+                  <span class="sidebar-order-label">Pinned folders</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Pinned folders" title="Hide Pinned folders">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row dragging" role="listitem" data-view="bookmarks">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-bookmark"/></svg></span>
+                  <span class="sidebar-order-label">Bookmarks</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Bookmarks" title="Hide Bookmarks">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="recent">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-clock"/></svg></span>
+                  <span class="sidebar-order-label">Recent files</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Recent files" title="Hide Recent files">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row" role="listitem" data-view="search">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+                  <span class="sidebar-order-label">Search</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search" title="Hide Search">Hide</button></span>
+                </div>
+                <div class="sidebar-order-row drop-before" role="listitem" data-view="ai">
+                  <span class="sidebar-order-grip" draggable="true" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+                  <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-ai"/></svg></span>
+                  <span class="sidebar-order-label">AI Assistant</span>
+                  <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide AI Assistant" title="Hide AI Assistant">Hide</button></span>
+                </div>
+              </div>
+            <p class="settings-note">Announced on drop: <em>Bookmarks moved to position 6 of 7.</em> Focus then lands on that row's Hide button. Dropping on the card's own position, or releasing outside the list, changes nothing and announces nothing. Esc cancels the drag and leaves Settings open. A hidden row is an ordinary drop target.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="board">
+      <div class="board-head"><span class="dot"></span>States<span class="grow"></span><span class="size">handle · row · toggle</span></div>
+      <div class="stage stage--order theme-light">
+        <div class="spec">
+          <div class="spec-group">
+            <h3>Handle</h3>
+            <div class="spec-line"><span class="spec-cap">rest</span><span class="sidebar-order-grip" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span><span class="spec-cap" style="min-width:0">--text-muted · cursor grab</span></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><span class="sidebar-order-grip is-hover" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span><span class="spec-cap" style="min-width:0">--text-primary</span></div>
+            <div class="spec-line"><span class="spec-cap">active</span><span class="sidebar-order-grip is-active" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span><span class="spec-cap" style="min-width:0">--accent · cursor grabbing</span></div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Row</h3>
+            <div class="spec-line"><span class="spec-cap">rest</span>
+            <div class="sidebar-order-row" role="listitem" data-view="rest">
+              <span class="sidebar-order-grip" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+              <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+              <span class="sidebar-order-label">Search</span>
+              <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search">Hide</button></span>
+            </div>
+            </div>
+            <div class="spec-line"><span class="spec-cap">hidden</span>
+            <div class="sidebar-order-row is-hidden" role="listitem" data-view="hidden">
+              <span class="sidebar-order-grip" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+              <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+              <span class="sidebar-order-label">Search</span>
+              <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Unhide Search">Unhide</button></span>
+            </div>
+            </div>
+            <div class="spec-line"><span class="spec-cap">dragging</span>
+            <div class="sidebar-order-row dragging" role="listitem" data-view="drag">
+              <span class="sidebar-order-grip" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+              <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+              <span class="sidebar-order-label">Search</span>
+              <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search">Hide</button></span>
+            </div>
+            </div>
+            <div class="spec-line"><span class="spec-cap">drop before</span>
+            <div class="sidebar-order-row drop-before" role="listitem" data-view="before">
+              <span class="sidebar-order-grip" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+              <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+              <span class="sidebar-order-label">Search</span>
+              <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search">Hide</button></span>
+            </div>
+            </div>
+            <div class="spec-line"><span class="spec-cap">drop after</span>
+            <div class="sidebar-order-row drop-after" role="listitem" data-view="after">
+              <span class="sidebar-order-grip" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-grip"/></svg></span>
+              <span class="sidebar-order-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#i-search"/></svg></span>
+              <span class="sidebar-order-label">Search</span>
+              <span class="sidebar-order-actions"><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search">Hide</button></span>
+            </div>
+            </div>
+          </div>
+
+          <div class="spec-group">
+            <h3>Toggle</h3>
+            <div class="spec-line"><span class="spec-cap">rest</span><button class="settings-action sidebar-order-toggle" type="button" aria-label="Hide Search">Hide</button><button class="settings-action sidebar-order-toggle" type="button" aria-label="Unhide Search">Unhide</button></div>
+            <div class="spec-line"><span class="spec-cap">hover</span><button class="settings-action sidebar-order-toggle is-hover" type="button" aria-label="Hide Search">Hide</button></div>
+            <div class="spec-line"><span class="spec-cap">focus</span><button class="settings-action sidebar-order-toggle is-focus" type="button" aria-label="Hide Search">Hide</button><span class="spec-cap" style="min-width:0">--focus-ring at 1 px (E4)</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Handle only.</strong> <code>draggable</code> sits on the 24 × 24 grip. A drag from
+      the label or the button is cancelled, so text selection and the button click both work.</li>
+    <li><strong>The line, not a gap.</strong> The marker is a 2 px <code>--accent</code> bar on
+      <code>::before</code> / <code>::after</code>, 4 px off the row, in the 8 px gap. Foundations
+      §5.3 names <code>--stroke-2</code> for exactly this.</li>
+    <li><strong>Hidden is not removed.</strong> One list holds both states so a hidden view never
+      loses its index; the row is not dimmed, so <code>Unhide</code> keeps full contrast.</li>
+    <li><strong>The icon is the bar's own.</strong> Each row draws the same 14 px
+      <code>nb-icon-*</code> symbol its activity-bar button uses, in <code>currentColor</code> on
+      <code>--text-muted</code>. It is muted in both states — it identifies the row whether the view
+      is in the bar or not — and it is <code>aria-hidden</code>, so the label stays the row's name.</li>
+    <li><strong>Keyboard.</strong> The toggle is the only row control and the only tab stop: Tab,
+      Enter and Space hide and unhide, and each result is announced. Reordering has no keyboard path —
+      the help copy and the spec say so rather than implying one.</li>
+    <li><strong>Not drawn:</strong> the drag image (the browser draws it), the auto-scroll of the
+      sections column, and the one-frame delay before the source card dims.</li>
+  </ul>
 </section>
 
 <!-- ============================================================== -->

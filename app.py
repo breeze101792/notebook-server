@@ -1495,12 +1495,32 @@ def boot_state(cfg=None):
     wallpaper_intensity = _choice("wallpaperIntensity", _WALLPAPER_INTENSITIES, "subtle")
     wallpaper_scroll = _choice("wallpaperScroll", ("scroll", "fixed"), "scroll")
 
-    # Tuple membership compares by ==, so a non-string (int/list/None) is
-    # rejected without raising; anything not exactly a known view id falls
-    # back to Explorer.
+    # Hidden activity-bar views. Same allowlist and de-dupe rule; the order
+    # list still shows these rows so they can be unhidden.
+    sidebar_hidden = []
+    raw_hidden = cfg.get("sidebarHidden")
+    if isinstance(raw_hidden, list):
+        for view_id in raw_hidden:
+            if view_id in _ACTIVE_VIEWS and view_id not in sidebar_hidden:
+                sidebar_hidden.append(view_id)
+
+    # The active view cannot be hidden: the shell would paint a panel whose
+    # icon is absent. Fall back to the first visible view (Explorer when every
+    # view is hidden; the client then collapses the empty panel).
     active_view = cfg.get("activeView")
-    if active_view not in _ACTIVE_VIEWS:
-        active_view = "explorer"
+    if active_view not in _ACTIVE_VIEWS or active_view in sidebar_hidden:
+        active_view = next(
+            (view_id for view_id in _ACTIVE_VIEWS
+             if view_id not in sidebar_hidden), "explorer")
+
+    # Activity-bar order: unknown ids are dropped, duplicates collapse, and
+    # anything missing keeps its registration order after the named ones.
+    sidebar_order = []
+    raw_order = cfg.get("sidebarOrder")
+    if isinstance(raw_order, list):
+        for view_id in raw_order:
+            if view_id in _ACTIVE_VIEWS and view_id not in sidebar_order:
+                sidebar_order.append(view_id)
 
     # The viewer-content classes are assembled here so the shell can render
     # them directly; keep them in the same shape app.js applies.
@@ -1525,6 +1545,8 @@ def boot_state(cfg=None):
         "topbar_hidden": bool(cfg.get("hideTopbar")),
         "wallpaper_classes": " ".join(wallpaper_classes),
         "active_view": active_view,
+        "sidebar_order": sidebar_order,
+        "sidebar_hidden": sidebar_hidden,
         **_boot_workspaces(),
     }
 

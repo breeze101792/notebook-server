@@ -71,6 +71,18 @@
   // id of the action currently in capture mode, or null.
   const shortcutsListEl  = document.getElementById("settings-shortcuts-list");
   const shortcutsResetAllBtn = document.getElementById("settings-shortcuts-reset-all");
+  const sidebarOrderListEl = document.getElementById("settings-sidebar-order");
+  const sidebarOrderStatusEl = document.getElementById("settings-sidebar-order-status");
+  const settingsSectionsEl = overlayEl.querySelector(".settings-sections");
+  // Auto-scroll while dragging: depth of the top/bottom band and the step
+  // per animation frame (about 480 px/s at 60 Hz).
+  const SIDEBAR_DRAG_SCROLL_BAND_PX = 32;
+  const SIDEBAR_DRAG_SCROLL_STEP_PX = 8;
+  // View id being dragged in the activity-bar order list, or null.
+  let sidebarDragId = null;
+  let sidebarDragX = 0;
+  let sidebarDragY = 0;
+  let sidebarDragFrame = 0;
   let capturingAction = null;
 
   // Passwords section handles. The admin section adapts to state:
@@ -230,6 +242,7 @@
     refreshWatchStatus();
     refreshAuthState();
     renderShortcuts();
+    renderSidebarOrder();
     if (!infoLoaded) loadInfo();
     overlayEl.hidden = false;
     markInitialFocus();
@@ -349,6 +362,251 @@
       });
     }
   }
+
+  // Activity-bar order: one card per registered view. The grip is the only
+  // drag source; the row's toggle hides or restores the icon without losing
+  // its place. Reads the live bar order so a partial saved list still shows
+  // every view.
+  function renderSidebarOrder() {
+    if (!sidebarOrderListEl || !NB.activity || !NB.activity.barItems) return;
+    const items = NB.activity.barItems();
+    sidebarOrderListEl.innerHTML = "";
+    items.forEach((item, idx) => {
+      const row = document.createElement("div");
+      row.className = "sidebar-order-row";
+      row.classList.toggle("is-hidden", !!item.hidden);
+      row.dataset.view = item.id;
+      row.setAttribute("role", "listitem");
+      row.setAttribute("aria-posinset", String(idx + 1));
+      row.setAttribute("aria-setsize", String(items.length));
+      row.addEventListener("dragstart", (e) => startSidebarDrag(e, row));
+      row.addEventListener("dragover", (e) => dragOverSidebarRow(e, row));
+      row.addEventListener("dragleave", (e) => {
+        if (e.relatedTarget && row.contains(e.relatedTarget)) return;
+        row.classList.remove("drop-before", "drop-after");
+      });
+      row.addEventListener("drop", (e) => dropSidebarRow(e, row));
+      row.addEventListener("dragend", endSidebarDrag);
+      const grip = document.createElement("span");
+      grip.className = "sidebar-order-grip";
+      grip.draggable = true;
+      grip.setAttribute("aria-hidden", "true");
+      grip.innerHTML =
+        '<svg class="icon" aria-hidden="true" focusable="false">' +
+        '<use href="#nb-icon-grip"/></svg>';
+      row.appendChild(grip);
+      const icon = document.createElement("span");
+      icon.className = "sidebar-order-icon";
+      icon.setAttribute("aria-hidden", "true");
+      if (item.icon && item.icon.indexOf("nb-icon-") === 0) {
+        icon.innerHTML =
+          '<svg aria-hidden="true" focusable="false"><use href="#' +
+          item.icon + '"/></svg>';
+      } else {
+        icon.textContent = item.icon || "";
+      }
+      row.appendChild(icon);
+      const label = document.createElement("span");
+      label.className = "sidebar-order-label";
+      label.textContent = item.label;
+      row.appendChild(label);
+      const actions = document.createElement("span");
+      actions.className = "sidebar-order-actions";
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "settings-action sidebar-order-toggle";
+      toggle.textContent = item.hidden ? "Unhide" : "Hide";
+      toggle.title = (item.hidden ? "Unhide " : "Hide ") + item.label;
+      toggle.setAttribute("aria-label", toggle.title);
+      toggle.addEventListener("click", () => toggleSidebarHidden(item.id));
+      actions.appendChild(toggle);
+      row.appendChild(actions);
+      sidebarOrderListEl.appendChild(row);
+    });
+  }
+  function sidebarRequestFrame(fn) {
+    return window.requestAnimationFrame
+      ? window.requestAnimationFrame(fn) : window.setTimeout(fn, 16);
+  }
+  function sidebarCancelFrame(id) {
+    if (!id) return;
+    if (window.cancelAnimationFrame) window.cancelAnimationFrame(id);
+    else window.clearTimeout(id);
+  }
+  function startSidebarDrag(e, row) {
+    if (!e.target || !e.target.closest || !e.target.closest(".sidebar-order-grip")) {
+      e.preventDefault();
+      return;
+    }
+    const id = row.dataset.view;
+    sidebarDragId = id;
+    // Seed the pointer from the gesture so the auto-scroll loop's first tick
+    // tests a real position, not the (0, 0) initial value.
+    sidebarDragX = e.clientX || 0;
+    sidebarDragY = e.clientY || 0;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", id);
+    }
+    // Dim one frame late: the browser snapshots the drag image as dragstart
+    // returns, so a class added here would dim the image itself.
+    sidebarRequestFrame(() => {
+      if (sidebarDragId === id) row.classList.add("dragging");
+    });
+    document.addEventListener("dragover", trackSidebarDrag, true);
+    document.addEventListener("drop", guardSidebarDrop, true);
+    startSidebarAutoScroll();
+  }
+  function trackSidebarDrag(e) {
+    sidebarDragX = e.clientX;
+    sidebarDragY = e.clientY;
+    e.preventDefault();
+  }
+  function guardSidebarDrop(e) {
+    e.preventDefault();
+  }
+  function dragOverSidebarRow(e, row) {
+    if (!sidebarDragId) return;
+    if (row.dataset.view === sidebarDragId) {
+      clearSidebarDropMarks();
+      return;
+    }
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    markSidebarDrop(row, e.clientY);
+  }
+  function markSidebarDrop(row, clientY) {
+    if (!row || row.dataset.view === sidebarDragId) {
+      clearSidebarDropMarks();
+      return;
+    }
+    const rect = row.getBoundingClientRect();
+    const after = clientY > rect.top + rect.height / 2;
+    clearSidebarDropMarks();
+    row.classList.add(after ? "drop-after" : "drop-before");
+  }
+  function dropSidebarRow(e, row) {
+    e.preventDefault();
+    const id = sidebarDragId;
+    const before = row.classList.contains("drop-before");
+    clearSidebarDropMarks();
+    if (!id || id === row.dataset.view) {
+      endSidebarDrag();
+      return;
+    }
+    moveSidebarViewTo(id, row.dataset.view, before);
+    endSidebarDrag();
+  }
+  function endSidebarDrag() {
+    sidebarDragId = null;
+    clearSidebarDropMarks();
+    if (sidebarOrderListEl) {
+      sidebarOrderListEl.querySelectorAll(".sidebar-order-row.dragging")
+        .forEach(row => row.classList.remove("dragging"));
+    }
+    stopSidebarAutoScroll();
+    document.removeEventListener("dragover", trackSidebarDrag, true);
+    document.removeEventListener("drop", guardSidebarDrop, true);
+  }
+  function startSidebarAutoScroll() {
+    stopSidebarAutoScroll();
+    const step = () => {
+      sidebarDragFrame = 0;
+      if (!sidebarDragId || !settingsSectionsEl) return;
+      const rect = settingsSectionsEl.getBoundingClientRect();
+      let dir = 0;
+      if (sidebarDragY < rect.top + SIDEBAR_DRAG_SCROLL_BAND_PX) dir = -1;
+      else if (sidebarDragY > rect.bottom - SIDEBAR_DRAG_SCROLL_BAND_PX) dir = 1;
+      if (dir) {
+        settingsSectionsEl.scrollTop += dir * SIDEBAR_DRAG_SCROLL_STEP_PX;
+        refreshSidebarDropAtPointer();
+      }
+      sidebarDragFrame = sidebarRequestFrame(step);
+    };
+    sidebarDragFrame = sidebarRequestFrame(step);
+  }
+  function stopSidebarAutoScroll() {
+    sidebarCancelFrame(sidebarDragFrame);
+    sidebarDragFrame = 0;
+  }
+  function refreshSidebarDropAtPointer() {
+    if (typeof document.elementFromPoint !== "function") return;
+    const el = document.elementFromPoint(sidebarDragX, sidebarDragY);
+    const row = (el && el.closest) ? el.closest(".sidebar-order-row") : null;
+    if (row && sidebarOrderListEl && sidebarOrderListEl.contains(row)) {
+      markSidebarDrop(row, sidebarDragY);
+    } else {
+      clearSidebarDropMarks();
+    }
+  }
+  function clearSidebarDropMarks() {
+    if (!sidebarOrderListEl) return;
+    sidebarOrderListEl.querySelectorAll(".drop-before, .drop-after")
+      .forEach(row => row.classList.remove("drop-before", "drop-after"));
+  }
+  function moveSidebarViewTo(viewId, targetId, before) {
+    const items = (NB.activity && NB.activity.barItems) ? NB.activity.barItems() : [];
+    const from = items.findIndex(item => item.id === viewId);
+    if (from < 0 || items.findIndex(item => item.id === targetId) < 0) return;
+    const previous = items.map(item => item.id);
+    const ids = previous.slice();
+    ids.splice(from, 1);
+    let target = ids.indexOf(targetId);
+    if (!before) target += 1;
+    ids.splice(target, 0, viewId);
+    if (ids.join(",") === previous.join(",")) return;
+    if (NB.app && NB.app.setSidebarOrder) NB.app.setSidebarOrder(ids);
+    renderSidebarOrder();
+    focusSidebarOrderToggle(viewId);
+    announceSidebarMove(viewId, ids.indexOf(viewId), ids.length);
+  }
+  function focusSidebarOrderToggle(viewId) {
+    if (!sidebarOrderListEl) return;
+    const row = sidebarOrderListEl.querySelector(
+      '.sidebar-order-row[data-view="' + viewId + '"]');
+    const toggle = row && row.querySelector(".sidebar-order-toggle");
+    if (toggle) toggle.focus({ preventScroll: true });
+  }
+  function toggleSidebarHidden(viewId) {
+    const items = (NB.activity && NB.activity.barItems) ? NB.activity.barItems() : [];
+    const item = items.find(entry => entry.id === viewId);
+    if (!item) return;
+    const hidden = items.filter(entry => entry.hidden).map(entry => entry.id);
+    const next = item.hidden
+      ? hidden.filter(id => id !== viewId)
+      : hidden.concat(viewId);
+    if (NB.app && NB.app.setSidebarHidden) NB.app.setSidebarHidden(next);
+    renderSidebarOrder();
+    focusSidebarOrderToggle(viewId);
+    if (sidebarOrderStatusEl) {
+      sidebarOrderStatusEl.textContent =
+        item.label + (item.hidden ? " shown." : " hidden.");
+    }
+  }
+  function announceSidebarMove(viewId, index, total) {
+    if (!sidebarOrderStatusEl) return;
+    const items = (NB.activity && NB.activity.barItems) ? NB.activity.barItems() : [];
+    const item = items.find(entry => entry.id === viewId);
+    const label = (item && item.label) || viewId;
+    sidebarOrderStatusEl.textContent =
+      label + " moved to position " + (index + 1) + " of " + total + ".";
+  }
+  // A config load can change the order or the hidden set while the modal is
+  // open. Re-render only when the list actually differs, so an ordinary save
+  // does not steal focus mid-move.
+  NB.evt.on("config:changed", () => {
+    if (!isOpen() || !sidebarOrderListEl || !NB.activity || !NB.activity.barItems) return;
+    const items = NB.activity.barItems();
+    const shownOrder = Array.from(sidebarOrderListEl.children)
+      .map(row => row.dataset.view).join(",");
+    const shownHidden = Array.from(sidebarOrderListEl.children)
+      .filter(row => row.classList.contains("is-hidden"))
+      .map(row => row.dataset.view).join(",");
+    const nowOrder = items.map(item => item.id).join(",");
+    const nowHidden = items.filter(item => item.hidden)
+      .map(item => item.id).join(",");
+    if (shownOrder !== nowOrder || shownHidden !== nowHidden) renderSidebarOrder();
+  });
 
   // One row at a time can be capturing. We arm the shortcuts module's
   // capture, swap the row's binding cell + button into a "press a key"
@@ -614,7 +872,14 @@
     if (e.target === overlayEl) close();
   });
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && isOpen()) close();
+    if (e.key !== "Escape" || !isOpen()) return;
+    // Esc cancels a drag gesture. Clean up here as well as on dragend so the
+    // modal stays open even if the browser does not deliver dragend.
+    if (sidebarDragId) {
+      endSidebarDrag();
+      return;
+    }
+    close();
   });
 
   /* --- Passwords section -------------------------------------------- */

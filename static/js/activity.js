@@ -21,6 +21,22 @@
   const barEl = document.getElementById("activity-bar");
   const panelEl = document.getElementById("side-panel");
 
+  // The server embeds the saved bar order on the nav so the first icon pass
+  // matches the saved setting instead of reordering when config loads.
+  function readBootBarOrder() {
+    const raw = barEl && barEl.dataset ? barEl.dataset.sidebarOrder : "";
+    if (!raw) return [];
+    return raw.split(",").filter(Boolean);
+  }
+
+  // Hidden views are listed in the same server-rendered form so their icons
+  // are absent from the first pass, not removed once config lands.
+  function readBootHiddenViews() {
+    const raw = barEl && barEl.dataset ? barEl.dataset.sidebarHidden : "";
+    if (!raw) return [];
+    return raw.split(",").filter(Boolean);
+  }
+
   // A side-panel view can be adopted while this script evaluates, before
   // app.js defines NB.app. Read search prefs through these fallbacks; the
   // config:changed load event syncs the controls once app.js boots.
@@ -70,6 +86,11 @@
   // text) across switches, mirroring how VS Code keeps each pane alive.
   const views = [];
   const mounted = new Set();
+  // View ids in the user's saved bar order (cfg.sidebarOrder). Seeded from
+  // the server-rendered attribute; views the list does not name keep
+  // registration order after the named ones.
+  const barOrder = readBootBarOrder();
+  const hiddenViews = new Set(readBootHiddenViews());
   // The currently-active view id. Null when the panel is collapsed (no
   // view is "active" while collapsed -- the icon strip is the only
   // visible chrome on the left).
@@ -83,6 +104,76 @@
     const i = views.findIndex(x => x.id === v.id);
     if (i >= 0) views[i] = v; else views.push(v);
     renderBar();
+  }
+
+  // Registered views sorted by the saved bar order, then registration
+  // order for anything the saved list does not name.
+  function orderedViews() {
+    if (!barOrder.length) return views.slice();
+    const rank = new Map();
+    barOrder.forEach((id, i) => { if (!rank.has(id)) rank.set(id, i); });
+    const known = [];
+    const rest = [];
+    for (const v of views) {
+      if (rank.has(v.id)) known.push(v); else rest.push(v);
+    }
+    known.sort((a, b) => rank.get(a.id) - rank.get(b.id));
+    return known.concat(rest);
+  }
+
+  function setBarOrder(ids) {
+    barOrder.length = 0;
+    if (Array.isArray(ids)) {
+      for (const id of ids) {
+        if (typeof id === "string" && id && barOrder.indexOf(id) < 0) barOrder.push(id);
+      }
+    }
+    renderBar();
+  }
+
+  function visibleViews() {
+    return orderedViews().filter(v => !hiddenViews.has(v.id));
+  }
+
+  function setHidden(ids) {
+    hiddenViews.clear();
+    if (Array.isArray(ids)) {
+      for (const id of ids) {
+        if (typeof id === "string" && id) hiddenViews.add(id);
+      }
+    }
+    renderBar();
+    reconcileHiddenActive();
+  }
+
+  // A hidden view cannot stay active: its icon is gone, so switching it away
+  // keeps the panel reachable. With every view hidden, the panel collapses.
+  function reconcileHiddenActive() {
+    const visible = visibleViews();
+    if (!activeId) {
+      if (!visible.length) hideAllAndCollapse();
+      return;
+    }
+    if (!hiddenViews.has(activeId)) return;
+    if (visible.length) {
+      activate(visible[0].id, false);
+      return;
+    }
+    hideAllAndCollapse();
+  }
+
+  function hideAllAndCollapse() {
+    activeId = null;
+    if (panelEl) {
+      panelEl.querySelectorAll(".side-panel-view").forEach(el => { el.hidden = true; });
+    }
+    syncActiveClass();
+    if (isPhone()) {
+      if (NB.mobile && NB.mobile.closeDrawer) NB.mobile.closeDrawer();
+    } else {
+      collapse();
+    }
+    NB.evt.emit("activity:changed", { id: null });
   }
 
   function renderBar() {
@@ -100,7 +191,7 @@
       barEl.insertBefore(viewsEl, pin ? pin.nextSibling : barEl.firstChild);
     }
     viewsEl.innerHTML = "";
-    for (const v of views) {
+    for (const v of visibleViews()) {
       const btn = document.createElement("button");
       btn.className = "activity-btn";
       btn.dataset.view = v.id;
@@ -149,7 +240,10 @@
 
   function activate(id, toggle) {
     const v = views.find(x => x.id === id);
-    if (!v) return;
+    if (!v) return false;
+    // A hidden view has no icon; activating it would strand the panel with
+    // no rail control. Unhide it in Settings first.
+    if (hiddenViews.has(id)) return false;
     // Phone: the panel is a drawer. Tapping the active rail icon closes
     // it; activating any view opens it. Neither path touches the desktop
     // .collapsed state, the width var, or activity:collapsed/expanded.
@@ -157,7 +251,7 @@
       if (toggle && activeId === id && NB.mobile && NB.mobile.isDrawerOpen &&
           NB.mobile.isDrawerOpen()) {
         NB.mobile.closeDrawer();
-        return;
+        return true;
       }
       if (panelEl) {
         panelEl.querySelectorAll(".side-panel-view").forEach(el => {
@@ -175,14 +269,14 @@
       syncActiveClass();
       NB.evt.emit("activity:changed", { id });
       if (toggle && NB.mobile && NB.mobile.openDrawer) NB.mobile.openDrawer();
-      return;
+      return true;
     }
     // Clicking the already-active icon toggles the panel collapsed /
     // expanded (VS Code behavior). The active view is preserved across
     // the toggle so re-expanding returns to the same view.
     if (toggle && activeId === id && !panelEl.classList.contains("collapsed")) {
       collapse();
-      return;
+      return true;
     }
     // Only a user toggle (icon click) may expand a collapsed panel. The
     // load-time adoptShellView() calls activate(id, false) while the
@@ -206,6 +300,7 @@
     }
     syncActiveClass();
     NB.evt.emit("activity:changed", { id });
+    return true;
   }
 
   function collapse() {
@@ -251,7 +346,7 @@
    * an already-mounted view only reveals it, so focus is applied here
    * rather than only in mountSearch. */
   function openSearch() {
-    activate("search", false);
+    if (!activate("search", false)) return;
     if (isPhone()) {
       if (NB.mobile && NB.mobile.openDrawer) NB.mobile.openDrawer();
     } else if (isCollapsed()) {
@@ -278,7 +373,16 @@
   }
 
   function adoptShellView() {
-    activate(shellViewId() || "explorer", false);
+    const shell = shellViewId();
+    const visible = visibleViews();
+    const target = (shell && !hiddenViews.has(shell))
+      ? shell
+      : (visible[0] && visible[0].id);
+    if (target) {
+      activate(target, false);
+      return;
+    }
+    reconcileHiddenActive();
   }
 
   // Build a collapse button for a side-panel view's header. Every view
@@ -313,6 +417,15 @@
     isCollapsed,
     makeCollapseBtn,
     views: () => views.map(v => v.id),
+    // Every view in bar order, with its hidden flag. Settings lists all
+    // rows so a hidden view can be unhidden.
+    barItems: () => orderedViews().map(v => ({
+      id: v.id, label: v.label || v.id, icon: v.icon || "",
+      hidden: hiddenViews.has(v.id),
+    })),
+    setBarOrder,
+    setHidden,
+    visible: () => visibleViews().map(v => v.id),
     adoptShellView,
   };
 
@@ -1419,4 +1532,5 @@
   // Adopt the view the server rendered visible so the first frame is the
   // saved view; fall back to Explorer when the shell shows none.
   adoptShellView();
+  reconcileHiddenActive();
 })();

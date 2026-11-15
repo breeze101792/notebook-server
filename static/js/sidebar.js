@@ -1025,9 +1025,18 @@
    * collapsed) so the revealed tree is actually on screen. */
   function revealFile(path) {
     if (!path) return;
+    // "Show in file sidebar" is meaningless with Explorer hidden, so unhide
+    // it first (this is the one path that may restore its icon).
+    if (NB.app && NB.app.getSidebarHidden && NB.app.setSidebarHidden &&
+        NB.app.getSidebarHidden().indexOf("explorer") >= 0) {
+      NB.app.setSidebarHidden(
+        NB.app.getSidebarHidden().filter(id => id !== "explorer"));
+    }
     if (NB.activity && NB.activity.activate) {
-      NB.activity.activate("explorer", false);
-      if (NB.activity.isCollapsed && NB.activity.isCollapsed()) NB.activity.expand();
+      const ok = NB.activity.activate("explorer", false);
+      if (ok && NB.activity.isCollapsed && NB.activity.isCollapsed()) {
+        NB.activity.expand();
+      }
     }
     const parts = path.split("/");
     for (let i = 1; i < parts.length; i++) {

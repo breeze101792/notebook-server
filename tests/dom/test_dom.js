@@ -235,7 +235,8 @@ const html = `<!DOCTYPE html><html><head>
       <button id="edit-toggle" class="icon-btn" title="Edit Markdown source (Ctrl/Cmd+E)" aria-label="Edit Markdown source">📝</button>
     </header>
     <main id="layout">
-      <nav id="activity-bar" class="activity-bar" aria-label="Activity bar">
+      <nav id="activity-bar" class="activity-bar" aria-label="Activity bar"
+           data-sidebar-order="" data-sidebar-hidden="">
         <div class="activity-bar-spacer"></div>
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view">🕸</button>
         <button id="logout-btn" class="activity-btn activity-action" hidden>⎋</button>
@@ -542,6 +543,15 @@ const html = `<!DOCTYPE html><html><head>
               <label class="settings-label" for="settings-hide-topbar">Hide top bar</label>
               <input type="checkbox" id="settings-hide-topbar">
             </div>
+            <div class="settings-form-title">Activity bar</div>
+            <p class="settings-help" id="settings-sidebar-order-help">
+              Order of the side-bar icons. Drag a row by its handle to reorder it,
+              and use Hide to remove a view from the activity bar. Unhide restores it.
+            </p>
+            <div id="settings-sidebar-order" class="sidebar-order-list" role="list"
+                 aria-label="Activity bar order"
+                 aria-describedby="settings-sidebar-order-help"></div>
+            <p class="sr-only" id="settings-sidebar-order-status" role="status"></p>
             <div class="settings-form-title">Modal size</div>
             <div class="settings-row">
               <span class="settings-label">Settings modal width</span>
@@ -27538,6 +27548,245 @@ function check(label, cond, extra) {
   await tick(20);
   check("topbar: unchecking shows the top bar again",
     !window.document.body.classList.contains("topbar-hidden"));
+
+  console.log("== activity bar order ==");
+  const orderList = $("settings-sidebar-order");
+  const registeredIds = window.NB.activity.views();
+  check("sidebar order: list rendered in Settings",
+    !!orderList && orderList.children.length === registeredIds.length,
+    "rows=" + (orderList ? orderList.children.length : "missing"));
+  const barIdsBefore = window.NB.activity.barItems().map(item => item.id);
+  check("sidebar order: default order matches registration",
+    barIdsBefore.join(",") === registeredIds.join(","),
+    barIdsBefore.join(","));
+  const firstOrderRow = orderList.querySelector(".sidebar-order-row");
+  check("sidebar order: first row names Explorer",
+    firstOrderRow && firstOrderRow.dataset.view === "explorer",
+    "view=" + (firstOrderRow && firstOrderRow.dataset.view));
+  const firstOrderIconUse = firstOrderRow.querySelector(".sidebar-order-icon use");
+  check("sidebar order: each row shows its view icon before the title",
+    firstOrderIconUse &&
+      firstOrderIconUse.getAttribute("href") === "#nb-icon-explorer",
+    "href=" + (firstOrderIconUse && firstOrderIconUse.getAttribute("href")));
+  check("sidebar order: rows carry their position",
+    firstOrderRow.getAttribute("aria-posinset") === "1" &&
+      firstOrderRow.getAttribute("aria-setsize") === String(registeredIds.length),
+    "posinset=" + firstOrderRow.getAttribute("aria-posinset") +
+      " setsize=" + firstOrderRow.getAttribute("aria-setsize"));
+  check("sidebar order: no up/down buttons remain",
+    orderList.querySelector(".sidebar-order-move") === null);
+  const explorerToggle = firstOrderRow.querySelector(".sidebar-order-toggle");
+  check("sidebar order: each row has a Hide button",
+    explorerToggle && explorerToggle.textContent === "Hide",
+    "text=" + (explorerToggle && explorerToggle.textContent));
+  explorerToggle.click();
+  await tick(20);
+  const hiddenIconIds = Array.from(
+    window.document.querySelectorAll("#activity-bar .activity-btn[data-view]"))
+    .map(btn => btn.dataset.view).join(",");
+  check("sidebar order: Hide removes Explorer from the activity bar",
+    hiddenIconIds === "sessions,pinned,bookmarks,recent,search,ai",
+    hiddenIconIds);
+  const hiddenExplorerRow = orderList.querySelector('.sidebar-order-row[data-view="explorer"]');
+  check("sidebar order: a hidden view stays in the list with Unhide",
+    hiddenExplorerRow &&
+      hiddenExplorerRow.classList.contains("is-hidden") &&
+      hiddenExplorerRow.querySelector(".sidebar-order-toggle").textContent === "Unhide");
+  check("sidebar order: hiding is announced",
+    $("settings-sidebar-order-status").textContent === "Explorer hidden.",
+    $("settings-sidebar-order-status").textContent);
+  check("sidebar order: hiding the active view switches away from it",
+    window.NB.activity.getActive() !== "explorer");
+  window.NB.activity.activate("explorer", false);
+  await tick(10);
+  check("sidebar order: a hidden view cannot be re-activated",
+    window.NB.activity.getActive() !== "explorer");
+  check("sidebar order: cfg records the hidden view",
+    window.NB.app.getSidebarHidden().join(",") === "explorer",
+    window.NB.app.getSidebarHidden().join(","));
+  await tick(300);
+  const hiddenCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+  check("sidebar order: the debounced save sends sidebarHidden",
+    hiddenCfgPost.indexOf('"sidebarHidden":["explorer"]') !== -1,
+    hiddenCfgPost);
+  hiddenExplorerRow.querySelector(".sidebar-order-toggle").click();
+  await tick(20);
+  check("sidebar order: Unhide restores the icon and the row",
+    window.NB.activity.barItems().map(item => item.id).join(",") ===
+      "explorer,sessions,pinned,bookmarks,recent,search,ai" &&
+      window.NB.app.getSidebarHidden().length === 0,
+    window.NB.activity.barItems().map(item => item.id).join(","));
+  check("sidebar order: unhiding is announced",
+    $("settings-sidebar-order-status").textContent === "Explorer shown.",
+    $("settings-sidebar-order-status").textContent);
+  // Hiding every view leaves no icon to reopen the panel, so it collapses.
+  window.NB.app.setSidebarHidden(registeredIds);
+  await tick(20);
+  check("sidebar order: hiding every view empties and collapses the bar",
+    window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length === 0 &&
+      window.NB.activity.isCollapsed() &&
+      window.NB.activity.getActive() === null,
+    "icons=" + window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length);
+  window.NB.app.setSidebarHidden([]);
+  await tick(20);
+  check("sidebar order: unhiding every view restores the bar",
+    window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length ===
+      registeredIds.length);
+  window.NB.app.setSidebarOrder(["search", "explorer", 5, "search"]);
+  await tick(20);
+  check("sidebar order: invalid ids are dropped and duplicates collapse",
+    window.NB.app.getSidebarOrder().join(",") === "search,explorer",
+    window.NB.app.getSidebarOrder().join(","));
+  check("sidebar order: unnamed views follow the saved prefix",
+    window.NB.activity.barItems().map(item => item.id).join(",") ===
+      "search,explorer,sessions,pinned,bookmarks,recent,ai",
+    window.NB.activity.barItems().map(item => item.id).join(","));
+  window.NB.app.setSidebarOrder([]);
+  await tick(20);
+  check("sidebar order: an empty order restores registration order",
+    window.NB.activity.barItems().map(item => item.id).join(",") ===
+      "explorer,sessions,pinned,bookmarks,recent,search,ai");
+
+  console.log("== activity bar drag and drop ==");
+  window.NB.settings.close();
+  window.NB.settings.open();
+  await tick(20);
+  const dragList = $("settings-sidebar-order");
+  const dragExplorer = dragList.querySelector('.sidebar-order-row[data-view="explorer"]');
+  const dragBookmarks = dragList.querySelector('.sidebar-order-row[data-view="bookmarks"]');
+  check("sidebar order: only the grip is draggable",
+    dragExplorer.draggable === false &&
+      dragExplorer.querySelector(".sidebar-order-grip").draggable === true);
+  const dragData = {
+    effectAllowed: "", dropEffect: "",
+    setData() {}, getData() { return ""; },
+  };
+  function fireDrag(el, type, clientY) {
+    const ev = new window.Event(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, "dataTransfer", { value: dragData });
+    Object.defineProperty(ev, "clientX", { value: 0 });
+    Object.defineProperty(ev, "clientY", { value: clientY || 0 });
+    el.dispatchEvent(ev);
+    return ev;
+  }
+  // A drag that starts on the label must not arm a reorder.
+  fireDrag(dragExplorer.querySelector(".sidebar-order-label"), "dragstart");
+  await tick(20);
+  check("sidebar order: a label drag does not arm the reorder",
+    !dragExplorer.classList.contains("dragging"));
+  // Drag Explorer by its grip and drop it before Bookmarks.
+  fireDrag(dragExplorer.querySelector(".sidebar-order-grip"), "dragstart");
+  check("sidebar order: the drag image is not dimmed synchronously",
+    !dragExplorer.classList.contains("dragging"));
+  await tick(20);
+  check("sidebar order: the drag source dims one frame later",
+    dragExplorer.classList.contains("dragging"));
+  // Esc cancels the gesture without closing Settings.
+  window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+    key: "Escape", bubbles: true, cancelable: true,
+  }));
+  await tick(20);
+  check("sidebar order: Esc cancels the drag and keeps Settings open",
+    window.NB.settings.isOpen() &&
+      !dragList.querySelector(".dragging") &&
+      !dragList.querySelector(".drop-before, .drop-after"));
+  // Restart the gesture and complete the drop.
+  fireDrag(dragExplorer.querySelector(".sidebar-order-grip"), "dragstart");
+  await tick(20);
+  fireDrag(dragBookmarks, "dragover", 0);
+  check("sidebar order: the drop mark sits before the target row",
+    dragBookmarks.classList.contains("drop-before") &&
+      dragList.querySelectorAll(".drop-before, .drop-after").length === 1);
+  fireDrag(dragBookmarks, "drop");
+  await tick(20);
+  const dragOrder = window.NB.activity.barItems().map(item => item.id).join(",");
+  check("sidebar order: drag moves Explorer before Bookmarks",
+    dragOrder === "sessions,pinned,explorer,bookmarks,recent,search,ai",
+    dragOrder);
+  check("sidebar order: a drag is announced",
+    $("settings-sidebar-order-status").textContent ===
+      "Explorer moved to position 3 of 7.",
+    $("settings-sidebar-order-status").textContent);
+  const draggedRow = dragList.querySelector('.sidebar-order-row[data-view="explorer"]');
+  check("sidebar order: drag focuses the moved row's toggle",
+    draggedRow &&
+      window.document.activeElement ===
+        draggedRow.querySelector(".sidebar-order-toggle"),
+    "active=" + (window.document.activeElement && window.document.activeElement.className));
+  check("sidebar order: the drag source and marks are cleared",
+    !dragList.querySelector(".dragging") &&
+      !dragList.querySelector(".drop-before, .drop-after"));
+  // Let the completed drag's save flush before counting no-op writes.
+  await tick(300);
+  const dragCfgPost = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+  check("sidebar order: the debounced save sends the dragged order",
+    dragCfgPost.indexOf('"sidebarOrder":["sessions","pinned","explorer",') !== -1,
+    dragCfgPost);
+  const configPostsBeforeNoop =
+    fetchLog.filter(x => x.startsWith("POST /api/config")).length;
+  // Dropping after the row above resolves to the same index: no write, no
+  // re-render, no announcement.
+  const statusBeforeNoop = $("settings-sidebar-order-status").textContent;
+  const noopPinned = dragList.querySelector('.sidebar-order-row[data-view="pinned"]');
+  const noopSessions = dragList.querySelector('.sidebar-order-row[data-view="sessions"]');
+  fireDrag(noopPinned.querySelector(".sidebar-order-grip"), "dragstart");
+  await tick(20);
+  fireDrag(noopSessions, "dragover", 100);
+  fireDrag(noopSessions, "drop");
+  await tick(300);
+  check("sidebar order: a no-op drop changes nothing",
+    window.NB.activity.barItems().map(item => item.id).join(",") === dragOrder &&
+      $("settings-sidebar-order-status").textContent === statusBeforeNoop,
+    window.NB.activity.barItems().map(item => item.id).join(","));
+  check("sidebar order: a no-op drop posts no config",
+    fetchLog.filter(x => x.startsWith("POST /api/config")).length ===
+      configPostsBeforeNoop,
+    "posts=" + (fetchLog.filter(x => x.startsWith("POST /api/config")).length -
+      configPostsBeforeNoop));
+  // Releasing outside the list leaves the order, focus and marks untouched.
+  const orderBeforeOutside = window.NB.activity.barItems()
+    .map(item => item.id).join(",");
+  const focusBeforeOutside = window.document.activeElement;
+  const outsideGrip = dragList.querySelector(
+    '.sidebar-order-row[data-view="recent"] .sidebar-order-grip');
+  fireDrag(outsideGrip, "dragstart");
+  await tick(20);
+  fireDrag(window.document.querySelector("#settings-overlay .settings-modal"), "drop");
+  fireDrag(outsideGrip, "dragend");
+  await tick(20);
+  check("sidebar order: a drop outside the list changes nothing",
+    window.NB.activity.barItems().map(item => item.id).join(",") ===
+      orderBeforeOutside &&
+      window.document.activeElement === focusBeforeOutside &&
+      !dragList.querySelector(".dragging") &&
+      !dragList.querySelector(".drop-before, .drop-after"));
+  // Auto-scroll: with the pointer in the top band, the sections column
+  // moves up one step per frame. jsdom has no layout, so stub the rect.
+  const sectionsEl = window.document.querySelector(
+    "#settings-overlay .settings-sections");
+  const realRect = sectionsEl.getBoundingClientRect;
+  let scrollTopValue = 100;
+  sectionsEl.getBoundingClientRect = () => ({
+    top: 0, bottom: 400, left: 0, right: 800,
+    width: 800, height: 400, x: 0, y: 0,
+    toJSON() { return {}; },
+  });
+  Object.defineProperty(sectionsEl, "scrollTop", {
+    configurable: true,
+    get: () => scrollTopValue,
+    set: (value) => { scrollTopValue = value; },
+  });
+  const scrollGrip = dragList.querySelector(
+    '.sidebar-order-row[data-view="search"] .sidebar-order-grip');
+  fireDrag(scrollGrip, "dragstart", 10);
+  await tick(40);
+  fireDrag(scrollGrip, "dragend");
+  check("sidebar order: dragging into the top band auto-scrolls",
+    scrollTopValue < 100, "scrollTop=" + scrollTopValue);
+  sectionsEl.getBoundingClientRect = realRect;
+  delete sectionsEl.scrollTop;
+  window.NB.app.setSidebarOrder([]);
+  await tick(20);
   window.NB.settings.close();
   await tick(10);
 
@@ -35800,6 +36049,30 @@ function check(label, cond, extra) {
       /<body\{%.*topbar_hidden.*%\}\s*class="topbar-hidden"/.test(tpl));
     check("boot: wallpaper classes are rendered on #viewer-content",
       /id="viewer-content" class="markdown-body \{\{\s*boot\.wallpaper_classes\s*\}\}"/.test(tpl));
+    // The activity bar's saved order ships on the nav so the icons paint in
+    // that order before the async config fetch lands.
+    check("boot: activity bar order is rendered server-side",
+      /id="activity-bar"[^>]*data-sidebar-order="\{\{\s*boot\.sidebar_order\s*\|\s*join\(',\'\)\s*\}\}"/.test(tpl));
+    check("boot: hidden activity-bar views are rendered server-side",
+      /id="activity-bar"[^>]*data-sidebar-hidden="\{\{\s*boot\.sidebar_hidden\s*\|\s*join\(',\'\)\s*\}\}"/.test(tpl));
+    check("boot: activity.js seeds the bar order from the rendered attribute",
+      /readBootBarOrder/.test(read("static/js/activity.js")) &&
+      /dataset\.sidebarOrder/.test(read("static/js/activity.js")));
+    check("boot: activity.js seeds hidden views from the rendered attribute",
+      /readBootHiddenViews/.test(read("static/js/activity.js")) &&
+      /dataset\.sidebarHidden/.test(read("static/js/activity.js")));
+    const barEl = $("activity-bar");
+    barEl.dataset.sidebarOrder = "ai,search";
+    barEl.dataset.sidebarHidden = "search";
+    const shellWithOrder = window.NB.app.shellPanelState();
+    check("boot: shellPanelState reads the painted bar order",
+      shellWithOrder.sidebarOrder.join(",") === "ai,search",
+      shellWithOrder.sidebarOrder.join(","));
+    check("boot: shellPanelState reads the painted hidden views",
+      shellWithOrder.sidebarHidden.join(",") === "search",
+      shellWithOrder.sidebarHidden.join(","));
+    barEl.dataset.sidebarOrder = "";
+    barEl.dataset.sidebarHidden = "";
     // The boot_state values must match DEFAULTS in app.js for a fresh
     // install, or the first frame would still differ from what app.js
     // applies after the config fetch.

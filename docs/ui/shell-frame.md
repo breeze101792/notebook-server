@@ -305,9 +305,13 @@ frame changes; do not add a second lock treatment.
 | 11 | bottom | `#logout-btn` | `nb-icon-logout` | auth on | hidden |
 | 12 | bottom | `#activity-settings-btn` | `nb-icon-gear` | action | hidden |
 
-View order is registration order in `static/js/activity.js:1317-1360`, and `renderBar()` renders
-into `.activity-bar-views` after the pin (`activity.js:96-112`). The static actions live in the
-markup (`templates/index.html:198-212`). The seven views are the set; a new view appends.
+View order is `sidebarOrder` (Settings → Appearance), seeded from the
+server-rendered `data-sidebar-order` attribute; unnamed views follow in
+registration order (`static/js/activity.js:96-168`). `hiddenViews` removes
+icons from the strip; hiding the active view switches to the first visible
+one, and hiding every view collapses the panel. `renderBar()` renders into
+`.activity-bar-views` after the pin (`activity.js:170-200`). The static actions live in the
+markup (`templates/index.html:198-214`). The seven views are the set; a new view appends.
 
 The split is structural, not visual: **views** select a panel and carry an active state;
 **actions** fire once and never take `aria-pressed`. `.activity-action.active::before` is already

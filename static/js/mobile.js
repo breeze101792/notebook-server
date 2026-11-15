@@ -354,10 +354,15 @@
   function openDrawer(viewId) {
     if (!isOn()) return;
     if (viewId && NB.activity && NB.activity.activate) {
-      NB.activity.activate(viewId, false);
+      const ok = NB.activity.activate(viewId, false);
+      if (!ok && NB.activity.visible) {
+        const firstVisible = NB.activity.visible()[0];
+        if (firstVisible) NB.activity.activate(firstVisible, false);
+      }
     }
     const active = (NB.activity && NB.activity.getActive) ? NB.activity.getActive() : null;
-    if (active) document.body.dataset.drawerView = active;
+    if (!active) return;
+    document.body.dataset.drawerView = active;
     setLayer("drawer");
     checkServer();
     setTimeout(focusDrawer, 220);

@@ -93,11 +93,17 @@ class TestIndexAndSeed(BaseTest):
             "sidebarCollapsed": False, "outlineCollapsed": True,
             "wallpaper": "grid", "wallpaperColor": "green",
             "wallpaperIntensity": "bold", "wallpaperScroll": "fixed",
+            "sidebarOrder": ["search", "explorer", "not-a-view"],
+            "sidebarHidden": ["ai", "not-a-view"],
         })
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn("<title>My Notes</title>", html)
         self.assertIn("--font-scale: 1.3", html)
         self.assertIn("--side-panel-width: 312px", html)
+        # The activity bar's saved order is on the nav so its first icon pass
+        # needs no post-fetch reorder; unknown ids are dropped.
+        self.assertIn('data-sidebar-order="search,explorer"', html)
+        self.assertIn('data-sidebar-hidden="ai"', html)
         # The outline is collapsed -> its width is 0 and it carries the
         # collapsed class, matching what app.js would apply post-fetch.
         self.assertIn("--outline-width: 0px", html)
@@ -170,11 +176,15 @@ class TestIndexAndSeed(BaseTest):
             "wallpaperColor": "rgb(1,2,3);background:url(javascript:1)",
             "wallpaperIntensity": "nope",
             "wallpaperScroll": "evil",
+            "sidebarOrder": ["<script>alert(1)</script>", "ai"],
+            "sidebarHidden": ["<script>alert(1)</script>", "ai"],
         })
         self.assertEqual(state["theme"], "auto")
         self.assertEqual(state["font_scale"], 1.0)
         self.assertEqual(state["side_panel_width"], 240)   # bad -> default
         self.assertEqual(state["outline_width"], 2000)     # clamped to ceiling
+        self.assertEqual(state["sidebar_order"], ["ai"])
+        self.assertEqual(state["sidebar_hidden"], ["ai"])
         self.assertEqual(state["wallpaper_classes"],
                          "wallpaper-none wallpaper-intensity-subtle")
         # The hostile strings must be allowlist-rejected, so they never
@@ -200,6 +210,38 @@ class TestIndexAndSeed(BaseTest):
             nb.boot_state({"sidebarWidth": 300, "sidebarCollapsed": True})["side_panel_width"], 0)
         self.assertEqual(
             nb.boot_state({"outlineWidth": 300, "outlineCollapsed": True})["outline_width"], 0)
+
+    def test_boot_state_sidebar_order(self):
+        # Only known view ids survive, duplicates collapse, and a value that
+        # is not a list falls back to registration order.
+        self.assertEqual(nb.boot_state({})["sidebar_order"], [])
+        self.assertEqual(
+            nb.boot_state({"sidebarOrder": ["ai", "ai", "explorer", 5, None,
+                                            "not-a-view"]})["sidebar_order"],
+            ["ai", "explorer"])
+        self.assertEqual(
+            nb.boot_state({"sidebarOrder": "ai"})["sidebar_order"], [])
+        # Hidden views use the same allowlist and de-dupe rule.
+        self.assertEqual(nb.boot_state({})["sidebar_hidden"], [])
+        self.assertEqual(
+            nb.boot_state({"sidebarHidden": ["ai", "ai", "explorer", 5, None,
+                                             "not-a-view"]})["sidebar_hidden"],
+            ["ai", "explorer"])
+        self.assertEqual(
+            nb.boot_state({"sidebarHidden": "ai"})["sidebar_hidden"], [])
+        # A hidden view cannot be the painted active view.
+        self.assertEqual(
+            nb.boot_state({"activeView": "search",
+                           "sidebarHidden": ["search"]})["active_view"],
+            "explorer")
+        self.assertEqual(
+            nb.boot_state({"activeView": "ai",
+                           "sidebarHidden": ["explorer", "ai"]})["active_view"],
+            "sessions")
+        self.assertEqual(
+            nb.boot_state({"activeView": "search",
+                           "sidebarHidden": list(nb._ACTIVE_VIEWS)})["active_view"],
+            "explorer")
 
     def test_boot_state_does_not_leak_content(self):
         # The shell is served before auth, so nothing content-bearing may

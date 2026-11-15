@@ -77,6 +77,13 @@
     // The server renders this view visible in the shell for first paint;
     // boot reconciles the once-fetched config against it.
     activeView: "explorer",
+    // Left activity-bar icon order (view ids). Empty means the shipped
+    // registration order; a partial list keeps the named views first and
+    // appends the rest. Edited in Settings -> Appearance.
+    sidebarOrder: [],
+    // Activity-bar views whose icons are hidden. The Settings list still
+    // shows every view so this is reversible; the order above is kept.
+    sidebarHidden: [],
     sidebarWidth: 240,
     outlineWidth: 220,
     sidebarCollapsed: false,
@@ -161,6 +168,20 @@
     const n = Math.round(Number(seconds));
     if (!Number.isFinite(n)) return AUTOSAVE_DELAY_DEFAULT_S;
     return Math.min(AUTOSAVE_DELAY_MAX_S, Math.max(AUTOSAVE_DELAY_MIN_S, n));
+  }
+
+  // Keep only unique view-id strings; anything else in a hand-edited
+  // config is dropped, and the next write persists the clean list.
+  function normalizeViewIdList(list) {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const id of list) {
+      if (typeof id !== "string" || !id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(id);
+    }
+    return out;
   }
 
   // Width used while the side panel is collapsed. 0 -- the activity
@@ -499,6 +520,14 @@
       ? cfg.searchSort : DEFAULTS.searchSort;
     cfg.searchTarget = SEARCH_TARGETS.indexOf(cfg.searchTarget) >= 0
       ? cfg.searchTarget : DEFAULTS.searchTarget;
+    cfg.sidebarOrder = normalizeViewIdList(cfg.sidebarOrder);
+    cfg.sidebarHidden = normalizeViewIdList(cfg.sidebarHidden);
+    if (NB.activity && NB.activity.setBarOrder) {
+      NB.activity.setBarOrder(cfg.sidebarOrder);
+    }
+    if (NB.activity && NB.activity.setHidden) {
+      NB.activity.setHidden(cfg.sidebarHidden);
+    }
     applySidebarState();
     applyOutlineState();
     // Hand the loaded bookmarks to the bookmarks module so the list
@@ -1332,12 +1361,19 @@
    * by cfg when the panel is expanded, so 0 is left untouched here. */
   function shellPanelState() {
     const px = (name) => parseInt(document.documentElement.style.getPropertyValue(name), 10);
+    // The activity bar is painted by activity.js from the server-rendered
+    // data-sidebar-order attribute; read it back for the failed-fetch path.
+    const barEl = document.getElementById("activity-bar");
+    const rawOrder = (barEl && barEl.dataset) ? barEl.dataset.sidebarOrder : "";
+    const rawHidden = (barEl && barEl.dataset) ? barEl.dataset.sidebarHidden : "";
     return {
       activeView: (NB.activity.getActive && NB.activity.getActive()) || cfg.activeView,
       collapsed: !!(sidePanelEl && sidePanelEl.classList.contains("collapsed")),
       width: px("--side-panel-width"),
       outlineCollapsed: !!(outlineEl && outlineEl.classList.contains("collapsed")),
       outlineWidth: px("--outline-width"),
+      sidebarOrder: rawOrder ? rawOrder.split(",").filter(Boolean) : [],
+      sidebarHidden: rawHidden ? rawHidden.split(",").filter(Boolean) : [],
     };
   }
 
@@ -1372,8 +1408,16 @@
       // reset it to DEFAULTS. Restore what applyConfig just overwrote.
       cfg.sidebarCollapsed = shellPanel.collapsed;
       cfg.outlineCollapsed = shellPanel.outlineCollapsed;
+      cfg.sidebarOrder = shellPanel.sidebarOrder;
+      cfg.sidebarHidden = shellPanel.sidebarHidden;
       if (shellPanel.width > 0) cfg.sidebarWidth = shellPanel.width;
       if (shellPanel.outlineWidth > 0) cfg.outlineWidth = shellPanel.outlineWidth;
+      if (NB.activity && NB.activity.setBarOrder) {
+        NB.activity.setBarOrder(cfg.sidebarOrder);
+      }
+      if (NB.activity && NB.activity.setHidden) {
+        NB.activity.setHidden(cfg.sidebarHidden);
+      }
       applySidebarState();
       applyOutlineState();
     }
@@ -1389,11 +1433,16 @@
       NB.activity.getActive(), shellPanel.activeView,
       serverCfg && serverCfg.activeView);
     if (bootView) NB.activity.activate(bootView, false);
-    // Phone has no AI or Sessions view; a saved desktop activeView of either
-    // must not leave the drawer showing a hidden host.
-    if (isPhoneMode() && NB.activity.getActive &&
-        PHONE_HIDDEN_VIEWS.indexOf(NB.activity.getActive()) >= 0) {
-      NB.activity.activate("explorer", false);
+    // Phone has no AI or Sessions view; a saved desktop activeView of either,
+    // or any hidden view, must not leave the drawer pointing at an unusable
+    // host. Pick the first visible phone view instead.
+    if (isPhoneMode() && NB.activity.visible && NB.activity.getActive) {
+      const usable = NB.activity.visible()
+        .filter(id => PHONE_HIDDEN_VIEWS.indexOf(id) < 0);
+      const active = NB.activity.getActive();
+      if (usable.length && usable.indexOf(active) < 0) {
+        NB.activity.activate(usable[0], false);
+      }
     }
     // The panel is the source of truth for the active view -- the failed
     // path leaves cfg at DEFAULTS -- so mirror it back. Without this a later
@@ -1645,6 +1694,34 @@
     },
     getSearchTarget: () => SEARCH_TARGETS.indexOf(cfg.searchTarget) >= 0
       ? cfg.searchTarget : DEFAULTS.searchTarget,
+    // Left activity-bar icon order. The setter re-renders the bar live and
+    // persists the cleaned list; a keyed write keeps the phone path safe.
+    setSidebarOrder: (order) => {
+      const next = normalizeViewIdList(order);
+      const current = normalizeViewIdList(cfg.sidebarOrder);
+      if (next.length === current.length &&
+          next.every((id, i) => id === current[i])) return;
+      cfg.sidebarOrder = next;
+      if (NB.activity && NB.activity.setBarOrder) {
+        NB.activity.setBarOrder(cfg.sidebarOrder);
+      }
+      persistConfig(["sidebarOrder"]);
+    },
+    getSidebarOrder: () => normalizeViewIdList(cfg.sidebarOrder),
+    // Hidden activity-bar views. Hiding or showing re-renders the bar live;
+    // the order list keeps every row so a hidden view can be restored.
+    setSidebarHidden: (ids) => {
+      const next = normalizeViewIdList(ids);
+      const current = normalizeViewIdList(cfg.sidebarHidden);
+      if (next.length === current.length &&
+          next.every((id, i) => id === current[i])) return;
+      cfg.sidebarHidden = next;
+      if (NB.activity && NB.activity.setHidden) {
+        NB.activity.setHidden(cfg.sidebarHidden);
+      }
+      persistConfig(["sidebarHidden"]);
+    },
+    getSidebarHidden: () => normalizeViewIdList(cfg.sidebarHidden),
     setSettingsModalWidth: (name) => { applySettingsModalWidth(name); persistConfig(); },
     getSettingsModalWidth: () => cfg.settingsModalWidth || "medium",
     setSettingsModalHeight: (name) => { applySettingsModalHeight(name); persistConfig(); },

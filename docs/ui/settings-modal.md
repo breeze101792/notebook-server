@@ -3,10 +3,11 @@
 Status: Current spec — shipped surface, codified.
 
 Reference mockup: [`settings-modal-mockup.html`](settings-modal-mockup.html) — dark and light
-boards: General, Appearance, the Appearance font-size row in dark, Workspaces (two rows), Shortcuts
-(with a row capturing), Security as admin, Security API tokens, Security as viewer, AI with two
-providers and the ACP panel, AI with no providers (empty list), About, the validation-error board,
-the control-state strip, the 390 phone settings sheet, and the measured 292 px desktop modal at 390.
+boards: General, Appearance, the Appearance font-size row in dark, the Appearance activity-bar order
+list in its default, hidden and drag-active states, Workspaces (two rows), Shortcuts (with a row
+capturing), Security as admin, Security API tokens, Security as viewer, AI with two providers and the
+ACP panel, AI with no providers (empty list), About, the validation-error board, the control-state
+strip, the 390 phone settings sheet, and the measured 292 px desktop modal at 390.
 
 **Prerequisite.** [`foundations.md`](foundations.md) §11.1 and [`controls.md`](controls.md) §3.3 step 1 must land before any rule below; until then a token rule falls back to the shipped literal.
 
@@ -420,6 +421,7 @@ viewport (and 598 px at 1280). Both figures are in exception **E12**.
 | VIM mode | live on `change` | `vimMode` | `settings.js:450-455` |
 | Watch toggle | live on click, after the picker resolves | `watchEnabled` | `settings.js:376-391` |
 | Hide top bar, particles | live on `change` | `hideTopbar`, `graphParticles` | `settings.js:474-487` |
+| Activity bar order / visibility | live on a drop or a Hide/Unhide click; a no-op drop writes nothing | `sidebarOrder`, `sidebarHidden`; re-renders the bar immediately | `settings.js:369-597`; [`activity-bar-order.md`](activity-bar-order.md) |
 | Theme, font size | live on `change` | `theme`, `fontSize` | `settings.js:228-233` |
 | Modal width/height | live on `change` | `settingsModalWidth/Height` → `--settings-modal-width/height` on `:root` | `settings.js:234-239`, `app.js:304-313` |
 | Wallpaper ×4 | live on `change` | `wallpaper`, `wallpaperScroll`, `wallpaperColor`, `wallpaperIntensity` | `settings.js:240-251` |
@@ -512,18 +514,29 @@ not clickable (`workspaces.js:859`). A missing folder renders the row as a disab
 | 4 | Row: `Font size · 12.6 px` (value follows the setting) + 4 preview tiles | `Aa` `Aa` `Aa` `Aa` over `S 12.6 px` `M 14 px` `L 16.1 px` `XL 18.2 px` | live → `fontSize`; sets `--font-scale` 0.9 / 1 / 1.15 / 1.3 and the root to 12.6 / 14 / 16.1 / 18.2 px. Anatomy, states and ARIA: §3.6.1 |
 | 5 | Row: `Hide top bar` + switch | off | live → `hideTopbar`; the topbar collapses to 0 px |
 | 6 | Row: `Graph background particles` + switch | off | live → `graphParticles` |
-| 7 | Group title | `Modal size` | — |
-| 8 | Row: `Settings modal width` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalWidth` (60/75/90 vw) |
-| 9 | Row: `Settings modal height` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalHeight` (80/85/90 vh) |
-| 10 | Group title | `Wallpaper` | — |
-| 11 | Row: `Wallpaper` + 3 chips | `None` `Lines` `Grid` | live → `wallpaper` |
-| 12 | Row: `Wallpaper scroll` + 2 chips | `Scroll with content` `Fixed in viewport` | live → `wallpaperScroll` |
-| 13 | Row: `Wallpaper color` + 5 chips | `Neutral` `Blue` `Green` `Purple` `Amber` | live → `wallpaperColor` |
-| 14 | Row: `Wallpaper intensity` + 3 chips | `Subtle` `Medium` `Bold` | live → `wallpaperIntensity` |
+| 7 | Group title | `Activity bar` | — |
+| 8 | Help paragraph `#settings-sidebar-order-help` | "Order of the side-bar icons. Drag a row by its handle to reorder it, and use Hide to remove a view from the activity bar. Unhide restores it." | `id` so the list can name it via `aria-describedby`; names both paths |
+| 9 | List `#settings-sidebar-order` | 7 cards, 40 px each, gap 8: handle, the view's own 14 px icon, view label, `Hide` / `Unhide` button | `role="list"`, rows `role="listitem"` with `aria-posinset` / `aria-setsize`; dragged by the handle only; a hidden row stays in the list, muted, with `Unhide`; live on a drop → `sidebarOrder`, live on Hide/Unhide → `sidebarHidden`; focus stays on the moved or toggled row's button |
+| 10 | Live region `#settings-sidebar-order-status` | `<View> moved to position <n> of 7.` · `<View> hidden.` · `<View> shown.` | `.sr-only`, `role="status"`; written after a completed move or visibility change, silent on a cancelled or no-op drag |
+| 11 | Group title | `Modal size` | — |
+| 12 | Row: `Settings modal width` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalWidth` (60/75/90 vw) |
+| 13 | Row: `Settings modal height` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalHeight` (80/85/90 vh) |
+| 14 | Group title | `Wallpaper` | — |
+| 15 | Row: `Wallpaper` + 3 chips | `None` `Lines` `Grid` | live → `wallpaper` |
+| 16 | Row: `Wallpaper scroll` + 2 chips | `Scroll with content` `Fixed in viewport` | live → `wallpaperScroll` |
+| 17 | Row: `Wallpaper color` + 5 chips | `Neutral` `Blue` `Green` `Purple` `Amber` | live → `wallpaperColor` |
+| 18 | Row: `Wallpaper intensity` + 3 chips | `Subtle` `Medium` `Bold` | live → `wallpaperIntensity` |
 
-Sources: `index.html:952-1030` (markup; earlier revisions of this document named lines ~140 too
-low, because the template grew); `settings.js:164-184` (radio sync), `:228-262` (live writers);
-`app.js:36-56` (defaults), `:259-273` (scales), `:315-356` (wallpaper).
+The order control has its own document: [`activity-bar-order.md`](activity-bar-order.md) owns its
+anatomy, visibility toggle, drop indicator, auto-scroll, announcements, and the resolution of the
+conflicts against the shipped code. Geometry: row 40 (4 + 4 padding + 30 control + 2 border),
+pitch 48, list **328** — 16 px shorter than the arrow-era 344, because the 6 px padding and the 6 px
+gap snapped to the 4 px grid (foundations §5.1).
+
+Sources: `index.html:952-1037` (markup; earlier revisions of this document named lines ~140 too
+low, because the template grew); `settings.js:164-184` (radio sync), `:228-262` (live writers),
+`:363-499` (activity-bar order); `app.js:36-56` (defaults), `:259-273` (scales), `:315-356`
+(wallpaper).
 
 The two "Modal size" rows resize the modal the user is standing in. That is intentional: the
 preset is written to `:root` immediately (`app.js:304-313`).
@@ -915,6 +928,7 @@ beyond ids. This is exception **E1**.
 | Errors | `.auth-error` blocks are `role="alert"` | yes — `index.html:1096`, `:1131`, `:1210` |
 | Live count notes | `API tokens: N`, `Providers: N` | no live region; the list change is the signal → keep |
 | Read-only ACP tag | text, not a control | yes — `settings.js:1372-1377` |
+| Activity-bar order list | `role="list"` + `role="listitem"`; each row `aria-posinset` / `aria-setsize`; the list points `aria-describedby` at the help paragraph; a `.sr-only` `role="status"` announces `<View> moved to position <n> of 7.`, `<View> hidden.` and `<View> shown.` | yes — `settings.js:369-414`, `:569-581` |
 
 ### 8.4 Focus order
 
@@ -1298,7 +1312,7 @@ Each is testable and names its file and check. `style.css` = `static/css/style.c
 | **AC4** | General writes live and the delay follows autosave | `settings.js` | Typing a title persists `siteTitle` after 250 ms; toggling Autosave off disables the delay field; toggling VIM persists `vimMode` |
 | **AC5** | The watch row reports state as dot + word and one button | `settings.js`, `style.css` | Copy is `Watching …` / `Polling (5s)` / `Watching off`; classes `watch-on`/`watch-off`; button `Enable`/`Disable`; `Unavailable` + disabled when `NB.watcher` is absent |
 | **AC6** | The VIM script is explicit and keeps the last good config | `settings.js` | Save applies, then persists; a parse error shows `Line N: …` in `--warn`, the textarea keeps the text, `cfg.vimrc` is unchanged; success shows `Saved (N binding(s) applied)` |
-| **AC7** | Appearance has eight chip groups and two switches, all live | `index.html`, `settings.js` | Theme, font size, modal width, modal height, wallpaper, scroll, colour, intensity; Hide top bar, particles. Each change updates `cfg` and `:root` immediately |
+| **AC7** | Appearance has eight chip groups, two switches, and the activity-bar order list, all live | `index.html`, `settings.js` | Theme, font size, modal width, modal height, wallpaper, scroll, colour, intensity; Hide top bar, particles; the order list writes `sidebarOrder` on a drop and `sidebarHidden` on Hide/Unhide, and a drop that resolves to the same position writes nothing. Each change updates `cfg` and `:root` immediately |
 | **AC8** | Workspaces rows carry the shipped anatomy and gates | `workspaces.js`, `style.css` | Check mark, name, `Active`/`Default`/`Not found` badges, mono path, `Rename`/`Remove`; Add only for an admin; Remove disabled with its title for default and active; switching reloads |
 | **AC9** | Shortcuts shows 9 configurable rows, 13 static rows, and reset | `settings.js`, `index.html` | `Reset` hidden at default; capture shows `Press a key… (Esc to cancel)` and `Cancel`; `Reset all to defaults` present; static bindings localised (`tests/dom/test_dom.js:25732-25811`) |
 | **AC10** | Security adapts to admin set / change / remove and viewer set | `settings.js` | Set form when no admin password; change form when set; Remove reveal needs a current password and a confirm; each success reloads the page; errors appear in `#settings-auth-error` (`tests/browser/test_auth_export_browser.js:388-648`) |
@@ -1319,6 +1333,7 @@ Each is testable and names its file and check. `style.css` = `static/css/style.c
 | **AC25** | The Font size row is four preview tiles | `index.html`, `style.css`, `settings-modal-mockup.html` | Four tiles 72 × 52 at gap 8; each draws `Aa` at 12.6 / 14 / 16.1 / 18.2 px, its letter and its px caption; the selected tile is `--accent-soft` with a `--accent` border; the chip look no longer applies to `.font-size-options` |
 | **AC26** | The row label carries the current value | `index.html`, `settings.js` | The row reads `Font size · 14 px` at M, and follows the setting on change and on reopen; the px string is copied from the selected tile's caption, not computed a second time |
 | **AC27** | The tiles are named, not lettered | `index.html` | Each input carries `aria-label` naming the option in words and repeating its px (`Medium — 14 px`); the four inputs keep `name="fontSize"`, so the existing suite still drives them (`tests/dom/test_dom.js:515-519`, `:26983-27006`) |
+| **AC28** | The order list drags by its handle, hides and unhides, and reports every result | `settings.js`, `style.css`, `index.html` | `draggable` is true on `.sidebar-order-grip` and absent on the row; one 2 px `--accent` bar sits in the list gap; Esc during a drag leaves Settings open; the live region reads `<View> moved to position <n> of 7.`, `<View> hidden.` or `<View> shown.`; there is no `.sidebar-order-move` and no keyboard reorder; no hex, raw radius or raw duration is added ([`activity-bar-order.md`](activity-bar-order.md) §15) |
 
 ---
 
@@ -1362,6 +1377,7 @@ P2 and P3 are the two that matter for correctness. The rest are finish.
 | A custom select for Role or any other select | Native select is the contract (controls §2.5); the wallpaper's five options fit a native popup |
 | A custom tooltip for the disabled Remove buttons | The `title` carries the reason; controls §2.10 forbids a tooltip component |
 | Drag-to-reorder tabs, or a settings search field | Neither is asked for; the nav is seven rows and every tab is one click |
+| Whole-row drag, or a gap / ghost drop indicator, on the activity-bar order list | The handle is the only drag source and the 2 px line is the only marker; a gap reflows under the pointer and a ghost duplicates the drag image ([`activity-bar-order.md`](activity-bar-order.md) §4) |
 | Editing `config/acp.json` from the UI | The file chooses a command to execute; it stays server-side and read-only (`docs/contracts/configuration.md:435-445`; §5.5) |
 | Revealing an API key after it is stored | The server never returns it; only `hasKey` (`docs/contracts/configuration.md:422-429`) |
 | Re-showing an issued token after the list refreshes | It is shown once per create, by design (§5.3) |

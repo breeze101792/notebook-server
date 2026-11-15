@@ -132,6 +132,8 @@ into the page shell for first paint.
 | `sidebarCollapsed` | `false` | Collapses the side panel to width 0 (`app.js`) |
 | `outlineCollapsed` | `false` | Collapses the outline pane to width 0 (`app.js`) |
 | `activeView` | `explorer` | Active side-panel view: `explorer`, `sessions`, `pinned`, `bookmarks`, `recent`, `search`, or `ai`; any other value falls back to `explorer` (`app.js`, `_ACTIVE_VIEWS` in `app.py`) |
+| `sidebarOrder` | `[]` | Activity-bar icon order: array of view ids; unknown ids are dropped and unnamed views keep registration order. Embedded in the shell for first paint (`app.js`, `app.py`) |
+| `sidebarHidden` | `[]` | Activity-bar views whose icons are hidden: array of view ids; unknown ids are dropped. Settings lists every view so a hidden one can be unhidden. Embedded in the shell for first paint (`app.js`, `app.py`) |
 
 ### Files and tabs
 
@@ -243,13 +245,15 @@ for the default it is the unresolved `DATA_DIR` string.
 `boot_state()` (`app.py`) validates and embeds a small subset into the
 HTML shell so the first frame already matches the saved settings. The
 subset is: theme, site title, font scale, pane widths, pane collapse state,
-topbar hidden, the active side-panel view, and the assembled wallpaper
-classes (`app.py`).
+topbar hidden, the active side-panel view, the activity-bar icon order, the
+hidden activity-bar views, and the assembled wallpaper classes (`app.py`).
 
 The active view is embedded as `hidden` on every `.side-panel-view` host
 except the active one (`_ACTIVE_VIEWS`, `app.py`), so the panel's first
 frame is the saved view and never flashes the file tree. The value is
-allowlisted, so a hand-edited id cannot inject markup.
+allowlisted, so a hand-edited id cannot inject markup. The icon order and
+hidden list are embedded as `data-sidebar-order` and `data-sidebar-hidden`
+on `#activity-bar`, filtered against the same view-id allowlist.
 
 The page is served before auth. Content-bearing keys (`recentFiles`,
 `openFiles`, `bookmarks`) are deliberately excluded, because an
