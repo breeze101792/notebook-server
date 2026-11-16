@@ -333,6 +333,10 @@ const html = `<!DOCTYPE html><html><head>
           </span>
           <span class="eb-sep"></span>
           <button class="eb" data-act="clear">Clear</button>
+          <span class="eb-sep"></span>
+          <button id="hybrid-debug-btn" class="eb" type="button" aria-pressed="false"
+                  aria-controls="hybrid-debug-pane" aria-label="Show the Markdown source"
+                  title="Show the Markdown source Save writes" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-split"/></svg></button>
           <span class="eb-actions">
             <button id="preview-btn" class="eb">Preview</button>
             <button id="save-btn" class="eb eb-primary" hidden>Save</button>
@@ -345,6 +349,14 @@ const html = `<!DOCTYPE html><html><head>
             <div id="viewer-scroll">
               <div id="viewer-content" class="markdown-body"></div>
             </div>
+          </div>
+          <div id="hybrid-debug-pane" class="hybrid-debug-pane" hidden>
+            <div class="hybrid-debug-head">
+              <span class="hybrid-debug-title">Markdown</span>
+              <span class="hybrid-debug-hint">what Save writes</span>
+            </div>
+            <pre id="hybrid-debug-source" class="hybrid-debug-source" role="region"
+                 aria-label="Markdown source, read-only" tabindex="0"></pre>
           </div>
           <div id="draft-bar" hidden>
             <span id="draft-bar-msg"></span>
@@ -8257,6 +8269,80 @@ function check(label, cond, extra) {
     check("hybrid: Preview button hidden (CM6-only)", $("preview-btn").hidden);
     check("hybrid: Close button visible", !$("close-edit-btn").hidden);
 
+    // --- Markdown debug pane -----------------------------------------
+    {
+      const dbgBtn = $("hybrid-debug-btn");
+      const pane = $("hybrid-debug-pane");
+      const src = $("hybrid-debug-source");
+      const split = $("edit-split");
+      check("debug pane: button visible in hybrid", !dbgBtn.hidden);
+      check("debug pane: button initially unpressed",
+        dbgBtn.getAttribute("aria-pressed") === "false");
+      check("debug pane: pane hidden initially", pane.hidden);
+      check("debug pane: pane is outside the serialized root", !vc.contains(pane));
+
+      const mdBefore = window.NB.hybrid.domToMarkdown();
+      dbgBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("debug pane: opens on click", pane.hidden === false);
+      check("debug pane: button pressed after open",
+        dbgBtn.getAttribute("aria-pressed") === "true");
+      check("debug pane: split class on #edit-split",
+        split.classList.contains("hybrid-debug"));
+      check("debug pane: page stays editable",
+        vc.getAttribute("contenteditable") === "true");
+      check("debug pane: opening writes no bytes",
+        window.NB.hybrid.domToMarkdown() === mdBefore);
+      check("debug pane: text equals the serialization",
+        src.textContent === window.NB.hybrid.domToMarkdown(),
+        JSON.stringify(src.textContent.slice(0, 60)));
+
+      // A content change refreshes it after the 50 ms pass and one frame.
+      const probe = window.document.createElement("p");
+      probe.textContent = "debug refresh probe";
+      vc.appendChild(probe);
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+      await new Promise((r) => window.requestAnimationFrame(r));
+      check("debug pane: refresh follows an edit",
+        src.textContent === window.NB.hybrid.domToMarkdown() &&
+        src.textContent.includes("debug refresh probe"),
+        JSON.stringify(src.textContent.slice(-60)));
+      probe.remove();
+      vc.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await tick(80);
+
+      // A zero-byte note has no text node (the empty word is CSS).
+      // Detach and re-append the same nodes: re-writing innerHTML would
+      // drop the per-element wiring the rest of the suite relies on.
+      const kids = Array.from(vc.childNodes);
+      kids.forEach((n) => n.remove());
+      window.NB.hybrid.onContentChange();
+      await tick(20);
+      await new Promise((r) => window.requestAnimationFrame(r));
+      check("debug pane: zero-byte note is empty",
+        src.textContent === "" && src.childNodes.length === 0);
+      kids.forEach((n) => vc.appendChild(n));
+      window.NB.hybrid.onContentChange();
+      await tick(20);
+      await new Promise((r) => window.requestAnimationFrame(r));
+
+      // Closing while the pane has focus must hand it back to the page.
+      src.focus();
+      check("debug pane: the pane takes focus",
+        window.document.activeElement === src);
+      dbgBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(20);
+      check("debug pane: closing returns focus to the page",
+        window.document.activeElement === vc);
+      check("debug pane: closes on click", pane.hidden === true);
+      check("debug pane: split class removed",
+        !split.classList.contains("hybrid-debug"));
+      check("debug pane: text cleared on close", src.textContent === "");
+      check("debug pane: button unpressed after close",
+        dbgBtn.getAttribute("aria-pressed") === "false");
+    }
+
     // domToMarkdown should produce valid markdown from the rendered content.
     // The file content may have been modified by earlier tests, so we
     // check against the actual current content rather than a hardcoded string.
@@ -9251,6 +9337,10 @@ function check(label, cond, extra) {
       !/<\/?p>|<\/?div>|<br\s*\/?>/i.test(shiftSaved),
       JSON.stringify(shiftSaved).slice(-60));
     await window.NB.hybrid.exit(false);
+    check("debug pane: exit hides the toggle", $("hybrid-debug-btn").hidden);
+    check("debug pane: exit closes the pane", $("hybrid-debug-pane").hidden);
+    check("debug pane: exit drops the split class",
+      !$("edit-split").classList.contains("hybrid-debug"));
     await tick(20);
 
     // End-to-end for the reported bug: when a TABLE is the last block,
@@ -13043,6 +13133,28 @@ function check(label, cond, extra) {
 
       navTbl.remove();
     }
+  }
+
+  // --- debug pane: exit closes before the first await ---------------
+  // A frame scheduled by the last keystroke must not serialize the
+  // preview DOM into the pane after exit.
+  {
+    FILES["notes/debug-exit.md"] = "# Exit\n\nbody\n";
+    await window.NB.tabs.open("notes/debug-exit.md");
+    await tick(20);
+    await window.NB.hybrid.enter();
+    await tick(20);
+    $("hybrid-debug-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("exit race: the pane is open before the exit",
+      $("hybrid-debug-pane").hidden === false);
+    window.NB.hybrid.onContentChange();
+    await window.NB.hybrid.exit(false);
+    await new Promise((r) => window.requestAnimationFrame(r));
+    check("exit race: exit closes the pane", $("hybrid-debug-pane").hidden === true);
+    check("exit race: exit clears the pane text",
+      $("hybrid-debug-source").textContent === "");
+    check("exit race: exit hides the toggle", $("hybrid-debug-btn").hidden === true);
   }
 
   console.log("== table editor history ==");

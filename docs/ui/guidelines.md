@@ -161,6 +161,7 @@ Rules:
 | Full-screen viewers | [`lightboxes.md`](lightboxes.md) | controls |
 | Source editor | [`source-editor.md`](source-editor.md) | shell-frame, reader |
 | WYSIWYG mode | [`hybrid-mode.md`](hybrid-mode.md) | reader, content-blocks |
+| The hybrid Markdown debug pane | [`hybrid-markdown-debug-pane.md`](hybrid-markdown-debug-pane.md) | hybrid-mode, controls, foundations |
 | Graph view | [`graph-view.md`](graph-view.md) | shell-frame |
 | Phone shell | [`mobile-shell.md`](mobile-shell.md) | shell-frame |
 | Welcome and app-level empties | [`welcome.md`](welcome.md) | shell-frame, reader |

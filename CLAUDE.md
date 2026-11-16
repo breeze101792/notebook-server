@@ -366,6 +366,27 @@ by an allow-list rule; an element without that marker — a paste or the engine'
 own wrapper — is unwrapped, so untrusted clipboard markup never reaches the
 file. See `docs/architecture/markdown.md` for the full contract.
 
+**Hybrid Markdown debug pane.** The edit bar's split-view control
+(`#hybrid-debug-btn`, sprite `#nb-icon-split`) toggles
+`#hybrid-debug-pane`: a read-only `<pre>` beside the page inside
+`#edit-split`, showing `domToMarkdown()` — the bytes the next save writes,
+not the on-disk file. The pane is a sibling of `#viewer`, never a child of
+`#viewer-content`, so the serializer, the render check and the undo snapshots
+cannot see it; opening it writes no bytes. It refreshes from
+`onContentChange` (frame-coalesced), from `rebaseSession` (reusing the
+`sessionSerialized` it already computed), after a splice revival in
+`settlePendingCheck`, and at the end of `doSave` (recomputed from the DOM,
+because a keystroke may have landed during the POST). The columns scroll in
+sync proportionally with a one-frame guard; a refresh holds that guard across
+the `textContent` write and the `scrollTop` restore, because the clamp fires a
+scroll event. `exit()` closes the pane and unbinds it before its first
+`await`. `viewerScrollTargetHasFocus` and `typingTargetHasFocus` treat a
+focused pane as a read-only target, so the arrows scroll it and bare chords do
+not fire. Desktop only: the control and pane are hidden below 1140 px
+(508 px of shell chrome + 352 px reader floor + 280 px source column).
+Design: `docs/ui/hybrid-markdown-debug-pane.md`; mechanism:
+`docs/architecture/hybrid-editing.md` §5.8.
+
 **Agent-facing docs are part of the renderer contract.** The fence
 languages are documented for two audiences that must stay in sync with the
 code: the built-in assistant's system prompt in `static/js/ai.js`, and the

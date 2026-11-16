@@ -9370,3 +9370,108 @@ details.ai-tool-trace .ai-tool-out { display: block; margin-top: 4px; }
 
 /* One size rule for sprite callers. */
 .icon { width: var(--icon-md); height: var(--icon-md); display: block; }
+
+/* ------------------------------------------------------------------ */
+/* Hybrid Markdown debug pane                                          */
+/* ------------------------------------------------------------------ */
+/* A read-only source column beside the hybrid page. Design:
+ * docs/ui/hybrid-markdown-debug-pane.md; mechanism:
+ * docs/architecture/hybrid-editing.md §5.8. The pane is a sibling of
+ * #viewer, never a child of #viewer-content, so the serializer, the
+ * render check and the undo snapshots cannot see it. */
+#edit-bar #hybrid-debug-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* The bar's buttons flash a filled accent while held. A toggle keeps its
+ * soft face in both states: an on-state is never a filled accent
+ * (controls.md §2.2). */
+#edit-bar #hybrid-debug-btn:active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+#edit-split.hybrid-debug { flex-direction: row; }
+/* The page keeps the shell's reader floor and the larger share; the pane
+ * takes the rest. At the 1140 px breakpoint that is 352 / 280. */
+#edit-split.hybrid-debug #viewer {
+  flex: 1 1 55%;
+  min-width: var(--shell-reader-min);
+}
+/* The source split's inline inset, so the reader keeps its column. Only
+ * while the split is shown: below the breakpoint the CSS hides the pane
+ * but keeps the open state, and the page must keep its hybrid padding. */
+@media (min-width: 1140px) {
+  #edit-split.hybrid-debug #viewer-content {
+    padding: 16px 24px var(--viewer-tail);
+  }
+}
+#hybrid-debug-pane {
+  flex: 1 1 45%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+#hybrid-debug-pane[hidden] { display: none; }
+.hybrid-debug-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 26px;
+  padding: 0 var(--space-3);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-xs);
+  line-height: var(--lh-tight);
+}
+.hybrid-debug-title {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.hybrid-debug-hint {
+  margin-left: auto;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#hybrid-debug-source {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin: 0;
+  padding: var(--space-3) var(--space-4) var(--space-4);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-primary);
+}
+#hybrid-debug-source:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+#hybrid-debug-source:empty::before {
+  content: "Empty note";
+  color: var(--text-muted);
+}
+
+/* Desktop only. 1140 = 508 px of shell chrome (rail, panel, outline) +
+ * 352 px reader floor + 280 px source column. The selectors must be the
+ * same or stronger than the rules they override, and this block must
+ * come after them. */
+@media (max-width: 1139px) {
+  #edit-bar #hybrid-debug-btn { display: none; }
+  #hybrid-debug-pane { display: none; }
+  #edit-split.hybrid-debug { flex-direction: column; }
+  #edit-split.hybrid-debug #viewer { flex: 1 1 auto; min-width: 0; }
+}

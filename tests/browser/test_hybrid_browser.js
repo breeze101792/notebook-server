@@ -2739,6 +2739,187 @@ async function main() {
       await waitLeave();
     }
 
+    // --- Markdown debug pane -----------------------------------------
+    {
+      let longNote = "";
+      for (let i = 0; i < 120; i += 1) {
+        longNote += "Paragraph " + i +
+          " with enough words to wrap when the source column is narrow.\n\n";
+      }
+      writeNote("notes/debugpane.md", longNote);
+      await gotoNote(page, "notes/debugpane.md");
+      await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await enterHybrid();
+      await page.waitForTimeout(100);
+
+      check("real browser debug pane: toggle visible at 1280",
+        await page.isVisible("#hybrid-debug-btn"));
+
+      await page.click("#hybrid-debug-btn");
+      await page.waitForSelector("#hybrid-debug-pane:not([hidden])", { timeout: 4000 });
+      check("real browser debug pane: text equals the serialization",
+        await page.evaluate(() => {
+          const src = document.getElementById("hybrid-debug-source");
+          return src.textContent === window.NB.hybrid.domToMarkdown();
+        }));
+      check("real browser debug pane: the reader keeps its floor at 1280",
+        await page.evaluate(() =>
+          document.getElementById("viewer-content").clientWidth) >= 352);
+
+      await caretInBlock(page, "#viewer-content p", 0);
+      await page.keyboard.press("End");
+      await page.keyboard.type(" probe");
+      await page.waitForTimeout(200);
+      check("real browser debug pane: refresh follows a real edit",
+        await page.evaluate(() => document.getElementById("hybrid-debug-source")
+          .textContent.includes("probe")));
+
+      await page.evaluate(() => window.NB.hybrid.save());
+      await page.waitForTimeout(250);
+      const paneAfterSave = await page.evaluate(() => ({
+        pane: document.getElementById("hybrid-debug-source").textContent,
+        md: window.NB.hybrid.domToMarkdown(),
+      }));
+      check("real browser debug pane: after a save the pane equals the file",
+        paneAfterSave.pane === readNote("notes/debugpane.md") &&
+        paneAfterSave.md === paneAfterSave.pane,
+        JSON.stringify(paneAfterSave.pane.slice(-40)));
+
+      // Proportional sync, both directions.
+      await page.evaluate(() => {
+        const sc = document.getElementById("viewer-scroll");
+        sc.scrollTop = (sc.scrollHeight - sc.clientHeight) * 0.5;
+      });
+      await page.waitForTimeout(150);
+      const pageToPane = await page.evaluate(() => {
+        const sc = document.getElementById("viewer-scroll");
+        const pane = document.getElementById("hybrid-debug-source");
+        const frac = (el) => el.scrollTop / (el.scrollHeight - el.clientHeight);
+        return { page: frac(sc), pane: frac(pane) };
+      });
+      check("real browser debug pane: page scroll moves the pane",
+        Math.abs(pageToPane.page - pageToPane.pane) < 0.05,
+        JSON.stringify(pageToPane));
+
+      await page.evaluate(() => {
+        const pane = document.getElementById("hybrid-debug-source");
+        pane.scrollTop = (pane.scrollHeight - pane.clientHeight) * 0.25;
+      });
+      await page.waitForTimeout(150);
+      const paneToPage = await page.evaluate(() => {
+        const sc = document.getElementById("viewer-scroll");
+        const pane = document.getElementById("hybrid-debug-source");
+        const frac = (el) => el.scrollTop / (el.scrollHeight - el.clientHeight);
+        return { page: frac(sc), pane: frac(pane) };
+      });
+      check("real browser debug pane: pane scroll moves the page",
+        Math.abs(paneToPage.page - paneToPage.pane) < 0.05,
+        JSON.stringify(paneToPage));
+
+      // A refresh must not move either column.
+      const beforeRefresh = await page.evaluate(() => ({
+        page: document.getElementById("viewer-scroll").scrollTop,
+        pane: document.getElementById("hybrid-debug-source").scrollTop,
+      }));
+      await page.evaluate(() => window.NB.hybrid.onContentChange());
+      await page.waitForTimeout(200);
+      const afterRefresh = await page.evaluate(() => ({
+        page: document.getElementById("viewer-scroll").scrollTop,
+        pane: document.getElementById("hybrid-debug-source").scrollTop,
+      }));
+      check("real browser debug pane: a refresh moves neither column",
+        Math.abs(afterRefresh.page - beforeRefresh.page) < 2 &&
+        Math.abs(afterRefresh.pane - beforeRefresh.pane) < 2,
+        JSON.stringify({ beforeRefresh, afterRefresh }));
+
+      // The pane owns its arrows; "/" must not open Search.
+      await page.focus("#hybrid-debug-source");
+      const paneBefore = await page.evaluate(() =>
+        document.getElementById("hybrid-debug-source").scrollTop);
+      await page.keyboard.press("ArrowDown");
+      await page.waitForTimeout(150);
+      const keyState = await page.evaluate(() => ({
+        pane: document.getElementById("hybrid-debug-source").scrollTop,
+        active: document.activeElement.id,
+      }));
+      check("real browser debug pane: ArrowDown scrolls the pane",
+        keyState.pane > paneBefore, JSON.stringify(keyState));
+      await page.keyboard.press("/");
+      await page.waitForTimeout(100);
+      check("real browser debug pane: a bare / does not take focus",
+        await page.evaluate(() => document.activeElement.id) === "hybrid-debug-source");
+
+      // Close: the page keeps its offset and the split class goes.
+      const closeBefore = await page.evaluate(() =>
+        document.getElementById("viewer-scroll").scrollTop);
+      await page.click("#hybrid-debug-btn");
+      await page.waitForTimeout(100);
+      const closed = await page.evaluate(() => ({
+        hidden: document.getElementById("hybrid-debug-pane").hidden,
+        page: document.getElementById("viewer-scroll").scrollTop,
+        split: document.getElementById("edit-split").classList.contains("hybrid-debug"),
+      }));
+      check("real browser debug pane: close hides it and keeps the page put",
+        closed.hidden && !closed.split &&
+        Math.abs(closed.page - closeBefore) < 2, JSON.stringify(closed));
+
+      await page.click("#close-edit-btn");
+      await waitLeave();
+
+      await page.setViewportSize({ width: 1139, height: 800 });
+      await enterHybrid();
+      check("real browser debug pane: absent at 1139",
+        await page.evaluate(() => getComputedStyle(
+          document.getElementById("hybrid-debug-btn")).display === "none"));
+      await page.click("#close-edit-btn");
+      await waitLeave();
+
+      await page.setViewportSize({ width: 1140, height: 800 });
+      await enterHybrid();
+      check("real browser debug pane: present at 1140",
+        await page.evaluate(() => getComputedStyle(
+          document.getElementById("hybrid-debug-btn")).display !== "none"));
+      await page.click("#hybrid-debug-btn");
+      await page.waitForTimeout(100);
+      const open1140 = await page.evaluate(() => ({
+        hidden: document.getElementById("hybrid-debug-pane").hidden,
+        split: document.getElementById("edit-split").classList.contains("hybrid-debug"),
+        width: document.getElementById("viewer-content").clientWidth,
+      }));
+      check("real browser debug pane: the split opens and the reader keeps its floor",
+        !open1140.hidden && open1140.split && open1140.width >= 352,
+        JSON.stringify(open1140));
+
+      // Narrowing with the pane open hides it by CSS but keeps the state.
+      await page.setViewportSize({ width: 1139, height: 800 });
+      await page.waitForTimeout(120);
+      const narrow = await page.evaluate(() => ({
+        btn: getComputedStyle(document.getElementById("hybrid-debug-btn")).display,
+        pane: getComputedStyle(document.getElementById("hybrid-debug-pane")).display,
+        hidden: document.getElementById("hybrid-debug-pane").hidden,
+      }));
+      check("real browser debug pane: narrowing hides the surface, keeps the state",
+        narrow.btn === "none" && narrow.pane === "none" && narrow.hidden === false,
+        JSON.stringify(narrow));
+
+      await page.setViewportSize({ width: 1140, height: 800 });
+      await page.waitForTimeout(120);
+      const widened = await page.evaluate(() => ({
+        btn: getComputedStyle(document.getElementById("hybrid-debug-btn")).display,
+        pane: getComputedStyle(document.getElementById("hybrid-debug-pane")).display,
+        hidden: document.getElementById("hybrid-debug-pane").hidden,
+      }));
+      check("real browser debug pane: widening restores the open pane",
+        widened.btn !== "none" && widened.pane !== "none" && widened.hidden === false,
+        JSON.stringify(widened));
+
+      await page.click("#hybrid-debug-btn");
+      await page.click("#close-edit-btn");
+      await waitLeave();
+      await page.setViewportSize({ width: 1280, height: 800 });
+    }
+
     check("real browser I10: no uncaught page errors",
       pageErrors.length === 0, pageErrors.join(" | "));
 

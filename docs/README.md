@@ -55,7 +55,7 @@ Start here depending on the job:
 | [`architecture/frontend.md`](architecture/frontend.md) | Script load order, the boot sequence, the `static/js/` modules, the code-block renderer registry, persistence, the service worker, and the UI surfaces. |
 | [`architecture/sessions.md`](architecture/sessions.md) | Session tab groups: the live-view ownership model, config shape, normalisation and migration, the swap algorithm and its tokens, file operations across stored sessions, the empty state, and test seams. §17 is the designed cross-device sync (not implemented). |
 | [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the six special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
-| [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, and the open questions. |
+| [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, the open questions, and §5.8 the Markdown debug pane's mechanism. |
 | [`architecture/context-menus.md`](architecture/context-menus.md) | The one shared `NB.menu` module: placement, keyboard, submenus, `onClose`, and the three pre-migration menus it replaced. |
 | [`architecture/window-maximize.md`](architecture/window-maximize.md) | Shared window behavior: drag, resize, maximize/restore, the overlay inventory, and geometry persistence. |
 | [`architecture/ai-assistant.md`](architecture/ai-assistant.md) | The built-in assistant: provider setup, ACP profiles, the six tools, the tool loop, and reviewing edits. |
@@ -99,6 +99,7 @@ Start here depending on the job:
 | [`product/search-options.md`](product/search-options.md) | Side-panel Search options; the shipped control set is in `archive/design/search-panel-advanced.md`. |
 | [`product/search-gaps.md`](product/search-gaps.md) | Search gap analysis with the open gaps marked. |
 | [`product/hybrid-shortcuts.md`](product/hybrid-shortcuts.md) | Hybrid editing shortcuts; the behavior contract is `architecture/hybrid-editing.md`. |
+| [`product/hybrid-markdown-debug-pane.md`](product/hybrid-markdown-debug-pane.md) | The read-only Markdown column beside the hybrid surface: why it shows the save output, flows, edge cases, P-AC1–P-AC18. |
 | [`product/hybrid-block-marker-backspace.md`](product/hybrid-block-marker-backspace.md) | Removing a block marker at the content start. |
 | [`product/side-panel-view-restore.md`](product/side-panel-view-restore.md) | Restoring the active side-panel view and its first paint. |
 | [`product/bugfix-preview-overflow-tabs-focus.md`](product/bugfix-preview-overflow-tabs-focus.md) | The bugfix spec for preview overflow, Settings focus, and tab-strip visibility. |
@@ -129,6 +130,7 @@ directly in a browser.
 | [`ui/lightboxes.md`](ui/lightboxes.md) | The four full-screen viewers: open/close, controls, gestures, states, keyboard and phone. Mockup: [`ui/lightboxes-mockup.html`](ui/lightboxes-mockup.html). |
 | [`ui/source-editor.md`](ui/source-editor.md) | Markdown source mode: edit bar, CodeMirror surface, split preview, save/dirty, draft bar and phone. Mockup: [`ui/source-editor-mockup.html`](ui/source-editor-mockup.html). |
 | [`ui/hybrid-mode.md`](ui/hybrid-mode.md) | WYSIWYG mode: page state, block chrome, grips, overlays, code chip, save and conflict. Mockup: [`ui/hybrid-mode-mockup.html`](ui/hybrid-mode-mockup.html). |
+| [`ui/hybrid-markdown-debug-pane.md`](ui/hybrid-markdown-debug-pane.md) | The hybrid split-view toggle and the read-only Markdown column: anatomy, tokens, states, the 1140 px breakpoint, accessibility, AC1–AC21. Mockup: [`ui/hybrid-markdown-debug-pane-mockup.html`](ui/hybrid-markdown-debug-pane-mockup.html). |
 | [`ui/graph-view.md`](ui/graph-view.md) | The `§graph` tab: header, controls, canvases, gestures, states, keyboard and phone. Mockup: [`ui/graph-view-mockup.html`](ui/graph-view-mockup.html). |
 | [`ui/mobile-shell.md`](ui/mobile-shell.md) | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history and states. Mockup: [`ui/mobile-shell-mockup.html`](ui/mobile-shell-mockup.html). |
 | [`ui/welcome.md`](ui/welcome.md) | Welcome, no tabs, empty/no workspace, load failure, offline and first run. Mockup: [`ui/welcome-mockup.html`](ui/welcome-mockup.html). |

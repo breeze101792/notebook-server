@@ -41,9 +41,13 @@
   // and restored around one.
   const viewerScrollEl = document.getElementById("viewer-scroll");
   const editBar        = document.getElementById("edit-bar");
+  const editSplit      = document.getElementById("edit-split");
   const hybridBtn      = document.getElementById("hybrid-toggle");
   const saveBtn        = document.getElementById("save-btn");
   const closeEditBtn   = document.getElementById("close-edit-btn");
+  const debugBtn       = document.getElementById("hybrid-debug-btn");
+  const debugPane      = document.getElementById("hybrid-debug-pane");
+  const debugSource    = document.getElementById("hybrid-debug-source");
   const topbar         = document.getElementById("topbar");
   // Hybrid mode replaces the text labels with icons so the two mode
   // actions read at a glance next to the formatting buttons.
@@ -7207,6 +7211,9 @@
     // second generation bump would make a Ctrl+S inside the 50 ms window
     // look like "typed during the POST" and defer the I10 check.
     if (!opts || !opts.alreadyDirty) markDirty();
+    // The debug pane tracks every content change, including the passes
+    // that follow a save (the dirty guard below would skip those).
+    scheduleDebugRefresh();
     // A save can reset the flag before this timer fires; in that case the
     // UI must not re-mark the tab dirty with no write behind it.
     if (!dirty) return;
@@ -7640,6 +7647,109 @@
       });
   }
 
+  /* --- Markdown debug pane ---------------------------------------- */
+  /* A read-only column beside the hybrid page showing what the next save
+   * writes (`domToMarkdown`). It is not part of the document: the pane is
+   * a sibling of #viewer, so the serializer, the render check and the
+   * undo snapshots never see it. Design:
+   * docs/ui/hybrid-markdown-debug-pane.md; mechanism:
+   * docs/architecture/hybrid-editing.md §5.8. */
+  let debugOpen = false;
+  let debugFrame = 0;
+  let debugSyncing = false;
+
+  /* Write `md` (or the current serialization) into the pane, keeping its
+   * scroll offset. The textContent replacement clamps scrollTop, which
+   * fires a scroll event on the pane, so the sync guard spans the write
+   * and the restore. */
+  function refreshDebugPane(md) {
+    if (!debugOpen || !debugSource) return;
+    let text = md;
+    if (text == null) {
+      try {
+        text = domToMarkdown();
+      } catch (err) {
+        text = "⚠ Serialization failed: " +
+          (err && err.message ? err.message : err);
+      }
+    }
+    const top = debugSource.scrollTop;
+    debugSyncing = true;
+    debugSource.textContent = text;
+    debugSource.scrollTop = top;
+    requestAnimationFrame(() => { debugSyncing = false; });
+  }
+
+  /* One serialization per frame, however many structural sites call
+   * onContentChange in one tick. The frame computes from the live DOM. */
+  function scheduleDebugRefresh() {
+    if (!debugOpen || debugFrame) return;
+    debugFrame = requestAnimationFrame(() => {
+      debugFrame = 0;
+      if (debugOpen) refreshDebugPane();
+    });
+  }
+
+  /* Proportional sync in both directions, the source-mode rule. The
+   * guard is set before the write and cleared on the next frame so the
+   * echoed scroll event cannot re-trigger. */
+  function debugSyncScroll(source, target) {
+    if (!debugOpen || debugSyncing || !source || !target) return;
+    const srcMax = source.scrollHeight - source.clientHeight;
+    const tgtMax = target.scrollHeight - target.clientHeight;
+    if (srcMax <= 0 || tgtMax <= 0) return;
+    debugSyncing = true;
+    target.scrollTop = (source.scrollTop / srcMax) * tgtMax;
+    requestAnimationFrame(() => { debugSyncing = false; });
+  }
+
+  function onDebugPageScroll() { debugSyncScroll(viewerScrollEl, debugSource); }
+  function onDebugPaneScroll() { debugSyncScroll(debugSource, viewerScrollEl); }
+
+  /* The only writer of the pane state. Sets the state before the refresh
+   * (the refresh guard reads debugOpen) and cancels any pending frame. */
+  function setDebugPane(open) {
+    debugOpen = !!open;
+    if (debugFrame) {
+      cancelAnimationFrame(debugFrame);
+      debugFrame = 0;
+    }
+    if (debugBtn) {
+      debugBtn.setAttribute("aria-pressed", debugOpen ? "true" : "false");
+    }
+    // Closing while the pane has focus would drop focus to <body> (the
+    // bar's mousedown preventDefault keeps it on the pane). Hand it back
+    // to the page before the pane is hidden; preventScroll keeps the
+    // reading position the user chose in the page.
+    if (!debugOpen && debugPane && debugPane.contains(document.activeElement)) {
+      viewerContentEl.focus({ preventScroll: true });
+    }
+    if (debugPane) debugPane.hidden = !debugOpen;
+    if (editSplit) editSplit.classList.toggle("hybrid-debug", debugOpen);
+    if (viewerScrollEl) {
+      if (debugOpen) {
+        viewerScrollEl.addEventListener("scroll", onDebugPageScroll, { passive: true });
+      } else {
+        viewerScrollEl.removeEventListener("scroll", onDebugPageScroll);
+      }
+    }
+    if (!debugSource) return;
+    if (debugOpen) {
+      debugSource.addEventListener("scroll", onDebugPaneScroll, { passive: true });
+      refreshDebugPane();
+      return;
+    }
+    debugSource.removeEventListener("scroll", onDebugPaneScroll);
+    debugSource.textContent = "";
+    debugSyncing = false;
+  }
+
+  function onDebugToggle(e) {
+    if (!active) return;
+    if (e) { e.stopPropagation(); e.preventDefault(); }
+    setDebugPane(!debugOpen);
+  }
+
   /* --- public API ------------------------------------------------- */
 
   async function enter(path) {
@@ -7675,6 +7785,9 @@
     markRawHtmlBlocks(viewerContentEl);
     active = true;
     dirty = false;
+    // Every session starts with the debug pane closed (it is also closed
+    // on exit; this is the idempotent belt-and-suspenders).
+    setDebugPane(false);
 
     // Make the viewer content editable.
     viewerContentEl.setAttribute("contenteditable", "true");
@@ -7703,6 +7816,7 @@
     // become icon-only actions in hybrid mode.
     const previewBtn = document.getElementById("preview-btn");
     if (previewBtn) previewBtn.hidden = true;
+    if (debugBtn) debugBtn.hidden = false;
     if (closeEditBtn) {
       closeEditBtn.hidden = false;
       // The phone has no keyboard shortcut and icons alone are ambiguous;
@@ -7771,12 +7885,18 @@
     if (emojiPanelEl) emojiPanelEl.addEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.addEventListener("click", onSave, true);
     if (closeEditBtn) closeEditBtn.addEventListener("click", onClose, true);
+    if (debugBtn) debugBtn.addEventListener("click", onDebugToggle, true);
 
     NB.evt.emit("hybrid:entered", activePath);
   }
 
   async function exit(save) {
     if (!active) return;
+    // Close the pane before the first await: the surface is re-rendered as
+    // preview near the end of this function, and a frame scheduled by the
+    // last keystroke would otherwise serialize that preview into the pane.
+    setDebugPane(false);
+    if (debugBtn) debugBtn.hidden = true;
     cancelAutosave();
     clearTimeout(historyTimer);
     historyTimer = null;
@@ -7819,6 +7939,7 @@
     if (emojiPanelEl) emojiPanelEl.removeEventListener("click", onEmojiPanelClick);
     if (saveBtn) saveBtn.removeEventListener("click", onSave, true);
     if (closeEditBtn) closeEditBtn.removeEventListener("click", onClose, true);
+    if (debugBtn) debugBtn.removeEventListener("click", onDebugToggle, true);
     NB.menu.close("hybrid");
 
     // Remove contentEditable.
@@ -8128,7 +8249,10 @@
     const result = renderCheck.verify(sessionSource,
       renderCheck.liveSignature());
     if (result.match) {
-      if (!blockHashes) rebaseSegments(sessionSource);
+      if (!blockHashes) {
+        rebaseSegments(sessionSource);
+        scheduleDebugRefresh();
+      }
       return result;
     }
     console.warn("hybrid: the saved render still differs at block " +
@@ -8150,6 +8274,8 @@
     sessionSource = source || "";
     rebaseSegments(sessionSource);
     sessionSerialized = domToMarkdown();
+    // The pane shows the same bytes; passing them costs no second pass.
+    refreshDebugPane(sessionSerialized);
   }
 
   async function doSave(md, opts) {
@@ -8222,6 +8348,10 @@
         generation === editGeneration) {
       rebaseSegments(sessionSource);
     }
+    // Recomputed from the DOM, because the write is awaited: a keystroke
+    // during the POST has already painted the newer DOM, and writing the
+    // older md here would walk the pane backwards.
+    scheduleDebugRefresh();
     return result;
   }
 
@@ -8385,6 +8515,7 @@
     renderMarkdown(md);
     dirty = true;
     pushSnapshot();
+    scheduleDebugRefresh();
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
     return true;
   }

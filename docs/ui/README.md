@@ -50,6 +50,8 @@ line. *Mockup* — the visual reference; the doc beside it is normative.
 | [`source-editor-mockup.html`](source-editor-mockup.html) | Mockup — **open this** | Source-only, split, dirty, menus, draft bar, narrow and phone. |
 | [`hybrid-mode.md`](hybrid-mode.md) | Current spec — pre-implementation | WYSIWYG mode: page state, block chrome, grips, table/list overlays, code chip, save and conflict. AC1–AC19. |
 | [`hybrid-mode-mockup.html`](hybrid-mode-mockup.html) | Mockup — **open this** | Idle, hover, focus, drag, table/list overlay, code chip, dirty, conflict and phone. |
+| [`hybrid-markdown-debug-pane.md`](hybrid-markdown-debug-pane.md) | Current spec — pre-implementation | The hybrid split-view toggle and the read-only Markdown column: anatomy, tokens, states, the 1140 px breakpoint, accessibility, proposals and AC1–AC21. |
+| [`hybrid-markdown-debug-pane-mockup.html`](hybrid-markdown-debug-pane-mockup.html) | Mockup — **open this** | Six boards: closed, open dark and light, 900 px, the phone strip, and the empty/failed/focused pane states. |
 | [`graph-view.md`](graph-view.md) | Current spec — pre-implementation | The `§graph` tab: header, controls, canvases, gestures, states, keyboard and phone. AC1–AC11. |
 | [`graph-view-mockup.html`](graph-view-mockup.html) | Mockup — **open this** | 3D loading and ready, 2D, empty, error, large graph, 720, dark and light. |
 | [`mobile-shell.md`](mobile-shell.md) | Current spec — pre-implementation | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history, states. AC1–AC12. |

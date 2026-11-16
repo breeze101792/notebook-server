@@ -1503,6 +1503,172 @@ authored raw block nested in a quote or list, whose internal line breaks are
 collapsed to spaces (text is kept; the block is rebuilt once). The check turns
 each from a silent rewrite into a visible, reported re-render.
 
+### 5.8 The Markdown debug pane
+
+A read-only second column in hybrid mode showing the bytes the next save would
+write. The product definition is
+[`../product/hybrid-markdown-debug-pane.md`](../product/hybrid-markdown-debug-pane.md);
+the visual spec is [`../ui/hybrid-markdown-debug-pane.md`](../ui/hybrid-markdown-debug-pane.md).
+
+**What it shows.** `domToMarkdown()` of the live DOM (`hybrid.js:1259`) — the
+same call every save caller makes. With the splice alive this includes the
+untouched original bytes; with the splice dead it is the whole-file
+regeneration. Either way it is exactly what `POST /api/file` would receive, so
+after a save it is byte-identical to the file. It is **not** the bytes currently
+on disk: those are frozen during the session and say nothing about an edit made
+a keystroke ago.
+
+**Where it lives.** `#hybrid-debug-pane` is a sibling of `#viewer` inside
+`#edit-split` (`index.html:510-553`), after it and before `#draft-bar`. It is
+never a child of `#viewer-content`. That placement is the whole isolation
+argument:
+
+- `domToMarkdown()` walks `#viewer-content` only (`hybrid.js:37`), so the pane
+  cannot reach the file.
+- The render check's live signature, the undo snapshots, and the no-op baseline
+  all read or replace `#viewer-content`; the pane is outside all three.
+- The pane's text is written with `textContent`; Markdown bytes never become
+  nodes.
+
+The invariant is testable in one line: with the pane open, `domToMarkdown()` is
+byte-equal to the same call with the pane closed.
+
+**State.** One module-local flag, `debugOpen`, plus the pane's `hidden`
+attribute, the `#edit-split.hybrid-debug` class, the toggle's `aria-pressed`,
+a pending frame id, and the `<pre>` text. Session-only: `enter()` closes and
+clears it, `exit()` closes and clears it, no config key exists. The pane is a DOM
+sibling the app already has at load, not a lazy build, so open/close is a class
+and an attribute flip with no first-open cost.
+
+**The three calls, and the state order.**
+
+- `setDebugPane(open)` — the only writer of the state: sets `debugOpen`, the
+  pane's `hidden`, the class, and `aria-pressed`; cancels a pending frame; on
+  open, computes and writes once, synchronously; on close, clears the text.
+  Setting the state **before** the refresh is part of the contract: otherwise
+  the refresh's `debugOpen` guard drops the first paint.
+- `refreshDebugPane(md)` — writes `md` (or, with no argument, computes it once,
+  caught) synchronously, preserving `scrollTop`.
+- `scheduleDebugRefresh()` — marks the pane dirty and, if no frame is pending,
+  requests one; the callback checks `debugOpen` **before** calling
+  `domToMarkdown()`, then writes.
+
+`exit()` calls `setDebugPane(false)` **before its first `await`**
+(`hybrid.js:7789`). It is async with three awaits, and the surface is re-rendered
+as preview near the end; a frame scheduled by the last keystroke would otherwise
+fire in that window, see an open pane, and serialize the preview DOM into it
+(and the row layout could show the viewer, the pane and the draft bar side by
+side). Closing first also cancels the frame, so a closed pane pays no
+serialization. `enter()` calls it again, idempotently. One consequence: an exit
+whose save fails leaves hybrid active with the pane already closed; the toggle
+reopens it (the session and its edits are intact).
+
+**Refresh points.** The frame coalescing is load-bearing: `onContentChange` is
+called synchronously from roughly 55 structural sites in `hybrid.js` plus the
+plugin windows (`designer-shell.js:631`, `mermaid-designer.js:3794`,
+`table-editor.js:1766`), and a burst in one tick must cost one serialization,
+not one per call.
+
+| Trigger | Where | Why |
+| --- | --- | --- |
+| Toggle opens | the click handler, after the state is set: `refreshDebugPane()` | Compute immediately; do not wait for a keystroke |
+| Every content change | `onContentChange()` (`hybrid.js:7205`), **before** the `if (!dirty) return;` guard at `:7212`, `scheduleDebugRefresh()` | The one funnel for typing and structural edits: list move, table row/column, checkbox toggle, undo/redo (via `restoreSnapshot` → `onContentChange`) all pass through it. Placing the call after the dirty guard would skip a refresh when a save already cleared dirty |
+| Baseline re-seat | `rebaseSession()` (`hybrid.js:8149`), `refreshDebugPane(sessionSerialized)` after the assignment | It already computes `sessionSerialized`; passing that string costs no second serialization. Covers enter, post-save rebuild (`rebuildFromSaved`, `:8066`), external reload (`:10119`), and an approved AI patch (`refreshFromContent`) |
+| A revived splice | `settlePendingCheck()`, after `rebaseSegments(sessionSource)` (`hybrid.js:8131`), `scheduleDebugRefresh()` | The bytes change with no DOM change: a dead splice that becomes live stops canonicalizing the whole note. This runs before an explicit save, including a no-op save that writes nothing |
+| After a write | the **end** of `doSave()` (`hybrid.js:8155`), after `reconcileSavedRender` and the post-check re-pairing at `:8223`, `scheduleDebugRefresh()` | Recompute from the DOM, because the write is awaited: a keystroke during the POST has already painted the newer DOM, and writing the older `md` here would walk the pane backwards. With no keystroke since the capture, the recomputation equals the written bytes; with one, the pane stays on the newer DOM, which is what the *next* save would write. A rebuild inside the check already refreshed through `rebaseSession` |
+
+No refresh on scroll, selection, focus, mouse movement, or the edit bar's other
+actions. `domToMarkdown()` is not a pure function of the DOM: it reads
+`sessionSource`, `sourceBlocks`, `blockHashes`, and `rootAuxBaseline`
+(`hybrid.js:1755-1772`), so every site that mutates those baselines without a
+render is listed above. A save with no write still needs the `settlePendingCheck`
+refresh, because that call can revive the splice.
+
+**Cost.** One serialization per content-change burst while the pane is open, on
+the same call the save path already performs: the splice hashes every top-level
+block and re-serializes the changed ones, so the cost is proportional to block
+count, and the dead-splice fallback is a full clone plus a whole-document
+turndown pass. The cadence is the existing 50 ms idle pass while typing, with
+bursts coalesced to one per frame; it never runs inside a key handler. There is
+no hard bound for a very large note; the pane is opt-in. One accepted edge: if
+the window narrows below 1140 px with the pane open, the CSS hides it but the
+state is kept for a widen, so refreshes continue until it is closed or the
+window widens. Measured at implementation, not asserted in CI.
+
+**Failure.** The refresh wraps the call in `try/catch` and writes one line,
+`⚠ Serialization failed: <message>`, into the pane. It never rethrows into the
+input path, so a diagnostic can never break editing or saving. This is the only
+place hybrid catches a serializer error for display; the save path keeps its own
+alert. The branch is a safety net with no test seam (the module keeps its own
+`domToMarkdown` binding, and the export at `:10181` is only a reference) and no
+AC claims it. Note what it is not: with a live splice, a missing turndown does
+not produce an empty result — `spliceSave` can return `sessionSource` verbatim
+(`hybrid.js:1772`) or splice an empty block serialization, and the save path has
+no empty-string guard (`:8156`). The pane would show that, accurately; the
+diagnostic's job is to make such a state visible, not to fix it.
+
+**Keyboard.** The pane's `<pre>` is focusable (`tabindex="0"`) so it can be
+scrolled from the keyboard. Two existing guards would otherwise treat it as the
+note and hijack its keys, so each gains one clause:
+
+- `viewerScrollTargetHasFocus()` (`viewer.js:1455-1462`) — the document-level
+  arrow/Page handler (`:1464-1481`) skips the pane, so the browser's native
+  scrolling of the focused scroll container runs.
+- `typingTargetHasFocus()` (`shortcuts.js:355-362`) — the document-capture
+  dispatcher (`:261`) stops claiming modifierless chords (`:311-320`), so `/`
+  does not open Search and no bare key acts. Modifier chords still fire.
+
+The pane owns no key handler of its own; it does not need one, and a
+`stopPropagation` on the pane could not work anyway: the shortcut listener is in
+the capture phase and runs first.
+
+**Scroll sync.** While the pane is open, the two columns scroll together,
+proportionally — the shape source mode already uses between its editor and its
+preview (`viewer.js:557-586`). Hybrid keeps its own pair, because those are
+module-private and bound to the CM6 scroll DOM:
+
+- `setDebugPane(true)` binds passive `scroll` listeners on `#viewer-scroll` and
+  `#hybrid-debug-source`; `setDebugPane(false)` removes them. Closing before the
+  first `await` in `exit()` therefore unbinds before the preview render, so no
+  echo can fire against a closed pane.
+- Each handler writes
+  `target.scrollTop = (source.scrollTop / sourceMax) * targetMax`, where
+  `*Max = scrollHeight - clientHeight`. When either side has no scrollable
+  height, it returns: that covers `display: none` at 1139 px and shorter than
+  one screen.
+- One module-local flag, set before the write and cleared on the next animation
+  frame, breaks the echo loop — the same guard and the same frame delay the
+  source-mode sync uses.
+- A refresh runs no sync, and it has to work for that: replacing the text
+  shrinks `scrollHeight`, the browser clamps `scrollTop`, and the clamp fires a
+  `scroll` event on the pane. The refresh therefore holds the guard across the
+  `textContent` write **and** the `scrollTop` restore, releasing it on the next
+  frame; otherwise a refresh would push the page. The next user scroll re-syncs.
+- The mapping is proportional, not line-accurate: rendered blocks and wrapped
+  lines have different heights. That is the accepted cost in source mode too.
+
+**Why not a second module.** The pane reads module-private state
+(`domToMarkdown`, the session baseline, the enter/exit hook points) and no other
+module consumes it. A `static/js/hybrid-debug.js` would need a new public surface
+whose only caller is the same file, so it stays inside `hybrid.js`. The toggle
+is wired by id, with the same capture-listener pattern as Save/Close
+(`hybrid.js:7772-7773`), not through `editbar.js`'s `data-act` router: the bar is
+shared with source mode, and this control is hybrid-only.
+
+**Rejected alternatives.**
+
+| Alternative | Why not |
+| --- | --- |
+| Show the file on disk | Frozen while editing; adds no information and hides the defect after a keystroke |
+| A `contenteditable`/`textarea` pane | Would need input wiring, a save path, and dirty semantics — a second editor, not a view; also risks writing the pane into the note |
+| Render the Markdown with `innerHTML` | Turns untrusted bytes into nodes and cannot be read as source |
+| A diff against the on-disk baseline | A diff engine, a second scroll model, and a definition of "changed" under a spliced save; a proposal, not v1 |
+| Reuse source mode's split (`.split`) and scroll sync | Source mode is a different editor; the sync (`viewer.js:557-586`) is bound only there and would fight the debug column |
+
+**Test seams.** `NB.hybrid.domToMarkdown` is already exported for the suite
+(`hybrid.js:10181`); the pane is reached through its real button and real DOM
+ids. No test-only API is added.
+
 ---
 
 ## 6. Open questions

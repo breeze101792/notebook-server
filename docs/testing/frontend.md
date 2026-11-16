@@ -126,7 +126,7 @@ blocks registry, tabs (open/close/reorder/pin/ghost animation), clear-text
 control, case in Advanced, the side-panel search options
 (unique mode, sort, caps, keyboard, latest-wins, open-failure), edit and
 save, the edit bar, scroll sync,
-hybrid mode and its round-trip guards, table view, empty-tree create,
+hybrid mode and its round-trip guards, the Markdown debug pane, table view, empty-tree create,
 collapse/expand, recent files, the 3D graph view and interactions, bookmarks,
 watcher polling and tree sync, settings, auth, passwords, tokens, export,
 wallpaper, welcome, deep links, wikilinks, vim mode and vimrc, keyboard
@@ -353,6 +353,56 @@ control, clean or dirty (`focusOutsideGrid` reads exactly that list). The AC17
 selector list includes the two bar ids, so their accessible names and disabled
 states are checked in the bar.
 
+### The hybrid Markdown debug pane (`== hybrid ==`)
+
+The read-only source column is asserted inside the existing hybrid block; the
+jsdom fixture carries the button and the pane. The checks drive the real
+`#hybrid-debug-btn`:
+
+- in hybrid, the button is visible with `aria-pressed="false"`; the pane is
+  hidden, and `#viewer-content.contains(pane)` is false;
+- a click sets `aria-pressed="true"`, unhides `#hybrid-debug-pane`, adds
+  `hybrid-debug` to `#edit-split`, keeps `contenteditable` on
+  `#viewer-content`, and the pane's `textContent` equals
+  `NB.hybrid.domToMarkdown()` at that instant; opening the pane does not change
+  the serialization by one byte;
+- typing a block, running the 50 ms timer and then one animation frame refreshes
+  the pane to the new serialization (the refresh is frame-coalesced; the jsdom
+  harness stubs `requestAnimationFrame` as `setTimeout(0)`, so the test awaits
+  one frame). Structural actions reach the same `onContentChange` funnel but are
+  not asserted individually;
+- a zero-byte note shows `textContent === ""` with no child node, so the
+  `:empty` rule applies (the **Empty note** word is CSS);
+- closing the pane while it has focus returns focus to `#viewer-content`, clears its text, drops the class and unpresses the button;
+  exit hides the toggle, closes the pane and drops the class; re-entering starts
+  closed;
+- one case pins the early close: open the pane, call `onContentChange()` so a
+  frame is pending, `await exit(false)`, wait a frame, and assert the pane is
+  hidden, empty, and did not serialize the preview DOM.
+
+The browser suite exercises the parts jsdom cannot:
+
+- open the pane, type, save, read the file back: the pane text and the disk
+  bytes are identical (a real `contenteditable` produces DOM jsdom cannot);
+- scroll each column to a fraction in turn: the other follows within 5%, both
+  directions, with no echo loop; a refresh at that position moves neither (the
+  pane clamps its `scrollTop` during the write, which fires a `scroll` event, so
+  the guard must cover the write and the restore);
+- focus the pane and press `ArrowDown` and `/`: the pane scrolls, the page
+  follows, and `/` does not take focus;
+- close the pane: it hides, the class goes, and the page keeps its offset;
+- 1280 px: the toggle is visible, the split opens, and `#viewer-content` is at
+  least 352 px wide (`--shell-reader-min`);
+- 1139 px on entry: the toggle's computed `display` is `none`;
+- 1140 px: the toggle is visible, the split opens, the reader keeps its floor;
+  narrowing to 1139 hides the button and the pane by CSS while `hidden` stays
+  false (the state is kept), and widening restores the open pane.
+
+Not asserted anywhere: the thrown-serializer branch (no seam; inspection), the
+text's selectable/copyable behaviour (native, inspection), and the listener
+unbind after close (the close path removes both listeners; inspection). Media
+queries do not run in jsdom, so every width check is browser-only.
+
 ### Mobile v1 (`== mobile ==`)
 
 The phone shell (`static/js/mobile.js`) is covered at the end of the jsdom
@@ -453,7 +503,9 @@ against a temp notebook, opens a note in a real browser, enters hybrid mode
 through the actual UI button, edits with the real editing engine, and reads
 the file back from disk. It exists because jsdom has no `contentEditable`
 engine, no selection, and no native markup insertion, so the DOM a real
-browser produces never appears there.
+browser produces never appears there. The Markdown debug pane is exercised
+here too: open it, type, save, and assert the pane text equals the file bytes;
+the 1139 px viewport hides both the toggle and the pane.
 
 `tests/browser/test_designer_browser.js` (796 lines) is the same harness for
 the Mermaid designer: it loads the real Visimer bundle and real mermaid,

@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markdown debug pane — design mockup</title>
+<style>
+  /* ------------------------------------------------------------------
+     Mockup frame (not product chrome)
+     ------------------------------------------------------------------ */
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0;
+    padding: 32px 24px 56px;
+    background: #0d0e12;
+    color: #c7cad4;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1420px; margin: 0 auto; }
+  .intro { max-width: 900px; margin: 0 0 10px; }
+  .intro h1 { margin: 0 0 6px; font-size: 21px; line-height: 1.25; font-weight: 650; color: #f0f1f5; }
+  .intro p { margin: 0 0 8px; font-size: 13px; color: #a6abb8; }
+  .intro code { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                background: #191b21; border: 1px solid #2b2e38; border-radius: 4px; padding: 1px 5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 7px 16px; margin: 14px 0 28px; font-size: 12px; color: #8e94a3; }
+  .legend b { color: #c7ccd8; font-weight: 600; }
+
+  .boards { display: grid; grid-template-columns: repeat(auto-fit, minmax(600px, 1fr)); gap: 26px; align-items: start; }
+  .board {
+    border: 1px solid #2b2e38;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #101116;
+    --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .board.wide { grid-column: 1 / -1; }
+  .board[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-page: #1a1b1f;
+    --surface-panel: #22232a;
+    --surface-raised: #2a2b34;
+    --surface-well: #14151a;
+    --text-primary: #e6e6ea;
+    --text-muted: #9799a4;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, .18);
+    --text-on-accent: #14151a;
+    --border: #383a45;
+    --border-strong: #7b8194;
+    --warn: #f3b454;
+    --danger: #ff6b6b;
+    --ok: #5fd49a;
+  }
+  .board[data-theme="light"] {
+    color-scheme: light;
+    --surface-page: #ffffff;
+    --surface-panel: #f6f7f9;
+    --surface-raised: #eceef2;
+    --surface-well: #f0f2f5;
+    --text-primary: #1f2330;
+    --text-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, .12);
+    --text-on-accent: #ffffff;
+    --border: #d8dde4;
+    --border-strong: #78828f;
+    --warn: #8a5a0b;
+    --danger: #c0392b;
+    --ok: #16703f;
+  }
+  .board-head {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 9px 13px;
+    background: #15161c;
+    border-bottom: 1px solid #2b2e38;
+    font-size: 12px; color: #b9bec9;
+  }
+  .board-head .letter { font-weight: 700; color: #7c9cff; font-variant-numeric: tabular-nums; }
+  .board-head h2 { margin: 0; font-size: 12.5px; font-weight: 600; color: #e3e5eb; }
+  .board-head .theme-tag { margin-left: auto; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: #7e8492; }
+  .board-note {
+    padding: 9px 13px;
+    background: #15161c;
+    border-top: 1px solid #2b2e38;
+    font-size: 11.5px; line-height: 1.5; color: #8f95a3;
+  }
+  .board-note b { color: #c2c7d2; font-weight: 600; }
+  .canvas { background: var(--surface-page); color: var(--text-primary); font-family: var(--font-ui); }
+  .crop { overflow: hidden; }
+
+  /* ------------------------------------------------------------------
+     Product chrome used by the boards
+     ------------------------------------------------------------------ */
+  .topbar {
+    display: flex; align-items: center; gap: 10px;
+    height: 46px; padding: 0 12px;
+    background: var(--surface-panel);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-primary);
+  }
+  .brand { font-size: 13px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; }
+  .brand span { opacity: .75; margin-right: 5px; }
+  .grow { flex: 1 1 auto; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    height: 30px; padding: 0 8px;
+    background: var(--surface-raised); border: 1px solid var(--border-strong); border-radius: 6px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .iconbtn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 33px; height: 28px;
+    background: var(--surface-raised); border: 1px solid var(--border); border-radius: 6px;
+    font-size: 13px; color: var(--text-muted);
+  }
+  .iconbtn.active { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+
+  /* Tab strip */
+  .tabstrip { display: flex; align-items: stretch; height: 34px; background: var(--surface-panel); border-bottom: 1px solid var(--border); }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 0 12px; font-size: 11.5px; color: var(--text-muted); border-right: 1px solid var(--border); }
+  .tab.current { background: var(--surface-page); color: var(--text-primary); box-shadow: inset 0 2px 0 var(--accent); }
+
+  /* Edit bar (26 px controls, wraps) */
+  .editbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 2px;
+    padding: 4px 8px;
+    background: var(--surface-panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .eb {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 28px; height: 26px; padding: 0 6px;
+    border: 1px solid transparent; border-radius: 4px;
+    background: transparent; color: var(--text-muted);
+    font: inherit; font-size: .93rem; line-height: 1;
+  }
+  .eb:hover { background: var(--accent-soft); color: var(--text-primary); }
+  button.eb { cursor: pointer; appearance: none; }
+  .eb:active { background: var(--accent); color: var(--text-on-accent); }
+  .eb[aria-pressed="true"]:active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .eb .icon { width: 16px; height: 16px; display: block; }
+  .eb.pressed, .eb[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .eb.sep-gap { margin-left: 2px; }
+  .ebsep { display: inline-block; width: 1px; height: 18px; margin: 0 4px; background: var(--border); }
+  .eb-actions { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .eb-actions .eb { font-size: 12.5px; }
+  .eb-primary { color: var(--accent); font-weight: 600; }
+
+  /* Content area */
+  .split { display: flex; min-height: 0; background: var(--surface-page); }
+  .split.column { flex-direction: column; }
+  .page { flex: 1 1 auto; min-width: 0; padding: 18px 24px 26px; }
+  .split:not(.column) .page { flex: 1 1 55%; }
+  .page h1 { margin: 0 0 10px; font-size: 20px; line-height: 1.2; font-weight: 700; letter-spacing: -.2px; }
+  .page h2 { margin: 0 0 8px; font-size: 16px; line-height: 1.3; font-weight: 650; }
+  .page p { margin: 0 0 10px; font-size: 13px; line-height: 1.55; }
+  .page ul { margin: 0 0 10px; padding-left: 20px; font-size: 13px; line-height: 1.7; }
+  .page code { font: .86em/1.4 var(--font-mono); background: var(--surface-well); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
+  .page table { border-collapse: collapse; font-size: 12.5px; margin: 0 0 10px; }
+  .page th, .page td { border: 1px solid var(--border); padding: 4px 9px; text-align: left; }
+  .page th { background: var(--surface-well); font-weight: 600; }
+  .page .caretline { box-shadow: 0 0 0 2px var(--accent-soft); border-radius: 3px; }
+
+  /* The debug pane */
+  .dbg[hidden] { display: none; }
+  .dbg-src:empty::before { content: "Empty note"; color: var(--text-muted); }
+  .dbg {
+    flex: 1 1 45%; min-width: 0;
+    display: flex; flex-direction: column; min-height: 0;
+    border-left: 1px solid var(--border);
+    background: var(--surface-panel);
+  }
+  .dbg-head {
+    display: flex; align-items: center; gap: 8px;
+    height: 26px; padding: 0 12px;
+    background: var(--surface-raised);
+    border-bottom: 1px solid var(--border);
+    font-size: .8rem; line-height: 1.35;
+  }
+  .dbg-title { color: var(--text-primary); font-weight: 600; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; line-height: 1.2; }
+  .dbg-hint { margin-left: auto; color: var(--text-muted); font-size: .72rem; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dbg-src {
+    flex: 1 1 auto; min-height: 0; margin: 0;
+    padding: 12px 16px 16px;
+    overflow-y: auto; overflow-x: hidden;
+    white-space: pre-wrap; overflow-wrap: anywhere;
+    font-family: var(--font-mono); font-size: .8rem; line-height: 1.35;
+    color: var(--text-primary);
+  }
+  .dbg-src .md-pipe { color: var(--accent); }
+  .dbg-empty { color: var(--text-muted); }
+  .dbg-error { color: var(--danger); }
+
+  /* Narrow / phone shells */
+  .narrow .page { padding: 14px 22px 20px; }
+  .phone {
+    width: 390px; margin: 0 auto; border-radius: 12px; overflow: hidden;
+    border: 1px solid #2b2e38;
+  }
+  .phone .topbar { height: 52px; }
+  .phone .editbar {
+    flex-wrap: nowrap; overflow: hidden;
+    height: 52px; padding: 4px 6px; gap: 2px;
+  }
+  .phone .eb { flex: 0 0 auto; min-width: 44px; height: 44px; font-size: 15px; }
+  .phone .eb-actions { order: -1; margin-left: 0; padding-right: 6px; background: var(--surface-panel); box-shadow: 6px 0 8px -6px rgba(0,0,0,.45); }
+  .phone .eb-actions .eb { padding: 0 12px; font-size: 13px; }
+  .phone .page { padding: 14px 20px 20px; }
+  .phone .page p { font-size: 12px; }
+
+  .ruler { position: relative; height: 0; }
+  .ruler span {
+    position: absolute; top: 6px; font-size: 10px; color: #7e8492;
+    font-family: var(--font-mono); letter-spacing: .02em;
+  }
+</style>
+</head>
+<body>
+<svg aria-hidden="true" style="position:absolute;width:0;height:0;overflow:hidden">
+  <symbol id="nb-icon-split" viewBox="0 0 16 16">
+    <rect x="2.2" y="3" width="11.6" height="10" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M8 3.6v8.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+</svg>
+<div class="wrap">
+
+<div class="intro">
+  <h1>Markdown debug pane — hybrid mode</h1>
+  <p>Six boards. The left column is the hybrid page and never changes. The right column is the
+     read-only Markdown the next <b>Save</b> would write — <code>domToMarkdown()</code> of the live DOM,
+     not the frozen file on disk. The two columns scroll together, proportionally. The toggle is a 26 px
+     edit-bar control using the new <code>#nb-icon-split</code> symbol.</p>
+  <p>Tokens are the app's foundation tokens; no new token is introduced. The pane is a sibling of
+     <code>#viewer</code> inside <code>#edit-split</code>, so the serializer never sees it.</p>
+</div>
+
+<div class="legend">
+  <span><b>Boards</b></span>
+  <span>A closed · dark</span>
+  <span>B open · dark</span>
+  <span>C open · light</span>
+  <span>D narrow · 900 px</span>
+  <span>E phone · 390 px</span>
+  <span>F pane states</span>
+</div>
+<p class="intro" style="font-size:12px;color:#8e94a3;margin:-14px 0 26px">A–C run in both themes. D–F are state crops shown in dark: they use the same token pairs as A–C and add no colour.</p>
+
+<div class="boards">
+
+  <!-- ============================================================ A -->
+  <section class="board wide" data-theme="dark">
+    <div class="board-head"><span class="letter">A</span><h2>Closed — the default on entry</h2><span class="theme-tag">dark · 1280 shell, cropped</span></div>
+    <div class="canvas crop">
+      <div class="topbar">
+        <span class="brand"><span>▣</span>Notebook</span>
+        <span class="chip">bench-notes.md <span style="color:var(--text-muted)">▾</span></span>
+        <span class="grow"></span>
+        <span class="iconbtn">⌕</span>
+        <span class="iconbtn active">✎</span>
+        <span class="iconbtn">⚙</span>
+      </div>
+      <div class="tabstrip"><span class="tab current">Bench tests — week 12.md</span><span class="tab">Flash bring-up.md</span></div>
+
+      <div class="editbar">
+        <span class="eb">↶</span><span class="eb">↷</span><span class="ebsep"></span>
+        <span class="eb">H1</span><span class="eb">H2</span><span class="eb">H3</span>
+        <span class="ebsep"></span>
+        <span class="eb"><b>B</b></span><span class="eb"><i>I</i></span><span class="eb"><s>S</s></span><span class="eb">&lt;/&gt;</span>
+        <span class="ebsep"></span>
+        <span class="eb">• List</span><span class="eb">1. List</span><span class="eb">☑</span><span class="eb">&gt;</span>
+        <span class="ebsep"></span>
+        <span class="eb">🔗</span><span class="eb">🖼</span><span class="eb">🙂</span><span class="eb">{}</span>
+        <span class="eb">Examples ▾</span><span class="eb">──</span>
+        <span class="ebsep"></span>
+        <span class="eb">▦</span><span class="eb">Tx</span>
+        <span class="ebsep"></span>
+        <button class="eb" type="button" aria-pressed="false" aria-controls="hdp-a" aria-label="Show the Markdown source" title="Show the Markdown source Save writes"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#nb-icon-split"/></svg></button>
+        <span class="eb-actions"><span class="eb eb-primary">Save</span><span class="eb">✕</span></span>
+      </div>
+
+      <div class="split column">
+        <div class="page">
+          <h2>Bench tests — week 12</h2>
+          <p>Three boards on the rig. The <code>nRF52840</code> target boots, but the SPI flash ID is <code>0x00</code> on two of them.</p>
+          <ul>
+            <li>power rail: 3.29 V</li>
+            <li>reset: floating</li>
+          </ul>
+          <table>
+            <tr><th>board</th><th>flash id</th><th>state</th></tr>
+            <tr><td>A</td><td>0xEF4017</td><td>ok</td></tr>
+            <tr><td>B</td><td>0x00</td><td>fail</td></tr>
+          </table>
+        </div>
+        <div id="hdp-a" class="dbg" hidden></div>
+      </div>
+    </div>
+    <p class="board-note"><b>One control added.</b> The split glyph sits in its own separator group after
+      <code>Tx</code>, before the right-hand Save/Close cluster. Unpressed it is transparent and muted.
+      Nothing else on the bar moves.</p>
+  </section>
+
+  <!-- ============================================================ B -->
+  <section class="board wide" data-theme="dark">
+    <div class="board-head"><span class="letter">B</span><h2>Open — the split, dark</h2><span class="theme-tag">dark · 1280 shell, cropped</span></div>
+    <div class="canvas crop">
+      <div class="topbar">
+        <span class="brand"><span>▣</span>Notebook</span>
+        <span class="chip">bench-notes.md <span style="color:var(--text-muted)">▾</span></span>
+        <span class="grow"></span>
+        <span class="iconbtn">⌕</span>
+        <span class="iconbtn active">✎</span>
+        <span class="iconbtn">⚙</span>
+      </div>
+      <div class="tabstrip"><span class="tab current">Bench tests — week 12.md</span><span class="tab">Flash bring-up.md</span></div>
+
+      <div class="editbar">
+        <span class="eb">↶</span><span class="eb">↷</span><span class="ebsep"></span>
+        <span class="eb">H1</span><span class="eb">H2</span><span class="eb">H3</span>
+        <span class="ebsep"></span>
+        <span class="eb"><b>B</b></span><span class="eb"><i>I</i></span><span class="eb"><s>S</s></span><span class="eb">&lt;/&gt;</span>
+        <span class="ebsep"></span>
+        <span class="eb">• List</span><span class="eb">1. List</span><span class="eb">☑</span><span class="eb">&gt;</span>
+        <span class="ebsep"></span>
+        <span class="eb">🔗</span><span class="eb">🖼</span><span class="eb">🙂</span><span class="eb">{}</span>
+        <span class="eb">Examples ▾</span><span class="eb">──</span>
+        <span class="ebsep"></span>
+        <span class="eb">▦</span><span class="eb">Tx</span>
+        <span class="ebsep"></span>
+        <button class="eb pressed" type="button" aria-pressed="true" aria-controls="hdp-b" aria-label="Show the Markdown source" title="Show the Markdown source Save writes"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#nb-icon-split"/></svg></button>
+        <span class="eb-actions"><span class="eb eb-primary">Save</span><span class="eb">✕</span></span>
+      </div>
+
+      <div class="split">
+        <div class="page">
+          <h2>Bench tests — week 12</h2>
+          <p>Three boards on the rig. The <code>nRF52840</code> target boots, but the SPI flash ID is <code>0x00</code> on two of them.</p>
+          <ul>
+            <li>power rail: 3.29 V</li>
+            <li>reset: floating</li>
+          </ul>
+          <table>
+            <tr><th>board</th><th>flash id</th><th>state</th></tr>
+            <tr><td>A</td><td>0xEF4017</td><td>ok</td></tr>
+            <tr><td>B</td><td>0x00</td><td>fail</td></tr>
+          </table>
+        </div>
+
+        <div id="hdp-b" class="dbg">
+          <div class="dbg-head">
+            <span class="dbg-title">Markdown</span>
+            <span class="dbg-hint">what Save writes</span>
+          </div>
+          <pre class="dbg-src" role="region" aria-label="Markdown source, read-only" tabindex="0">## Bench tests — week 12
+
+Three boards on the rig. The `nRF52840` target boots, but the SPI flash ID is `0x00` on two of them.
+
+- power rail: 3.29 V
+- reset: floating
+
+| board | flash id | state |
+| --- | --- | --- |
+| A | 0xEF4017 | ok |
+| B | 0x00 | fail |
+</pre>
+        </div>
+      </div>
+    </div>
+    <p class="board-note"><b>An asymmetric split — page 55%, pane 45% — with proportional scroll.</b> At the 1140 px floor that is 352 / 280. Moving either column moves the other to the same relative position. The pane header is 26 px: the title
+      <code>Markdown</code> and, pushed right, the promise <code>what Save writes</code>. The body is
+      <code>--font-mono</code> at <code>--text-sm</code>, <code>pre-wrap</code> — a long paragraph line wraps
+      rather than adding a horizontal scrollbar inside a column. The toggle is pressed: accent-soft face,
+      accent border, accent glyph.</p>
+  </section>
+
+  <!-- ============================================================ C -->
+  <section class="board wide" data-theme="light">
+    <div class="board-head"><span class="letter">C</span><h2>Open — the split, light</h2><span class="theme-tag">light · 1280 shell, cropped</span></div>
+    <div class="canvas crop">
+      <div class="topbar">
+        <span class="brand"><span>▣</span>Notebook</span>
+        <span class="chip">bench-notes.md <span style="color:var(--text-muted);opacity:.7">▾</span></span>
+        <span class="grow"></span>
+        <span class="iconbtn">⌕</span>
+        <span class="iconbtn active">✎</span>
+        <span class="iconbtn">⚙</span>
+      </div>
+      <div class="tabstrip"><span class="tab current">Bench tests — week 12.md</span><span class="tab">Flash bring-up.md</span></div>
+
+      <div class="editbar">
+        <span class="eb">↶</span><span class="eb">↷</span><span class="ebsep"></span>
+        <span class="eb">H1</span><span class="eb">H2</span><span class="eb">H3</span>
+        <span class="ebsep"></span>
+        <span class="eb"><b>B</b></span><span class="eb"><i>I</i></span><span class="eb"><s>S</s></span><span class="eb">&lt;/&gt;</span>
+        <span class="ebsep"></span>
+        <span class="eb">• List</span><span class="eb">1. List</span><span class="eb">☑</span><span class="eb">&gt;</span>
+        <span class="ebsep"></span>
+        <span class="eb">🔗</span><span class="eb">🖼</span><span class="eb">🙂</span><span class="eb">{}</span>
+        <span class="eb">Examples ▾</span><span class="eb">──</span>
+        <span class="ebsep"></span>
+        <span class="eb">▦</span><span class="eb">Tx</span>
+        <span class="ebsep"></span>
+        <button class="eb pressed" type="button" aria-pressed="true" aria-controls="hdp-c" aria-label="Show the Markdown source" title="Show the Markdown source Save writes"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><use href="#nb-icon-split"/></svg></button>
+        <span class="eb-actions"><span class="eb eb-primary">Save</span><span class="eb">✕</span></span>
+      </div>
+
+      <div class="split">
+        <div class="page">
+          <h2>Bench tests — week 12</h2>
+          <p>Three boards on the rig. The <code>nRF52840</code> target boots, but the SPI flash ID is <code>0x00</code> on two of them.</p>
+          <ul>
+            <li>power rail: 3.29 V</li>
+            <li>reset: floating</li>
+          </ul>
+          <table>
+            <tr><th>board</th><th>flash id</th><th>state</th></tr>
+            <tr><td>A</td><td>0xEF4017</td><td>ok</td></tr>
+            <tr><td>B</td><td>0x00</td><td>fail</td></tr>
+          </table>
+        </div>
+
+        <div id="hdp-c" class="dbg">
+          <div class="dbg-head">
+            <span class="dbg-title">Markdown</span>
+            <span class="dbg-hint">what Save writes</span>
+          </div>
+          <pre class="dbg-src" role="region" aria-label="Markdown source, read-only" tabindex="0">## Bench tests — week 12
+
+Three boards on the rig. The `nRF52840` target boots, but the SPI flash ID is `0x00` on two of them.
+
+- power rail: 3.29 V
+- reset: floating
+
+| board | flash id | state |
+| --- | --- | --- |
+| A | 0xEF4017 | ok |
+| B | 0x00 | fail |
+
+</pre>
+        </div>
+      </div>
+    </div>
+    <p class="board-note"><b>Same values, light theme.</b> The pane face is the panel colour, the header the
+      raised colour, the seam a 1 px border. No contrast pair is new; both are shipped foundation pairs.</p>
+  </section>
+
+  <!-- ============================================================ D -->
+  <section class="board" data-theme="dark">
+    <div class="board-head"><span class="letter">D</span><h2>Narrow — 900 px, no debug surface</h2><span class="theme-tag">dark</span></div>
+    <div class="canvas crop narrow">
+      <div class="topbar">
+        <span class="brand"><span>▣</span>Notebook</span>
+        <span class="grow"></span>
+        <span class="iconbtn active">✎</span>
+      </div>
+      <div class="editbar">
+        <span class="eb">↶</span><span class="eb">↷</span><span class="ebsep"></span>
+        <span class="eb">H2</span><span class="eb">H3</span><span class="ebsep"></span>
+        <span class="eb"><b>B</b></span><span class="eb"><i>I</i></span><span class="eb">&lt;/&gt;</span>
+        <span class="ebsep"></span>
+        <span class="eb">• List</span><span class="eb">1. List</span><span class="eb">☑</span>
+        <span class="eb">Tx</span>
+        <span class="ebsep"></span>
+        <span class="eb-actions"><span class="eb eb-primary">Save</span><span class="eb">✕</span></span>
+      </div>
+      <div class="split column">
+        <div class="page">
+          <h2>Bench tests — week 12</h2>
+          <p>Three boards on the rig. The <code>nRF52840</code> target boots, but the SPI flash ID is <code>0x00</code> on two of them.</p>
+          <ul><li>power rail: 3.29 V</li><li>reset: floating</li></ul>
+        </div>
+      </div>
+    </div>
+    <p class="board-note"><b>Below 1140 px both the toggle and the pane are gone.</b> One media query
+      (<code>max-width: 1139px</code>) hides them and keeps <code>#edit-split</code> a column. The open state is
+      kept, so widening the window restores the pane.</p>
+  </section>
+
+  <!-- ============================================================ E -->
+  <section class="board" data-theme="dark">
+    <div class="board-head"><span class="letter">E</span><h2>Phone — the strip, no debug control</h2><span class="theme-tag">dark · 390 px</span></div>
+    <div class="canvas crop" style="padding:16px 0;background:#101116">
+      <div class="phone canvas">
+        <div class="topbar">
+          <span class="brand"><span>▣</span>Notebook</span>
+          <span class="grow"></span>
+          <span class="iconbtn">✓</span>
+        </div>
+        <div class="editbar">
+          <span class="eb-actions"><span class="eb eb-primary">Save</span><span class="eb">Done</span></span>
+          <span class="eb">↶</span><span class="eb">↷</span><span class="ebsep"></span>
+          <span class="eb">H1</span><span class="eb">H2</span><span class="eb">H3</span>
+          <span class="eb"><b>B</b></span><span class="eb"><i>I</i></span><span class="eb">&lt;/&gt;</span>
+          <span class="eb">• List</span><span class="eb">☑</span><span class="eb">&gt;</span>
+          <span class="eb">🔗</span><span class="eb">🙂</span>
+        </div>
+        <div class="split column">
+          <div class="page">
+            <h2>Bench tests — week 12</h2>
+            <p>Three boards on the rig. The SPI flash ID is <code>0x00</code> on two of them.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="board-note"><b>No debug surface on a phone.</b> The phone bar is a sideways-scrolling 44 px
+      strip with Save/Done pinned; a second column has no room and the phone has no source mode. The
+      split toggle is not rendered there.</p>
+  </section>
+
+  <!-- ============================================================ F -->
+  <section class="board wide" data-theme="dark">
+    <div class="board-head"><span class="letter">F</span><h2>Pane states — empty, failed, focused</h2><span class="theme-tag">dark · three crops</span></div>
+    <div class="canvas crop" style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px;padding:14px;background:#101116">
+      <div class="dbg" style="border-left:0">
+        <div class="dbg-head">
+          <span class="dbg-title">Markdown</span>
+          <span class="dbg-hint">what Save writes</span>
+        </div>
+        <pre class="dbg-src" role="region" aria-label="Markdown source, read-only" tabindex="0"></pre>
+      </div>
+      <div class="dbg" style="border-left:0">
+        <div class="dbg-head">
+          <span class="dbg-title">Markdown</span>
+          <span class="dbg-hint">what Save writes</span>
+        </div>
+        <pre class="dbg-src dbg-error" role="region" aria-label="Markdown source, read-only" tabindex="0">⚠ Serialization failed: &lt;message&gt;</pre>
+      </div>
+      <div class="dbg" style="border-left:0">
+        <div class="dbg-head">
+          <span class="dbg-title">Markdown</span>
+          <span class="dbg-hint">what Save writes</span>
+        </div>
+        <pre class="dbg-src" role="region" aria-label="Markdown source, read-only" tabindex="0" style="outline:2px solid var(--accent);outline-offset:-2px">## Bench tests — week 12
+
+Three boards on the rig.</pre>
+      </div>
+    </div>
+    <p class="board-note"><b>Empty, failed, focused.</b> A zero-byte document shows the muted word
+      <code>Empty note</code> from the <code>:empty</code> rule, never from bytes; a note of blank lines
+      shows those blank lines. A thrown serializer is one red line and nothing else changes — a safety
+      net, unverified; no AC claims behaviour for it. The pane takes focus with <code>Tab</code> and shows
+      the inset 2 px accent ring; arrow, Page keys, Home and End scroll it, and no bare key invokes an app
+      shortcut.</p>
+  </section>
+
+</div>
+</div>
+</body>
+</html>

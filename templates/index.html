@@ -246,6 +246,12 @@
       <symbol id="nb-icon-menu" viewBox="0 0 16 16">
         <path d="M2.6 4.5h10.8M2.6 8h10.8M2.6 11.5h10.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
       </symbol>
+      <!-- Split view: one frame, two columns. Marks the hybrid debug pane
+           toggle; distinct from #nb-icon-code ("Edit Markdown source"). -->
+      <symbol id="nb-icon-split" viewBox="0 0 16 16">
+        <rect x="2.2" y="3" width="11.6" height="10" rx="1.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M8 3.6v8.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </symbol>
     </defs>
   </svg>
   <div id="app">
@@ -501,6 +507,13 @@
           </span>
           <span class="eb-sep"></span>
           <button class="eb" data-act="clear"  title="Clear formatting">Tx</button>
+          <span class="eb-sep"></span>
+          <!-- Debug view: a read-only column with the Markdown the next
+               save writes. Hybrid-only; hidden outside hybrid mode and
+               below 1140 px (style.css, the hybrid debug pane section). -->
+          <button id="hybrid-debug-btn" class="eb" type="button" aria-pressed="false"
+                  aria-controls="hybrid-debug-pane" aria-label="Show the Markdown source"
+                  title="Show the Markdown source Save writes" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-split"/></svg></button>
           <span class="eb-actions">
             <button id="preview-btn" class="eb" title="Render and return to preview">Preview</button>
             <button id="save-btn"    class="eb eb-primary" title="Save current file" hidden>Save</button>
@@ -525,6 +538,17 @@
             <div id="viewer-scroll">
               <div id="viewer-content" class="markdown-body {{ boot.wallpaper_classes }}"></div>
             </div>
+          </div>
+          <!-- Debug view (hybrid only): the Markdown the next save writes,
+               read-only. A sibling of #viewer, never a child of
+               #viewer-content, so the serializer cannot see it. -->
+          <div id="hybrid-debug-pane" class="hybrid-debug-pane" hidden>
+            <div class="hybrid-debug-head">
+              <span class="hybrid-debug-title">Markdown</span>
+              <span class="hybrid-debug-hint">what Save writes</span>
+            </div>
+            <pre id="hybrid-debug-source" class="hybrid-debug-source" role="region"
+                 aria-label="Markdown source, read-only" tabindex="0"></pre>
           </div>
           <!-- After a tab switch, an unsaved buffer is kept in the viewer
                cache instead of forcing a save/discard prompt. This bar

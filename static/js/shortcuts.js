@@ -356,6 +356,9 @@
     const a = document.activeElement;
     if (!a || a === document.body) return false;
     if (a.isContentEditable) return true;
+    // The hybrid debug pane is read-only, but a bare chord must not fire
+    // while the user is reading it (docs/ui/hybrid-markdown-debug-pane.md).
+    if (a.closest && a.closest("#hybrid-debug-pane")) return true;
     const tag = a.tagName;
     return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
   }
