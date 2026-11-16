@@ -36,6 +36,10 @@
 
   const viewerContentEl = document.getElementById("viewer-content");
   const viewerEl       = document.getElementById("viewer");
+  // The only scroll container around the note (style.css #viewer-scroll).
+  // A rebuild replaces #viewer-content's children, so its offset is saved
+  // and restored around one.
+  const viewerScrollEl = document.getElementById("viewer-scroll");
   const editBar        = document.getElementById("edit-bar");
   const hybridBtn      = document.getElementById("hybrid-toggle");
   const saveBtn        = document.getElementById("save-btn");
@@ -75,6 +79,7 @@
   // needs its own rewrite (a heading drops the separating space, a list
   // item also drops the padding after its marker).
   const CARET_BR_ATTR = "data-hybrid-caret-br";
+  const CARET_P_ATTR = "data-hybrid-caret";
   // Every serialization sentinel carries a per-session random nonce. The
   // sentinels are restored with global string replacements after turndown,
   // so a real note whose text happens to contain a literal sentinel (pasted
@@ -95,6 +100,10 @@
   // prefix and the end marker pick the entry from the per-serialization
   // commentStash.
   const COMMENT_SENTINEL = "\u0000nbcomment" + SENTINEL_NONCE;
+  // A comment placeholder that sits inside a table cell; restored with the
+  // pipe escape, like the raw-HTML cell variant, so a pipe in the comment
+  // cannot end the cell.
+  const COMMENT_CELL_SENTINEL = "\u0000nbcommentcell" + SENTINEL_NONCE;
   const COMMENT_SENTINEL_END = "\u0000c";
   // Turndown's collapseWhitespace deletes a whitespace-only text node
   // BEFORE any rule runs (vendor turndown.browser.js, collapseWhitespace
@@ -124,6 +133,11 @@
   // after an in-place edit. Marking only elements that came from the
   // source keeps an engine-generated <div> from turning into raw HTML.
   const RAW_HTML_ATTR = "data-hybrid-raw-html";
+  // An authored INLINE (or quote/list-nested) element Markdown cannot
+  // express. Set at render time from the source, never by typing or
+  // pasting, so a clipboard wrapper and an engine span stay untrusted and
+  // are unwrapped instead of written (Q21/Q9).
+  const AUTHORED_ATTR = "data-hybrid-authored";
   // Viewer bookkeeping added for anchors/outline; restored or stripped
   // before turndown so a save never writes it into the note.
   const RAW_ID_ATTR = "data-nb-id";
@@ -139,7 +153,42 @@
   // escaping/heading/task passes never touch markup that is meant to be
   // literal HTML.
   const RAW_HTML_SENTINEL = "\u0000nbrawhtml" + SENTINEL_NONCE;
+  // Authored markup inside a table cell needs its own sentinel: GFM ends
+  // the cell at the first pipe that is not backslash-escaped, even inside
+  // a tag's text or attribute, so the cell rule retags the sentinel it
+  // finds in a cell and postProcessMarkdown restores that one escaped.
+  const RAW_HTML_CELL_SENTINEL = "\u0000nbrawhtmlcell" + SENTINEL_NONCE;
   let rawHtmlStash = [];
+  // Tags Markdown cannot express, carried as HTML when their block is
+  // re-serialized: inline formatting here, block structure nested in a
+  // quote/list/heading/cell below. An explicit allow-list, never a
+  // negative test: the built-in image and link rules match a sized <img>
+  // and a targeted <a> first, and an app-owned span must never be
+  // written as HTML. The paste path reads the same set: a wrapper the
+  // browser added is unwrapped, an authored one is kept (Q21).
+  const RAW_INLINE_TAGS = new Set([
+    "KBD", "MARK", "SUP", "SUB", "SPAN", "U", "INS", "Q", "ABBR", "SMALL",
+    "VAR", "SAMP", "CITE",
+  ]);
+  const RAW_NESTED_BLOCK_TAGS = new Set([
+    "DETAILS", "SUMMARY", "DIV", "SECTION", "FIGURE", "FIGCAPTION", "ASIDE",
+    "DL", "DT", "DD",
+  ]);
+  // Every tag the authored-raw rule can emit. Read by the serializer's
+  // provenance test and by the read-only key walk (an unmarked one is a
+  // paste or engine wrapper, so it is unwrapped in both).
+  const AUTHORED_ELEMENT_TAGS =
+    new Set([...RAW_INLINE_TAGS, ...RAW_NESTED_BLOCK_TAGS]);
+  // The attributes Markdown can express on an <img>/<a>; any other
+  // attribute makes an authored element raw HTML, and is dropped when the
+  // element came from a paste or the engine.
+  const MARKDOWN_IMG_ATTRS = ["src", "alt", "title"];
+  const MARKDOWN_A_ATTRS = ["href", "title"];
+  // highlight.js state: its classes are presentation, its token spans are
+  // chrome. The authored `language-*` class is content and stays.
+  const HLJS_CLASS = "hljs";
+  const HLJS_SPAN_CLASS_PREFIX = "hljs-";
+  const HIGHLIGHTED_ATTR = "data-highlighted";
   // Turndown's bundled postProcess() trims trailing whitespace, so a
   // non-whitespace sentinel is appended as the clone's LAST child and the
   // output is cut at it (see wholeDomMarkdown / serializeEditedElement).
@@ -158,6 +207,12 @@
   // disagree about what counts as content.
   const EMBEDDED_CONTENT_SELECTOR =
     "img,hr,input,canvas,svg,iframe,embed,object,video,audio";
+  // Void children that make an otherwise text-less <p>/<div> real content
+  // -- a standalone image, a checkbox, a rule. A block with none of them
+  // and no text is an EMPTY block: the browser's own Enter artifact, which
+  // serializes as a blank line and never as an HTML tag.
+  const EMPTY_BLOCK_VOID_SELECTOR =
+    "img,hr,input,canvas,svg,iframe,embed,object";
   // Block-level children of a list item. Everything before the first of
   // these is the item's own inline content; everything from it onward is
   // structure that a merge moves AFTER the target's content.
@@ -189,6 +244,34 @@
   // highlight and the table-select rectangle classes (table-select.js). One
   // list, so every change-hash strip site cannot drift from the others.
   const CHROME_CLASS_TOKENS = [HR_SELECTED_CLASS, "nb-ts-range", "nb-ts-drag"];
+  // Every class token that is painted state or editor state: the gesture
+  // classes above, highlight.js's own marker, and the marker a fence
+  // carries while it is open in its in-place editor. The authored
+  // `language-*` class is content and stays; the token spans hljs builds
+  // are unwrapped as chrome.
+  const PLUGIN_EDITING_CLASS = "hybrid-plugin-editing";
+  const CHROME_CLASSES =
+    CHROME_CLASS_TOKENS.concat([HLJS_CLASS, PLUGIN_EDITING_CLASS]);
+  // Attributes the viewer and the editing engine inject, never note content:
+  // the editing flag, the captured fence language, the viewer's heading
+  // slug, the authored id kept for serialization, and highlight.js state.
+  // Read by the change hash and by the serialize strip alike (isChromeAttr).
+  const CHROME_ATTRS = [
+    "contenteditable", LANG_ATTR, SLUG_ATTR, RAW_ID_ATTR, HIGHLIGHTED_ATTR,
+  ];
+  // The UI elements the viewer injects into content: the copy button in a
+  // fence and the fence's language chip.
+  const CHROME_NODE_SELECTOR = ".code-copy-btn, .hybrid-lang-pill";
+  // The two chrome-node outcomes (see chromeNodeKind): the whole node is
+  // UI, or the element is paint around content that must be kept.
+  const CHROME_REMOVE = "remove";
+  const CHROME_UNWRAP = "unwrap";
+  // The editing engine's own inline wrapper: a span with no class or id that
+  // carries a font-size/font-weight declaration. normalizeEngineSpans clears
+  // that style on the live DOM and marks the element, because a span is
+  // serializable (Q21) and the wrapper must not be written as HTML.
+  const ENGINE_SPAN_STYLE_RE = /(?:^|;)\s*(?:font-size|font-weight)\s*:/i;
+  const ENGINE_SPAN_ATTR = "data-hybrid-engine-span";
   // Renderer identity, derived from the blocks registry so a new renderer
   // is covered by construction. The registry keys it on the renderer's
   // marker attribute, not its class, so authored HTML with the same class
@@ -352,27 +435,50 @@
     turndownSvc.addRule("paragraph", {
       filter: ["p", "div"],
       replacement(content, node) {
-        const hasVoid = node.querySelector ?
-          !!node.querySelector("img,hr,input,canvas,svg,iframe,embed,object") :
-          false;
-        if (!node.textContent.trim() && !hasVoid) return "\n\n";
+        if (isEmptyParagraphBlock(node)) return "\n\n";
         return "\n\n" + content + "\n\n";
       },
     });
     // Authored raw HTML blocks: emit the element's own outerHTML instead
     // of letting turndown unwrap it to its text. The block is stashed and
     // replaced by a sentinel so the Markdown clean-up passes never touch
-    // the literal markup (see postProcessMarkdown).
+    // the literal markup (see postProcessMarkdown). A marked top-level
+    // block keeps the "\n\n" form; a block nested in a quote, list,
+    // heading, or cell goes through the inline rule below.
     turndownSvc.addRule("raw-html-block", {
       filter: (node) => node.nodeType === 1 && node.getAttribute &&
         node.getAttribute(RAW_HTML_ATTR) === "1",
+      replacement: (content, node) => "\n\n" + stashRawHtml(node) + "\n\n",
+    });
+    // A table cell's own pipes are escaped here, AFTER turndown has
+    // converted the cell: GFM ends the cell at an unescaped pipe (a code
+    // span included), so a bare pipe adds a column on reload. Escaping the
+    // text node instead does not work -- turndown would double the
+    // backslash. Reproduces the GFM plugin's pipe-wrapped cell output, and
+    // is added after the plugin so the last rule wins.
+    turndownSvc.addRule("tablecell", {
+      filter: ["th", "td"],
       replacement: (content, node) => {
-        const clone = node.cloneNode(true);
-        clone.removeAttribute(RAW_HTML_ATTR);
-        clone.removeAttribute("contenteditable");
-        const idx = rawHtmlStash.push(clone.outerHTML) - 1;
-        return "\n\n" + RAW_HTML_SENTINEL + idx + "\n\n";
+        const index = Array.from(node.parentNode.childNodes).indexOf(node);
+        const prefix = index === 0 ? "| " : " ";
+        // Authored markup in this cell was stashed as a plain sentinel;
+        // retag it so its restored bytes are escaped too.
+        const body = escapeCellPipes(content)
+          .split(RAW_HTML_SENTINEL).join(RAW_HTML_CELL_SENTINEL)
+          .split(COMMENT_SENTINEL).join(COMMENT_CELL_SENTINEL);
+        return prefix + body + " |";
       },
+    });
+    // Authored HTML that Markdown cannot express, added LAST so it
+    // outranks the built-in rules and the paragraph override: a sized
+    // image, a targeted link, an inline formatting tag, and a block
+    // nested in a quote, list, heading, or cell. The replacement has no
+    // surrounding newline, so "press <kbd>Ctrl</kbd> and" stays one
+    // paragraph. The app's own markers keep their own rule (see
+    // isAuthoredRawElement).
+    turndownSvc.addRule("raw-html-inline", {
+      filter: (node) => isAuthoredRawElement(node),
+      replacement: (content, node) => stashRawHtml(node),
     });
     // An EMPTY heading ("##" with no text yet) is handled in
     // domToMarkdown, not here: turndown's isBlank() check runs before any
@@ -383,6 +489,53 @@
   function isActive() { return active; }
 
   /* --- DOM <-> Markdown helpers ----------------------------------- */
+
+  /* True when a <p>/<div> holds no text and no void content, i.e. it is an
+   * empty block (the browser's own Enter artifact) rather than authored
+   * content. Such a block saves as a blank line. */
+  function isEmptyParagraphBlock(node) {
+    if (!node.querySelector) return true;
+    if (node.textContent.trim()) return false;
+    return !node.querySelector(EMPTY_BLOCK_VOID_SELECTOR);
+  }
+
+  /* True for an element the note's author wrote as HTML that Markdown
+   * cannot express and that no app rule owns. Provenance is the marker
+   * set by markRawHtmlBlocks at render time: a clipboard wrapper or an
+   * engine span is unmarked and is unwrapped by Turndown's default (Q9).
+   * A marked raw block (data-hybrid-raw-html) and both wikilink forms are
+   * excluded so each keeps its own rule. */
+  function isAuthoredRawElement(node) {
+    if (node.nodeType !== Node.ELEMENT_NODE || !node.tagName) return false;
+    if (!node.hasAttribute(AUTHORED_ATTR)) return false;
+    if (node.hasAttribute(RAW_HTML_ATTR)) return false;
+    if (node.hasAttribute("data-wikilink-raw") ||
+        node.hasAttribute("data-wikilink")) return false;
+    // An EMPTY <div> is the browser's own Enter artifact, never authored
+    // markup; the paragraph rule owns it and emits a blank line.
+    if (node.tagName === "DIV" && isEmptyParagraphBlock(node)) return false;
+    return true;
+  }
+
+  /* Stash an authored element's chrome-stripped markup and return the
+   * sentinel that stands in for it. The strip runs on a CLONE: removing
+   * contenteditable from a live atomic block would re-open it to the caret
+   * mid-save. The raw-block marker identifies the element to the block
+   * rule, so the strip leaves it on the tree; it is dropped here. */
+  function stashRawHtml(node) {
+    const clone = node.cloneNode(true);
+    // Strip while the authored markers are still on the clone: the strip's
+    // attribute filter needs them to know these attributes are content.
+    stripHybridChrome(clone);
+    clone.removeAttribute(RAW_HTML_ATTR);
+    clone.removeAttribute(AUTHORED_ATTR);
+    clone.querySelectorAll("[" + RAW_HTML_ATTR + "],[" + AUTHORED_ATTR + "]")
+      .forEach((el) => {
+        el.removeAttribute(RAW_HTML_ATTR);
+        el.removeAttribute(AUTHORED_ATTR);
+      });
+    return RAW_HTML_SENTINEL + (rawHtmlStash.push(clone.outerHTML) - 1);
+  }
 
   /* True for inline code -- a <code> that is not inside a <pre>. The
    * fenced path owns its source through NB.blocks.restoreForMarkdown
@@ -586,6 +739,75 @@
     });
   }
 
+  /* Strip the editor's own chrome from a CLONE. Never call it on the live
+   * DOM: removing contenteditable from an atomic block would re-open it to
+   * the caret mid-save, and restoring an authored id would rewrite the live
+   * outline's anchors.
+   *
+   * One definition, so the whole-DOM serializer and both raw-HTML emit
+   * paths cannot disagree about what is chrome. An authored id is restored
+   * (it is content); the rest is bookkeeping, UI, or painted state: the
+   * viewer's heading id and slug, the fence chip and copy button, the
+   * editing attributes, the highlight.js state, and the caret and gesture
+   * placeholders. */
+  function stripHybridChrome(root) {
+    const scope = [root].concat(Array.from(root.querySelectorAll("*")));
+    // An authored id (data-nb-id) is content: restore it and drop the
+    // marker. A viewer-assigned heading id (data-nb-slug with no authored
+    // marker) is bookkeeping and must never reach the note.
+    const authoredId = new Set();
+    scope.forEach((el) => {
+      if (!el.hasAttribute(RAW_ID_ATTR)) return;
+      authoredId.add(el);
+      el.id = el.getAttribute(RAW_ID_ATTR);
+      el.removeAttribute(RAW_ID_ATTR);
+    });
+    scope.forEach((el) => {
+      if (!HEADING_TAG_RE.test(el.tagName)) return;
+      if (!el.hasAttribute(SLUG_ATTR)) return;
+      if (!authoredId.has(el)) el.removeAttribute("id");
+      el.removeAttribute(SLUG_ATTR);
+    });
+    // The chrome NODES, by the decision the change hash also makes: UI and
+    // editing artifacts (the fence language chip, the copy button, a caret
+    // line box) are removed; engine paint around real words (an hljs token
+    // span, the engine's merged-text wrapper) is unwrapped so the words
+    // survive. highlight.js and the engine act on the live DOM, so this
+    // must run before the rules see the tree.
+    scope.forEach((el) => {
+      const chrome = chromeNodeKind(el);
+      if (chrome === CHROME_REMOVE) el.remove();
+      else if (chrome === CHROME_UNWRAP) {
+        el.replaceWith(...Array.from(el.childNodes));
+      }
+    });
+    // The injected attributes and the painted class tokens.
+    scope.forEach((el) => {
+      for (const name of Array.from(el.attributes, (a) => a.name)) {
+        // Both authored-raw markers stay on the TREE while Turndown routes
+        // each element to its own rule; the emit path removes them from
+        // the clone it stashes, so neither is ever written.
+        if (name === RAW_HTML_ATTR || name === AUTHORED_ATTR) continue;
+        if (!isChromeAttr(el, name)) continue;
+        el.removeAttribute(name);
+      }
+      const cls = el.getAttribute("class");
+      if (cls === null) return;
+      const rest = withoutChromeClasses(cls);
+      if (rest === cls) return;
+      if (rest) el.setAttribute("class", rest);
+      else el.removeAttribute("class");
+    });
+    // The zero-width placeholder keeps an empty list item's marker
+    // rendered; it is invisible and meaningless in the note.
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+      if (node.nodeValue.indexOf(ZERO_WIDTH_SPACE) === -1) continue;
+      node.nodeValue = node.nodeValue.split(ZERO_WIDTH_SPACE).join("");
+    }
+  }
+
   /* Run every pre-turndown pass over a clone (or a one-element container):
    * strip viewer chrome and editing artifacts, protect the whitespace
    * that turndown would otherwise delete, mark empty headings and list
@@ -595,22 +817,7 @@
    * serialization would have used. */
   function prepareTurndownClone(clone) {
     rawHtmlStash = [];
-    // Restore authored ids and drop the viewer's id/slug bookkeeping:
-    // a raw HTML block (or a heading inside one) must save its own
-    // markup, not the ids the outline and anchor resolution added.
-    clone.querySelectorAll("h1[" + SLUG_ATTR + "],h2[" + SLUG_ATTR + "]," +
-      "h3[" + SLUG_ATTR + "],h4[" + SLUG_ATTR + "]," +
-      "h5[" + SLUG_ATTR + "],h6[" + SLUG_ATTR + "]").forEach((el) => {
-      if (!el.hasAttribute(RAW_ID_ATTR)) el.removeAttribute("id");
-      el.removeAttribute(SLUG_ATTR);
-    });
-    clone.querySelectorAll("[" + RAW_ID_ATTR + "]").forEach((el) => {
-      el.id = el.getAttribute(RAW_ID_ATTR);
-      el.removeAttribute(RAW_ID_ATTR);
-    });
-    // Remove injected copy buttons and the fence-language chip so they
-    // don't appear in the output.
-    clone.querySelectorAll(".code-copy-btn, .hybrid-lang-pill").forEach((b) => b.remove());
+    stripHybridChrome(clone);
     // Fold text the browser parked between </code> and the chip back into
     // the code element (turndown's fenced rule reads <code> only).
     clone.querySelectorAll("pre").forEach((pre) => {
@@ -627,32 +834,6 @@
         }
       });
     });
-    // Drop the transient gesture-chrome classes: the <hr> selection
-    // highlight (toggled by the selectionchange listener, so a save with a
-    // rule still selected must serialize byte-for-byte as before) and the
-    // table-select rectangle (table-select.js). Built from CHROME_CLASS_TOKENS
-    // so this strip cannot drift from the change-hash strip.
-    clone.querySelectorAll(CHROME_CLASS_TOKENS.map((c) => "." + c).join(","))
-      .forEach((el) => CHROME_CLASS_TOKENS.forEach((c) => el.classList.remove(c)));
-    // Drop caret placeholder paragraphs the hr repair opened for the
-    // user (see placeCaretForRule) when they are still empty: a click
-    // beside a rule that never received text must not save as a blank
-    // line. The marker attribute is what identifies them; an empty one
-    // (only a <br>) is never user content, while one the user typed
-    // into fails the emptiness test and is kept. Normal blank lines the
-    // user creates are never marked, so they always survive.
-    clone.querySelectorAll("p[data-hybrid-caret]").forEach((p) => {
-      if (!p.textContent.trim() && !p.querySelector("img,hr,input")) p.remove();
-    });
-    // Drop the caret line-box <br> appended by caretToStart / caretToEdge.
-    // It is an editing artifact, not content: it exists only so the
-    // caret has a line to sit on in an empty block. Removing it on every
-    // save keeps an untouched empty heading as "##" (not "##   ") and
-    // stops it being serialized as a Markdown hard break ("  \n") after
-    // the user types a character in front of it. The attribute is set
-    // ONLY by those two functions, so a <br> the user actually typed is
-    // never marked and always survives.
-    clone.querySelectorAll("[" + CARET_BR_ATTR + "]").forEach((br) => br.remove());
     // Preserve a whitespace-only inline <code>   </code> by standing the
     // NUL-prefixed sentinel in for each space before turndown's
     // collapseWhitespace can delete the text node. Restored by
@@ -767,7 +948,10 @@
     // comment is not itself escaped.
     md = escapeRawHtmlEntities(md);
     // Restore each surviving HTML comment that was replaced by a
-    // COMMENT_SENTINEL placeholder (turndown drops comment nodes).
+    // COMMENT_SENTINEL placeholder (turndown drops comment nodes). One
+    // that sat in a table cell comes back with the pipe escape.
+    md = md.replace(commentCellSentinelRe(),
+      (_, i) => escapeCellPipes(commentStash[Number(i)] || ""));
     md = md.replace(commentSentinelRe(),
       (_, i) => commentStash[Number(i)] || "");
     // Turndown emits a task line as "-   [ ]  text": three spaces after the
@@ -785,8 +969,12 @@
     md = escapeLeadingHashes(md);
     // Restore authored raw HTML last: every Markdown clean-up pass above
     // would otherwise rewrite literal markup (escape "<", normalize a
-    // line that looks like a task, ...).
+    // line that looks like a task, ...). A cell's stash is restored with
+    // the pipe escape, so a pipe in the tag's text or an attribute cannot
+    // end the cell.
     if (rawHtmlStash.length) {
+      md = md.replace(rawHtmlCellSentinelRe(),
+        (_, i) => escapeCellPipes(rawHtmlStash[Number(i)] || ""));
       md = md.replace(rawHtmlSentinelRe(),
         (_, i) => rawHtmlStash[Number(i)] || "");
     }
@@ -825,9 +1013,30 @@
     return new RegExp(COMMENT_SENTINEL + "(\\d+)" + COMMENT_SENTINEL_END, "g");
   }
 
+  function commentCellSentinelRe() {
+    return new RegExp(COMMENT_CELL_SENTINEL + "(\\d+)" + COMMENT_SENTINEL_END, "g");
+  }
+
   function rawHtmlSentinelRe() {
     return new RegExp(
       RAW_HTML_SENTINEL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\d+)", "g");
+  }
+
+  function rawHtmlCellSentinelRe() {
+    return new RegExp(
+      RAW_HTML_CELL_SENTINEL.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "(\\d+)",
+      "g");
+  }
+
+  /* Give every pipe an ODD backslash run before it, so GFM reads it as a
+   * literal cell character instead of a cell boundary. An odd run is left
+   * alone; an even run gains one backslash. Turndown escapes a backslash
+   * of its own, so a cell holding a literal backslash-plus-pipe arrives
+   * here with two and is written with three -- which reads back as that
+   * same backslash and pipe. */
+  function escapeCellPipes(text) {
+    return text.replace(/\\*\|/g, (run) =>
+      (run.length - 1) % 2 === 0 ? "\\" + run : run);
   }
 
   /* Replace every HTML comment node under `root` with a text placeholder
@@ -1139,20 +1348,21 @@
     return 1;
   }
 
-  /* True for a token the gap-borrowing path may take a separating newline
-   * from: a token that owns no element of its own. Mirrors
-   * tokenElementCount === 0. */
+  /* True for a token that owns at least one top-level element. The
+   * gap-borrowing path may only take a separating newline from a token
+   * that owns none. */
   function tokenProducesElement(token) {
     return tokenElementCount(token) > 0;
   }
 
-  /* How many elements an `html` token owns. A comment renders none; raw
-   * markup renders one or several. A raw `<table>` is the one exception:
-   * a table has a native GFM form and §4.12 requires that no `<table>`
-   * ever be emitted, so a raw-table token owns no element and the whole
-   * document falls back to the whole-DOM serializer, which converts it.
-   * Every other raw block (`<div>`, `<details>`, a comment) is passed
-   * through untouched (Q10). */
+  /* How many elements an `html` token owns: a comment renders none, a raw
+   * block renders one (a `<table>`, a single `<div>`), and adjacent raw
+   * blocks in one token render several. Only a count of exactly one can be
+   * paired with one source span, so `buildAlignment` refuses two or more
+   * and the save falls back to the whole-DOM serializer -- canonicalized,
+   * but never lost or resurrected. A raw `<table>` is not special: it has
+   * a source span like any other block, and converting it is the work of
+   * the serializer, which runs only when the block is touched. */
   function htmlTokenElementCount(raw) {
     if (!window.marked || !raw) return 0;
     const holder = document.createElement("div");
@@ -1163,9 +1373,7 @@
     }
     let n = 0;
     for (const c of holder.childNodes) {
-      if (c.nodeType !== Node.ELEMENT_NODE) continue;
-      if (c.tagName === "TABLE") return 0;
-      n += 1;
+      if (c.nodeType === Node.ELEMENT_NODE) n += 1;
     }
     return n;
   }
@@ -1179,6 +1387,110 @@
     return els;
   }
 
+  /* True when `name` on `el` is editor/viewer bookkeeping rather than note
+   * content: a fixed injected attribute (CHROME_ATTRS), any data-hybrid-*
+   * marker, or a DOM id the viewer minted. An authored id is carried on
+   * data-nb-id: canonicalSubtree keys it as the id and stripHybridChrome
+   * restores it in place, so the deduped id the live DOM shows is never
+   * compared and never written. Read by both, so they cannot disagree. */
+  function isChromeAttr(el, name) {
+    if (name === "id") {
+      // An id on an unmarked <img>/<a> cannot be written by Markdown.
+      if ((el.tagName === "IMG" || el.tagName === "A") &&
+          !el.hasAttribute(AUTHORED_ATTR)) return true;
+      // An authored id is restored at the id position by canonicalSubtree;
+      // a heading slug the viewer minted is bookkeeping.
+      return HEADING_TAG_RE.test(el.tagName) && el.hasAttribute(SLUG_ATTR) &&
+        !el.hasAttribute(RAW_ID_ATTR);
+    }
+    if (CHROME_ATTRS.indexOf(name) !== -1) return true;
+    if (name.indexOf(HASH_ATTR_PREFIX) === 0) return true;
+    // An unmarked <img>/<a> is a paste or a Markdown render: Turndown
+    // writes only the Markdown attributes, so the key must ignore the
+    // rest. A marked one is authored and keeps every attribute.
+    if (el.tagName === "IMG" && !el.hasAttribute(AUTHORED_ATTR)) {
+      return MARKDOWN_IMG_ATTRS.indexOf(name) === -1;
+    }
+    if (el.tagName === "A" && !el.hasAttribute(AUTHORED_ATTR)) {
+      return MARKDOWN_A_ATTRS.indexOf(name) === -1 &&
+        name !== "data-wikilink" && name !== "data-wikilink-raw";
+    }
+    return false;
+  }
+
+  /* The chrome-node decision: CHROME_REMOVE for a node that is UI or an
+   * editing artifact, CHROME_UNWRAP for an element that is engine paint
+   * around real words, null for content. Shared by the read-only key walk
+   * and the mutating strip, so the hash, both signatures, and the written
+   * bytes cannot disagree about what is chrome. A caret <p> counts only
+   * while it is still empty; one the user typed into is content. */
+  function chromeNodeKind(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return null;
+    if (node.matches && node.matches(CHROME_NODE_SELECTOR)) return CHROME_REMOVE;
+    if (node.hasAttribute(CARET_BR_ATTR)) return CHROME_REMOVE;
+    if (node.hasAttribute(CARET_P_ATTR)) {
+      return isEmptyCaretParagraph(node) ? CHROME_REMOVE : null;
+    }
+    // An UNMARKED element Markdown cannot express is a paste or engine
+    // wrapper: Turndown unwraps it, so the key must too. A DIV is excluded
+    // because the paragraph rule owns it; an authored one carries the
+    // marker and is keyed as content. A wikilink keeps its own rule.
+    if (node.tagName !== "DIV" && AUTHORED_ELEMENT_TAGS.has(node.tagName) &&
+        !node.hasAttribute(AUTHORED_ATTR) &&
+        !node.hasAttribute(RAW_HTML_ATTR) &&
+        !node.hasAttribute("data-wikilink") &&
+        !node.hasAttribute("data-wikilink-raw")) {
+      return CHROME_UNWRAP;
+    }
+    if (node.tagName !== "SPAN") return null;
+    return isHljsTokenSpan(node) || isEngineSpan(node) ? CHROME_UNWRAP : null;
+  }
+
+  function isEmptyCaretParagraph(p) {
+    return !p.textContent.trim() && !p.querySelector(EMBEDDED_CONTENT_SELECTOR);
+  }
+
+  function isHljsTokenSpan(el) {
+    return Array.from(el.classList)
+      .some((c) => c.indexOf(HLJS_SPAN_CLASS_PREFIX) === 0);
+  }
+
+  /* The editing engine's own wrapper (see ENGINE_SPAN_STYLE_RE). The
+   * element is chrome, the text inside it is not. */
+  function isEngineSpan(el) {
+    if (el.className || el.id) return false;
+    // An authored span is content (Q21); only an unmarked wrapper is the
+    // engine's own paint.
+    if (el.hasAttribute(AUTHORED_ATTR)) return false;
+    return el.hasAttribute(ENGINE_SPAN_ATTR) ||
+      ENGINE_SPAN_STYLE_RE.test(el.getAttribute("style") || "");
+  }
+
+  /* A class attribute with the chrome tokens removed, or "" when none are
+   * left. A value that carries no chrome token is returned untouched, so a
+   * class the user or a renderer set keeps its exact bytes and no element
+   * whose paint did not change moves in the hash. */
+  function withoutChromeClasses(value) {
+    const tokens = String(value).split(/\s+/);
+    if (!tokens.some((c) => CHROME_CLASSES.indexOf(c) !== -1)) return value;
+    return tokens.filter((c) => c && CHROME_CLASSES.indexOf(c) === -1).join(" ");
+  }
+
+  /* Containers whose child text is layout, never prose: the newline marked
+   * puts between rows, items, or quoted blocks is HTML formatting no
+   * Markdown can express, and a view pass that re-appends a row or an item
+   * (table-view's sort restore, a list move) moves it. Neither the change
+   * hash nor a saved-render signature may see it. Whitespace inside a
+   * paragraph, heading, or table cell IS content and is kept. */
+  const LAYOUT_CONTAINER_TAGS = new Set([
+    "TABLE", "THEAD", "TBODY", "TFOOT", "TR", "UL", "OL", "BLOCKQUOTE",
+  ]);
+
+  function isLayoutSpace(node, parent) {
+    if (!parent || !LAYOUT_CONTAINER_TAGS.has(parent.tagName)) return false;
+    return !node.nodeValue.trim();
+  }
+
   /* A canonical, serialization-free string of a subtree for hashing:
    * element tags, non-chrome attributes, text and comment nodes. It must
    * be stable across the app's own DOM churn and sensitive to real edits:
@@ -1186,62 +1498,93 @@
    *   - `input.checked` is appended explicitly. Toggling a task checkbox
    *     is a real edit, but it is a live property that innerHTML /
    *     outerHTML / isEqualNode cannot see.
-   *   - Viewer/hybrid chrome is stripped before hashing: the
-   *     .code-copy-btn injected into every fence, every data-hybrid-*
-   *     attribute, and contenteditable. Heading ids (viewer slugs) are
-   *     stripped too; an id on any other element is treated as content.
+   *   - Every chrome node and attribute is skipped (see chromeNodeKind
+   *     and isChromeAttr): the copy button and language chip in a fence,
+   *     highlight.js token spans, the editing attributes, and the viewer's
+   *     heading slug. An authored id is keyed from data-nb-id, the value
+   *     the serializer writes.
+   *   - Adjacent text is keyed as ONE run, so an hljs run split across
+   *     token spans keys exactly like the plain text it unwraps to.
    *   - The zero-width-space placeholder addListPlaceholders injects into
    *     empty list items is ignored: it is invisible and meaningless.
    *
    * This is a cheap deterministic walk, NOT a serialization comparison:
    * comparing emitted markdown would see every `*` bullet and setext
    * heading as "changed" (turndown canonicalizes them) and re-serialize
-   * the whole file. */
-  function isHashStrippedAttr(el, name) {
-    if (name === "contenteditable" || name === CARET_BR_ATTR) return true;
-    if (name.indexOf(HASH_ATTR_PREFIX) === 0) return true;
-    if (name === "id" && HEADING_TAG_RE.test(el.tagName)) return true;
-    return false;
-  }
-
+   * the whole file. It never mutates the tree, so it can key the live
+   * DOM directly. */
   function canonicalSubtree(root) {
     let out = "";
-    (function walk(node) {
+    let text = "";
+    const flush = () => {
+      if (!text) return;
+      out += "\u0001t" + text;
+      text = "";
+    };
+    (function walk(node, parent) {
       if (node.nodeType === Node.TEXT_NODE) {
-        out += "\u0001t" + node.nodeValue.split(ZERO_WIDTH_SPACE).join("");
+        if (isLayoutSpace(node, parent)) return;
+        text += node.nodeValue.split(ZERO_WIDTH_SPACE).join("");
         return;
       }
       if (node.nodeType === Node.COMMENT_NODE) {
+        flush();
         out += "\u0001c" + node.nodeValue;
         return;
       }
       if (node.nodeType !== Node.ELEMENT_NODE) return;
-      if (node.classList && node.classList.contains("code-copy-btn")) return;
-      out += "\u0001<" + node.tagName;
-      for (const a of node.attributes) {
-        if (isHashStrippedAttr(node, a.name)) continue;
-        // The selection-highlight class is chrome, not content, but a
-        // class attribute can also carry real significance. Strip only
-        // the transient gesture tokens -- HR_SELECTED_CLASS and the
-        // table-select rectangle classes; every other value is emitted
-        // byte-for-byte, so a class the user or a renderer set keeps its
-        // exact significance and no non-selected element's hash moves.
-        if (a.name === "class" && a.value.split(/\s+/)
-              .some((c) => CHROME_CLASS_TOKENS.indexOf(c) !== -1)) {
-          const rest = a.value.split(/\s+/)
-            .filter((c) => c && CHROME_CLASS_TOKENS.indexOf(c) === -1).join(" ");
-          if (rest) out += " class=" + rest;
-          continue;
+      const chrome = chromeNodeKind(node);
+      if (chrome === CHROME_REMOVE) return;
+      if (chrome === CHROME_UNWRAP) {
+        for (const child of node.childNodes) walk(child, node);
+        return;
+      }
+      flush();
+      // An unmarked <div> is the browser's or a paste's block wrapper; the
+      // paragraph rule writes it as <p> with no attributes, so the key
+      // must see exactly that.
+      const unmarkedDiv = node.tagName === "DIV" &&
+        !node.hasAttribute(RAW_HTML_ATTR) &&
+        !node.hasAttribute(AUTHORED_ATTR);
+      out += "\u0001<" + (unmarkedDiv ? "P" : node.tagName);
+      // The authored id is content: emit it at the id position so attribute
+      // order matches the parsed render, which has a real id only.
+      let idWritten = false;
+      if (!unmarkedDiv) {
+        for (const a of node.attributes) {
+          if (a.name === RAW_ID_ATTR) continue;
+          // A live checkbox property, appended below, is the one authority.
+          if (node.tagName === "INPUT" && a.name === "checked") continue;
+          if (a.name === "id" && node.hasAttribute(RAW_ID_ATTR)) {
+            out += " id=" + node.getAttribute(RAW_ID_ATTR);
+            idWritten = true;
+            continue;
+          }
+          if (isChromeAttr(node, a.name)) continue;
+          if (a.name === "class") {
+            const rest = withoutChromeClasses(a.value);
+            if (rest) out += " class=" + rest;
+            continue;
+          }
+          out += " " + a.name + "=" + a.value;
         }
-        out += " " + a.name + "=" + a.value;
+        if (!idWritten && node.hasAttribute(RAW_ID_ATTR)) {
+          out += " id=" + node.getAttribute(RAW_ID_ATTR);
+        }
       }
       // A live checkbox property has no attribute to compare.
       if (node.tagName === "INPUT") {
         out += " checked=" + (node.checked ? "1" : "0");
       }
-      for (const child of node.childNodes) walk(child);
+      // A live checkbox property has no attribute to compare.
+      if (node.tagName === "INPUT") {
+        out += " checked=" + (node.checked ? "1" : "0");
+      }
+      for (const child of node.childNodes) walk(child, node);
+      flush();
       out += ">";
-    })(root);
+    })(root, null);
+    flush();
     return out;
   }
 
@@ -1267,6 +1610,25 @@
     return null;
   }
 
+  /* The comparison form of a plugin fence's source: marked appends a
+   * newline to a fenced block's body, while the live container stores the
+   * source as authored. Both sides trim the same way so the identity check
+   * sees one source. The change hash also uses this form, and both the
+   * baseline and the current DOM go through it, so the trim cannot make a
+   * real edit look unchanged. */
+  function comparisonSource(source) {
+    return (source || "").replace(/\n+$/, "");
+  }
+
+  /* The key of a plugin block: its fence identifier and its original
+   * source. The rendered SVG or error box is asynchronous and mutable, so
+   * the source is the only form both sides of a comparison can agree on.
+   * The fence is the descriptor's round-trip language, so an alias
+   * (```katex -> ```math) keys the same on both sides. */
+  function pluginKey(info) {
+    return "\u0001p" + info.fence + "\u0001" + comparisonSource(info.source);
+  }
+
   /* The change key of a top-level element: a collision-free canonical
    * string, not a hash. A 32-bit FNV-1a digest was used here originally,
    * but two distinct short paragraphs can collide (`5ur85a` and `qnef9u`
@@ -1284,7 +1646,7 @@
    * subtree (see canonicalSubtree). */
   function changeKeyForElement(el) {
     const info = pluginBlockInfo(el);
-    if (info) return "\u0001p" + info.fence + "\u0001" + info.source;
+    if (info) return pluginKey(info);
     return canonicalSubtree(el);
   }
 
@@ -1734,18 +2096,56 @@
     });
   }
 
-  /* Mark authored raw HTML blocks (the source came from marked, so any
-   * block-level tag outside Markdown's own output is the author's HTML).
-   * Renderer containers are excluded: they are DIVs too, but they own
-   * their fenced source and serialize through the blocks registry. */
+  /* Mark the elements that came from the note's own source as authored
+   * raw HTML: every top-level block tag outside Markdown's own output, and
+   * every inline/quote/list-nested element Markdown cannot express. The
+   * marker is set from the freshly rendered DOM, so a clipboard wrapper or
+   * an engine span pasted or typed later is never marked and is unwrapped
+   * instead (Q9). Renderer containers are excluded: they own their fenced
+   * source and serialize through the blocks registry. */
   function markRawHtmlBlocks(root) {
-    Array.from((root || viewerContentEl).children).forEach((el) => {
-      if (!RAW_HTML_TAGS.has(el.tagName)) return;
+    const scope = root || viewerContentEl;
+    Array.from(scope.children).forEach((el) => {
       if (el.hasAttribute(RAW_HTML_ATTR)) return;
       if (el.getAttribute("contenteditable") === "false") return;
       if (PLUGIN_CONTAINER_SELECTOR && el.matches(PLUGIN_CONTAINER_SELECTOR)) return;
-      el.setAttribute(RAW_HTML_ATTR, "1");
+      // A block tag outside Markdown's output, or a Markdown block (a
+      // heading, a paragraph) carrying an authored id the viewer kept on
+      // data-nb-id: Markdown cannot express that attribute, so the element
+      // keeps its own markup.
+      if (RAW_HTML_TAGS.has(el.tagName) || el.hasAttribute(RAW_ID_ATTR)) {
+        el.setAttribute(RAW_HTML_ATTR, "1");
+      }
     });
+    scope.querySelectorAll("*").forEach((el) => {
+      if (el.hasAttribute(AUTHORED_ATTR)) return;
+      if (el.closest("[" + RAW_HTML_ATTR + "]")) return;
+      if (PLUGIN_CONTAINER_SELECTOR && el.closest(PLUGIN_CONTAINER_SELECTOR)) return;
+      if (el.hasAttribute("data-wikilink") ||
+          el.hasAttribute("data-wikilink-raw")) return;
+      if (AUTHORED_ELEMENT_TAGS.has(el.tagName)) {
+        el.setAttribute(AUTHORED_ATTR, "1");
+        return;
+      }
+      if (el.tagName === "IMG" && !isMarkdownImage(el)) {
+        el.setAttribute(AUTHORED_ATTR, "1");
+        return;
+      }
+      if (el.tagName === "A" && !isMarkdownLink(el)) {
+        el.setAttribute(AUTHORED_ATTR, "1");
+      }
+    });
+  }
+
+  function isMarkdownImage(el) {
+    return Array.from(el.attributes)
+      .every((a) => MARKDOWN_IMG_ATTRS.indexOf(a.name) !== -1);
+  }
+
+  function isMarkdownLink(el) {
+    return Array.from(el.attributes).every((a) =>
+      MARKDOWN_A_ATTRS.indexOf(a.name) !== -1 ||
+      a.name === "data-wikilink" || a.name === "data-wikilink-raw");
   }
 
   function renderMarkdown(md) {
@@ -1799,6 +2199,27 @@
     // doesn't park the caret on a rect-less element and fling the
     // viewport to the top/bottom (see markAtomicBlocks).
     markAtomicBlocks();
+  }
+
+  /* Apply the structural normalization renderMarkdown applies, in the same
+   * order, to a detached tree: the viewer's passes that change SHAPE,
+   * minus what only makes the surface editable (no plugin render -- a
+   * plugin block is compared by its fence source -- and no heading ids).
+   * The saved side of the saved-equals-viewed check runs through this so
+   * the list of passes exists once. */
+  function normalizeForComparison(root) {
+    if (!root) return root;
+    markRawHtmlBlocks(root);
+    if (NB.viewer && NB.viewer.stripTaskItemSpaces) {
+      NB.viewer.stripTaskItemSpaces(root);
+    }
+    // renderMarkdown's own order below: the checkbox, placeholder, and
+    // line-box passes precede the thead flatten.
+    enableCheckboxes(root);
+    addListPlaceholders(root);
+    addEmptyLineBoxes(root);
+    flattenTheads(root);
+    return root;
   }
 
   /* --- edit bar integration -------------------------------------- */
@@ -2825,9 +3246,12 @@
 
   /* Add a zero-width-space placeholder to every empty list item in the
    * current DOM so their markers render. Called on hybrid enter and after
-   * any re-render (the markdown may contain empty items). */
-  function addListPlaceholders() {
-    viewerContentEl.querySelectorAll("li").forEach(ensureListMarker);
+   * any re-render (the markdown may contain empty items). `root` defaults
+   * to the live viewer; the saved-render comparison passes a detached
+   * one. */
+  function addListPlaceholders(root) {
+    const scope = root || viewerContentEl;
+    scope.querySelectorAll("li").forEach(ensureListMarker);
   }
 
   /* Give every empty block a marked caret line box so the caret has a
@@ -2846,9 +3270,9 @@
    * empty "###" still saves as exactly "###". Only blocks that can hold
    * text get one; a void block (<hr>, an atomic plugin container, a
    * table) has no text caret and keeps its own behavior. */
-  function addEmptyLineBoxes() {
+  function addEmptyLineBoxes(root) {
     const BLOCKS = "p,h1,h2,h3,h4,h5,h6,blockquote,li";
-    viewerContentEl.querySelectorAll(BLOCKS).forEach((el) => {
+    (root || viewerContentEl).querySelectorAll(BLOCKS).forEach((el) => {
       if (el.textContent.trim()) return;
       if (el.querySelector(EMBEDDED_CONTENT_SELECTOR + ",br")) return;
       if (el.querySelector(PLUGIN_CONTAINER_SELECTOR)) return;
@@ -2871,8 +3295,8 @@
    * cells are all <th>, and the tableSection rule strips tbody wrappers,
    * so domToMarkdown saves byte-identical markdown. The preview DOM is
    * untouched (marked re-renders with thead on exit). */
-  function flattenTheads() {
-    viewerContentEl.querySelectorAll("table thead").forEach((thead) => {
+  function flattenTheads(root) {
+    (root || viewerContentEl).querySelectorAll("table thead").forEach((thead) => {
       const table = thead.closest("table");
       if (!table) return;
       let tbody = table.tBodies[0];
@@ -3768,15 +4192,12 @@
    * rendering ever larger). Hybrid has no span formatting, so a span that
    * carries an inline font-size/font-weight and no class or id is engine
    * chrome, never user content: clear its presentational style so the
-   * text inherits the block's own size. The span element itself is left
-   * in place (only its style is cleared), so the caret and the engine's
-   * own markup stay intact and a following Backspace/Delete merges
-   * exactly as it would without this pass. Turndown discards the span
-   * either way, so the saved Markdown is untouched; this fixes the live
-   * view only. A span with a class or id is real markup (a renderer's or
-   * a hljs token) and is left alone. */
-  const ENGINE_SPAN_STYLE_RE = /(?:^|;)\s*(?:font-size|font-weight)\s*:/i;
-
+   * text inherits the block's own size, and mark it so the serializer can
+   * unwrap a wrapper this pass has already cleaned (see stripHybridChrome).
+   * The span element itself is left in place, so the caret and the
+   * engine's own markup stay intact and a following Backspace/Delete
+   * merges exactly as it would without this pass. A span with a class or
+   * id is real markup (a renderer's or a hljs token) and is left alone. */
   function normalizeEngineSpans(root) {
     // The engine span is inside the block that received the merged text --
     // the caret's own block -- so scope the scan there; an ordinary
@@ -3785,8 +4206,12 @@
     const scope = root || (block && block.blockEl) || viewerContentEl;
     scope.querySelectorAll("span").forEach((span) => {
       if (span.className || span.id) return;
+      // An authored span is content (Q21), even when the engine's own
+      // marker style matches its declaration.
+      if (span.hasAttribute(AUTHORED_ATTR)) return;
       const style = span.getAttribute("style") || "";
       if (!ENGINE_SPAN_STYLE_RE.test(style)) return;
+      span.setAttribute(ENGINE_SPAN_ATTR, "1");
       const kept = style.split(";")
         .map((d) => d.trim())
         .filter((d) => d && !/^(?:font-size|font-weight)\s*:/i.test(d))
@@ -6480,6 +6905,13 @@
       if (!pastedImageUrlIsSafe(node.getAttribute("src"))) node.removeAttribute("src");
     }
     Array.from(node.children).forEach((child) => sanitizePastedNode(child, level + 1));
+    // A wrapper Markdown cannot express -- a clipboard's theme <span>, a
+    // <kbd>/<mark> from a web page -- is unwrapped to its text: a paste
+    // writes no tag (Q9). The serializer keeps the AUTHORED form of these
+    // same tags (Q21), so this is where the browser's own is removed.
+    if (RAW_INLINE_TAGS.has(tag) && node.parentNode) {
+      node.replaceWith(...Array.from(node.childNodes));
+    }
   }
 
   function markPastedTaskItem(li) {
@@ -6770,8 +7202,14 @@
     editGeneration += 1;
   }
 
-  function onContentChange() {
-    markDirty();
+  function onContentChange(opts) {
+    // The debounced UI pass that follows a keystroke is already dirty; a
+    // second generation bump would make a Ctrl+S inside the 50 ms window
+    // look like "typed during the POST" and defer the I10 check.
+    if (!opts || !opts.alreadyDirty) markDirty();
+    // A save can reset the flag before this timer fires; in that case the
+    // UI must not re-mark the tab dirty with no write behind it.
+    if (!dirty) return;
     saveBtn.hidden = false;
     closeEditBtn.classList.add("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
@@ -7085,7 +7523,7 @@
     markDirty();
     armAutosave();
     clearTimeout(inputDebounce);
-    inputDebounce = setTimeout(onContentChange, 50);
+    inputDebounce = setTimeout(() => onContentChange({ alreadyDirty: true }), 50);
   }
 
   /* beforeinput: the last line of defence for text typed at a rule's
@@ -7194,11 +7632,12 @@
    * Also marks each one contenteditable="false" (see makeTaskCheckbox)
    * so the caret can never target the box. Called on enter (the DOM is
    * already rendered by viewer.js) and after any re-render. */
-  function enableCheckboxes() {
-    viewerContentEl.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-      cb.removeAttribute("disabled");
-      cb.setAttribute("contenteditable", "false");
-    });
+  function enableCheckboxes(root) {
+    (root || viewerContentEl).querySelectorAll('input[type="checkbox"]')
+      .forEach((cb) => {
+        cb.removeAttribute("disabled");
+        cb.setAttribute("contenteditable", "false");
+      });
   }
 
   /* --- public API ------------------------------------------------- */
@@ -7350,11 +7789,18 @@
     await awaitPendingAutosave();
     let md = null;
     if (save) {
+      // A deferred check is resolved BEFORE this save serializes (AC25).
+      settlePendingCheck(true);
       md = domToMarkdown();
       // Same no-op rule as every other save caller: an unchanged DOM
-      // writes nothing.
-      if (isNoOpMarkdown(md)) resetDirty();
-      else await doSave(md);
+      // writes nothing -- but the bytes still have to match the view
+      // (AC22), and a mismatch is announced after the exit render below.
+      if (isNoOpMarkdown(md)) {
+        resetDirty();
+        verifySessionRender(true);
+      } else {
+        await doSave(md, { onExit: true });
+      }
     }
     // Unwire listeners.
     viewerContentEl.removeEventListener("input", onInput);
@@ -7412,6 +7858,9 @@
     const path = activePath;
     activePath = null;
     resetDirty();
+    // The session is over: a deferred check has nothing left to reconcile,
+    // and the notice below belongs to this exit.
+    pendingVerify = false;
 
     // Re-render the file as normal preview (from the cache, which
     // doSave updated if we saved; otherwise from the original content).
@@ -7427,6 +7876,13 @@
       if (viewer.activate && NB.tabs && NB.tabs.isOpen(path)) {
         await viewer.activate(path);
       }
+    }
+    // A mismatch found on this path was logged there; the render above is
+    // its reconciliation, so the notice goes out now that the user sees
+    // the rebuilt view.
+    if (exitRenderNotice) {
+      exitRenderNotice = false;
+      notifyRebuilt();
     }
 
     NB.evt.emit("hybrid:exited", path);
@@ -7458,6 +7914,229 @@
     return isNoOpMarkdown(md) ? null : md;
   }
 
+  /* --- saved equals viewed (I10, Q23) ------------------------------ */
+
+  const REBUILT_NOTICE = "Saved — the view was rebuilt from the file.";
+
+  // A mismatch found while the user typed during the write: the bytes on
+  // disk are older than the DOM, so the check is deferred rather than
+  // re-rendered over the new text.
+  let pendingVerify = false;
+  // A mismatch found on the exit path: the surface is rebuilt there
+  // anyway, so the notice is shown after that render.
+  let exitRenderNotice = false;
+
+  /* Rewrite every registered fence under `root` (or `root` itself) into
+   * the canonical form both signatures key: the descriptor's round-trip
+   * fence language and the trimmed source. A rendered container or error
+   * box is replaced by that <pre>; a plain <pre> a descriptor claims is
+   * normalized in place. This is what makes a plugin nested in a quote or
+   * list compare equal to the render of its saved fence. */
+  function normalizePluginForCompare(root) {
+    const fenceEl = (info) => {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-" + info.fence;
+      code.textContent = comparisonSource(info.source);
+      pre.appendChild(code);
+      return pre;
+    };
+    const descriptorOf = (el) =>
+      (NB.blocks && NB.blocks.forElement) ? NB.blocks.forElement(el) : null;
+    if (root.nodeType === Node.ELEMENT_NODE && PLUGIN_CONTAINER_SELECTOR &&
+        root.matches(PLUGIN_CONTAINER_SELECTOR)) {
+      const d = descriptorOf(root);
+      return d ? fenceEl({ fence: d.fence, source: NB.blocks.sourceOf(d, root) })
+        : root;
+    }
+    root.querySelectorAll("pre").forEach((pre) => {
+      const info = pluginBlockInfo(pre);
+      if (info) pre.replaceWith(fenceEl(info));
+    });
+    root.querySelectorAll(PLUGIN_CONTAINER_SELECTOR).forEach((el) => {
+      const d = descriptorOf(el);
+      if (!d) return;
+      el.replaceWith(fenceEl({
+        fence: d.fence, source: NB.blocks.sourceOf(d, el),
+      }));
+    });
+    return root;
+  }
+
+  /* The key of one top-level element of the view. A top-level plugin is
+   * keyed by its fence source; every other block keys a CLONE with its
+   * nested plugin containers reduced to their fence form, so a rendered
+   * diagram inside a quote, list, or cell compares equal to the saved
+   * fence. The clone is required: the reduction replaces nodes. */
+  function liveElementKey(el) {
+    const info = pluginBlockInfo(el);
+    if (info) return pluginKey(info);
+    const clone = el.cloneNode(true);
+    normalizePluginForCompare(clone);
+    return canonicalSubtree(clone);
+  }
+
+  /* A top-level empty <p>/<div> writes no bytes: the paragraph rule emits
+   * a blank line and join() collapses it, so the saved render has no such
+   * element. The signature must agree, or a block the user just created
+   * by pressing Enter would read as a permanent mismatch. An authored raw
+   * element is never zero-byte -- it writes its markup. */
+  function isZeroByteTopBlock(el) {
+    if (el.hasAttribute(RAW_HTML_ATTR) || el.hasAttribute(AUTHORED_ATTR)) {
+      return false;
+    }
+    return (el.tagName === "P" || el.tagName === "DIV") &&
+      isEmptyParagraphBlock(el);
+  }
+
+  /* The view's signature: one key per top-level element of
+   * #viewer-content, in order. The key walk never mutates the live DOM. */
+  function liveRenderSignature() {
+    return topLevelElements()
+      .filter((el) => !isZeroByteTopBlock(el))
+      .map(liveElementKey);
+  }
+
+  /* The key of one element of a freshly parsed document. A plugin fence is
+   * keyed by the renderer's FENCE and the source, exactly as its live
+   * container is, so an alias (```katex -> ```math) and both forms of the
+   * same block compare equal; everything else keys its normalized
+   * subtree. */
+  function savedElementKey(el) {
+    const info = pluginBlockInfo(el);
+    if (info) return pluginKey(info);
+    return canonicalSubtree(el);
+  }
+
+  /* The signature of the app's own render of `md`: the bytes a save wrote
+   * or would write, parsed with the viewer's options, normalized the way
+   * renderMarkdown normalizes the view, and keyed like the live DOM.
+   * Returns null when marked is unavailable (nothing to compare). */
+  function savedRenderSignature(md) {
+    if (!window.marked) return null;
+    const root = document.createElement("div");
+    root.innerHTML = window.marked.parse(md == null ? "" : md,
+      { gfm: true, breaks: false });
+    normalizeForComparison(root);
+    normalizePluginForCompare(root);
+    return Array.from(root.children).map(savedElementKey);
+  }
+
+  /* Compare the render of `md` with the view captured when `md` was
+   * computed. Element sequences only, in order, and the count must match:
+   * root-level text and comments stay covered by rootAuxCount, and a
+   * blank-line run has no DOM shape, so the written bytes remain its
+   * source of truth. Returns the first mismatch, or match: true. */
+  function verifySavedRender(md, liveSig) {
+    const saved = savedRenderSignature(md);
+    const live = liveSig || [];
+    if (!saved) return { match: true, index: -1, liveKey: null, savedKey: null };
+    const count = Math.max(live.length, saved.length);
+    for (let i = 0; i < count; i += 1) {
+      if (live[i] === saved[i]) continue;
+      return {
+        match: false,
+        index: i,
+        liveKey: live[i] === undefined ? null : live[i],
+        savedKey: saved[i] === undefined ? null : saved[i],
+      };
+    }
+    return { match: true, index: -1, liveKey: null, savedKey: null };
+  }
+
+  /* The check as the save path calls it, never as a local binding: a test
+   * can force a mismatch (or capture a signature) without breaking the
+   * serializer. */
+  const renderCheck = {
+    liveSignature: liveRenderSignature,
+    savedSignature: savedRenderSignature,
+    verify: verifySavedRender,
+  };
+
+  function notifyRebuilt() {
+    if (NB.app && NB.app.notify) NB.app.notify(REBUILT_NOTICE);
+  }
+
+  /* Rebuild the surface from `md`: the file is the source of truth once the
+   * view and the bytes disagree. The scroll offset is restored so the
+   * reader stays put, and the undo history is reset -- a snapshot of the
+   * divergent DOM would restore it, and the next Ctrl+S would then write
+   * the old bytes back (AC24). The new history baseline is this rebuilt
+   * DOM, and the splice baseline is re-seated from it. */
+  function rebuildFromSaved(md) {
+    const scrollTop = viewerScrollEl ? viewerScrollEl.scrollTop : 0;
+    renderMarkdown(md);
+    markAtomicBlocks();
+    if (viewerScrollEl) viewerScrollEl.scrollTop = scrollTop;
+    resetHistory();
+    rebaseSession(md);
+    notifyRebuilt();
+  }
+
+  /* Act on one comparison. A match clears a pending check while the
+   * snapshot still describes the DOM. A mismatch is reconciled by a
+   * rebuild ONLY when no keystroke landed since the capture; otherwise
+   * the check is deferred, because a re-render would delete what was
+   * typed (AC23). `onExit` suppresses the rebuild: the exit path renders
+   * the note again anyway, so the mismatch is reported after that
+   * render. */
+  function reconcileSavedRender(md, liveSig, generation, onExit) {
+    const result = renderCheck.verify(md, liveSig);
+    const deferred = generation !== editGeneration;
+    if (result.match) {
+      if (!deferred) pendingVerify = false;
+      return result;
+    }
+    console.warn("hybrid: the saved render differs at block " + result.index);
+    if (deferred) {
+      pendingVerify = true;
+      return result;
+    }
+    pendingVerify = false;
+    if (onExit || !active) {
+      // The exit render reconciles the surface; a finished session has
+      // nothing left to touch.
+      if (active) exitRenderNotice = true;
+      return result;
+    }
+    rebuildFromSaved(md);
+    return Object.assign({}, result, { rebuilt: true });
+  }
+
+  /* The no-write form of the check: the bytes already on disk against the
+   * view as it stands now, both captured in this tick. An explicit save
+   * that writes nothing still has to surface a divergence an autosave
+   * wrote (AC18b/AC22), and the exit path reports one after its own
+   * re-render. */
+  function verifySessionRender(onExit) {
+    return reconcileSavedRender(sessionSource, renderCheck.liveSignature(),
+      editGeneration, onExit);
+  }
+
+  /* Resolve a deferred check before the next serialization.
+   *
+   * The DOM is newer than the file in the case that deferred it -- that
+   * keystroke is the reason the rebuild was skipped -- so a rebuild here
+   * would delete it. What this can do safely is re-seat a dead splice
+   * baseline when the two already agree, so the coming write splices
+   * instead of falling back to the whole file (AC25). A real mismatch is
+   * left to the write's own check, which compares the bytes it just wrote;
+   * on the exit path it is reported after the exit render. */
+  function settlePendingCheck(onExit) {
+    if (!pendingVerify) return null;
+    pendingVerify = false;
+    const result = renderCheck.verify(sessionSource,
+      renderCheck.liveSignature());
+    if (result.match) {
+      if (!blockHashes) rebaseSegments(sessionSource);
+      return result;
+    }
+    console.warn("hybrid: the saved render still differs at block " +
+      result.index + "; the next write reports it");
+    if (onExit) exitRenderNotice = true;
+    return result;
+  }
+
   /* Re-seat the no-op baseline and the splice baseline on `source` and on
    * the current DOM. Called when hybrid enters, after a successful write,
    * and after an external change re-renders the note. The last case is
@@ -7473,8 +8152,8 @@
     sessionSerialized = domToMarkdown();
   }
 
-  async function doSave(md) {
-    if (!activePath || md == null) return;
+  async function doSave(md, opts) {
+    if (!activePath || md == null) return null;
     // Capture the splice baseline for the bytes being written NOW, before
     // the first await. `md` was computed from the DOM in this same tick,
     // so the DOM at this instant is the one `md` describes; the user can
@@ -7486,6 +8165,8 @@
     const writtenAlignment = buildAlignment(writtenBlocks);
     const writtenAux = rootAuxCount();
     const generation = editGeneration;
+    // The view the bytes came from, in the same tick (see I10).
+    const liveSig = renderCheck.liveSignature();
     const path = activePath;
     // Open the watcher's self-save window BEFORE the write. The server
     // changes the file while this POST is in flight, so a watcher poll
@@ -7525,6 +8206,23 @@
     // Edits typed during the write stay dirty so their own autosave (or
     // an explicit one) writes them; clearing here would mark them saved.
     if (generation === editGeneration) resetDirty();
+    // Saved equals viewed (I10): compare the render of the bytes just
+    // written with the view they were taken from. A rebuild is skipped on
+    // the exit path (it renders the note again anyway) and whenever a
+    // keystroke landed during the POST.
+    const result = reconcileSavedRender(md, liveSig, generation,
+      !!(opts && opts.onExit));
+    // A write whose written block count differs cannot be aligned before
+    // the render settles (buildAlignment returns null), which would leave
+    // the splice dead. The check's rebuild re-seats it; when the render
+    // matched, this DOM is the written bytes, so retry the pairing rather
+    // than let the next save fall back to the whole file (AC25). A newer
+    // DOM must not be re-seated: its tokens describe older bytes.
+    if (!blockHashes && result && result.match &&
+        generation === editGeneration) {
+      rebaseSegments(sessionSource);
+    }
+    return result;
   }
 
   async function onSave(e) {
@@ -7547,15 +8245,25 @@
       // Let an in-flight autosave finish first so this explicit save is
       // the last write to reach the file (see awaitPendingAutosave).
       await awaitPendingAutosave();
+      // A check deferred by an earlier write runs BEFORE this one
+      // serializes (AC25).
+      settlePendingCheck(false);
       const md = domToMarkdown();
+      let result;
       if (isNoOpMarkdown(md)) {
         // No edits: clear dirty and report success without a POST. The
-        // user's words are already on disk byte-for-byte.
+        // user's words are already on disk byte-for-byte -- but the bytes
+        // still have to match the view, so the no-write check runs
+        // (AC18b/AC22).
         resetDirty();
+        result = verifySessionRender(false);
       } else {
-        await doSave(md);
+        result = await doSave(md);
       }
-      if (NB.app && NB.app.notify) NB.app.notify("Saved");
+      // A rebuild states what happened; "Saved" would overwrite it.
+      if (NB.app && NB.app.notify && !(result && result.rebuilt)) {
+        NB.app.notify("Saved");
+      }
     } catch (err) {
       alert("Save failed: " + (err && err.message ? err.message : err));
       throw err;
@@ -7569,6 +8277,8 @@
     // than the DOM serialized below, and the exit save must be the last
     // write to reach the file.
     await awaitPendingAutosave();
+    // A deferred check is resolved BEFORE this save serializes (AC25).
+    settlePendingCheck(true);
     let md;
     try {
       md = pendingMarkdown();
@@ -7576,6 +8286,9 @@
       alert("Save failed: " + (err && err.message ? err.message : err));
       return;
     }
+    // Nothing to write: the bytes on disk still have to match the view
+    // (AC18b/AC22). A mismatch is reported after the exit render.
+    const checkOnly = md == null;
     let ask = true;
     let attempts = 0;
     // The loop covers bytes typed while a POST is in flight: doSave
@@ -7589,7 +8302,7 @@
         if (!ok) break;          // Cancel: discard and exit, as before
       }
       try {
-        await doSave(md);
+        await doSave(md, { onExit: true });
       } catch (err) {
         alert("Save failed: " + (err && err.message ? err.message : err));
         return;                  // stay in the editor with the edits intact
@@ -7597,6 +8310,7 @@
       attempts += 1;
       md = pendingMarkdown();
     }
+    if (checkOnly) verifySessionRender(true);
     await exit(false);
   }
 
@@ -7642,7 +8356,7 @@
     // tab switch still writes silently.
     if (autosaveEnabled()) {
       try {
-        await doSave(md);
+        await doSave(md, { onExit: true });
       } catch (err) {
         alert("Save failed: " + (err && err.message ? err.message : err));
         return false;
@@ -9466,6 +10180,10 @@
     refreshFromContent,
     domToMarkdown,
     flattenTheads,
+    // Saved equals viewed (I10): the check the save path runs. Exposed so
+    // a test can read a signature or force a mismatch; the save path calls
+    // through this object, never a module-local binding.
+    renderCheck,
     updateButtonVisibility,
     commitForTabSwitch,
     recoverDraft,

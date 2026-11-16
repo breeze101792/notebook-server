@@ -1,7 +1,8 @@
 # Hybrid editing behavior specification
 
-Status: implemented behavior spec. Open questions are tracked inline with
-the ⛔/✳ marks. Owner: `product-designer`.
+Status: implemented behavior spec. The 2026-11-15 write-back addendum
+(Q20–Q24, defects V1–V7) is implemented at this revision. Open questions are
+tracked inline with the ⛔/✳ marks. Owner: `product-designer`.
 Applies to: `static/js/hybrid.js`, `templates/index.html`, `tests/dom/test_dom.js`,
 `tests/browser/test_hybrid_browser.js`.
 
@@ -121,6 +122,11 @@ These are settled by the owner and override any conflicting recommendation below
 | Q10 | **Raw HTML is editable in place** (not made read-only). | The `html` token must be aligned by the splice so an edit does not force whole-file fallback. **Open fork:** what an *edited* raw HTML block writes back is undecided — preserve the user's tags, or unwrap to text (§6 Q10). |
 | Q16 | **One `Enter`, one break, in hybrid mode.** The rule is about the editor's behavior, not the file format. A single `Enter` must not add several newlines. | Invariant I9, criterion AC7. |
 | Q18 | **Fix the extra-break defects found in real Chromium.** An empty list item marked with a `<br>` saved as junk (`-     \n    \n`) instead of a bare marker. | ✅ Implemented: `markEmptyListItems` (`hybrid.js`) strips the line box before the sentinel; `ensureListMarker` also drops a textless item's browser `<br>` when the item is created, so typing cannot preserve it as a trailing soft break. Verified in Chromium and jsdom. |
+| Q20 | **A pipe inside a table cell is escaped on write.** GFM splits a row on an unescaped pipe, even inside a code span, so an unescaped cell changes the table's column count on reload. | Escape in the **cell rule's replacement only**, after Turndown has converted the cell. Each pipe is emitted with an **odd backslash run** before it (add one when the run is even), so a bare pipe and a literal backslash-plus-pipe both survive. A raw-HTML sentinel inside a cell gets a cell-specific sentinel so its restored markup (tag text or attribute) is escaped too. Escaping a text node before Turndown does not work: Turndown doubles the backslash. §4.12, AC19. |
+| Q21 | **Authored raw HTML survives; editor chrome does not.** An element Markdown cannot express is emitted as HTML when its block is re-serialized. | Provenance is a marker set at render time from the source (`data-hybrid-authored`); a clipboard wrapper or engine span inserted later is unmarked. One `addRule` matches the marked allow-list: inline `kbd`, `mark`, `sup`, `sub`, `span`, `u`, `ins`, `q`, `abbr`, `small`, `var`, `samp`, `cite`; nested block `details`, `summary`, `div`, `section`, `figure`, `figcaption`, `aside`, `dl`, `dt`, `dd`; `img`/`a` with an attribute Markdown cannot express; and a Markdown block carrying an authored id (`data-nb-id`). Added **last** to outrank the built-in and `paragraph` rules; `data-wikilink*` spans and `data-hybrid-raw-html` blocks are excluded. **Inline context emits a no-newline sentinel**; a marked top-level block keeps the `\n\n` form. The markers are not written. §4.14, §5.7, AC20. |
+| Q22 | **A raw HTML token with one rendered element is spliced; a multi-element token fails closed.** A raw `<table>` or a `<div>`-wrapped section must not disable the splice. | `htmlTokenElementCount` returns 1 for a token that renders exactly one element (including a `<table>`); `buildAlignment` pairs it like any block. A token that renders zero or several elements returns no count and disables the splice for the whole document, as today: whole-file canonicalization is bad, but silent loss or resurrection is worse. §5.5, AC21. |
+| Q23 | **The saved render is checked against the view.** A save must not leave the screen showing a document different from the file. | `verifySavedRender` runs after every write (including autosave) and on every explicit save and exit **even when the write is a no-op**, against `sessionSource`. The re-render runs only when no keystroke landed since the bytes were captured; otherwise reconciliation is deferred. A rebuild resets the undo history. §5.7, AC18. |
+| Q24 | **Table parts GFM cannot express are already converted.** Caption, `colgroup`/`col`, and `tfoot` have no GFM form. | Already implemented in `normalizeTablesForGfm`: caption text becomes the paragraph immediately before the table, `tfoot` rows become the last body rows, column widths are dropped. Verify only; no new branch. §4.12, AC18. |
 
 ## Test suite
 
@@ -130,10 +136,9 @@ native-engine cases in `tests/browser/test_hybrid_browser.js` (Chromium). A
 `[defect]` tag on a case names a code defect the test pins; all are now fixed.
 The coverage map is a comment at the top of the jsdom section.
 
-Results at this revision: jsdom **2411 ok, 0 failed**; the Chromium harness
-**69 ok, 0 failed** (the last two were the horizontal-rule preview-selection
-case, fixed by re-measuring the rule box after leaving hybrid mode -- the
-format bar's removal shifts the rule). Backend `unittest` **209 OK**.
+Results at this revision: jsdom **5365 ok, 0 failed**; the Chromium hybrid
+harness **185 ok, 0 failed**, with all 13 Chromium suites passing. Backend
+`unittest` unchanged by this work (no backend file touched).
 
 ### Defects found by the suite and fixed
 
@@ -178,6 +183,24 @@ reproduced through the real `hybrid.js` + vendored marked/Turndown in jsdom.
 | M3b | The M3 fix only covered a live-typed wikilink; one already in the source still saved as `\[\[...\]\]`. | The renderer emits an unresolved wikilink as `<span data-wikilink-raw="1">[[...]]</span>` (`viewer.js`) and the serializer rule (`hybrid.js`) keys off the attribute. |
 | Q12 | **An empty heading must accept typed text.** It has zero height in a real browser and the caret was redirected into the next block (typing at `###` produced `Hellobody` inside the paragraph). | ✅ Implemented: `addEmptyLineBoxes` (`hybrid.js`) gives every empty block a marked caret line box at enter/render; the box is stripped on save. Verified in Chromium. |
 | Q7 | **An emptied blockquote survives as `>`.** Turndown drops an empty `<blockquote>` outright, unlike an empty heading or list item. | ✅ Implemented: `markEmptyBlockquotes` + `EMPTY_QUOTE_SENTINEL` (`hybrid.js`). Verified in Chromium and jsdom. |
+
+### Defects reported by the owner on 2026-11-15, specified here
+
+Reproduced in real Chromium against the pre-fix revision: enter hybrid, make one
+edit in the affected block, save, read the file, re-render it. Each row is a case
+where the saved document was not the document on screen. Status: **implemented**;
+V1–V6 are pinned by jsdom and Chromium cases, V7 is verified (the conversion is
+the existing one).
+
+| # | Defect | Repro (viewed -> saved) | Fix |
+|---|--------|--------------------------|-----|
+| V1 | A pipe typed or authored inside a table cell is written unescaped, so the row gains a column on reload. | cell shows `x\|y` -> `\| x\|y \| z \|` -> reloads as three columns | Q20: parity-aware pipe escape in the cell rule |
+| V2 | Authored inline HTML is unwrapped when its block is re-serialized. | `press <kbd>Ctrl</kbd> and <mark>this</mark>` -> `press Ctrl and this` | Q21: allow-list rule, inline no-newline sentinel |
+| V3 | Authored raw HTML nested in a blockquote, list item, heading, or cell is never marked, so it is unwrapped. | `> <details><summary>more</summary>hidden body</details>` -> `> morehidden body` | Q21: the same rule applies in inline context; no descendant marking needed |
+| V4 | An edited raw block writes editor chrome into the file. | one keystroke inside `<div>` -> `contenteditable`, `data-hybrid-*`, `hljs-*` spans in the file | Q21: `stripHybridChrome(clone)` before emit |
+| V5 | One raw `<table>` anywhere disables the splice, so every save re-serializes and canonicalizes the whole file. | setext heading + `*` bullets + indented code beside `<table>` -> `# Title`, `-   star a`, ```` ``` ```` fence | Q22: a token that renders one element is aligned; a multi-element token still fails closed |
+| V6 | Nothing re-renders the surface from the bytes just saved; the screen keeps the pre-save DOM until exit. | Ctrl+S -> screen unchanged, file changed | Q23: check after every write and on explicit save/exit even when nothing is written |
+| V7 | A table with a caption, `colgroup`, or `tfoot` silently loses its association/shape on any cell edit. | caption above the table -> caption as the paragraph before it, widths dropped | Already the defined conversion (Q24); verify only, and I10 surfaces the shape change |
 
 The goal **G1–G4** governs every open question: where a recommendation below would
 make hybrid less Word-like, less clean in the raw file, or would add HTML, the goal
@@ -239,7 +262,9 @@ I1. **No words lost.** Every edit preserves the text the user typed or already h
     except text the user explicitly deleted.
 I2. **No format lost unintentionally.** A construct the user did not touch keeps its
     source bytes; a construct the user did touch is re-emitted in its canonical
-    serialized form (Appendix A).
+    serialized form (Appendix A). A construct Markdown cannot express — authored
+    inline HTML (`<kbd>`, `<mark>`, a sized `<img>`) or raw HTML nested in a quote,
+    list, or heading — is re-emitted as HTML, never unwrapped to text (Q21).
 I3. **A no-op writes nothing.** If `domToMarkdown()` equals the session baseline,
     every save caller skips `POST /api/file` (`isNoOpMarkdown` and
     `pendingMarkdown` in `hybrid.js`; callers `save`, `onClose`,
@@ -282,6 +307,16 @@ I9. **One `Enter`, one break (goal G4b).** In hybrid mode a single `Enter` adds 
     The bug is `alpha beta` + `Enter` becoming `alpha beta\n\n` (Q18); the target is
     one break. A `<br>` inside a table cell has no GFM line-break form, so it is
     shown and saved as literal text (see `table-br`).
+I10. **Saved equals viewed.** For the bytes `md` a save writes, the app's own
+    render of `md` is structurally identical, block for block, to the live
+    `#viewer-content` DOM at the instant `md` was computed. The comparison strips
+    editing chrome (caret line boxes, placeholders, copy buttons, highlight spans)
+    and keys a plugin block by its fence source. Enforced by `verifySavedRender`
+    after every write, and on every explicit save and exit even when nothing is
+    written (§5.7). The comparison is read-only; only a mismatch rebuilds the
+    surface, and a mismatch with newer keystrokes is deferred so nothing typed is
+    lost. Notational canonicalization (setext to ATX, `*` to `-`) does not violate
+    this: it renders to the same DOM.
 
 ### 1.4 Non-hard-coded values
 
@@ -939,6 +974,10 @@ A headerless or caption/colgroup table is **rebuilt**, never emitted as `<table>
 | insert row/col | `+` | `\| 1 \| 2 \|` | new cell seeded `&nbsp;` | ✅ `:3713`, `:3753`, tests `6879-6920` |
 | — | last body row `-` | 1 body row | aria-disabled, refused | ✅ test `6934-6939` |
 | — | touched table | — | clean GFM, never `<table>` | ✅ tests `6930-6933`, `7368-7404` |
+| cell contains a pipe | save, any cell | `\| x\|y \| z \|` in the file | the pipe carries an odd backslash run — still two cells, text `x` + pipe + `y` | ❌ today writes the pipe bare and reloads as three columns; Q20 |
+| cell contains authored HTML with a pipe | save, any cell | `\| a <span>x\|y</span> \| z \|` | the pipe inside the tag text is escaped too | ❌ today the sentinel hides it from the escape; Q20 |
+| caption / `colgroup` / `tfoot` | save, any cell | caption above the table, footer rows, column widths | caption as the paragraph before the table, `tfoot` rows as the last body rows, widths dropped | ✅ already implemented in `normalizeTablesForGfm`; verify only, and I10 surfaces the shape change (Q24) |
+| raw `<table>` (one element) elsewhere in the note | edit a neighbour | raw table preserved, neighbours kept | neighbours byte-identical; splice stays aligned, table converted only when touched | ❌ today the whole file is re-serialized; Q22. A token rendering several elements still fails closed. |
 | table boundary | `↵` / `⇧↵` after last row | — | new block after the table | ✅ test `5010-5038` |
 
 #### 4.12.1 Cell caret positions
@@ -991,9 +1030,7 @@ A run of blank lines is a `space` token owned by the preceding block; carried ra
 ### 4.14 HTML comments and raw HTML
 
 Rendered as comment nodes / raw elements. Carried as `raw` segments and **never
-regenerated** (`PLAN.md`, the segment model at `hybrid.js`, assumption
-`PLAN.md`). A raw-HTML document deliberately makes the splice fail closed
-(`htmlTokenElementCount` `hybrid.js`).
+regenerated** (`PLAN.md`, the segment model at `hybrid.js`).
 
 **Q10 is DECIDED and implemented:** raw HTML stays editable in place, and an edited
 raw block writes back its own `outerHTML`. `markRawHtmlBlocks` marks authored
@@ -1002,12 +1039,65 @@ rule stashes the markup behind a sentinel so the Markdown clean-up passes cannot
 rewrite it, and `postProcessMarkdown` restores it. An untouched block still keeps
 its original source bytes through the splice.
 
+**Q21 closes the rest of the gap.** The existing rule covers only a top-level
+block element. Two defects remain and are specified here:
+
+- an authored **inline** element (`<kbd>`, `<mark>`, `<sup>`, `<span>`, `<u>`,
+  `<ins>`, `<q>`, `<abbr>`, `<small>`, `<var>`, `<samp>`, `<cite>`, a sized
+  `<img>`) is unwrapped to its text when the block is re-serialized;
+- an authored **block** element nested in a blockquote, list item, heading, or
+  cell is never marked, so it is unwrapped too.
+
+**Provenance is the marker, not the tag.** `markRawHtmlBlocks` runs on every
+render (enter, external change, AI patch, a rebuild) and sets `data-hybrid-authored`
+on every source-rendered element Markdown cannot express. A clipboard wrapper,
+an engine span, or any element inserted after the render is unmarked. Tag names
+alone are not enough: a pasted `<span style="…">` and an authored one are the
+same element, and only the source may be written back (Q9).
+
+The keep rule is then an **explicit allow-list checked on a marked element**,
+not a negative test. Turndown runs its built-in rules and `keep` after the added
+rules, and the app itself emits `<span data-wikilink-raw>`; a negative filter
+would either lose a sized `<img>` (the built-in image rule matches first) or
+write an app span as HTML. The `addRule` matches: inline `kbd`, `mark`, `sup`,
+`sub`, `span`, `u`, `ins`, `q`, `abbr`, `small`, `var`, `samp`, `cite`; nested
+block `details`, `summary`, `div`, `section`, `figure`, `figcaption`, `aside`,
+`dl`, `dt`, `dd`; `img`/`a` with any attribute Markdown cannot express; and a
+Markdown block carrying an authored id. It is added **last** so it outranks the
+built-in rules and the `paragraph` override; its filter excludes `data-wikilink*`
+spans and `data-hybrid-raw-html` blocks, so each of those keeps its own rule.
+
+Emission is context-sensitive. An **inline** element returns a no-newline
+sentinel, so `press <kbd>Ctrl</kbd> and` stays one paragraph; a **marked
+top-level block** keeps the existing `\n\n` sentinel form. Restoring the stash
+verbatim at the same offset is what makes the round-trip exact. The markers are
+never written.
+
+Chrome stripping runs on a **clone** before emission, never on the live element:
+removing `contenteditable` from a live atomic block would re-open it to the caret
+mid-save. `stripHybridChrome(clone)` removes `contenteditable`, every
+`data-hybrid-*` attribute except the two raw markers it needs to route the
+element, `data-fence-lang`, highlight.js spans and the exact hljs
+class/attribute set (`hljs`, `language-*` on the inner `code` is kept,
+`data-highlighted` is not), the language pill, gesture classes, copy buttons,
+caret `<br>`/`<p>`, and the zero-width placeholder. Heading ids are split:
+an authored id restored from `data-nb-id` (`prepareTurndownClone` `:601-610`) is
+kept; only a viewer-assigned id (`data-nb-slug` with no authored marker) is
+removed. An unmarked element of an allow-listed tag is unwrapped by Turndown's
+default, and the read-only key walk unwraps it the same way, so a paste never
+produces a false mismatch.
+
 | Op | Before | After | Status |
 |---|---|---|---|
 | edit a neighbour | `a\n\n<!-- keep -->\n\nb\n` | comment kept | ✅ test `7586-7603` |
 | clean round-trip | `<!-- c -->\n\nbody\n` | byte-identical | ✅ corpus `7684` |
 | paste rich HTML | — | list items become clean siblings; `style`/`class`/scripts stripped | ✅ `onPaste` (Q9, list path) |
 | edit inside a raw element | `<div>block</div>` | `<div>block!</div>`: tag and attributes kept | ✅ `markRawHtmlBlocks` + raw-HTML rule; browser test |
+| edit text beside inline HTML | `press <kbd>Ctrl</kbd> and <mark>this</mark>` | tags kept, text edit applied | ❌ today `press Ctrl and this`; Q21 |
+| edit inside a quote holding `<details>` | `> <details><summary>m</summary>body</details>` | quote keeps the element | ❌ today `> mbody`; Q21 |
+| edit a raw element's text | `<div>block</div>` + one keystroke | no `data-hybrid-*`, no `contenteditable`, no `hljs-*` span in the file | ❌ today the chrome leaks; Q21 |
+| edit beside a sized image | `<img src="a.png" width="120">` | the tag and its attributes kept | ❌ today `![alt](a.png)`, size lost; Q21 |
+| edit beside an authored link with `target` | `<a href="u" target="_blank">x</a>` | the tag and its attributes kept | ❌ today `[x](u)`; Q21 |
 
 ### 4.15 Special fenced blocks (`mermaid`, `wavedrom`, `math`/`katex`, `dot`/`graphviz`, `html-live`, plain `html`)
 
@@ -1063,6 +1153,8 @@ delimiter at the caret in a single text node** (`INLINE_RULES` `hybrid.js`,
 | literal `[` | M | type `[` | `a` | `a\[` | ✅ escape `vendor:741` |
 | leading digit | S | type `1. x` | `` | `1\. x` | ✅ escape `vendor:745` |
 | escaped asterisk | — | no edit | `literal \*not em\* text` | survives as text | ✅ test `7999-8001` |
+| authored inline HTML | M | type in the same paragraph | `a <kbd>Ctrl</kbd> b` | tags kept; text edit applied | ❌ today unwrapped to `a Ctrl b`; Q21 |
+| sized image | M | type in the same paragraph | `<img src="a.png" width="120" height="80">` | tag kept with its attributes | ❌ today `![alt](a.png)`; Q21 |
 | inline over 2 blocks | F | Ctrl+B spanning blocks | `p1…p2…` | refused, unchanged (toast) | ✅ §6 Q11 |
 
 #### 4.16.1 Inline rule boundary conditions
@@ -1260,6 +1352,16 @@ blocks, whose bytes are carried raw. The rule, stated once:
   changed middle is re-serialized (a reorder re-serializes just the reordered
   region). Verified in Chromium and jsdom.
 - Root-level text/comment count still guards the aux nodes (`:901`).
+- **Q22 (decided, not implemented):** a raw HTML token that renders exactly one
+  top-level element is aligned like any other block, including a raw `<table>`.
+  `htmlTokenElementCount(raw)` stops special-casing a table: it parses the token
+  raw with marked into a detached holder and returns `1` when the raw renders
+  exactly one element, `0` for a comment. A token that renders zero or several
+  elements (adjacent raw blocks in one token) yields no count, so `buildAlignment`
+  returns `null` and the whole document falls back to whole-DOM serialization, as
+  today. That fallback canonicalizes but cannot lose or resurrect content; a
+  per-element source span is the follow-up if multi-element tokens ever matter.
+  `spliceSave` keeps its one-element-per-token slot model.
 
 ### 5.6 No-op, exit, and undo
 
@@ -1291,6 +1393,115 @@ blocks, whose bytes are carried raw. The rule, stated once:
   re-seated only on enter, after a write, and on external change
   (`rebaseSession`); undo relies on the hash/count checks, not a
   rebase.
+
+### 5.7 The saved render equals the view
+
+I10 is the contract the owner asked for: what is saved is what the hybrid
+surface shows. The comparison is cheap and read-only; only the **re-render** is
+restricted, because it resets the caret, selection, scroll, and undo. So the
+check runs often and the rebuild runs only on a defect.
+
+**When the check runs.**
+
+- After **every write**, explicit or autosave: capture `md`, `liveSig`, and
+  `editGeneration` in the same tick, write, then compare.
+- On every explicit save and exit **even when no write happens** (the
+  `isNoOpMarkdown` path), compare the signature of `sessionSource` — the bytes
+  already on disk — against the live signature. Without this, autosave could
+  write a divergence and the later explicit save, seeing no diff, would never
+  surface it.
+- After the check passes or is reconciled, clear the pending state. A no-op save
+  that matches writes nothing and touches nothing (AC22 stays true).
+
+**Two signatures, one chrome definition.**
+
+- `liveRenderSignature()` — for each top-level element of `#viewer-content`:
+  clone it, key it. A plugin container keys as
+  `"\u0001p" + fence + "\u0001" + source` (`pluginBlockInfo`), everything else
+  as `canonicalSubtree`.
+- `savedRenderSignature(md)` — parse `md` with `marked.parse(md, { gfm: true,
+  breaks: false })` into a detached `<div>`, run `normalizeForComparison`, then
+  key each element the same way. A `<pre><code class="language-X">` whose `X` is
+  a registered fence keys as the plugin form above, using the descriptor's
+  `fence` so an alias (`katex` -> `math`, `graphviz` -> `dot`) matches.
+- `normalizeForComparison(root)` applies the same structural normalization
+  `renderMarkdown` applies, in the same order, minus what only makes the surface
+  editable: `markRawHtmlBlocks`, `stripTaskItemSpaces`, `flattenTheads` (the live
+  DOM has no `<thead>`), `enableCheckboxes` (the parsed checkboxes are
+  `disabled`), `addListPlaceholders`, and `addEmptyLineBoxes`. It does NOT call
+  `NB.blocks.renderAll` (plugin blocks compare by fence source) and does not
+  assign heading ids. `addListPlaceholders`, `addEmptyLineBoxes`,
+  `flattenTheads`, and `enableCheckboxes` currently hard-code `viewerContentEl`
+  (`hybrid.js:2829`, `:2849`, `:2874`, `:7197`); `build` gives each an optional
+  `root` argument defaulting to it. `stripTaskItemSpaces` already takes a root
+  (`viewer.js:405`).
+- **Chrome is one set of constants, two consumers.** `CHROME_ATTRS`,
+  `CHROME_CLASS_TOKENS`, and the chrome-node predicate are shared by:
+  `canonicalSubtree` — **read-only**, used by the hash and both signature sides;
+  it never mutates the live DOM; and `stripHybridChrome(clone)` — mutating, used
+  by `prepareTurndownClone` and the raw-HTML emit path on a clone only. The
+  attributes are: `contenteditable`, every `data-hybrid-*`, `data-fence-lang`
+  (`LANG_ATTR` `:120`), `data-nb-slug` (viewer bookkeeping), `data-highlighted`
+  and the `hljs` class on a `<code>` (highlight.js state), and the heading `id`
+  **only** when the heading has `data-nb-slug` and no `data-nb-id`. An authored
+  id (`data-nb-id`, restored by `prepareTurndownClone` `:601-610`) stays in the
+  key and in the output. The nodes are: `.code-copy-btn`, `.hybrid-lang-pill`,
+  `<br data-hybrid-caret>`, `<p data-hybrid-caret>`, and an hljs `<span>` (its
+  children are kept). The values are: the zero-width placeholder and
+  `CHROME_CLASS_TOKENS` (the gesture classes). Both consumers read the same
+  constants, so the serializer, the hash, and the comparison cannot disagree
+  about what chrome is.
+- Only elements are compared, in order, and the count must match. Root-level
+  text/comment nodes stay covered by `rootAuxCount`; blank-line runs are not
+  representable in the DOM and are not compared — the written `md` is their
+  source of truth (Q1/§4.13). A top-level empty `<p>`/`<div>` (the browser's
+  Enter artifact) writes no bytes, so it is excluded from the live signature on
+  the same principle: otherwise Ctrl+S right after Enter would read as a
+  permanent mismatch. An authored raw element is never excluded — it writes its
+  markup. An unmarked `<div>` (a paste or the browser's Enter wrapper) keys as
+  the `<p>` the serialization writes, and an unmarked element inside it is
+  unwrapped, so a rich paste cannot force a rebuild.
+
+**Mismatch: write first, then reconcile safely.**
+
+1. On a mismatch with `editGeneration` unchanged since the capture:
+   `renderMarkdown(md)`, restore the viewer's `scrollTop`, `resetHistory()`,
+   `rebaseSession(md)`, and notify
+   `Saved — the view was rebuilt from the file.` Resetting the history is part
+   of the rebuild: without it, Ctrl+Z would restore the divergent DOM and the
+   next Ctrl+S would write the old bytes back. A rebuild is a new undo baseline;
+   the notice says the view changed.
+2. On a mismatch with the generation **changed** (the user typed during the
+   POST), do not touch the DOM: the new keystrokes are not in `md` and a
+   re-render would delete them. Leave the session dirty and let the next write
+   or explicit save/exit run the check on the newer content. The notice is
+   deferred with it.
+3. A rebuild never runs on data that is newer than the file.
+
+On exit the surface is rebuilt by `exit()` itself, so the check's role there is
+diagnostic: it is logged, and the notice is shown after the exit render — the
+user is no longer in hybrid, and the reconciliation would have happened anyway.
+
+**Splice health is part of the same step.** A write whose written block count
+differs from the live element count cannot be re-aligned (`buildAlignment`
+returns `null`), which would leave the splice disabled until the next render.
+The same write's check reconciles and rebases, restoring alignment. If the check
+was deferred by a generation change, the next explicit save runs the check
+against `sessionSource` **before** serializing, so a whole-file fallback never
+runs on a stale baseline.
+
+**Cost.** One deep clone of each top-level block plus one `marked.parse` and one
+normalization pass per write, and one of each per explicit save with no write.
+Autosave fires at most once per `AUTOSAVE_MS` after an idle period, so this is a
+parse of an idle note, not a per-keystroke cost.
+
+**What this does not do.** It does not repair a construct the serializer cannot
+express; it makes the result visible and keeps the surface honest. Known cases:
+§4.12 (caption/`tfoot`/`colgroup` conversion, a table nested in a cell), §4.13
+(blank-run collapse), the two-`<br>` split in Appendix A, and a multi-line
+authored raw block nested in a quote or list, whose internal line breaks are
+collapsed to spaces (text is kept; the block is rebuilt once). The check turns
+each from a silent rewrite into a visible, reported re-render.
 
 ---
 
@@ -1548,6 +1759,13 @@ Add to the byte-identity corpus (`test_dom.js`) and the locality test
 - An empty blockquote `>\n`, to pin Q7
 - A hard-break paragraph `a  \nb\n`, to pin the line-break rule (I9)
 - A raw HTML block `<div>x</div>\n`, to pin Q10
+- `press <kbd>Ctrl</kbd> and <mark>this</mark>\n`, to pin Q21
+- `> <details><summary>m</summary>body</details>\n`, to pin Q21
+- `| a | b |\n| --- | --- |\n| x\\|y | z |\n`, to pin Q20
+- a caption/`tfoot` table, to pin Q24
+- `Title\n=====\n\n* star a\n\n<table><tr><td>raw</td></tr></table>\n\n    indented\n`,
+  to pin Q22 byte preservation of the neighbours
+- a sized image `<img src="a.png" width="120">` beside a paragraph, to pin Q21
 - The owner's example `## Commands\n###\n### `   `\n` (Q16) — must be
   byte-identical after enter+save
 
@@ -1606,6 +1824,54 @@ The Q5/Q7/Q10/`~~~`/nested-list/owner entries already exist as contract cases
 - AC17. **Keyboard parity and announcement.** The List submenu moves a list item up/down
   among siblings and the caret follows; each completed move (drag or keyboard) is
   announced in an `aria-live` region and never changes the note outside the list block.
+- AC18. **Saved equals viewed (I10).** For every corpus note in §8.3, after one
+  edit in the affected block and a save, `savedRenderSignature(md)` equals the
+  `liveRenderSignature()` captured in the same tick. Covered in Chromium and
+  jsdom. Four paths are asserted separately: (a) an explicit save with a write;
+  (b) an explicit save with **no** write after an autosave already wrote a
+  divergent document — it must still check `sessionSource` and reconcile; (c) a
+  mismatch with no keystroke since the capture — the surface is rebuilt, the
+  scroll is kept, and the notice appears; (d) a mismatch with a keystroke since
+  the capture — nothing is re-rendered, the typed text survives, and the check
+  runs again on the next save.
+- AC19. **A table cell keeps its column.** A cell whose text is `x` + pipe + `y`
+  saves with an odd backslash run before the pipe (`x\|y`) and re-renders as one
+  cell with the same text. A cell whose text is a backslash + pipe + text is
+  emitted with three backslashes and also round-trips. A pipe inside an inline
+  code span, inside authored HTML (tag text or attribute), and inside an HTML
+  comment is escaped the same way. Asserted for a header cell, a body cell, the
+  authored-HTML cell, and the comment cell.
+- AC20. **Authored HTML survives; chrome does not.** Editing text in a block that
+  contains `<kbd>`, `<mark>`, a sized `<img>`, an `<a target>`, a styled
+  `<span>`, or a raw element nested in a quote, list, heading, or cell keeps the
+  element and its attributes in the saved file, and restores the same DOM on
+  re-render. The same save contains no `contenteditable`, `data-hybrid-*`,
+  `data-fence-lang`, `data-highlighted`, an `hljs`-class `<code>`, or
+  `.hybrid-lang-pill`. `[[NoSuchNote]]` still saves as literal `[[...]]`, never
+  as a `<span>`. An element of an allow-listed tag inserted **after** the render
+  (a paste or the engine) is unmarked and is unwrapped: it writes no tag (Q9).
+- AC21. **One raw table no longer rewrites the note.** With
+  `Title\n=====\n\n* star a\n\n<table>…</table>\n\n    indented\n`, editing the
+  heading saves `# Title edited` and keeps the bullet, the raw table, and the
+  indented code byte-for-byte. Editing a cell of the raw table converts that
+  table to GFM and still leaves the other blocks untouched. A token that renders
+  two elements (`<div>a</div>\n<div>b</div>`) still fails closed: whole-file
+  serialization, no loss and no resurrection.
+- AC22. **A no-op save writes nothing and still checks.** Enter+save, save+exit,
+  and exit issue zero `POST /api/file`. An explicit save whose bytes equal the
+  baseline issues no POST but still runs the check against `sessionSource`.
+- AC23. **Autosave preserves typing.** An autosave that matches the live render
+  does not touch the DOM, caret, selection, scroll, or undo. An autosave that
+  mismatches and has no keystroke since the capture reconciles immediately. One
+  with a keystroke since the capture does not re-render at all; the typing
+  survives and the check is deferred.
+- AC24. **A rebuild is a clean undo baseline.** After a mismatch re-render, Ctrl+Z
+  cannot restore the pre-rebuild divergent DOM; the next save does not write the
+  old bytes back. The notice states that the view was rebuilt.
+- AC25. **A block-count-changing save keeps the splice alive.** After saving a
+  caption table (one live element, two written blocks), the next edit still
+  preserves its untouched neighbours' bytes; the baseline is rebuilt from the
+  reconciled DOM, never left stale.
 
 **Test split for §4.7.2.** jsdom (§8.1) drives the resolved move through the exported
 hybrid list-move entry point — the way `moveRow`/`moveCol` are tested — so the DOM
@@ -1645,6 +1911,13 @@ Verified against the vendored bundles at this revision with the exact
 | `<p><a href="u">x</a></p>` | `[x](u)` |
 | autolink | `[http://x.com](http://x.com)` |
 | `<p><img src="s" alt="a"></p>` | `![a](s)` |
+| `<p><img src="s" alt="a" width="120" height="80"></p>` | `<img src="s" alt="a" width="120" height="80">` (Q21) |
+| `<p>a <kbd>Ctrl</kbd> b</p>` | `a <kbd>Ctrl</kbd> b` (Q21) |
+| `<p>a <mark>hi</mark></p>` | `a <mark>hi</mark>` (Q21) |
+| `<blockquote><details><summary>s</summary>body</details></blockquote>` | `> <details><summary>s</summary>body</details>` (Q21) |
+| `<p><a href="u" target="_blank">x</a></p>` | `<a href="u" target="_blank">x</a>` (Q21) |
+| `<td>` text `x`, a pipe, `y` | one cell; the pipe is written with one backslash (Q20) |
+| `<td>` text `x`, a backslash, a pipe, `y` | one cell; the pipe is written with three backslashes (Q20) |
 | wikilink | `[[Target]]` or `[[Target\|label]]` |
 | `<p><br></p>` (empty) | `` (blank line, `paragraph` rule `:231-241`) |
 | empty `<h3>` | `###` |
@@ -1684,6 +1957,33 @@ Verified against the vendored bundles at this revision with the exact
   rule is selectable like a character (§4.11).
 - **Withdrawn.** Q17 (a renderer `breaks:true` change) — it misread Q16 as a
   file-format rule. No renderer change.
+- **Implemented 2026-11-16 (owner report).** Q20–Q24, defects V1–V7. All in
+  `static/js/hybrid.js` unless noted:
+  1. A `tablecell` rule whose replacement performs the parity-aware pipe escape,
+     plus a cell-specific raw-HTML and comment sentinel for a cell holding
+     authored markup or a comment (Q20, AC19). The text node is never escaped
+     before Turndown.
+  2. One chrome definition (`CHROME_ATTRS`, `CHROME_CLASSES`, `chromeNodeKind`)
+     with two consumers: read-only in `canonicalSubtree`, mutating in
+     `stripHybridChrome(clone)` (Q21, Q23). The two raw markers survive the strip
+     and are removed from the stashed clone.
+  3. `markRawHtmlBlocks` sets `data-hybrid-authored` on source-rendered elements
+     Markdown cannot express (and `data-hybrid-raw-html` on a block tag or an
+     authored-id block); an allow-list `raw-html-inline` rule emits a marked
+     element with a no-newline sentinel. An unmarked element (a paste, the
+     engine) is unwrapped by both the serializer and the key walk, and an
+     unmarked block `<div>` keys as the `<p>` it writes (Q21, AC20).
+  4. `htmlTokenElementCount` returns 1 for a token that renders exactly one
+     element (including a table); a multi-element token fails closed (Q22, AC21).
+  5. `savedRenderSignature`, `liveRenderSignature` (same-tick capture),
+     `verifySavedRender`; run after every write and on an explicit save/exit with
+     no write, against `sessionSource`; the rebuild is guarded on
+     `editGeneration`, `resetHistory()` runs before `rebaseSession`, and an empty
+     top-level block and a nested plugin are normalized so neither false-fires
+     (Q23, AC18/AC22/AC24).
+  6. Q24 is the existing `normalizeTablesForGfm` conversion; verified only.
+  7. Tests: jsdom contract cases and Chromium cases per AC18–AC25 (§8.2–§8.4).
+  8. Repo-root `CLAUDE.md` quotes the write-back contract and was updated.
 - **Biggest remaining question.** Q2 (block merge), then Q3 (block-edge typing).
 - **Next decisions, in order.** Q2 (merge), Q3 (block-edge typing), Q8 (cell
   boundary keys), Q14 (copy across blocks).

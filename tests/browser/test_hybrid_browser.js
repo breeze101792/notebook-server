@@ -2557,6 +2557,191 @@ async function main() {
         return !host || host.hidden;
       }));
 
+    // --- saved equals viewed (I10/Q23) ------------------------------
+    // The app's render of the bytes a save wrote must look like the
+    // surface the bytes came from. A match changes nothing; a mismatch
+    // rebuilds (unless the user typed during the POST) and says so.
+    const waitEditable = () => page.waitForFunction(
+      () => document.getElementById("viewer-content")
+        .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    const waitLeave = () => page.waitForFunction(
+      () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    const toastText = () => page.evaluate(() => {
+      const t = document.querySelector(".toast");
+      return t ? t.textContent : "";
+    });
+    const enterHybrid = async () => {
+      await page.click("#hybrid-toggle");
+      await waitEditable();
+    };
+
+    // (a) A touched block is canonicalized (setext -> ATX) and the render
+    // still matches, so the surface must NOT be rebuilt: an untouched
+    // sibling keeps its node identity.
+    {
+      writeNote("notes/i10setext.md", "Title\n=====\n\nbody para\n");
+      await gotoNote(page, "notes/i10setext.md");
+      await page.waitForSelector("#viewer-content h1", { timeout: 15000 });
+      await enterHybrid();
+      await caretInBlock(page, "#viewer-content h1", 0);
+      await page.keyboard.press("End");
+      await page.keyboard.type(" edited");
+      await page.evaluate(() => {
+        const p = document.querySelector("#viewer-content p");
+        if (p) p.__i10Probe = true;
+      });
+      await page.evaluate(() => window.NB.hybrid.save());
+      await page.waitForTimeout(150);
+      const out = readNote("notes/i10setext.md");
+      const kept = await page.evaluate(() => {
+        const p = document.querySelector("#viewer-content p");
+        return !!(p && p.__i10Probe);
+      });
+      check("real browser I10: a canonicalized edit still matches its render",
+        out.indexOf("# Title edited") !== -1, JSON.stringify(out));
+      check("real browser I10: a matching save does not rebuild the surface",
+        kept, "the untouched block was replaced");
+      check("real browser I10: a matching save says only Saved",
+        (await toastText()) === "Saved", await toastText());
+      await page.click("#close-edit-btn");
+      await waitLeave();
+    }
+
+    // (b) Authored inline HTML survives the edit, and the file's own
+    // render matches the surface the save came from.
+    {
+      writeNote("notes/i10html.md",
+        "press <kbd>Ctrl</kbd> and <mark>this</mark>\n");
+      await gotoNote(page, "notes/i10html.md");
+      await page.waitForSelector("#viewer-content kbd", { timeout: 15000 });
+      await enterHybrid();
+      await caretInBlock(page, "#viewer-content p", 0);
+      await page.keyboard.press("End");
+      await page.keyboard.type("!");
+      await page.evaluate(() => window.NB.hybrid.save());
+      await page.waitForTimeout(150);
+      const md = readNote("notes/i10html.md");
+      const verdict = await page.evaluate((saved) => {
+        const rc = window.NB.hybrid.renderCheck;
+        return rc.verify(saved, rc.liveSignature());
+      }, md);
+      check("real browser I10: authored <kbd>/<mark> reach the file",
+        md.indexOf("<kbd>Ctrl</kbd>") !== -1 &&
+        /<mark>this!<\/mark>|<mark>this<\/mark>!/.test(md),
+        JSON.stringify(md));
+      check("real browser I10: the saved bytes re-render like the surface",
+        verdict.match === true, JSON.stringify(verdict));
+      await page.click("#close-edit-btn");
+      await waitLeave();
+    }
+
+    // (c) A forced mismatch (no keystroke since the capture) rebuilds the
+    // surface, keeps the scroll offset, and says so.
+    {
+      const lines = [];
+      for (let i = 0; i < 60; i += 1) lines.push("para " + i + " text");
+      writeNote("notes/i10rebuild.md", lines.join("\n\n") + "\n");
+      await gotoNote(page, "notes/i10rebuild.md");
+      await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+      await enterHybrid();
+      await caretInBlock(page, "#viewer-content p", 0);
+      await page.keyboard.press("End");
+      await page.keyboard.type(" EDIT");
+      const before = await page.evaluate(() => {
+        const sc = document.getElementById("viewer-scroll");
+        sc.scrollTop = 300;
+        const p = document.querySelector("#viewer-content p");
+        if (p) p.__i10Probe = true;
+        return sc.scrollTop;
+      });
+      await page.evaluate(() => {
+        window.__i10Verify = window.NB.hybrid.renderCheck.verify;
+        window.NB.hybrid.renderCheck.verify = () => ({
+          match: false, index: 0, liveKey: "live-key", savedKey: "saved-key",
+        });
+        return window.NB.hybrid.save();
+      });
+      await page.waitForTimeout(200);
+      const after = await page.evaluate(() => {
+        const sc = document.getElementById("viewer-scroll");
+        const p = document.querySelector("#viewer-content p");
+        return {
+          scrollTop: sc.scrollTop,
+          probeKept: !!(p && p.__i10Probe),
+          firstText: p ? p.textContent : "",
+        };
+      });
+      await page.evaluate(() => {
+        window.NB.hybrid.renderCheck.verify = window.__i10Verify;
+      });
+      check("real browser I10: a forced mismatch rebuilds the surface",
+        after.probeKept === false && /para 0 text EDIT/.test(after.firstText),
+        JSON.stringify(after));
+      check("real browser I10: the rebuild keeps the scroll offset",
+        Math.abs(after.scrollTop - before) <= 30,
+        "before=" + before + " after=" + after.scrollTop);
+      check("real browser I10: the rebuild states what happened",
+        /rebuilt from the file/.test(await toastText()), await toastText());
+      await page.click("#close-edit-btn");
+      await waitLeave();
+    }
+
+    // (d) Typing while the POST is in flight is newer than the bytes, so a
+    // mismatch must NOT re-render over it; the text survives and the next
+    // save writes it.
+    {
+      writeNote("notes/i10generation.md", "alpha\n");
+      await gotoNote(page, "notes/i10generation.md");
+      await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+      await enterHybrid();
+      await caretInBlock(page, "#viewer-content p", 0);
+      await page.keyboard.press("End");
+      await page.keyboard.type("!");
+      await page.evaluate(() => {
+        const api = window.NB.api;
+        const realSave = api.saveFile;
+        window.__i10Save = realSave;
+        api.saveFile = (p2, content) => new Promise((resolve) => {
+          setTimeout(() => realSave(p2, content).then(resolve), 300);
+        });
+        window.__i10Verify = window.NB.hybrid.renderCheck.verify;
+        window.NB.hybrid.renderCheck.verify = () => ({
+          match: false, index: 0, liveKey: "live-key", savedKey: "saved-key",
+        });
+        window.__i10SaveDone = window.NB.hybrid.save();
+      });
+      await page.waitForTimeout(120);
+      await page.keyboard.type("typed");
+      await page.evaluate(() => window.__i10SaveDone);
+      await page.waitForTimeout(200);
+      const state = await page.evaluate(() => {
+        const p = document.querySelector("#viewer-content p");
+        return {
+          text: p ? p.textContent : "",
+          active: window.NB.hybrid.isActive(),
+          toast: (document.querySelector(".toast") || {}).textContent || "",
+        };
+      });
+      await page.evaluate(() => {
+        window.NB.api.saveFile = window.__i10Save;
+        window.NB.hybrid.renderCheck.verify = window.__i10Verify;
+      });
+      check("real browser I10: typing during the POST is not discarded",
+        state.text === "alpha!typed" && state.active, JSON.stringify(state));
+      check("real browser I10: a deferred mismatch does not claim a rebuild",
+        !/rebuilt from the file/.test(state.toast), state.toast);
+      await page.evaluate(() => window.NB.hybrid.save());
+      await page.waitForTimeout(200);
+      check("real browser I10: the next save writes the typed text",
+        readNote("notes/i10generation.md").indexOf("alpha!typed") !== -1,
+        JSON.stringify(readNote("notes/i10generation.md")));
+      await page.click("#close-edit-btn");
+      await waitLeave();
+    }
+
+    check("real browser I10: no uncaught page errors",
+      pageErrors.length === 0, pageErrors.join(" | "));
+
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
   } finally {
     await browser.close();

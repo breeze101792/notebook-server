@@ -12590,6 +12590,10 @@ function check(label, cond, extra) {
             "<tbody><tr><td><b>bold</b> <em>it</em> <code>c</code> " +
             "<a href=\"https://x.test\">link</a> " +
             "<span style=\"color:red\">plain</span></td><td></td></tr></tbody>");
+          // A source-authored span is marked at render; this table is built
+          // directly, so stand in for that pass.
+          tInline.querySelector("span")
+            .setAttribute("data-hybrid-authored", "1");
           tInline.setAttribute("data-te-test", "inline");
           window.NB.tableEditor.open(tInline);
           window.NB.tableEditor.getState().rows[1].cells[0].html += " tail";
@@ -12602,10 +12606,12 @@ function check(label, cond, extra) {
             /(\*|_)it(\*|_)/.test(inlineMd) && /`c`/.test(inlineMd) &&
             /\[link\]\(https:\/\/x\.test\)/.test(inlineMd),
             JSON.stringify(inlineMd));
-          check("table editor: unsupported inline HTML is flattened to text",
-            inlineMd.indexOf("<span") === -1 &&
-            inlineMd.indexOf("color:red") === -1 &&
-            inlineMd.indexOf("plain") !== -1,
+          // Q21: authored inline HTML is kept, not flattened: Markdown has
+          // no syntax for a styled span, so a touched block emits it as
+          // HTML rather than dropping the style (AC19 covers the cell).
+          check("table editor: authored inline HTML in a cell survives Apply",
+            /<span style="color:red">plain<\/span>/.test(inlineMd) &&
+            inlineMd.indexOf("tail") !== -1,
             JSON.stringify(inlineMd));
           check("table editor: an empty cell stays empty in place",
             !!inlineTable && inlineTable.rows[1].cells.length === 2 &&
@@ -16169,9 +16175,11 @@ function check(label, cond, extra) {
     await window.NB.hybrid.exit(false);
     await tick(20);
 
-    // A raw <table> in the source is converted too, not passed through as
-    // HTML: the note is Markdown, so no tag may be written. Inline markup
-    // inside the cells is preserved by the GFM header rule.
+    // A raw <table> in the source keeps its bytes while it is untouched
+    // (Q22: a token that renders one element is aligned like any other
+    // block). Once a cell is edited the table is re-serialized and must
+    // come out as GFM: the note is Markdown, so no tag may be written.
+    // Inline markup inside the cells is preserved by the GFM header rule.
     FILES["notes/a.md"] =
       "# File A\n\n<table><tbody><tr><td><b>bold</b></td><td>b</td></tr></tbody></table>\n";
     window.NB.viewer.close("notes/a.md");
@@ -16180,9 +16188,17 @@ function check(label, cond, extra) {
     await window.NB.hybrid.enter();
     await tick(20);
     const passthroughMd = window.NB.hybrid.domToMarkdown();
-    check("hybrid no-html: a source raw table is converted, never emitted as HTML",
-      !/<table/i.test(passthroughMd) && /\|\s*\*\*bold\*\*\s*\|\s*b\s*\|/.test(passthroughMd),
+    check("hybrid no-html: an untouched raw table keeps its source bytes (Q22)",
+      passthroughMd === FILES["notes/a.md"],
       JSON.stringify(passthroughMd).slice(0, 160));
+    $("viewer-content").querySelector("table td + td").textContent = "b2";
+    $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(40);
+    const convertedMd = window.NB.hybrid.domToMarkdown();
+    check("hybrid no-html: a touched raw table is converted, never emitted as HTML",
+      !/<table/i.test(convertedMd) &&
+      /\|\s*\*\*bold\*\*\s*\|\s*b2\s*\|/.test(convertedMd),
+      JSON.stringify(convertedMd).slice(0, 160));
     await window.NB.hybrid.exit(false);
     await tick(20);
 
@@ -16235,11 +16251,24 @@ function check(label, cond, extra) {
       await tick(20);
       await window.NB.hybrid.enter();
       await tick(20);
+      // Touch the table so it is re-serialized: these cases are about the
+      // SERIALIZER's shape handling, because the GFM plugin keeps a table
+      // it cannot make GFM out of as raw HTML. An empty table has no cell
+      // to touch, so it keeps its bytes (Q22) and only has to not throw.
+      const rawCell = $("viewer-content").querySelector("table th, table td");
+      if (rawCell) {
+        rawCell.appendChild(window.document.createTextNode("!"));
+        $("viewer-content").dispatchEvent(new window.Event("input", { bubbles: true }));
+        await tick(40);
+      }
       let rawMd = "";
       try { rawMd = window.NB.hybrid.domToMarkdown(); }
       catch (e) { rawMd = "THROW:" + (e && e.message); }
-      check("hybrid no-html: raw table shape (" + label + ") never emits HTML",
-        rawMd.indexOf("<table") === -1 && rawMd.indexOf("THROW") === -1,
+      check("hybrid no-html: raw table shape (" + label + ") " +
+        (rawCell ? "never emits HTML" : "keeps its bytes untouched"),
+        rawMd.indexOf("THROW") === -1 &&
+        (rawCell ? rawMd.indexOf("<table") === -1
+          : rawMd === FILES["notes/a.md"]),
         JSON.stringify(rawMd).slice(0, 120));
       await window.NB.hybrid.exit(false);
       await tick(20);
@@ -18256,6 +18285,25 @@ function check(label, cond, extra) {
     };
     const hasPresentationHtml = (md) =>
       /<\/?(br|div|span|table)\b/i.test(outsideFences(md));
+    // Re-render saved bytes the way a reload would, for the assertions
+    // that care about the DOM the file produces (one cell, not two; the
+    // same tags back).
+    const rendered = (md) => {
+      const holder = window.document.createElement("div");
+      holder.innerHTML = window.marked.parse(md, { gfm: true, breaks: false });
+      return holder;
+    };
+    // The rows of a re-rendered table: an unescaped pipe splits a row into
+    // an extra column, which is exactly the reload defect Q20 fixes.
+    const savedTableRows = (md) => {
+      const root = rendered(md);
+      const cells = (tr) => Array.from(tr.cells).map((c) => c.textContent);
+      const head = root.querySelector("thead tr");
+      return {
+        head: head ? cells(head) : null,
+        body: Array.from(root.querySelectorAll("tbody tr")).map(cells),
+      };
+    };
 
     const contractEnter = async (source) => {
       FILES[CONTRACT_PATH] = source;
@@ -18521,6 +18569,250 @@ function check(label, cond, extra) {
         },
         expectedSaved: (md) => !/<table/i.test(md) && /\|\s*a\s*\|\s*b\s*\|/.test(md) },
 
+      // --- Q20/AC19: a pipe in a cell keeps its column ------------------
+      // GFM ends a cell at the first pipe that is not backslash-escaped,
+      // even inside a code span, so the serializer writes every pipe with
+      // an odd backslash run. Each case asserts the bytes AND what the
+      // file re-renders to: one cell, not two.
+      { name: "Q20: a body cell's pipe is escaped",
+        source: "| a | b |\n| --- | --- |\n| x\\|y | z |\n",
+        action: async (vc) => {
+          vc.querySelector("tbody td + td").textContent = "z2";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("x\\|y") !== -1 &&
+          JSON.stringify(savedTableRows(md).body[0]) ===
+            JSON.stringify(["x|y", "z2"]) },
+      { name: "Q20: a header cell's pipe is escaped",
+        source: "| x\\|y | b |\n| --- | --- |\n| 1 | 2 |\n",
+        action: async (vc) => {
+          vc.querySelector("tbody td").textContent = "9";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("x\\|y") !== -1 &&
+          JSON.stringify(savedTableRows(md).head) === JSON.stringify(["x|y", "b"]) },
+      // A cell holding a literal backslash plus pipe: turndown escapes the
+      // backslash, so the pipe arrives with an even run and gains one --
+      // three backslashes, which read back as that same backslash and pipe.
+      { name: "Q20: a backslash-plus-pipe cell round-trips",
+        source: "| a | b |\n| --- | --- |\n| x\\\\\\|y | z |\n",
+        action: async (vc) => {
+          vc.querySelector("tbody td + td").textContent = "z2";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("x\\\\\\|y") !== -1 &&
+          JSON.stringify(savedTableRows(md).body[0]) ===
+            JSON.stringify(["x\\|y", "z2"]) },
+      { name: "Q20: a pipe inside a cell's code span is escaped",
+        source: "| a | b |\n| --- | --- |\n| `x\\|y` | z |\n",
+        action: async (vc) => {
+          vc.querySelector("tbody td + td").textContent = "z2";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("`x\\|y`") !== -1 &&
+          JSON.stringify(savedTableRows(md).body[0]) ===
+            JSON.stringify(["x|y", "z2"]) },
+      // The sentinel hides authored markup from every Markdown pass, so
+      // its pipes must be escaped when the stash is restored instead.
+      { name: "Q20: a pipe inside authored HTML in a cell is escaped",
+        source: "| a | b |\n| --- | --- |\n| <span>x\\|y</span> | z |\n",
+        action: async (vc) => {
+          vc.querySelector("tbody td + td").textContent = "z2";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("<span>x\\|y</span>") !== -1 &&
+          JSON.stringify(savedTableRows(md).body[0]) ===
+            JSON.stringify(["x|y", "z2"]),
+        skipHtmlCheck: true },
+      { name: "Q20: a pipe inside an attribute in a cell is escaped",
+        source: "| a | b |\n| --- | --- |\n| <span title=\"a\\|b\">x</span> | z |\n",
+        action: async (vc) => {
+          vc.querySelector("tbody td + td").textContent = "z2";
+          dirty(vc);
+        },
+        expectedSaved: (md) =>
+          md.indexOf('<span title="a\\|b">x</span>') !== -1 &&
+          JSON.stringify(savedTableRows(md).body[0]) ===
+            JSON.stringify(["x", "z2"]),
+        skipHtmlCheck: true },
+      // A comment is stashed by its own placeholder, restored after the
+      // cell rule ran, so it needs the cell variant too.
+      { name: "Q20: a pipe inside a comment in a cell is escaped",
+        source: "| a | b |\n| --- | --- |\n| <!-- x\\|y --> | z |\n",
+        action: async (vc) => {
+          vc.querySelector("tbody td + td").textContent = "z2";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("<!-- x\\|y -->") !== -1 &&
+          savedTableRows(md).body[0].length === 2,
+        skipHtmlCheck: true },
+
+      // --- Q21/AC20: authored HTML survives, chrome does not -----------
+      { name: "Q21: authored <kbd>/<mark> beside an edited word survive",
+        source: "press <kbd>Ctrl</kbd> and <mark>this</mark>\n",
+        action: async (vc) => {
+          vc.querySelector("p").appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) =>
+          md.indexOf("press <kbd>Ctrl</kbd> and <mark>this</mark>!") !== -1 },
+      { name: "Q21: a sized image keeps its attributes",
+        source: "x <img src=\"a.png\" alt=\"a\" width=\"120\" height=\"80\"> y\n",
+        action: async (vc) => {
+          vc.querySelector("p").appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) =>
+          md.indexOf('<img src="a.png" alt="a" width="120" height="80">') !== -1 &&
+          md.indexOf("![") === -1 },
+      { name: "Q21: an authored link with target keeps its tag",
+        source: "x <a href=\"u\" target=\"_blank\">y</a> z\n",
+        action: async (vc) => {
+          vc.querySelector("p").appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) =>
+          md.indexOf('<a href="u" target="_blank">y</a>') !== -1 },
+      // A styled span from the source is authored content; the engine span
+      // heuristic must not mistake its font-size for browser paint.
+      { name: "Q21: an authored sized span survives",
+        source: "x <span style=\"font-size:20px\">big</span> y\n",
+        action: async (vc) => {
+          vc.querySelector("p").appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) =>
+          md.indexOf('<span style="font-size:20px">big</span>') !== -1,
+        skipHtmlCheck: true },
+      // The same tag inserted AFTER render (a paste or the engine) carries
+      // no authored marker, so it is a wrapper and only its words save.
+      { name: "Q21: an unmarked pasted span is unwrapped",
+        source: "alpha\n",
+        action: async (vc) => {
+          const p = vc.querySelector("p");
+          const span = window.document.createElement("span");
+          span.setAttribute("style", "color:red");
+          span.textContent = " pasted";
+          p.appendChild(span);
+          dirty(vc);
+        },
+        expectedSaved: (md) => md === "alpha pasted\n" && md.indexOf("<span") === -1 },
+      // A clipboard's top-level <div> is the paragraph rule's input, not
+      // authored raw HTML: it writes as plain Markdown, and the key has to
+      // agree (else every rich paste rebuilds the surface).
+      { name: "Q21: an unmarked pasted div writes as a paragraph",
+        source: "alpha\n",
+        action: async (vc) => {
+          const div = window.document.createElement("div");
+          div.textContent = "pasted";
+          vc.appendChild(div);
+          dirty(vc);
+        },
+        expectedSaved: "alpha\n\npasted\n\n" },
+      // A pasted <details> is not authored either: it and its <summary>
+      // unwrap to their text.
+      { name: "Q21: an unmarked pasted details is unwrapped",
+        source: "alpha\n",
+        action: async (vc) => {
+          const d = window.document.createElement("details");
+          d.innerHTML = "<summary>s</summary>body";
+          vc.appendChild(d);
+          dirty(vc);
+        },
+        expectedSaved: (md) => !/<details|<summary/i.test(md) &&
+          md.indexOf("sbody") !== -1 },
+      // A block element nested in a quote is never marked raw (the marker
+      // is set on top-level children only), so it reaches the inline rule.
+      { name: "Q21: an authored <details> inside a blockquote survives",
+        source: "> <details><summary>m</summary>body</details>\n",
+        action: async (vc) => {
+          vc.querySelector("blockquote").appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) =>
+          md.indexOf("> <details><summary>m</summary>body</details>!") !== -1 },
+      // highlight.js runs on every pre>code, an authored raw block
+      // included. Its spans, class and data attributes, the fence-language
+      // marker, and the raw-block marker itself must not reach the file.
+      { name: "Q21: an edited raw block writes no editor chrome",
+        defect: "V4",
+        source: "<div>alpha <pre><code class=\"language-python\">x = 1</code></pre></div>\n",
+        action: async (vc) => {
+          vc.querySelector("div").firstChild.nodeValue = "alpha2 ";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("alpha2") !== -1 &&
+          md.indexOf("x = 1") !== -1 &&
+          /class="language-python"/.test(md) &&
+          !/contenteditable|data-hybrid-|data-fence-lang|data-highlighted/
+            .test(md) &&
+          !/hljs|hybrid-lang-pill|code-copy-btn/.test(md),
+        skipHtmlCheck: true },
+      // Chromium wraps the text it carries across a block merge in a
+      // class-less <span> with an inline font-size. A span is serializable
+      // since Q21, so the wrapper has to be stripped as chrome: only the
+      // words are saved.
+      { name: "Q21: an engine merge span is unwrapped",
+        source: "alphaBeta\n",
+        action: async (vc) => {
+          const p = vc.querySelector("p");
+          p.textContent = "alpha";
+          const span = window.document.createElement("span");
+          span.setAttribute("style", "font-size: 1rem;");
+          span.textContent = "Beta";
+          p.appendChild(span);
+          dirty(vc);
+        },
+        expectedSaved: "alphaBeta\n" },
+      // The renderer's own span must keep its own rule: the allow-list
+      // would otherwise write an app marker as HTML.
+      { name: "Q21: an unresolved wikilink still saves literally",
+        source: "press <kbd>Ctrl</kbd> and see [[NoSuchNote]]\n",
+        action: async (vc) => {
+          vc.querySelector("p").appendChild(window.document.createTextNode("!"));
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("<kbd>Ctrl</kbd>") !== -1 &&
+          md.indexOf("[[NoSuchNote]]") !== -1 &&
+          md.indexOf("data-wikilink") === -1 && md.indexOf("<span") === -1 },
+
+      // --- Q22/AC21: one raw element is aligned, several fail closed ----
+      // The raw table is one rendered element, so it is paired like any
+      // block and its own source bytes are kept; only the edited heading
+      // is re-serialized (as ATX).
+      { name: "Q22: one edit in the heading keeps a raw table's neighbours",
+        defect: "V5",
+        source: "Title\n=====\n\n* star a\n\n" +
+          "<table><tr><td>raw</td></tr></table>\n\n    indented\n",
+        action: async (vc) => { vc.querySelector("h1").textContent = "Title edited"; },
+        expectedSaved: "# Title edited\n\n* star a\n\n" +
+          "<table><tr><td>raw</td></tr></table>\n\n    indented\n",
+        skipHtmlCheck: true },
+      // A cell edit inside the raw table re-serializes that table only:
+      // it becomes GFM, and every other block keeps its bytes.
+      { name: "Q22: a cell edit in a raw table converts it, neighbours kept",
+        source: "Title\n=====\n\n* star a\n\n" +
+          "<table><tr><td>raw</td></tr></table>\n\n    indented\n",
+        action: async (vc) => {
+          vc.querySelector("table td").textContent = "raw2";
+          dirty(vc);
+        },
+        expectedSaved: (md) => md.indexOf("<table") === -1 &&
+          /\|\s*raw2\s*\|/.test(md) && md.indexOf("* star a") !== -1 &&
+          md.indexOf("Title\n=====") !== -1 && md.indexOf("    indented") !== -1 },
+      // Two elements in one token have no per-element source span, so the
+      // whole document is re-serialized: the untouched blocks are
+      // canonicalized (setext heading to ATX, the star bullet to "-   "),
+      // which is the accepted cost of failing closed. Nothing is lost and
+      // nothing is resurrected.
+      { name: "Q22: a two-element raw token still fails closed with no loss",
+        source: "<div>a</div>\n<div>b</div>\n\nTitle\n=====\n\n* star a\n",
+        expectedSaved: (md) =>
+          md.indexOf("<div>a</div>\n\n<div>b</div>") !== -1 &&
+          md.indexOf("# Title") !== -1 && md.indexOf("-   star a") !== -1 &&
+          md.indexOf("=====") === -1 && md.indexOf("* star a") === -1,
+        skipHtmlCheck: true },
+
       // --- §8.3 byte-identity corpus (clean enter, no edit) -------------
       { name: "corpus: ~~~ fence byte-identical", source: "~~~\ntext\n~~~\n",
         expectedSaved: "~~~\ntext\n~~~\n" },
@@ -18762,6 +19054,320 @@ function check(label, cond, extra) {
       await window.NB.tabs.activate("notes/a.md");
       await tick(20);
     }
+  }
+
+  console.log("== hybrid: saved render equals the view (I10/Q23) ==");
+  // The app's own render of the bytes a save writes must be structurally
+  // identical, block for block, to the live surface (I10). Both signatures
+  // and the comparison are exposed on NB.hybrid.renderCheck, so the
+  // contract is asserted directly; the save paths are driven through the
+  // real entry points.
+  {
+    const VC_PATH = "notes/viewcheck.md";
+    const vcEl = () => $("viewer-content");
+    const postFile = () =>
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    const rc = () => window.NB.hybrid.renderCheck;
+    const toastText = () => {
+      const el = window.document.querySelector(".toast");
+      return el ? el.textContent : "";
+    };
+    const dirty = (el) =>
+      el.dispatchEvent(new window.Event("input", { bubbles: true }));
+    const viewEnter = async (source) => {
+      FILES[VC_PATH] = source;
+      MTIMES[VC_PATH] = (MTIMES[VC_PATH] || 1) + 1;
+      if (window.NB.tabs.isOpen(VC_PATH)) window.NB.viewer.close(VC_PATH);
+      await window.NB.tabs.open(VC_PATH);
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      return vcEl();
+    };
+    const viewLeave = async () => {
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await tick(20);
+    };
+    const describe = (r) => JSON.stringify(r);
+
+    // --- AC18: an untouched note matches its own render ---------------
+    // One row per construct the render pipeline rewrites on the way to the
+    // DOM: the check has to see through every one of them.
+    const EQUAL_SOURCES = [
+      { name: "a table (thead flattened in the view)",
+        source: "| a | b |\n| --- | --- |\n| 1 | 2 |\n" },
+      { name: "a task list (disabled vs enabled checkbox)",
+        source: "- [ ] open\n- [x] done\n" },
+      { name: "a highlighted fence (hljs state is chrome)",
+        source: "```python\ndef f():\n    return 1\n```\n" },
+      { name: "a plugin fence",
+        source: "```mermaid\nflowchart LR\n  A --> B\n```\n" },
+      // A plugin nested in a container keys the surrounding block's
+      // subtree; the rendered container must reduce to its fence form so
+      // the blockquote matches the render of the saved bytes.
+      { name: "a plugin fence inside a blockquote",
+        source: "> ```mermaid\n> flowchart LR\n>   A --> B\n> ```\n" },
+      { name: "a raw HTML block",
+        source: "<div>x</div>\n" },
+      { name: "an unresolved wikilink",
+        source: "see [[NoSuchNote]] here\n" },
+      // The viewer renames a raw id that collides with a shell id and
+      // keeps the authored value on data-nb-id; that value is the content,
+      // so both sides must key the authored id.
+      { name: "a raw block whose id the viewer renamed",
+        source: '<div id="app">raw shell id</div>\n' },
+      // Attribute ORDER is part of the key: the authored id must be keyed
+      // at the id position, not where the data-nb-id marker happens to be.
+      { name: "an authored heading id beside a class",
+        source: '<h2 id="x" class="y">T</h2>\n' },
+      { name: "an authored sized span",
+        source: 'x <span style="font-size:20px">big</span> y\n' },
+    ];
+    for (const c of EQUAL_SOURCES) {
+      const vc = await viewEnter(c.source);
+      const live = rc().liveSignature();
+      check("I10: untouched " + c.name + " matches the bytes on disk",
+        rc().verify(c.source, live).match,
+        describe(rc().verify(c.source, live)));
+      // Touch one block so the serializer runs: an untouched note takes the
+      // splice fast path and returns the source verbatim, which would make
+      // this assertion a copy of the one above.
+      const target = vc.querySelector(
+        "p:not([data-hybrid-caret]), h1, h2, h3, li, td, div");
+      if (target && !target.hasAttribute("contenteditable")) {
+        target.appendChild(window.document.createTextNode("!"));
+        dirty(vc);
+        await tick(10);
+        const liveAfter = rc().liveSignature();
+        const would = window.NB.hybrid.domToMarkdown();
+        check("I10: edited " + c.name + " matches the bytes a save writes",
+          rc().verify(would, liveAfter).match, describe(would));
+      }
+      await viewLeave();
+    }
+
+    // A plugin block keys by its fence source in BOTH shapes, so the
+    // raw fence (what an edit leaves behind, or what a note looks like
+    // before the renderer runs) keys like the rendered container.
+    {
+      const source = "```mermaid\nflowchart LR\n  A --> B\n```\n";
+      const vc = await viewEnter(source);
+      const box = vc.querySelector(".mermaid-container");
+      const pre = window.document.createElement("pre");
+      const code = window.document.createElement("code");
+      code.className = "language-mermaid";
+      code.textContent = "flowchart LR\n  A --> B\n";
+      pre.appendChild(code);
+      if (box) box.replaceWith(pre);
+      check("I10: the raw fence keys like the rendered plugin container",
+        !!box && rc().verify(source, rc().liveSignature()).match,
+        describe(rc().liveSignature()));
+      await viewLeave();
+    }
+
+    // --- AC18: a divergent md is reported, with the first index --------
+    {
+      await viewEnter("alpha\n\nbeta\n");
+      const result = rc().verify("alpha\n\ngamma\n", rc().liveSignature());
+      check("I10: a divergent render is reported as a mismatch",
+        result.match === false && result.index === 1, describe(result));
+      check("I10: the mismatch carries both block keys",
+        typeof result.liveKey === "string" && typeof result.savedKey === "string" &&
+        result.liveKey !== result.savedKey, describe(result));
+      await viewLeave();
+    }
+
+    // A clipboard insert of a block element must not read as a divergence:
+    // the paragraph rule writes it as a <p>, and the key sees the same.
+    {
+      const vc = await viewEnter("alpha\n\nbeta\n");
+      const div = window.document.createElement("div");
+      div.textContent = "pasted";
+      vc.appendChild(div);
+      dirty(vc);
+      await tick(40);
+      await window.NB.hybrid.save();
+      await tick(80);
+      check("I10 pasted block: the save does not rebuild the surface",
+        div.isConnected && !/rebuilt/.test(toastText()), toastText());
+      await viewLeave();
+    }
+
+    // --- AC22: a no-op save writes nothing and still checks ------------
+    {
+      const source = "alpha\n\n- [ ] task\n";
+      const vc = await viewEnter(source);
+      const firstP = vc.querySelector("p");
+      const before = postFile();
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("I10 no-op: a clean save issues zero POST /api/file",
+        postFile() - before === 0, "delta=" + (postFile() - before));
+      check("I10 no-op: a clean save does not re-render the surface",
+        firstP.isConnected && vc.querySelector("p") === firstP);
+      check("I10 no-op: a clean save keeps the file bytes",
+        FILES[VC_PATH] === source, JSON.stringify(FILES[VC_PATH]));
+      check("I10 no-op: the no-write check ran and matched",
+        !/rebuilt/.test(toastText()), toastText());
+      await viewLeave();
+    }
+
+    // An empty <p> the browser creates on Enter writes no bytes. It must
+    // not read as a mismatch: Ctrl+S right after Enter would otherwise
+    // delete the block the user just made and reset the undo history.
+    {
+      const vc = await viewEnter("alpha\n\nbeta\n");
+      const empty = window.document.createElement("p");
+      empty.appendChild(window.document.createElement("br"));
+      vc.insertBefore(empty, vc.children[1] || null);
+      dirty(vc);
+      await tick(40);
+      const before = postFile();
+      await window.NB.hybrid.save();
+      await tick(80);
+      check("I10 empty block: a save writes nothing",
+        postFile() - before === 0, "delta=" + (postFile() - before));
+      check("I10 empty block: the block survives (no rebuild)",
+        empty.isConnected && !/rebuilt/.test(toastText()), toastText());
+      await viewLeave();
+    }
+
+    // Toggling a checkbox changes the live property, not the attribute.
+    // Both sides must key the property only, or every toggle rebuilds.
+    {
+      const vc = await viewEnter("- [ ] task\n");
+      const box = vc.querySelector('input[type="checkbox"]');
+      box.checked = true;
+      box.dispatchEvent(new window.Event("change", { bubbles: true }));
+      await tick(40);
+      const before = postFile();
+      await window.NB.hybrid.save();
+      await tick(80);
+      check("I10 checkbox: the toggle saves as [x]",
+        FILES[VC_PATH] === "- [x] task\n", JSON.stringify(FILES[VC_PATH]));
+      check("I10 checkbox: the toggle does not rebuild the surface",
+        !/rebuilt/.test(toastText()) && box.isConnected, toastText());
+      check("I10 checkbox: the write happened once",
+        postFile() - before === 1, "delta=" + (postFile() - before));
+      await viewLeave();
+    }
+
+    // --- AC18c/AC24: a mismatch rebuilds, and the undo baseline is new --
+    // A caption table is the real defect: the live DOM has one element,
+    // the written bytes have two (the caption becomes the paragraph above
+    // the table), so the check must rebuild and re-seat.
+    {
+      const source =
+        '<table><caption>Cap</caption><tbody><tr><td>a</td></tr></tbody></table>\n';
+      const vc = await viewEnter(source);
+      const oldTable = vc.querySelector("table");
+      oldTable.querySelector("td").textContent = "b";
+      dirty(vc);
+      await tick(40);
+      const before = postFile();
+      await window.NB.hybrid.save();
+      await tick(80);
+      const rebuilt = vc.querySelectorAll("#viewer-content > *");
+      check("I10 rebuild: the caption save wrote the converted bytes",
+        postFile() - before === 1 &&
+        FILES[VC_PATH].indexOf("<table") === -1 &&
+        FILES[VC_PATH].indexOf("Cap") !== -1,
+        JSON.stringify(FILES[VC_PATH]));
+      check("I10 rebuild: the surface is re-rendered from the file",
+        !vc.querySelector("caption") && rebuilt.length === 2,
+        vc.querySelectorAll("#viewer-content > *").length + " blocks");
+      check("I10 rebuild: the view and the file now agree",
+        rc().verify(FILES[VC_PATH], rc().liveSignature()).match,
+        describe(rc().verify(FILES[VC_PATH], rc().liveSignature())));
+      check("I10 rebuild: the notice says the view was rebuilt",
+        /rebuilt from the file/.test(toastText()), toastText());
+      // A rebuild is a new undo baseline: Ctrl+Z must not restore the
+      // pre-rebuild DOM (which would let the next save write it back).
+      vc.dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "z", ctrlKey: true, bubbles: true, cancelable: true }));
+      await tick(60);
+      check("I10 rebuild: Ctrl+Z cannot restore the divergent DOM",
+        !vc.querySelector("caption"),
+        vc.querySelector("caption") ? "caption is back" : "");
+      // AC25: the block-count-changing write leaves alignment stale, so
+      // the next edit has to splice from a re-seated baseline.
+      const tail = window.document.createElement("p");
+      tail.appendChild(window.document.createTextNode("tail"));
+      vc.appendChild(tail);
+      dirty(vc);
+      await tick(40);
+      await window.NB.hybrid.save();
+      await tick(80);
+      check("I10 AC25: the next edit keeps the reconciled bytes",
+        FILES[VC_PATH].indexOf("Cap") !== -1 &&
+        /\|\s*b\s*\|/.test(FILES[VC_PATH]) &&
+        FILES[VC_PATH].indexOf("tail") !== -1,
+        JSON.stringify(FILES[VC_PATH]));
+      await viewLeave();
+    }
+
+    // A deliberate mismatch with no keystroke since the capture rebuilds
+    // immediately; the same mismatch with a keystroke since is deferred so
+    // the typed text survives (AC18c/AC18d, AC23).
+    {
+      await viewEnter("alpha\n");
+      const vc = vcEl();
+      const para = vc.querySelector("p");
+      para.appendChild(window.document.createTextNode("!"));
+      dirty(vc);
+      await tick(40);
+      const realVerify = rc().verify;
+      rc().verify = () => ({ match: false, index: 0,
+        liveKey: "live-key", savedKey: "saved-key" });
+      await window.NB.hybrid.save();
+      await tick(60);
+      rc().verify = realVerify;
+      check("I10 mismatch: an unchanged generation rebuilds the surface",
+        !para.isConnected && vc.querySelector("p").textContent === "alpha!",
+        vc.querySelector("p").textContent);
+      await viewLeave();
+    }
+    {
+      await viewEnter("alpha\n");
+      const vc = vcEl();
+      const para = vc.querySelector("p");
+      para.appendChild(window.document.createTextNode("!"));
+      dirty(vc);
+      await tick(40);
+      const realVerify = rc().verify;
+      const realSaveFile = window.NB.api.saveFile;
+      // Hold the POST so a keystroke lands while it is in flight.
+      let release = null;
+      window.NB.api.saveFile = (p2, content) => new Promise((resolve) => {
+        release = () => realSaveFile(p2, content).then(resolve);
+      });
+      // Force a mismatch so the generation guard is the only thing that
+      // can keep the typed text on screen.
+      rc().verify = () => ({ match: false, index: 0,
+        liveKey: "live-key", savedKey: "saved-key" });
+      const saving = window.NB.hybrid.save();
+      await tick(10);
+      para.appendChild(window.document.createTextNode("typed"));
+      dirty(vc);
+      await tick(10);
+      if (release) release();
+      await saving;
+      await tick(60);
+      window.NB.api.saveFile = realSaveFile;
+      rc().verify = realVerify;
+      check("I10 mismatch: a keystroke during the write is not re-rendered away",
+        para.isConnected && vc.querySelector("p") === para &&
+        para.textContent === "alpha!typed", para.textContent);
+      check("I10 mismatch: the deferred check shows no rebuild notice",
+        !/rebuilt from the file/.test(toastText()), toastText());
+      await viewLeave();
+    }
+
+    if (window.NB.tabs.isOpen(VC_PATH)) {
+      window.NB.tabs.close(VC_PATH, { force: true });
+    }
+    delete FILES[VC_PATH];
+    delete MTIMES[VC_PATH];
   }
 
   console.log("== list reorder ==");

@@ -468,6 +468,17 @@ every caret position, the invariants, and the open questions — is
   intact, folding a `<caption>` into a paragraph, dropping `<colgroup>`,
   and removing a row-less table. Without it, a raw `<table>` from the
   source whose first row is not a heading row is kept verbatim as HTML.
+  A `|` inside a cell is escaped as `\|`; an unescaped pipe changes the
+  row's column count on the next render (Q20 in
+  [hybrid-editing.md](hybrid-editing.md)).
+- **The saved render equals the view (I10).** The app compares its render of the
+  written bytes against the live DOM after every write, and on an explicit save
+  or exit even when nothing was written. On a mismatch with no keystroke since
+  the capture, the surface is rebuilt from the file, the undo history is reset,
+  and the user is told; a mismatch with newer keystrokes is deferred so nothing
+  typed is lost. Authored inline and nested raw HTML is re-emitted as HTML
+  rather than unwrapped, and editor chrome is stripped on a clone before the
+  write. [hybrid-editing.md](hybrid-editing.md) §5.7 owns the rule.
 
 ## Adding or changing a renderer
 

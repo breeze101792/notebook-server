@@ -341,7 +341,15 @@ on the `dirty` flag alone: `onInput` marks dirty synchronously (`markDirty`, no
 debounce) and those paths call `pendingMarkdown()`, so a click that lands
 between a keystroke and the debounced UI pass still writes the edit. `onClose`
 re-checks after each write and writes again for bytes typed while the POST was
-in flight. The watcher's self-save window opens before the POST, and an
+in flight. Every write is also checked against the view it came from (I10):
+`savedRenderSignature` parses the written bytes, applies the render-time
+normalization, and compares one key per top-level block against
+`liveRenderSignature`, captured in the same tick as the bytes. A mismatch
+rebuilds the surface from the file (keeping the scroll offset and resetting the
+undo baseline) only when no keystroke landed since the capture; otherwise the
+check is deferred so nothing typed is lost, and an explicit save or exit
+verifies the bytes on disk even when it writes nothing, still with no POST. The
+watcher's self-save window opens before the POST, and an
 external-change event whose content equals the session baseline or the
 in-flight write is treated as our own echo (never a conflict); a genuine
 change while dirty prompts discard/reload versus keep-and-mark-conflict.
@@ -351,7 +359,12 @@ carried through a clone with sentinels (a NUL-prefixed token for code spaces,
 because a private-use char occurs in real notes). Tables are always emitted as
 GFM: `normalizeTablesForGfm` rebuilds every table in the clone into the shape
 Turndown's GFM rule accepts (an all-`<th>` first row in a leading `<thead>`),
-never as raw `<table>`. See `docs/architecture/markdown.md` for the full contract.
+never as raw `<table>`; a pipe inside a cell is written with an odd backslash
+run. Authored HTML that Markdown cannot express (a `<kbd>`, a sized `<img>`, a
+`<details>` nested in a quote) is marked at render time and re-emitted as HTML
+by an allow-list rule; an element without that marker — a paste or the engine's
+own wrapper — is unwrapped, so untrusted clipboard markup never reaches the
+file. See `docs/architecture/markdown.md` for the full contract.
 
 **Agent-facing docs are part of the renderer contract.** The fence
 languages are documented for two audiences that must stay in sync with the
