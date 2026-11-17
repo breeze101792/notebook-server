@@ -1,0 +1,1986 @@
+{
+  "meta": {
+    "spec": "docs/architecture/hybrid-editing.md",
+    "rulings": "docs/product/hybrid-caret-matrix-priority.md \u00a77 (R1-R9)",
+    "markerSpec": "docs/product/hybrid-block-marker-backspace.md",
+    "sections": "\u00a73 position key, \u00a74 behavior matrix, \u00a75 cross-cutting rules, \u00a78.2 (Chromium harness)",
+    "generated": "2026-11-17",
+    "schema": {
+      "id": "stable row id; also the note filename",
+      "doc": "the section the row was transcribed from",
+      "block": "construct name; selects the caret target through the runner's selector map",
+      "target": "optional: a construct name that overrides block for the caret target only",
+      "index": "optional: which match of the selector, default 0, negative counts from the end",
+      "cell": "optional: [row, column] inside the block's <table>",
+      "before": "exact note bytes written to disk",
+      "position": "S | T | M | E | B | EMPTY (\u00a73)",
+      "operation": "a key name, 'Type:<text>', or a comma chain of steps",
+      "after": "exact note bytes expected after save and exit; null = the docs pin no bytes (BLOCKED)",
+      "note": "why the row exists / what the owner would notice",
+      "status": "absent or 'assert' = scored; 'spec-divergent' = the doc marks it open or self-conflicting; 'engine' = native-engine dependent; 'blocked' = the docs do not pin the expected bytes (scored by nobody, observed by the runner)",
+      "allowHtml": "optional: the note already contains authored HTML (Q10/Q21), so only the tag multiset may not grow"
+    },
+    "operationGrammar": {
+      "key": "Playwright page.keyboard.press(key): Backspace, Delete, Enter, Shift+Enter, Tab, Shift+Tab, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, End, Home, Ctrl+Z, Ctrl+B",
+      "type": "Type:<text> types the text character by character through the real engine, so live input rules fire as they do for a user",
+      "chain": "steps are comma-separated and run in order",
+      "SelectAll": "Ctrl+A over the whole note (selects #viewer-content)",
+      "SelectBlock": "selects the target block's contents (the doc's D operation)",
+      "NoOp": "dispatch nothing; save only (the doc's 'no edit' rows)"
+    },
+    "positionRule": {
+      "S": "before the block's first character (a container position at offset 0)",
+      "T": "offset 0 of the block's first text node, i.e. after the rendered marker",
+      "M": "between the block's middle characters: floor(textContent.length / 2), walking text nodes",
+      "E": "after the last character of the block",
+      "B": "the empty position after the target block, directly in the editor root",
+      "EMPTY": "the start of an empty block (a root caret when the note is empty)"
+    },
+    "invariants": {
+      "html": "no <tag> outside a fenced code block may appear in the saved file (I4/G4); a row with allowHtml must not gain a tag",
+      "chrome": "the file never contains data-hybrid-, contenteditable, or hljs",
+      "sentinels": "the file never contains NUL, the zero-width placeholder, a BOM, or a signature sentinel",
+      "noop": "a row whose before equals after issues zero POST /api/file (I3)",
+      "pageerrors": "no uncaught page error during the row",
+      "noTiming": "R4: no row asserts a wait, an interval, or a save latency; every row saves explicitly"
+    },
+    "selectors": {
+      "paragraph": "#viewer-content > p",
+      "atx-heading": "#viewer-content > h1..h6",
+      "setext": "#viewer-content > h1, > h2",
+      "bullet-list": "#viewer-content > ul > li",
+      "ordered-list": "#viewer-content > ol > li",
+      "nested-list": "#viewer-content > ul > li > ul > li (and the ol form)",
+      "task-list": "#viewer-content > ul > li",
+      "blockquote": "#viewer-content > blockquote",
+      "fenced-code": "#viewer-content > pre",
+      "indented-code": "#viewer-content > pre",
+      "hr": "#viewer-content > hr",
+      "table": "#viewer-content > table",
+      "raw-html": "#viewer-content > div / details / section / figure",
+      "plugin-fence": "#viewer-content > pre, [data-hybrid-atomic], .mermaid-container"
+    }
+  },
+  "rows": [
+    {
+      "id": "para.type.M.1",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\n",
+      "position": "M",
+      "operation": "Type:X",
+      "after": null,
+      "note": "M on a 3-char text is ambiguous: \u00a74.1's byte needs offset 2, the runner's floor(len/2) rule is offset 1",
+      "status": "blocked"
+    },
+    {
+      "id": "para.type.S.hash",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\n",
+      "position": "S",
+      "operation": "Type:# ",
+      "after": "# one\n",
+      "note": "the heading rule fires at the block start"
+    },
+    {
+      "id": "para.type.S.bullet",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\n",
+      "position": "S",
+      "operation": "Type:- ",
+      "after": "-   one\n",
+      "note": "the list rule fires at the block start"
+    },
+    {
+      "id": "para.enter.E.1",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\n",
+      "position": "E",
+      "operation": "Enter",
+      "after": "one\n\n",
+      "note": "R2: one Enter adds at most one blank line (exactly two \\n, never three, never a <br>)",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "para.shiftenter.E.1",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "one\n\n",
+      "note": "R1: Q15 wins over \u00a74.1's stale one-\\n target; the new top-level <p> writes one blank line",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "para.enter.M.split",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "alpha beta\n",
+      "position": "M",
+      "operation": "Enter",
+      "after": "alpha\n\nbeta\n",
+      "note": "AC-H4: Enter mid-paragraph is exactly one blank line and no stray space; the \u00a73 M caret lands one offset before AC-H4's (before the space, not after it), so the row also proves the space is not trimmed",
+      "status": "accepted",
+      "reason": "native: the space between the split words stays at the start of the second block; it renders identically and is what the browser produces"
+    },
+    {
+      "id": "para.delete.E.1",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\ntwo\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": "one\ntwo\n",
+      "note": "Delete at the content end has nothing to merge (no next block)",
+      "status": "engine"
+    },
+    {
+      "id": "para.delete.merge.E",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "alpha\n\nbeta\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": "alphabeta\n",
+      "note": "\u00a75.2 rule 2 / must-pass: Delete at E joins B into A, both texts kept, no word lost",
+      "status": "accepted",
+      "reason": "by design: the structural-splice path terminates an edited final block with a blank line"
+    },
+    {
+      "id": "para.backspace.merge.S",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "alpha\n\nbeta\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": "alphabeta\n",
+      "note": "\u00a75.2 rule 1 / must-pass: Backspace at S joins B's content to A, both texts kept",
+      "index": 1,
+      "status": "accepted",
+      "reason": "by design: the structural-splice path terminates an edited final block with a blank line"
+    },
+    {
+      "id": "para.type.B.1",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\n\ntwo\n",
+      "position": "B",
+      "operation": "Type:X",
+      "after": null,
+      "note": "\u00a74.2's B row leaves the result as a question mark (Q3); no expectation is pinned",
+      "status": "blocked",
+      "index": 0
+    },
+    {
+      "id": "para.enter.EMPTY.1",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Enter",
+      "after": "",
+      "note": "Enter on an empty note: the caret block writes no bytes"
+    },
+    {
+      "id": "para.delete.block.1",
+      "doc": "4.1",
+      "block": "paragraph",
+      "before": "one\n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": "",
+      "note": "D on the only block empties the note; \u00a75.3 says a caret <p> writes no bytes"
+    },
+    {
+      "id": "h2.type.EMPTY.h3",
+      "doc": "4.2",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:### ",
+      "after": "###\n",
+      "note": "empty h3; Appendix A: an empty <h3> saves as the bare marker",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "h2.type.EMPTY.root.h1",
+      "doc": "4.2",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:# ",
+      "after": "#\n",
+      "note": "Q19: a brand-new note types into the root; the heading rule still fires",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "h2.type.EMPTY.nospace",
+      "doc": "4.2",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:#no-space",
+      "after": "\\#no-space\n",
+      "note": "no space after # -> no conversion, the leading # is escaped on save",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "h2.type.EMPTY.existing",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Commands\n###\n\nbody\n",
+      "position": "EMPTY",
+      "operation": "Type:Overview",
+      "after": "## Commands\n### Overview\n\nbody\n",
+      "note": "R6/Q12: typing into an existing empty heading must land in it (must-pass, real engine)",
+      "index": 1
+    },
+    {
+      "id": "h2.type.T.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "T",
+      "operation": "Type:X",
+      "after": "## XTitle\n",
+      "note": "\u00a73 T is offset 0 (after the marker and its space); \u00a74.2's '## TitXle' cell is a doc typo"
+    },
+    {
+      "id": "h2.type.M.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "M",
+      "operation": "Type:X",
+      "after": "## TiXtle\n",
+      "note": "floor(5/2)=2 on 'Title'"
+    },
+    {
+      "id": "h2.type.M.bullet",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "M",
+      "operation": "Type:- ",
+      "after": "## Ti- tle\n",
+      "note": "G inside an H2: no block conversion, the characters stay literal text"
+    },
+    {
+      "id": "h2.type.E.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "## Title!\n",
+      "note": "edited block re-serializes as ATX"
+    },
+    {
+      "id": "h2.enter.E.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "E",
+      "operation": "Enter",
+      "after": "## Title\n\n",
+      "note": "R2: one blank line, a new block below; element count changes -> structural splice (Q1)",
+      "status": "engine"
+    },
+    {
+      "id": "h2.shiftenter.E.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "## Title\n\n",
+      "note": "the new empty <p> after the heading writes one blank line",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "h2.delete.merge.E",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n\nbody\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": "## Titlebody\n",
+      "note": "\u00a75.2 rule 2 / decision row 3: Delete joins the text, the heading keeps its type",
+      "status": "accepted",
+      "reason": "by design: the structural-splice path terminates an edited final block with a blank line"
+    },
+    {
+      "id": "h2.backspace.T.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "Title\n",
+      "note": "marker spec AC1: one press peels the ##, the text is kept, the block becomes a paragraph"
+    },
+    {
+      "id": "h2.delete.T.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "## Title\n",
+      "position": "T",
+      "operation": "Delete",
+      "after": "## itle\n",
+      "note": "marker spec AC11/D1: Delete at T on a non-empty heading is native and deletes the first character"
+    },
+    {
+      "id": "h2.delete.block.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "### Title\n\nbody\n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": "###\n\nbody\n",
+      "note": "D on the heading text keeps the marker (EMPTY_HEADING_SENTINEL); a neighbour keeps the selection off \u00a75.2's whole-note rule"
+    },
+    {
+      "id": "h2.delete.block.2",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "###\n\nbody\n",
+      "position": "EMPTY",
+      "operation": "NoOp",
+      "after": "###\n\nbody\n",
+      "note": "\u00a74.2's 'D, then save, no other edit' row: an untouched empty heading saves byte-identically"
+    },
+    {
+      "id": "h2.backspace.EMPTY.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "###\n",
+      "position": "EMPTY",
+      "operation": "Backspace",
+      "after": null,
+      "note": "marker spec AC2 pins 'no ### in the saved note', not the bytes of the empty paragraph it leaves",
+      "status": "blocked"
+    },
+    {
+      "id": "h2.delete.EMPTY.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "###\n",
+      "position": "EMPTY",
+      "operation": "Delete",
+      "after": null,
+      "note": "marker spec AC12 pins 'no ###', not the resulting empty-paragraph bytes",
+      "status": "blocked"
+    },
+    {
+      "id": "h2.enter.EMPTY.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "###\n",
+      "position": "EMPTY",
+      "operation": "Enter",
+      "after": "###\n\n",
+      "note": "Enter on an empty heading opens a new block (Q12 line box)",
+      "status": "engine"
+    },
+    {
+      "id": "h2.backspace.S.1",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "x\n\n## Title\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": null,
+      "note": "\u00a74.2 offers two outcomes ('x Title' or merged '## xTitle'); Q2 has not ruled",
+      "status": "blocked",
+      "index": 0
+    },
+    {
+      "id": "h2.type.B.1",
+      "doc": "4.2",
+      "block": "paragraph",
+      "before": "x\n\n## Title\n",
+      "position": "B",
+      "operation": "Type:X",
+      "after": null,
+      "note": "\u00a74.2's B row ends in a question mark; the native result is undisputed (Q3)",
+      "status": "blocked",
+      "index": 0
+    },
+    {
+      "id": "h2.backspace.EMPTY.2",
+      "doc": "4.2",
+      "block": "atx-heading",
+      "before": "x\n\n###\n",
+      "position": "EMPTY",
+      "operation": "Backspace",
+      "after": null,
+      "note": "\u00a74.2: 'x + caret; marker removed by merge' is prose with no bytes",
+      "status": "blocked",
+      "index": 0
+    },
+    {
+      "id": "setext.noop.1",
+      "doc": "4.3",
+      "block": "setext",
+      "before": "Title\n=====\n\nbody\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "Title\n=====\n\nbody\n",
+      "note": "no edit: byte-identical"
+    },
+    {
+      "id": "setext.type.E.1",
+      "doc": "4.3",
+      "block": "setext",
+      "before": "Title\n=====\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "# Title!\n",
+      "note": "a touched setext heading canonicalizes to ATX; the doc's byte shows the caret at the end"
+    },
+    {
+      "id": "setext.shiftenter.E.1",
+      "doc": "4.3",
+      "block": "setext",
+      "before": "Title\n=====\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "# Title\n\n",
+      "note": "insertLineBelow climbs to top level",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "bullet.type.EMPTY.dash",
+      "doc": "4.4",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:- ",
+      "after": "-\n",
+      "note": "empty item; Appendix A: an empty <li> saves as the bare marker",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "bullet.type.EMPTY.star",
+      "doc": "4.4",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:* ",
+      "after": "-\n",
+      "note": "the rule matches '*', the saved marker is canonical '-'",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "bullet.type.EMPTY.plus",
+      "doc": "4.4",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:+ ",
+      "after": "-\n",
+      "note": "R8: the Q5 '+ ' rule is live and must pass; \u00a74.1/\u00a74.4's stale \u2733 marks do not apply",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "bullet.type.T.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n",
+      "position": "T",
+      "operation": "Type:X",
+      "after": "-   Xitem\n",
+      "note": "T is before the first content character; canonical padding"
+    },
+    {
+      "id": "bullet.type.M.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n",
+      "position": "M",
+      "operation": "Type:X",
+      "after": "-   itXem\n",
+      "note": "floor(4/2)=2 on 'item'"
+    },
+    {
+      "id": "bullet.enter.E.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n",
+      "position": "E",
+      "operation": "Enter",
+      "after": "-   item\n-\n",
+      "note": "new item below; the empty item saves as a bare marker (Q18)"
+    },
+    {
+      "id": "bullet.enter.EMPTY.outdent",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- a\n- \n",
+      "position": "EMPTY",
+      "operation": "Enter",
+      "after": "-   a\n\n",
+      "note": "Enter on an empty item outdents it to a paragraph",
+      "index": 1
+    },
+    {
+      "id": "bullet.shiftenter.M.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n",
+      "position": "M",
+      "operation": "Shift+Enter",
+      "after": "-   item\n\n",
+      "note": "the new <p> lands after the whole list",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "bullet.shiftenter.E.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "-   item\n\n",
+      "note": "same as M",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "bullet.backspace.T.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "item\n",
+      "note": "marker spec AC3: the item leaves the list as a paragraph, the list goes"
+    },
+    {
+      "id": "bullet.backspace.T.middle",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- a\n- b\n- c\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "-   a\n\nb\n\n-   c\n",
+      "note": "marker spec AC4: b is a paragraph between two bullets; only the split list canonicalizes",
+      "index": 1,
+      "status": "accepted",
+      "reason": "by design: the structural-splice path terminates an edited final block with a blank line"
+    },
+    {
+      "id": "bullet.delete.E.boundary",
+      "doc": "4.4",
+      "block": "paragraph",
+      "before": "Intro\n\n- a\n- b\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": "Intro\n\n- a\n- b\n",
+      "note": "\u00a75.2 rule 3 / AC19: Delete before a 2+ item list is refused and writes nothing"
+    },
+    {
+      "id": "bullet.delete.EMPTY.item",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- a\n- \n",
+      "position": "EMPTY",
+      "operation": "Delete",
+      "after": "-   a\n",
+      "note": "AC20: the empty item is removed as a line and the list stays one list",
+      "index": 1
+    },
+    {
+      "id": "bullet.delete.block.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n\nbody\n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": "-\n\nbody\n",
+      "note": "D keeps the bare marker"
+    },
+    {
+      "id": "bullet.tab.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- a\n- b\n",
+      "position": "M",
+      "operation": "Tab",
+      "after": "-   a\n    -   b\n",
+      "note": "Tab nests the caret item",
+      "index": 1
+    },
+    {
+      "id": "bullet.shifttab.1",
+      "doc": "4.6",
+      "block": "nested-list",
+      "before": "- a\n    - b\n",
+      "position": "M",
+      "operation": "Shift+Tab",
+      "after": "-   a\n-   b\n",
+      "note": "Shift+Tab outdents the nested item to top level"
+    },
+    {
+      "id": "bullet.backspace.S.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "a\n\n- item\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": null,
+      "note": "\u00a74.4 offers 'outdent item / merge into a'; Q2 has not ruled",
+      "status": "blocked",
+      "index": 0
+    },
+    {
+      "id": "bullet.delete.E.1",
+      "doc": "4.4",
+      "block": "bullet-list",
+      "before": "- item\n\na\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": null,
+      "note": "\u00a74.4: 'merge next block into item' is prose with no bytes (Q2)",
+      "status": "blocked"
+    },
+    {
+      "id": "ol.type.EMPTY.1",
+      "doc": "4.5",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:1. ",
+      "after": "1.\n",
+      "note": "empty ordered item; Appendix A: an empty <li> saves as the bare marker",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "ol.type.EMPTY.2",
+      "doc": "4.5",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:2. ",
+      "after": "1.\n",
+      "note": "renumbered by DOM position",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "ol.type.EMPTY.paren",
+      "doc": "4.5",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:1) ",
+      "after": "1.\n",
+      "note": "R8: the Q5 '1) ' rule is live and must pass; the saved marker is canonical '1.'",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "ol.enter.E.1",
+      "doc": "4.5",
+      "block": "ordered-list",
+      "before": "1. a\n",
+      "position": "E",
+      "operation": "Enter",
+      "after": "1.  a\n2.\n",
+      "note": "new item below"
+    },
+    {
+      "id": "ol.enter.EMPTY.outdent",
+      "doc": "4.5",
+      "block": "ordered-list",
+      "before": "1. a\n2. \n",
+      "position": "EMPTY",
+      "operation": "Enter",
+      "after": "1.  a\n\n",
+      "note": "the empty item outdents, same path as 4.4",
+      "index": 1
+    },
+    {
+      "id": "ol.shiftenter.M.1",
+      "doc": "4.5",
+      "block": "ordered-list",
+      "before": "1. a\n",
+      "position": "M",
+      "operation": "Shift+Enter",
+      "after": "1.  a\n\n",
+      "note": "the new <p> lands after the list",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "ol.backspace.T.middle",
+      "doc": "4.5",
+      "block": "ordered-list",
+      "before": "1. a\n2. b\n3. c\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "1.  a\n\nb\n\n3.  c\n",
+      "note": "marker spec AC5: b becomes a paragraph and c keeps its displayed 3 (D4)",
+      "index": 1,
+      "status": "accepted",
+      "reason": "by design: the structural-splice path terminates an edited final block with a blank line"
+    },
+    {
+      "id": "ol.delete.block.1",
+      "doc": "4.5",
+      "block": "ordered-list",
+      "before": "1. a\n\nbody\n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": "1.\n\nbody\n",
+      "note": "D keeps the bare marker"
+    },
+    {
+      "id": "nested.shiftenter.M.1",
+      "doc": "4.6",
+      "block": "nested-list",
+      "before": "- a\n    - b\n",
+      "position": "M",
+      "operation": "Shift+Enter",
+      "after": "-   a\n    -   b\n\n",
+      "note": "the new <p> lands after the OUTER list",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "nested.backspace.T.1",
+      "doc": "4.6",
+      "block": "nested-list",
+      "before": "- a\n    - b\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "-   a\n\nb\n\n",
+      "note": "the nested item lifts out of the whole list as a paragraph; the structural-splice EOF convention adds one trailing blank line"
+    },
+    {
+      "id": "nested.delete.block.1",
+      "doc": "4.6",
+      "block": "nested-list",
+      "before": "- a\n    - \n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": "-   a\n    -\n",
+      "note": "an emptied nested item keeps its indent and bare marker",
+      "status": "blocked",
+      "reason": "marked renders no nested <li> for an empty sub-item (`- a\\n    - \\n`), so the row has no target; the app never sees this shape"
+    },
+    {
+      "id": "nested.enter.EMPTY.1",
+      "doc": "4.6",
+      "block": "nested-list",
+      "before": "- a\n    - \n",
+      "position": "EMPTY",
+      "operation": "Enter",
+      "after": null,
+      "note": "\u00a74.6: 'split: outer list, <p>, rest list' is prose with no bytes",
+      "status": "blocked"
+    },
+    {
+      "id": "task.type.EMPTY.open",
+      "doc": "4.7",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:- [ ] ",
+      "after": "- [ ] \n",
+      "note": "an empty task keeps a trailing space (EMPTY_TASK_SENTINEL)",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "task.type.EMPTY.checked",
+      "doc": "4.7",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:- [x] ",
+      "after": "- [x] \n",
+      "note": "checked task item",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "task.type.EMPTY.bare",
+      "doc": "4.7",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:[ ] ",
+      "after": "- [ ] \n",
+      "note": "the bare '[ ] ' rule adds the checkbox",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "task.shiftenter.M.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] task\n",
+      "position": "M",
+      "operation": "Shift+Enter",
+      "after": "- [ ] task\n\n",
+      "note": "the new <p> lands after the whole list",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "task.enter.T.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] task\n",
+      "position": "T",
+      "operation": "Enter",
+      "after": "- [ ] \n- [ ] task\n",
+      "note": "Enter at the content start opens the new task item ABOVE the caret item"
+    },
+    {
+      "id": "task.enter.E.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] task\n",
+      "position": "E",
+      "operation": "Enter",
+      "after": "- [ ] task\n- [ ] \n",
+      "note": "Enter at the content end opens the new task item below"
+    },
+    {
+      "id": "task.backspace.T.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] task\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "task\n",
+      "note": "marker spec AC6: checkbox and list type gone, text kept, never '- [ ] - item'"
+    },
+    {
+      "id": "task.backspace.T.checked",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [x] done\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "done\n",
+      "note": "marker spec AC6: a checked item loses the box and its state"
+    },
+    {
+      "id": "task.delete.E.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] a\n- [ ] b\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": "- [ ] ab\n",
+      "note": "\u00a75.2 task edge: the next item's text joins and its checkbox drops (never stranded)"
+    },
+    {
+      "id": "task.backspace.EMPTY.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] \n",
+      "position": "EMPTY",
+      "operation": "Backspace",
+      "after": null,
+      "note": "marker spec AC7 pins 'no - [ ]', not the resulting empty-paragraph bytes",
+      "status": "blocked"
+    },
+    {
+      "id": "task.delete.block.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] task\n\nbody\n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": "- [ ] \n\nbody\n",
+      "note": "R3: D deletes content, not markers; the checkbox stays and the empty item keeps its space"
+    },
+    {
+      "id": "task.noop.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [x] done\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "- [x] done\n",
+      "note": "no edit: [x]/[ ] preserved, byte-identical"
+    },
+    {
+      "id": "task.backspace.S.1",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [x] a\n- [ ] task\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": null,
+      "note": "R9: Backspace at S of a task item is native and accepted; no bytes are pinned",
+      "status": "blocked",
+      "index": 1
+    },
+    {
+      "id": "task.enter.EMPTY.2",
+      "doc": "4.7",
+      "block": "task-list",
+      "before": "- [ ] \n",
+      "position": "EMPTY",
+      "operation": "Enter",
+      "after": null,
+      "note": "\u00a74.7's After ('-') contradicts the row's own explanation (checkbox stripped, item outdented)",
+      "status": "blocked"
+    },
+    {
+      "id": "quote.type.EMPTY.1",
+      "doc": "4.8",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:> ",
+      "after": ">\n",
+      "note": "an empty quote keeps its marker (Q7)",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "quote.type.T.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> quoted\n",
+      "position": "T",
+      "operation": "Type:X",
+      "after": "> Xquoted\n",
+      "note": "T is before the first content character"
+    },
+    {
+      "id": "quote.type.M.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> quoted\n",
+      "position": "M",
+      "operation": "Type:X",
+      "after": "> quoXted\n",
+      "note": "floor(6/2)=3 on 'quoted'"
+    },
+    {
+      "id": "quote.enter.E.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> quoted\n",
+      "position": "E",
+      "operation": "Enter",
+      "after": "> quoted\n> \n",
+      "note": "native second quote line; Appendix A's multi-paragraph form",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "quote.shiftenter.E.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> quoted\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "> quoted\n\n",
+      "note": "the new <p> lands after the quote",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "quote.backspace.T.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> quoted\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "quoted\n",
+      "note": "marker spec AC8: the line is lifted out as a paragraph, the quote goes"
+    },
+    {
+      "id": "quote.backspace.T.multi",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> a\n> b\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": null,
+      "note": "marker spec AC9 pins 'a' + '> b', but the renderer emits ONE paragraph with a soft break, so there is no per-line element to lift",
+      "status": "blocked"
+    },
+    {
+      "id": "quote.delete.block.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> quote\n\nbody\n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": ">\n\nbody\n",
+      "note": "Q7: an emptied blockquote survives as '>'"
+    },
+    {
+      "id": "quote.noop.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> outer\n> > inner\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "> outer\n> > inner\n",
+      "note": "nested quote: no edit is byte-identical"
+    },
+    {
+      "id": "quote.enter.EMPTY.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "> \n",
+      "position": "EMPTY",
+      "operation": "Enter",
+      "after": null,
+      "note": "\u00a74.8: 'exits the quote to a paragraph' is prose with no bytes",
+      "status": "blocked"
+    },
+    {
+      "id": "quote.backspace.S.1",
+      "doc": "4.8",
+      "block": "blockquote",
+      "before": "x\n\n> quote\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": null,
+      "note": "'merge' only; no bytes (Q2)",
+      "status": "blocked",
+      "index": 0
+    },
+    {
+      "id": "fence.noop.1",
+      "doc": "4.9",
+      "block": "fenced-code",
+      "before": "```python\nprint(1)\n```\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "```python\nprint(1)\n```\n",
+      "note": "no edit: byte-identical"
+    },
+    {
+      "id": "fence.noop.2",
+      "doc": "4.9",
+      "block": "fenced-code",
+      "before": "```\n**x**\n```\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "```\n**x**\n```\n",
+      "note": "inline delimiters are never interpreted inside a fence"
+    },
+    {
+      "id": "fence.noop.3",
+      "doc": "4.9",
+      "block": "fenced-code",
+      "before": "~~~js\ntext\n~~~\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "~~~js\ntext\n~~~\n",
+      "note": "Q13: an untouched tilde fence is byte-identical"
+    },
+    {
+      "id": "fence.backspace.S.1",
+      "doc": "4.9",
+      "block": "fenced-code",
+      "before": "```\nx\n```\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": "```\nx\n```\n",
+      "note": "\u00a72: Backspace at a non-empty fence's start never deletes the fence (no write)"
+    },
+    {
+      "id": "fence.shiftenter.E.1",
+      "doc": "4.9",
+      "block": "fenced-code",
+      "before": "```python\nprint(1)\n```\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "```python\nprint(1)\n```\n\n",
+      "note": "the new <p> lands after the fence, never inside it",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "fence.delete.block.1",
+      "doc": "4.9",
+      "block": "fenced-code",
+      "before": "```\nx\n```\n",
+      "position": "T",
+      "operation": "SelectBlock,Delete",
+      "after": "",
+      "note": "D empties the fence and turndown's blank rule drops it (no blank fence)"
+    },
+    {
+      "id": "indented.noop.1",
+      "doc": "4.10",
+      "block": "indented-code",
+      "before": "    code\n\nBODY\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "    code\n\nBODY\n",
+      "note": "no edit: byte-identical"
+    },
+    {
+      "id": "indented.type.E.1",
+      "doc": "4.10",
+      "block": "indented-code",
+      "before": "    code\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "```\ncode!\n```\n",
+      "note": "a touched indented block canonicalizes to a fence; the doc's byte shows the caret at the end"
+    },
+    {
+      "id": "indented.shiftenter.E.1",
+      "doc": "4.10",
+      "block": "indented-code",
+      "before": "    code\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "    code\n\n",
+      "note": "the code is unchanged and a <p> lands after it",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "hr.backspace.S.afterrule",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "alpha\n\n---\n\ntext\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": "alpha\n\ntext\n",
+      "note": "Backspace at the start of the block after a rule removes the rule",
+      "index": 1
+    },
+    {
+      "id": "hr.delete.S.afterrule",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "alpha\n\n---\n\ntext\n",
+      "position": "S",
+      "operation": "Delete",
+      "after": "alpha\n\n---\n\ntext\n",
+      "note": "Delete at the start of the block after a rule keeps it (no write)",
+      "index": 1,
+      "status": "accepted",
+      "reason": "native: the key is a character delete next to a rule; the rule itself is kept (\u00a74.11 reads as the rule survives)"
+    },
+    {
+      "id": "hr.delete.E.beforerule",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "alpha\n\n---\n\ntext\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": "alpha\n\ntext\n",
+      "note": "Delete at the end of the block before a rule removes the rule"
+    },
+    {
+      "id": "hr.backspace.E.beforerule",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "alpha\n\n---\n\ntext\n",
+      "position": "E",
+      "operation": "Backspace",
+      "after": "alpha\n\n---\n\ntext\n",
+      "note": "Backspace at the end of the block before a rule keeps it (no write)",
+      "status": "accepted",
+      "reason": "native: the key is a character delete next to a rule; the rule itself is kept (\u00a74.11 reads as the rule survives)"
+    },
+    {
+      "id": "hr.backspace.root.1",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "---\n\ntext\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": "text\n",
+      "note": "rule at the note start: Backspace on the following block removes it"
+    },
+    {
+      "id": "hr.delete.root.1",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "alpha\n\n---\n",
+      "position": "E",
+      "operation": "Delete",
+      "after": "alpha\n",
+      "note": "Delete after the block before a trailing rule removes the rule",
+      "status": "accepted",
+      "reason": "by design: the structural-splice path terminates an edited final block with a blank line"
+    },
+    {
+      "id": "hr.type.S.afterrule",
+      "doc": "4.11",
+      "block": "atx-heading",
+      "before": "---\n\n## Title\n",
+      "position": "S",
+      "operation": "Type:X",
+      "after": "---\n\nX\n\n## Title\n",
+      "note": "typing at a rule edge opens a new paragraph, heading intact"
+    },
+    {
+      "id": "hr.enter.S.afterrule",
+      "doc": "4.11",
+      "block": "atx-heading",
+      "before": "---\n\n## Title\n",
+      "position": "S",
+      "operation": "Enter",
+      "after": null,
+      "note": "the caret line is opened, but the docs do not pin whether the empty <p> writes a blank line",
+      "status": "blocked"
+    },
+    {
+      "id": "hr.shiftenter.E.beforerule",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "alpha\n\n---\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": null,
+      "note": "the caret line's side is specified, its bytes are not",
+      "status": "blocked"
+    },
+    {
+      "id": "hr.delete.block.1",
+      "doc": "4.11",
+      "block": "hr",
+      "before": "---\n",
+      "position": "S",
+      "operation": "SelectAll,Delete",
+      "after": "",
+      "note": "the rule is the only block: the note becomes empty"
+    },
+    {
+      "id": "hr.delete.keepblank",
+      "doc": "4.11",
+      "block": "paragraph",
+      "before": "alpha\n\n---\n\n\n\nomega\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": "alpha\n\n\n\nomega\n",
+      "note": "the user's blank run survives the rule delete",
+      "index": 1,
+      "status": "accepted",
+      "reason": "the shipped rule (jsdom contract: \"a middle delete keeps the preceding run, consumes the separator\") joins the neighbours with the run that precedes the removed rule; the run after it is the consumed separator. The transcribed bytes were too literal"
+    },
+    {
+      "id": "hr.noop.nested",
+      "doc": "4.11",
+      "block": "blockquote",
+      "before": "> ---\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "> ---\n",
+      "note": "a nested rule is byte-identical with no edit"
+    },
+    {
+      "id": "table.noop.1",
+      "doc": "4.12",
+      "block": "table",
+      "before": "| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+      "note": "no edit: byte-identical"
+    },
+    {
+      "id": "table.noop.emptycell",
+      "doc": "4.12",
+      "block": "table",
+      "before": "| a | b |\n| --- | --- |\n|  | 2 |\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "| a | b |\n| --- | --- |\n|  | 2 |\n",
+      "note": "an empty cell keeps its column"
+    },
+    {
+      "id": "table.type.cell.M.1",
+      "doc": "4.12",
+      "block": "table",
+      "before": "| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+      "position": "M",
+      "operation": "Type:X",
+      "after": "| a | b |\n| --- | --- |\n| X1 | 2 |\n",
+      "note": "a touched body cell; the table canonicalizes to GFM on save",
+      "cell": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "table.type.cell.pipe",
+      "doc": "4.12",
+      "block": "table",
+      "before": "| a | b |\n| --- | --- |\n| x\\|y | z |\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "| a | b |\n| --- | --- |\n| x\\|y! | z |\n",
+      "note": "AC-H2/Q20: a pipe in the cell keeps an odd backslash run on save",
+      "cell": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "table.backspace.cell.S",
+      "doc": "4.12",
+      "block": "table",
+      "before": "| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": "| a | b |\n| --- | --- |\n| 1 | 2 |\n",
+      "note": "Backspace at a cell start keeps the rule and the cell text (no write)",
+      "cell": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "table.enter.cell.E",
+      "doc": "4.12",
+      "block": "table",
+      "before": "| a |\n| --- |\n| body |\n",
+      "position": "E",
+      "operation": "Enter",
+      "after": "| a |\n| --- |\n| body |\n",
+      "note": "Q8/decision row 10: Enter in a cell is refused with a notice; the row never splits",
+      "cell": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "table.shiftenter.cell.E",
+      "doc": "4.12",
+      "block": "table",
+      "before": "| a |\n| --- |\n| body |\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "| a |\n| --- |\n| body |\n\n",
+      "note": "Shift+Enter in a cell lands a <p> after the whole table",
+      "cell": [
+        1,
+        0
+      ],
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "table.raw.neighbour.q22",
+      "doc": "4.12",
+      "block": "setext",
+      "before": "Title\n=====\n\n* star a\n\n<table><tr><td>raw</td></tr></table>\n\n    indented\n",
+      "position": "E",
+      "operation": "Type: edited",
+      "after": "# Title edited\n\n* star a\n\n<table><tr><td>raw</td></tr></table>\n\n    indented\n",
+      "note": "AC21/Q22: one raw table no longer rewrites the note; neighbours keep their bytes",
+      "allowHtml": true
+    },
+    {
+      "id": "blank.neighbour.edit",
+      "doc": "4.13",
+      "block": "paragraph",
+      "before": "a\n\n\n\nb\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "a\n\n\n\nb!\n",
+      "note": "the blank run is carried raw and survives a text edit in a neighbour",
+      "index": 1
+    },
+    {
+      "id": "blank.structural.insert",
+      "doc": "4.13",
+      "block": "paragraph",
+      "before": "a\n\n\n\nb\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "a\n\n\n\nb\n",
+      "note": "R8: Q1 wins; \u00a75.3 pins that the inserted caret block writes no bytes, so the run is unchanged"
+    },
+    {
+      "id": "blank.shiftenter.1",
+      "doc": "4.13",
+      "block": "paragraph",
+      "before": "one\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "one\n\n",
+      "note": "one Shift+Enter adds one line (the doc's own byte)",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "blank.noop.trailing",
+      "doc": "4.13",
+      "block": "paragraph",
+      "before": "tail\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "tail\n",
+      "note": "the trailing newline is preserved and no NUL sentinel reaches the file"
+    },
+    {
+      "id": "comment.neighbour.1",
+      "doc": "4.14",
+      "block": "paragraph",
+      "before": "a\n\n<!-- keep -->\n\nb\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "a\n\n<!-- keep -->\n\nb!\n",
+      "note": "editing a neighbour keeps the comment",
+      "index": 1,
+      "allowHtml": true
+    },
+    {
+      "id": "comment.noop.1",
+      "doc": "4.14",
+      "block": "paragraph",
+      "before": "<!-- c -->\n\nbody\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "<!-- c -->\n\nbody\n",
+      "note": "a clean round-trip keeps the comment",
+      "allowHtml": true
+    },
+    {
+      "id": "raw.edit.div.1",
+      "doc": "4.14",
+      "block": "raw-html",
+      "before": "<div>block</div>\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "<div>block!</div>\n",
+      "note": "Q10: an edited raw block writes its own outerHTML",
+      "allowHtml": true
+    },
+    {
+      "id": "raw.inline.neighbour.1",
+      "doc": "4.14",
+      "block": "paragraph",
+      "before": "press <kbd>Ctrl</kbd> and <mark>this</mark>\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "press <kbd>Ctrl</kbd> and <mark>this!</mark>\n",
+      "note": "Q21/decision row 24: authored inline HTML survives a text edit in its block",
+      "allowHtml": true
+    },
+    {
+      "id": "raw.sizedimg.neighbour",
+      "doc": "4.14",
+      "block": "paragraph",
+      "before": "<img src=\"a.png\" width=\"120\" height=\"80\">\n\nbody\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "<img src=\"a.png\" width=\"120\" height=\"80\">\n\nbody!\n",
+      "note": "Q21: a sized image keeps its attributes when its neighbour is edited",
+      "index": 0,
+      "allowHtml": true
+    },
+    {
+      "id": "raw.link.neighbour",
+      "doc": "4.14",
+      "block": "paragraph",
+      "before": "<a href=\"u\" target=\"_blank\">x</a>\n\nbody\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "<a href=\"u\" target=\"_blank\">x</a>\n\nbody!\n",
+      "note": "Q21: an authored link with target keeps its tag",
+      "index": 1,
+      "allowHtml": true
+    },
+    {
+      "id": "raw.details.quote.1",
+      "doc": "4.14",
+      "block": "blockquote",
+      "before": "> <details><summary>m</summary>body</details>\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": null,
+      "note": "the row pins 'the quote keeps the element', not the bytes of a typed character inside it",
+      "status": "blocked",
+      "allowHtml": true
+    },
+    {
+      "id": "plugin.mermaid.noop",
+      "doc": "4.15",
+      "block": "plugin-fence",
+      "before": "```mermaid\ngraph TD\n```\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "```mermaid\ngraph TD\n```\n",
+      "note": "no edit: the fence is byte-identical"
+    },
+    {
+      "id": "plugin.mermaid.shiftenter.E",
+      "doc": "4.15",
+      "block": "plugin-fence",
+      "before": "```mermaid\ngraph TD\n```\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "```mermaid\ngraph TD\n```\n\n",
+      "note": "Shift+Enter lands a <p> after the top-level block",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "plugin.svg.noop",
+      "doc": "4.15",
+      "block": "plugin-fence",
+      "before": "```svg\n<svg width=\"10\" height=\"10\"><rect/></svg>\n```\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "```svg\n<svg width=\"10\" height=\"10\"><rect/></svg>\n```\n",
+      "note": "R7: svg is the sixth plugin fence; an untouched fence is byte-identical"
+    },
+    {
+      "id": "plugin.svg.shiftenter.E",
+      "doc": "4.15",
+      "block": "plugin-fence",
+      "before": "```svg\n<svg width=\"10\" height=\"10\"><rect/></svg>\n```\n",
+      "position": "E",
+      "operation": "Shift+Enter",
+      "after": "```svg\n<svg width=\"10\" height=\"10\"><rect/></svg>\n```\n\n",
+      "note": "R7: same atomic + shift-enter contract as the other five fences",
+      "status": "accepted",
+      "reason": "by design: a new empty block after Esc/Enter contributes no bytes (hybrid.js structuralSplice EOF rule; priority doc accepted limitations)"
+    },
+    {
+      "id": "plugin.backspace.S.after",
+      "doc": "5.2",
+      "block": "paragraph",
+      "before": "```mermaid\ngraph TD\n```\n\ntext\n",
+      "position": "S",
+      "operation": "Backspace",
+      "after": "text\n",
+      "note": "\u00a75.2 atomic block: Backspace at the neighbouring block's start removes the container and its fence source, and does not join the texts"
+    },
+    {
+      "id": "inline.bold.type",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:**bold**",
+      "after": "**bold**\n",
+      "note": "the bold live rule fires on the closing delimiter",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.italic.type",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:*italic*",
+      "after": "*italic*\n",
+      "note": "the italic live rule",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.underscore.type",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:_italic_",
+      "after": "*italic*\n",
+      "note": "R8: the Q5 '_italic_' rule is live and must pass; em canonicalizes to *x*",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.strike.type",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:~~strike~~",
+      "after": "~strike~\n",
+      "note": "GFM strikethrough; canonical output is ~x~",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.code.type",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:`code`",
+      "after": "`code`\n",
+      "note": "the code live rule",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.codespace.noop",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "`   `\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "`   `\n",
+      "note": "CODE_SPACE_SENTINEL: a whitespace-only code span survives"
+    },
+    {
+      "id": "inline.bold.neighbour.edit",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "a **b** c\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "a **b** c!\n",
+      "note": "\u00a72: a text edit keeps the bold run and its neighbours' text"
+    },
+    {
+      "id": "inline.star.midword",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "ab\n",
+      "position": "M",
+      "operation": "Type:*",
+      "after": "a\\*b\n",
+      "note": "\u00a72: a * typed mid-word does not start emphasis; it is escaped on save"
+    },
+    {
+      "id": "inline.wikilink.type",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:[[Target]]",
+      "after": "[[Target]]\n",
+      "note": "R8: the Q5 wikilink rule is live and must pass; an escape here is the M3 defect",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.wikilink.noop",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "[[b]]\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "[[b]]\n",
+      "note": "an untouched wikilink is byte-identical"
+    },
+    {
+      "id": "inline.wikilink.label.noop",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "[[b|File B]]\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "[[b|File B]]\n",
+      "note": "an untouched labelled wikilink is byte-identical"
+    },
+    {
+      "id": "inline.nbsp.noop",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "a&nbsp;b\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "a&nbsp;b\n",
+      "note": "I3: a no-op save writes nothing, so the entity keeps its bytes"
+    },
+    {
+      "id": "inline.hash.nospace",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:#",
+      "after": "\\#\n",
+      "note": "a literal # with no space is escaped",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.star.mid",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "a\n",
+      "position": "E",
+      "operation": "Type:*",
+      "after": "a\\*\n",
+      "note": "a literal * is escaped"
+    },
+    {
+      "id": "inline.underscore.mid",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "a\n",
+      "position": "E",
+      "operation": "Type:_",
+      "after": "a\\_\n",
+      "note": "a literal _ is escaped"
+    },
+    {
+      "id": "inline.bracket.mid",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "a\n",
+      "position": "E",
+      "operation": "Type:[",
+      "after": "a\\[\n",
+      "note": "a literal [ is escaped"
+    },
+    {
+      "id": "inline.digit.s",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "",
+      "position": "EMPTY",
+      "operation": "Type:1. x",
+      "after": "1\\. x\n",
+      "note": "a leading ordered marker typed as text is escaped",
+      "status": "accepted",
+      "reason": "by design: a new note is written by the whole-DOM path, which terminates every block with a blank line"
+    },
+    {
+      "id": "inline.escaped.noop",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "literal \\*not em\\* text\n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "literal \\*not em\\* text\n",
+      "note": "escaped asterisks survive as text"
+    },
+    {
+      "id": "inline.authored.kbd.edit",
+      "doc": "4.16",
+      "block": "paragraph",
+      "before": "a <kbd>Ctrl</kbd> b\n",
+      "position": "E",
+      "operation": "Type:!",
+      "after": "a <kbd>Ctrl</kbd> b!\n",
+      "note": "Q21: authored inline HTML survives a text edit",
+      "allowHtml": true
+    },
+    {
+      "id": "doc.selectall.delete.1",
+      "doc": "5.2",
+      "block": "bullet-list",
+      "before": "- a\n- b\n",
+      "position": "M",
+      "operation": "SelectAll,Delete",
+      "after": "",
+      "note": "Ctrl+A + Delete replaces the root with one caret <p>, which writes no bytes"
+    },
+    {
+      "id": "doc.noop.markers.1",
+      "doc": "5.4",
+      "block": "paragraph",
+      "before": "###\n\n-\n\n1.\n\n>\n\n- [ ] \n",
+      "position": "M",
+      "operation": "NoOp",
+      "after": "###\n\n-\n\n1.\n\n>\n\n- [ ] \n",
+      "note": "AC-H5: an untouched note of bare markers is byte-identical and writes nothing"
+    },
+    {
+      "id": "list.single.item.delete.block",
+      "doc": "4.4 (decision 19)",
+      "block": "bullet-list",
+      "before": "- item\n",
+      "position": "S",
+      "operation": "SelectBlock,Delete",
+      "after": "",
+      "status": "accepted",
+      "reason": "with a single item, selecting its content IS selecting the whole note, so the whole-note rule (selectionCoversNote -> clearNoteToParagraph) wins before the item rule. Pinned here so the case is not silently untested."
+    },
+    {
+      "id": "list.nested.peel.notlast",
+      "doc": "4.6",
+      "block": "nested-list",
+      "before": "- a\n    - b\n    - c\n",
+      "position": "T",
+      "operation": "Backspace",
+      "after": "- a\n    - b\n    - c\n",
+      "status": "accepted",
+      "reason": "a nested item with a following sibling cannot be lifted past it without reordering the note, so the key is claimed and the note is left alone. Outdenting it one level is the follow-up."
+    }
+  ],
+  "skipped": [
+    {
+      "doc": "hybrid-editing.md \u00a74.1",
+      "row": "M | G | one -> one (unchanged)",
+      "reason": "prose-only: 'unchanged' means 'no block conversion'; the trigger characters are still inserted as text"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.4",
+      "row": "Ctrl+X / Shift+Backspace over a whole item",
+      "reason": "needs a multi-node selection covering one item; the matrix holds collapsed carets"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.4",
+      "row": "P-txt / Ctrl+V of list items / P-md",
+      "reason": "clipboard paste is outside the key matrix (no clipboard in the headless context)"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.7",
+      "row": "click a checkbox",
+      "reason": "a mouse operation, not a key"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.7",
+      "row": "task edit-bar button",
+      "reason": "a toolbar button over a selection"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.7.1",
+      "row": "UL / OL / Task press matrix",
+      "reason": "toolbar buttons and a context submenu, not keys"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.7.2",
+      "row": "list-item drag reorder",
+      "reason": "pointer drag; geometry and hit-testing, not a key row"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.8",
+      "row": "nested rule '> ---' must not throw",
+      "reason": "requires a click on the rule; asserts that no throw happens, not bytes"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.9",
+      "row": "T/M/E | type inside a fence",
+      "reason": "reaching the source <pre> needs click-to-edit, outside the collapsed-caret key path"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.9",
+      "row": "any | G / block transform inside a fence",
+      "reason": "needs click-to-edit to place the caret in the fence source"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.9",
+      "row": "Shift+Enter 'inside' a plugin fence",
+      "reason": "the 'inside' half needs click-to-edit; the 'beside' half is covered by plugin rows"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.9",
+      "row": "a touched ~~~ fence canonicalizes to backticks",
+      "reason": "touching the fence needs click-to-edit"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.9",
+      "row": "language chip edit",
+      "reason": "a click on the chip plus typed input in a real <input>"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.9",
+      "row": "Backspace/Delete on an emptied fence removes the live <pre>",
+      "reason": "needs a two-step empty-then-delete sequence and asserts the live DOM, not the file"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.11",
+      "row": "click on/beside a rule; drag across a rule",
+      "reason": "mouse gestures; asserts selection chrome, not bytes"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.11",
+      "row": "caret on the rule element itself",
+      "reason": "the \u00a73 position key has no code for 'on the <hr>'; the rule is void and holds no caret"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.11",
+      "row": "a touched hr serializes as '* * *'",
+      "reason": "a void block cannot be touched by a key; only a whole-file re-serialize emits it"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.11",
+      "row": "cross-block inline format over a rule",
+      "reason": "needs a selection spanning blocks"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.12",
+      "row": "multi-cell selection delete / cut",
+      "reason": "needs a range across cells; the matrix holds collapsed carets"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.12",
+      "row": "delete row/column, header toggle, insert row, reorder",
+      "reason": "table-tool operations (context menu, + / - buttons, Alt+arrows on a grip)"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.12",
+      "row": "caption / colgroup / tfoot conversion",
+      "reason": "needs authored raw-HTML table markup plus a tool edit; the shape change is a re-render assertion"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.13",
+      "row": "Backspace/Delete on an empty paragraph line",
+      "reason": "an empty paragraph cannot be expressed in the Markdown source; it exists only after an Enter"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.14",
+      "row": "paste rich HTML",
+      "reason": "clipboard"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.15",
+      "row": "arrow-walk past a rendered plugin block",
+      "reason": "asserts the caret position and the atomic marker, not the file bytes"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.15",
+      "row": "click a rendered block / blur / edit source / error block",
+      "reason": "click-to-edit window plus a live-DOM assertion"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.16",
+      "row": "Ctrl+B on a selection, Ctrl+B again to unwrap",
+      "reason": "needs a text selection; the matrix holds collapsed carets"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.16",
+      "row": "edit-bar Link / Image",
+      "reason": "toolbar prompt over a selection"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.16",
+      "row": "an edited autolink canonicalizes to [url](url)",
+      "reason": "needs an edit inside the autolink's text node, which no collapsed position expresses"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a74.16",
+      "row": "inline formatting over two blocks",
+      "reason": "needs a multi-block selection (Q11)"
+    },
+    {
+      "doc": "hybrid-editing.md \u00a75.2",
+      "row": "the one-item list forward merge (the 2+ item guard is covered)",
+      "reason": "'the paragraph and the item's text join' states no separator, so the merged bytes are unpinned"
+    },
+    {
+      "doc": "hybrid-block-marker-backspace.md \u00a78 rank 3",
+      "row": "empty formatted block -> one empty paragraph",
+      "reason": "the marker spec itself says the empty paragraph is not representable on reload"
+    }
+  ]
+}

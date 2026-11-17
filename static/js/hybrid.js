@@ -322,6 +322,9 @@
   // resolves), so the external-change handler compares against this and
   // never treats our own bytes as a conflict.
   let writeInFlight = null;
+  // True while an exit save is running, so a second exit request cannot
+  // serialize and POST the same bytes again or open a second prompt.
+  let exitInFlight = false;
   // The serialization of the DOM as it was at enter() time (and after
   // each successful write). The no-op comparison targets this rather
   // than sessionSource's raw bytes so a clean save on a file the
@@ -982,6 +985,33 @@
       md = md.replace(rawHtmlSentinelRe(),
         (_, i) => rawHtmlStash[Number(i)] || "");
     }
+    // Two line-shape rules, both of which must never reach fenced code: an
+    // edited fence containing a "    " line or a "##   " line kept those bytes
+    // only because the block was untouched. Mask fenced blocks, rewrite the
+    // prose, restore.
+    //
+    //   - A block holding nothing but a caret line box serializes as a line of
+    //     spaces. It is not content: outdenting an empty list item wrote a line
+    //     holding one space, which reads back as an empty paragraph.
+    //   - The heading rule emits the marker, then whatever whitespace the caret
+    //     line box left, so emptying a heading saved "###   ". A heading line
+    //     holding only spaces after its marker is an empty heading, quoted or
+    //     not; write the marker alone.
+    const fences = [];
+    const maskFence = (block) => {
+      fences.push(block);
+      return "\u0000F" + (fences.length - 1) + "\u0000";
+    };
+    md = md.replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[ \t]*$/gm, maskFence);
+    // A fence nobody closed runs to the end of the note; its bytes are still
+    // source, not prose.
+    md = md.replace(/^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*$/m, maskFence);
+    md = md.replace(/^(\s*(?:>[ \t]*)*)(#{1,6})[ \t]+$/gm, "$1$2")
+      .replace(/^[^\S\n]+$/gm, "");
+    md = md.replace(/\u0000F(\d+)\u0000/g, (_, i) => fences[Number(i)]);
+    // At most one trailing blank line: the convention the serializer gives
+    // every block. Only newlines are touched, so a fence at EOF is safe.
+    md = md.replace(/\n{3,}$/, "\n\n");
     return md;
   }
 
@@ -1248,8 +1278,15 @@
     const holder = document.createElement("div");
     holder.appendChild(el.cloneNode(true));
     prepareTurndownClone(holder);
-    return postProcessMarkdown(turndownPrepared(td, holder))
+    const md = postProcessMarkdown(turndownPrepared(td, holder))
       .replace(BLANK_LINE_TRIM_RE, "");
+    // An empty block contributes nothing. Turndown emits a caret line box as
+    // a space (or the zero-width placeholder), and the region join then wrote
+    // a line holding one space (outdenting an empty list item did exactly
+    // that). A block with only invisible characters has no content.
+    // An NBSP-only block is content (a deliberate hard space), not an
+    // empty block.
+    return /^[ \t\n\r\u200B]*$/.test(md) ? "" : md;
   }
 
   /* Convert the current #viewer-content DOM back to a Markdown string.
@@ -1969,7 +2006,13 @@
       if (md && !/\n\n$/.test(md)) md = md.replace(/\n+$/, "") + SEGMENT_SEPARATOR;
       md += regionParts.join(SEGMENT_SEPARATOR);
     }
-    if (suffixPart) {
+    // A suffix that is only the empty list item's marker space (" \n") is
+    // not a block and not a blank run: appending it wrote a line holding one
+    // space after an outdent. A real trailing blank run (two or more
+    // newlines) is still kept verbatim.
+    const straySuffix = !!suffixPart && !suffixPart.trim() &&
+      (suffixPart.match(/\n/g) || []).length <= 1;
+    if (suffixPart && !straySuffix) {
       if (md && !/\n\n$/.test(md)) md = md.replace(/\n+$/, "") + SEGMENT_SEPARATOR;
       md += suffixPart.replace(/^\n+/, "");
       if (!/\n$/.test(md)) md += "\n";
@@ -2811,10 +2854,27 @@
     // The item's position in the list decides the trailing half's numbers
     // after the split (see the `start` write below).
     const itemIndex = Array.prototype.indexOf.call(list.children, li);
+    // A nested item's paragraph cannot stay where the item was: Markdown
+    // cannot put a paragraph between a parent item's text and its nested
+    // list, and the DOM it produced serialized as whitespace-only lines. It
+    // is lifted out of the whole list instead (marker spec §4) -- except
+    // under a task parent, where the task-item merge runs first (§5.2) and
+    // the child's text joins the parent item.
+    const parentLi = list.parentElement && list.parentElement.tagName === "LI"
+      ? list.parentElement : null;
+    const joinsParentTask = !!(parentLi && taskCheckboxOf(parentLi));
+    const outer = joinsParentTask ? list : outerListOf(list);
+    const lifting = outer !== list;
+    // A TOP-LEVEL middle item splits its list around the paragraph, which
+    // keeps the order. A NESTED item lifted out of the whole list cannot take
+    // its trailing siblings with it, so the paragraph would move past them:
+    // refuse, and let the caller leave the note alone.
+    if (lifting && li.nextElementSibling) return null;
     // The items after the caret's item move to a second list, so the
-    // paragraph can sit between the two halves.
+    // paragraph can sit between the two halves. A lifted nested item keeps
+    // its trailing siblings inside the parent item, so no split is needed.
     let after = null;
-    if (list.lastElementChild !== li) {
+    if (!lifting && list.lastElementChild !== li) {
       after = document.createElement(list.tagName);
       let cur = li.nextElementSibling;
       while (cur) { const nx = cur.nextElementSibling; after.appendChild(cur); cur = nx; }
@@ -2824,10 +2884,20 @@
     const nested = [];
     Array.from(li.childNodes).forEach((node) => {
       if (node.nodeType === 1 && /^(UL|OL)$/.test(node.tagName)) nested.push(node);
+      // The zero-width placeholder keeps an empty item's marker rendered; it
+      // is not content, and carrying it into the lifted paragraph saved a
+      // line holding one space.
+      // Drop only the zero-width placeholder and marked's block newlines.
+      // A plain space between two inline siblings ("<strong>a</strong>
+      // <em>b</em>") is content: dropping it concatenated the words.
+      else if (node.nodeType === Node.TEXT_NODE &&
+               /^[\u200B\n\r\t]*$/.test(node.nodeValue)) return;
       else p.appendChild(node);
     });
+    stripLiftGap(list, li);
     li.remove();
-    list.after(p);
+    if (lifting) outer.after(p);
+    else list.after(p);
     if (after) {
       // An ordered list restarts at 1 after the split. Give the trailing
       // half the ordinal the first moved item displayed before the lift,
@@ -2843,6 +2913,40 @@
     // Hoist nested lists: they follow the paragraph (with its split).
     nested.forEach((n) => p.after(n));
     return p;
+  }
+
+  /* The engine parks the lifted item's formatting newline inside the list
+   * it left. A whitespace-only text node between items is not the list's
+   * tight/loose signal (that is the <p> wrapping) and serialized as a stray
+   * blank or one-space line, so drop the ones the removed item left. */
+  function stripLiftGap(list, li) {
+    if (!list || (list.tagName !== "UL" && list.tagName !== "OL")) return;
+    const around = [];
+    let n = li.previousSibling;
+    while (n && n.nodeType === Node.TEXT_NODE && !n.nodeValue.trim()) {
+      around.push(n); n = n.previousSibling;
+    }
+    n = li.nextSibling;
+    while (n && n.nodeType === Node.TEXT_NODE && !n.nodeValue.trim()) {
+      around.push(n); n = n.nextSibling;
+    }
+    around.forEach((t) => t.remove());
+  }
+
+  /* The outermost list that holds `list`, walking up through parent items.
+   * A paragraph lifted out of a nested item has to leave the whole list. */
+  function outerListOf(list) {
+    let cur = list;
+    let parentLi = cur.parentElement && cur.parentElement.tagName === "LI"
+      ? cur.parentElement : null;
+    while (parentLi) {
+      const up = parentLi.closest("ul,ol");
+      if (!up || up === cur) break;
+      cur = up;
+      parentLi = cur.parentElement && cur.parentElement.tagName === "LI"
+        ? cur.parentElement : null;
+    }
+    return cur;
   }
 
   /* Enter at a list item's content start: insert a blank sibling ABOVE
@@ -5259,16 +5363,31 @@
           !node.nodeValue.replace(/\u200B/g, "").trim()) return false;
       return true;
     });
-    // The items after the caret's item move to a second list.
+    // The items after the caret's item move to a second list. A nested
+    // item's paragraph is lifted out of the whole list (Markdown cannot put
+    // a paragraph inside an item beside its nested list; it serialized as
+    // whitespace-only lines), and its trailing siblings stay in the parent
+    // item, so no split happens there.
+    const parentLi = list.parentElement && list.parentElement.tagName === "LI"
+      ? list.parentElement : null;
+    // A task item under a task item joins the parent's text (§5.2: the
+    // task-item merge runs first), so it stays inside the parent item; any
+    // other nested item is lifted out of the whole list.
+    const joinsParentTask = !!(parentLi && taskCheckboxOf(parentLi));
+    const outer = joinsParentTask ? list : outerListOf(list);
+    const lifting = outer !== list;
+    if (lifting && li.nextElementSibling) return null;
     let after = null;
-    if (list.lastElementChild !== li) {
+    if (!lifting && list.lastElementChild !== li) {
       after = document.createElement(list.tagName);
       let cur = li.nextElementSibling;
       while (cur) { const nx = cur.nextElementSibling; after.appendChild(cur); cur = nx; }
     }
-    list.after(p);
+    if (lifting) outer.after(p);
+    else list.after(p);
     let tail = p;
     leftovers.forEach((node) => { tail.after(node); tail = node; });
+    stripLiftGap(list, li);
     li.remove();
     if (after) {
       // An ordered list restarts at 1 after the split. Give the trailing
@@ -5375,6 +5494,16 @@
       while (target.node.firstChild) p.appendChild(target.node.firstChild);
       target.node.replaceWith(p);
     } else if (target.kind === "list") {
+      // A nested item with a following sibling: the paragraph lift is only
+      // order-preserving for the last child (it would move this text past the
+      // siblings), and letting the key fall through deletes it. Claim the key
+      // and leave the note alone until the outdent-one-level path exists.
+      const owner = target.node.parentElement;
+      if (owner && owner.parentElement &&
+          owner.parentElement.tagName === "LI" &&
+          target.node.nextElementSibling) {
+        return true;
+      }
       p = stripListItemMarker(target.node);
     } else if (target.kind === "quote") {
       p = liftQuoteLine(target.node, target.quote);
@@ -7568,7 +7697,7 @@
         clearNoteToParagraph();
         return;
       }
-      if (deleteListSelection()) {
+      if (deleteListSelection(true)) {
         e.preventDefault();
         return;
       }
@@ -8400,9 +8529,25 @@
     }
   }
 
-  async function onClose(e) {
+  /* The one exit path that can write. `silent` skips the confirm and saves
+   * without asking: the toggle passes it when autosave is on, because
+   * autosave already means "write without a prompt". */
+  async function onClose(e, opts) {
     if (e) { e.stopPropagation(); e.preventDefault(); }
-    if (!active) return;
+    // A second ✎, Mod+E or Close during the exit save would serialize and
+    // POST the same bytes again, and would open a second prompt when
+    // autosave is off. `active` is only cleared at the end of the exit, so
+    // this flag is the guard that spans the awaits.
+    if (!active || exitInFlight) return;
+    exitInFlight = true;
+    try {
+      await closeSession(opts);
+    } finally {
+      exitInFlight = false;
+    }
+  }
+
+  async function closeSession(opts) {
     // Settle an autosave that is already mid-write: its bytes are older
     // than the DOM serialized below, and the exit save must be the last
     // write to reach the file.
@@ -8419,7 +8564,7 @@
     // Nothing to write: the bytes on disk still have to match the view
     // (AC18b/AC22). A mismatch is reported after the exit render.
     const checkOnly = md == null;
-    let ask = true;
+    let ask = !(opts && opts.silent);
     let attempts = 0;
     // The loop covers bytes typed while a POST is in flight: doSave
     // re-seats the baseline on the written bytes, so the next
@@ -8444,8 +8589,16 @@
     await exit(false);
   }
 
+  /* Leave without discarding: autosave on means the user already opted into
+   * saving without a prompt (the rule commitForTabSwitch follows), so exit
+   * writes; autosave off asks, exactly like Close. Shared by the toggle and
+   * the source-mode switch, both of which used to drop the buffer. */
+  function requestExit() {
+    return onClose(null, { silent: autosaveEnabled() });
+  }
+
   async function toggle() {
-    if (active) { await exit(false); return; }
+    if (active) { await requestExit(); return; }
     // Switching in from CM6 source-edit mode: leave it first so the
     // contenteditable session starts from the rendered preview. endEdit
     // (not closeEdit) folds the CM6 buffer into the viewer cache and
@@ -8713,12 +8866,67 @@
       "blockquote,ul,ol,pre,table,img,hr,canvas,svg,iframe,input");
   }
 
+  /* True when the selection is that item's own text, not a structural
+   * selection of the item: a range reaching into a nested list is
+   * structure, and a range outside the item is not this item's edit. */
+  function selectionClearIsContentOnly(range, li) {
+    if (!li) return false;
+    if (!li.contains(range.startContainer) || !li.contains(range.endContainer)) {
+      return false;
+    }
+    const nested = li.querySelector("ul,ol");
+    if (nested && range.intersectsNode && range.intersectsNode(nested)) {
+      return false;
+    }
+    return true;
+  }
+
+  /* Empty one item's own content and keep its line. The marker (and a task
+   * checkbox, which is also a marker) is not content; the caret goes to the
+   * content start so the next keystroke fills the empty line. */
+  function clearListItemContent(li) {
+    const box = taskCheckboxOf(li);
+    // Remove every node that does not hold the checkbox. A loose task item
+    // wraps its content in a <p>, so the clear has to descend to the box's
+    // own container instead of skipping the whole paragraph (which deleted
+    // nothing and left the key looking dead).
+    const clearDeep = (el) => {
+      Array.from(el.childNodes).forEach((n) => {
+        if (box && (n === box || n.contains(box))) {
+          if (n.nodeType === Node.ELEMENT_NODE) clearDeep(n);
+          return;
+        }
+        el.removeChild(n);
+      });
+    };
+    clearDeep(li);
+    ensureListMarker(li);
+    viewerContentEl.focus({ preventScroll: true });
+    // The content start is after the marker: after the checkbox for a task
+    // item, not at the item boundary (a caret there types before the box, and
+    // a stale selection typed over it). taskCaretHost only guarantees a text
+    // node after the box; the range has to be placed in it.
+    if (box) {
+      const host = taskCaretHost(box);
+      const r = document.createRange();
+      r.setStart(host, 0);
+      r.collapse(true);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } else {
+      caretToStart(li);
+    }
+    onContentChange();
+    return true;
+  }
+
   /* Delete every list item fully covered by the selection, then put the
    * caret on the nearest surviving edge. This is the structural path for
    * Ctrl+X / Shift+Delete and for Delete/Backspace over a whole item: the
    * native text delete leaves an empty item behind, which the hybrid
    * placeholder paints as a stray bullet the saved Markdown then hides. */
-  function deleteListSelection() {
+  function deleteListSelection(cut) {
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount || sel.isCollapsed) return false;
     const range = sel.getRangeAt(0);
@@ -8726,6 +8934,15 @@
         !viewerContentEl.contains(range.endContainer)) return false;
     const items = coveredListItemsForDelete(range);
     if (!items.length) return false;
+    // A selection made of exactly one item's CONTENT (SelectBlock, or a
+    // mouse selection of its text) clears that text and keeps the item: the
+    // marker is not content, and removing the last item used to delete the
+    // whole list with it (priority doc decision 19). Removing items is for a
+    // selection of whole items -- two or more, one that reaches past its own
+    // text, or a cut, which already copied the line and must take it away.
+    if (!cut && items.length === 1 && selectionClearIsContentOnly(range, items[0])) {
+      return clearListItemContent(items[0]);
+    }
     const first = items[0];
     const last = items[items.length - 1];
     // Only a selection made entirely of whole list items is ours. Check
@@ -10179,10 +10396,6 @@
 
   if (hybridBtn) {
     hybridBtn.addEventListener("click", () => {
-      // On a phone the active pencil doubles as Done. The desktop toggle
-      // discards an unsaved buffer, so route the phone path through the
-      // same save/prompt exit as the Done button instead.
-      if (active && isPhoneMode()) { onClose(); return; }
       toggle();
     });
   }
@@ -10305,6 +10518,7 @@
     enter,
     exit,
     toggle,
+    requestExit,
     save,
     isActive,
     isDirty,

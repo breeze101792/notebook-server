@@ -87,20 +87,21 @@ appearance is part of the entry delta, not a hidden cost.
 
 | Path | Writes? | Prompt | Source |
 |---|---|---|---|
-| Edit-bar **Close** / **Done** | saves if the serialized bytes differ | `Save them before exiting WYSIWYG mode?` OK = save then exit; Cancel = discard and exit | `hybrid.js:7264-7300` |
-| Save fails during that prompt | no exit | `alert("Save failed: …")`, editor stays | `hybrid.js:7290-7295` |
-| Topbar `✎` (desktop) | **no** | none — `exit(false)` re-renders from cache | `hybrid.js:9035-9039`, `:7302-7303` |
-| `Mod+E` | **no** | none — same `toggle()` path | `hybrid.js:7302-7303`, `:9345-9347` |
-| Topbar `✎` (phone, active) | routes through Close | same as Close | `hybrid.js:9035-9038` |
-| Tab close / tab switch | see §6.4 | — | `hybrid.js:7325-7361` |
+| Edit-bar **Close** / **Done** | saves if the serialized bytes differ | `Save them before exiting WYSIWYG mode?` OK = save then exit; Cancel = discard and exit | `hybrid.js` `onClose()` → `closeSession()` |
+| Save fails during that prompt | no exit | `alert("Save failed: …")`, editor stays | `hybrid.js` `closeSession()` |
+| Topbar `✎` (desktop) | saves when the bytes differ **if autosave is on** | none while autosave is on; the Close prompt when it is off | `hybrid.js` `toggle()` → `requestExit()` |
+| `Mod+E` | same as the topbar `✎` | same | `hybrid.js` `shortcut:toggleHybrid` |
+| `#edit-toggle` / `Mod+Shift+E` (source mode) | same as the topbar `✎` | same; a failed save keeps WYSIWYG open | `viewer.js` `toggleEdit()` → `NB.hybrid.requestExit()` |
+| Topbar `✎` (phone, active) | saves when the bytes differ **if autosave is on** | the Close prompt when autosave is off | `hybrid.js` `hybridBtn` click handler |
+| Tab close / tab switch | see §6.4 | — | `hybrid.js` `commitForTabSwitch()` |
 
 Exit removes `contenteditable`, `.hybrid-editing`, `.hybrid-active`, `.editing` and
 `.active`, hides the edit bar, restores Preview and re-activates the tab so the note
 renders from cache (`hybrid.js:7082-7129`). Focus is left on the now non-editable page
 element; nothing moves it. Exception **E5** returns it to `#hybrid-toggle`.
 
-The silent discard on the two desktop toggle paths is shipped and recorded as proposal
-**P1**, not applied.
+No exit path discards unsaved bytes silently. The toggle paths write when autosave is on
+and ask when it is off (proposal **P1**, applied).
 
 ---
 
@@ -399,8 +400,9 @@ exiting WYSIWYG mode?` OK saves then exits; Cancel discards and exits (the shipp
 comment says "as before", `hybrid.js:7286-7289`). A failed save keeps the editor open with
 the buffer intact (`hybrid.js:7290-7295`).
 
-The desktop topbar toggle and `Mod+E` bypass this prompt and discard. That is
-**P1**.
+The desktop topbar toggle and `Mod+E` write instead of discarding: they exit through the
+same path, silently when autosave is on and with this prompt when it is off (**P1**,
+applied). The source-mode toggle (`#edit-toggle`, `Mod+Shift+E`) takes that path too.
 
 ### 6.4 Tab switch and draft
 
@@ -446,7 +448,7 @@ behaviour is `hybrid-editing.md` §4; the full chord table is `hybrid-shortcuts.
 
 | Key | Where | Visible effect |
 |---|---|---|
-| `Mod+E` | anywhere a writer has a note | toggles hybrid; discards unsaved work on exit (**P1**) |
+| `Mod+E` | anywhere a writer has a note | toggles hybrid; on exit writes the buffer, and asks when autosave is off |
 | `Mod+S` | hybrid, caret in the page | save; `Saved` toast |
 | `Esc` | language chip | restores the old language, focus returns to the code |
 | `Enter` | language chip | commits, focus returns to the code |
@@ -767,7 +769,7 @@ pressed.
 | C1 | Comment promises a block hover highlight; the rule only sets a radius | `style.css:2742-2755` | No hover highlight ships. Do not implement the comment. |
 | C2 | Phone surface says list grips are desktop-only; §4.7.2 and the code put them on touch | `hybrid-editing.md` phone surface vs §4.7.2; `list-edit.js:631-632` | Shipped wins: grips are present on the phone. Correct the architecture sentence. |
 | C3 | The active toggle's hover loses its fill by specificity | `style.css:202` vs `:2685-2688` | E1c. |
-| C4 | Desktop topbar toggle and `Mod+E` discard unsaved work with no prompt, while Close prompts | `hybrid.js:9035-9039`, `:7302-7303` | Shipped. P1 proposes routing both through Close. |
+| C4 | ~~Desktop topbar toggle and `Mod+E` discard unsaved work with no prompt, while Close prompts~~ | `hybrid.js` `toggle()` | Resolved by P1: both exit through `onClose`, which writes when autosave is on and asks when it is off. |
 | C5 | `.nb-te-open` rest border is `--border` (1.39:1 dark / 1.27:1 light), below the 3:1 control-boundary floor; the shipped docs require `--border-strong` | `style.css:825`; `controls.md` §2.4 | P5. The glyph carries the affordance today, so this is drift, not a blocker. |
 | C6 | `#hybrid-toggle` is ≈ 21 px tall on desktop, under the 24 px floor | `style.css:2680-2684`, `:192-201` | P6: grow to `--control-h-sm` with no visual box change beyond 3 px. |
 
@@ -826,7 +828,6 @@ exception.
 
 | # | Proposal | Why | Cost |
 |---|---|---|---|
-| **P1** | Route the desktop topbar `✎` and `Mod+E` through the Close prompt | Two exit paths silently discard unsaved work while the visible Close button asks (`hybrid.js:9035-9039`, `:7302-7303`) | One call-site change; the toggle stops being a one-press flip when dirty |
 | **P2** | A block handle for every block (drag to reorder; menu on click) | Only list items can be reordered by drag; a Word-like editor normally moves any block | New overlay, serialization for arbitrary subtrees, full keyboard parity, block-level undo; a second list-drag-sized module |
 | **P3** | A hover wash on the hovered block | Makes the caret target obvious; the shipped comment claims it exists | Chrome over prose, flicker while moving the mouse, and the user likes the current quiet page |
 | **P4** | Align the overlay controls' `outline-offset` from `1px` to `var(--focus-offset)` | One ring idiom | A 1 px visual shift on two controls; risks clipping at the viewer edge |
@@ -838,6 +839,9 @@ exception.
 | **P10** | A conflict banner in the page instead of a tab glyph | The `↻` meaning lives in `title`; a touch user cannot read it | A new in-page surface and a dismiss path |
 | **P11** | Give the fence chip a real focus ring | It relies on a 1 px border colour change inside a 22 px band | The ring clips or overhangs the band |
 | **P12** | Show the block marker in the gutter on hover (`#`, `-`, `>`) | Teaches the Markdown mapping while editing | New gutter chrome, alignment work per block type, and the marker is already rendered |
+
+**P1 applied.** The desktop topbar `✎` and `Mod+E` no longer discard unsaved work: they exit
+through `onClose`, which writes when autosave is on and asks when it is off.
 
 ---
 

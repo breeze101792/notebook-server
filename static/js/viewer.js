@@ -953,12 +953,15 @@
      * session first: its contenteditable surface and listeners sit on top
      * of the viewer, so starting CM6 underneath would leave both active.
      * exiting hybrid re-renders the note from the cache, which is the
-     * content CM6 then loads. */
+     * content CM6 then loads. The exit goes through hybrid's own save path,
+     * so unsaved WYSIWYG bytes are written (or asked about) instead of
+     * being dropped; a failed save keeps the WYSIWYG session open. */
     async toggleEdit() {
       const t = cur(); if (!t) return;
       if (t.editMode) { await this.closeEdit(); return; }
       if (NB.hybrid && NB.hybrid.isActive && NB.hybrid.isActive()) {
-        await NB.hybrid.exit(false);
+        await NB.hybrid.requestExit();
+        if (NB.hybrid.isActive()) return;
       }
       return this.startEdit();
     },

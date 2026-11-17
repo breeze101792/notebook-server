@@ -100,6 +100,363 @@ async function gotoNote(page, rel) {
     window.NB.tabs.getActive() === p, rel, { timeout: 15000 });
 }
 
+/* --- behavior matrix (§4, §8.2) ------------------------------------- *
+ * matrix/hybrid-caret-matrix.json holds one row per §4 table row that is
+ * expressible as exact note bytes. Each row runs on its own: a fresh note
+ * on disk, a fresh boot, the caret at the §3 position, the real key through
+ * Playwright, an explicit save, an exit, then a byte compare. Only bytes,
+ * POST counts, and page errors are asserted (R4: no timing assertion).
+ *
+ * Row classes: scored (no status), "spec-divergent" (the doc marks it open
+ * or self-conflicting), "engine" (native-engine dependent), "blocked" (the
+ * docs pin no bytes: observed and reported, never scored). A row with
+ * `after: null` is blocked by definition and has nothing to compare.
+ */
+const MATRIX_FILE = path.join(__dirname, "matrix", "hybrid-caret-matrix.json");
+const MATRIX_NOTE_DIR = "notes/matrix/";
+const MATRIX_TIMEOUT_MS = 30000;
+/* Wait for the app's own 50 ms input debounce before saving. This is a
+ * wait, never an assertion: no row scores a timing. */
+const MATRIX_INPUT_SETTLE_MS = 150;
+// The session is live before the edit bar appears and the caret is seated;
+// a caret placed in that window is overwritten. See the placement block.
+const MATRIX_ENTRY_SETTLE_MS = 450;
+// Typing with no delay outruns the live inline rules (`**b**` -> bold), which
+// then never fire and the row measures escaped delimiters instead.
+const MATRIX_TYPE_DELAY_MS = 15;
+const MATRIX_TAG_RE = /<\/?[a-zA-Z][^>]*>/;
+const MATRIX_FENCE_RE = /^ {0,3}(`{3,}|~{3,})[^\n]*\n[\s\S]*?^ {0,3}\1[ \t]*$/gm;
+const MATRIX_FORBIDDEN = ["data-hybrid-", "contenteditable", "hljs"];
+const MATRIX_SENTINEL_RE = /[\u0000\u0001\u200b\u200c\u200d\ufeff]/;
+const MATRIX_SELECTOR = {
+  "paragraph": ":scope > p",
+  "atx-heading": ":scope > h1, :scope > h2, :scope > h3, :scope > h4," +
+    " :scope > h5, :scope > h6",
+  "setext": ":scope > h1, :scope > h2",
+  "bullet-list": ":scope > ul > li",
+  "ordered-list": ":scope > ol > li",
+  "nested-list": ":scope > ul > li > ul > li, :scope > ol > li > ol > li",
+  "task-list": ":scope > ul > li:has(> input[type=checkbox], > p > input[type=checkbox])",
+  "blockquote": ":scope > blockquote",
+  "fenced-code": ":scope > pre",
+  "indented-code": ":scope > pre",
+  "hr": ":scope > hr",
+  "table": ":scope > table",
+  "raw-html": ":scope > div, :scope > details, :scope > section, :scope > figure",
+  "plugin-fence": ":scope > pre, :scope > [data-hybrid-atomic]," +
+    " :scope > .mermaid-container",
+};
+const MATRIX_MODE = { "SelectAll": "ALL", "SelectBlock": "BLOCK" };
+
+/* Runs in the page. Places the collapsed caret for a §3 position, or builds
+ * the selection a `SelectAll` / `SelectBlock` step needs. */
+function setMatrixSelection(spec) {
+  const root = document.getElementById("viewer-content");
+  const texts = (node) => {
+    const out = [];
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+    let n;
+    while ((n = walker.nextNode())) {
+      // Marked wraps a block's content in a <p>/<li> child and leaves the
+      // whitespace between elements as text nodes. They are not content: a
+      // caret placed in one sits BEFORE the block, not at T or E, so a
+      // quote/list row measured a no-op that the app does perform.
+      if (!n.nodeValue.trim()) continue;
+      out.push(n);
+    }
+    return out;
+  };
+  let el = null;
+  if (spec.mode !== "ALL") {
+    if (spec.cell) {
+      const table = root.querySelector(spec.selector);
+      const tr = table && table.rows[spec.cell[0]];
+      el = (tr && tr.cells[spec.cell[1]]) || null;
+    } else {
+      const all = root.querySelectorAll(spec.selector);
+      const i = spec.index < 0 ? all.length + spec.index : spec.index;
+      el = all[i] || null;
+      // A fence's caret lives in its <code>: the <pre> also holds the
+      // language pill and the Copy button, so "the end of the block" is the
+      // end of the code, not the end of the <pre> (typing there landed in the
+      // Copy button and the row measured an unchanged file). A structural
+      // selection still targets the whole <pre>.
+      if (el && el.tagName === "PRE" && spec.mode !== "BLOCK" && spec.mode !== "ALL") {
+        el = el.querySelector("code") || el;
+      }
+    }
+  }
+  root.focus();
+  const range = document.createRange();
+  if (spec.mode === "ALL" || (spec.mode === "BLOCK" && !el)) {
+    range.selectNodeContents(root);
+  } else if (spec.mode === "BLOCK") {
+    range.selectNodeContents(el);
+  } else if (!el) {
+    // An empty note has no block element: the caret sits on the root.
+    range.setStart(root, 0);
+    range.collapse(true);
+  } else if (spec.mode === "S" || spec.mode === "B") {
+    const parent = spec.mode === "S" ? el : el.parentNode;
+    const offset = spec.mode === "S" ? 0
+      : Array.prototype.indexOf.call(parent.childNodes, el) + 1;
+    range.setStart(parent, offset);
+    range.collapse(true);
+  } else if (spec.mode === "T" || spec.mode === "EMPTY") {
+    const tn = texts(el);
+    range.setStart(tn.length ? tn[0] : el, 0);
+    range.collapse(true);
+  } else if (spec.mode === "M") {
+    const tn = texts(el);
+    // The middle of the CONTENT, not of textContent: marked leaves the
+    // whitespace between elements in the string, so floor(textContent/2)
+    // landed one character past the middle in a quote or list.
+    let target = Math.floor(tn.reduce((n, t) => n + t.length, 0) / 2);
+    let placed = false;
+    for (const t of tn) {
+      if (placed) break;
+      if (target <= t.length) { range.setStart(t, target); placed = true; }
+      else target -= t.length;
+    }
+    if (!placed) range.setStart(el, el.childNodes.length);
+    range.collapse(true);
+  } else { // E
+    const tn = texts(el);
+    if (tn.length) range.setStart(tn[tn.length - 1], tn[tn.length - 1].length);
+    else range.setStart(el, el.childNodes.length);
+    range.collapse(true);
+  }
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
+/* Fenced blocks are copied by the serializer verbatim, so a tag inside one
+ * is the owner's code, not chrome (I4 says "outside a fence"). */
+function stripFences(md) {
+  return md.replace(MATRIX_FENCE_RE, "");
+}
+function tagsOf(md) {
+  return (stripFences(md).match(/<\/?[a-zA-Z][^>]*>/g) || []).sort();
+}
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const guard = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("row timed out after " + ms +
+      " ms: " + label)), ms);
+  });
+  return Promise.race([promise, guard]).finally(() => clearTimeout(timer));
+}
+
+async function runHybridMatrix(page, pageErrors) {
+  const spec = JSON.parse(fs.readFileSync(MATRIX_FILE, "utf8"));
+  const rows = spec.rows || [];
+  const skipped = spec.skipped || [];
+  const posts = [];
+  const onRequest = (req) => {
+    if (req.method() === "POST" && req.url().indexOf("/api/file") !== -1) {
+      posts.push(req.url());
+    }
+  };
+  page.on("request", onRequest);
+
+  let ok = 0;
+  let failed = 0;
+  let divergent = 0;
+  let blockedCount = 0;
+  let acceptedCount = 0;
+  let acceptedMatches = 0;
+  let knownBugFixed = 0;
+  const failures = [];
+  const divergences = [];
+  const blockedRows = [];
+  const acceptedRows = [];
+  const knownBugRows = [];
+
+  for (const row of rows) {
+    const rel = MATRIX_NOTE_DIR + row.id + ".md";
+    const kind = row.status || "assert";
+    const scored = kind === "assert";
+    const baseline = pageErrors.length;
+    let got = null;
+    let error = null;
+
+    try {
+      await withTimeout((async () => {
+        writeNote(rel, row.before);
+        await gotoNote(page, rel);
+        await page.waitForSelector("#viewer-content", { timeout: MATRIX_TIMEOUT_MS });
+        await page.waitForTimeout(MATRIX_INPUT_SETTLE_MS);
+        await page.click("#hybrid-toggle");
+        await page.waitForFunction(() => document.getElementById("viewer-content")
+          .getAttribute("contenteditable") === "true", null,
+          { timeout: MATRIX_TIMEOUT_MS });
+        // The session re-seats the caret once it is live, so a caret placed
+        // during the entry paint is discarded. Settle, place it twice, and
+        // press at once: without this the marker-peel rows measured a
+        // discarded selection and looked like no-ops.
+        await page.waitForTimeout(MATRIX_ENTRY_SETTLE_MS);
+        // A row whose selector matches nothing must say so. Without this the
+        // BLOCK/ALL path selected the whole note, and an empty nested item
+        // (which marked does not render) looked like a note-wiping defect.
+        const targetOk = await page.evaluate((spec) => {
+          // Only a structural selection needs a target: an empty note has no
+          // block to place a caret in, and the helper falls back to the root.
+          if (spec.mode !== "BLOCK") return true;
+          const root = document.getElementById("viewer-content");
+          if (spec.cell) {
+            const t = root.querySelector(spec.selector);
+            const tr = t && t.rows[spec.cell[0]];
+            return !!(tr && tr.cells[spec.cell[1]]);
+          }
+          const all = root.querySelectorAll(spec.selector);
+          const i = spec.index < 0 ? all.length + spec.index : spec.index;
+          return i >= 0 && i < all.length;
+        }, {
+          selector: MATRIX_SELECTOR[row.target || row.block] || row.block,
+          index: typeof row.index === "number" ? row.index : 0,
+          cell: row.cell || null,
+          mode: MATRIX_MODE[row.operation.split(",")[0]] || row.position,
+        });
+        if (!targetOk) throw new Error("target selector matched nothing: " +
+          (MATRIX_SELECTOR[row.target || row.block] || row.block));
+        // From here the row owns the file: entering hybrid writes nothing.
+        posts.length = 0;
+        const placeCaret = () => page.evaluate(setMatrixSelection, {
+          selector: MATRIX_SELECTOR[row.target || row.block] || row.block,
+          index: typeof row.index === "number" ? row.index : 0,
+          cell: row.cell || null,
+          mode: MATRIX_MODE[row.operation.split(",")[0]] || row.position,
+        });
+        await placeCaret();
+        await page.waitForTimeout(MATRIX_INPUT_SETTLE_MS);
+        await placeCaret();
+        for (const step of row.operation.split(",")) {
+          if (step === "NoOp") continue;
+          if (MATRIX_MODE[step]) {
+            await page.evaluate(setMatrixSelection, {
+              selector: MATRIX_SELECTOR[row.target || row.block] || row.block,
+              index: typeof row.index === "number" ? row.index : 0,
+              cell: row.cell || null,
+              mode: MATRIX_MODE[step],
+            });
+          } else if (step.indexOf("Type:") === 0) {
+            await page.keyboard.type(step.slice("Type:".length),
+              { delay: MATRIX_TYPE_DELAY_MS });
+          } else {
+            await page.keyboard.press(step);
+          }
+        }
+        await page.waitForTimeout(MATRIX_INPUT_SETTLE_MS);
+        await page.evaluate(() => window.NB.hybrid.save());
+        await page.click("#close-edit-btn");
+        await page.waitForFunction(() => !window.NB.hybrid.isActive(), null,
+          { timeout: MATRIX_TIMEOUT_MS });
+        await page.waitForTimeout(MATRIX_INPUT_SETTLE_MS);
+        got = readNote(rel);
+      })(), MATRIX_TIMEOUT_MS, row.id);
+    } catch (err) {
+      error = err;
+    }
+
+    // Invariants: every row, scored or not.
+    const pageOk = pageErrors.length === baseline;
+    const bytesOk = got != null;
+    const htmlOk = !bytesOk ? false
+      : row.allowHtml ? JSON.stringify(tagsOf(row.before)) === JSON.stringify(tagsOf(got))
+        : !MATRIX_TAG_RE.test(stripFences(got));
+    const chromeOk = !bytesOk ? false
+      : !MATRIX_FORBIDDEN.some((s) => got.indexOf(s) !== -1);
+    const sentinelOk = !bytesOk ? false : !MATRIX_SENTINEL_RE.test(got);
+    // I3: a save whose output equals the bytes already on disk writes nothing.
+    const noPost = !bytesOk ? false : (got !== row.before || posts.length === 0);
+    const same = bytesOk && row.after !== null && got === row.after;
+    const clean = bytesOk && same && htmlOk && chromeOk && sentinelOk && pageOk && noPost;
+
+    const detail = row.id + " | before " + JSON.stringify(row.before) +
+      " | " + row.operation + "@" + row.position + " | expected " +
+      JSON.stringify(row.after) + " | got " + JSON.stringify(got) +
+      (error ? " | error " + String(error.message || error).split("\n")[0] : "") +
+      (bytesOk && !htmlOk ? " | html invariant" : "") +
+      (bytesOk && !chromeOk ? " | chrome in file" : "") +
+      (bytesOk && !sentinelOk ? " | sentinel in file" : "") +
+      (!pageOk ? " | page error" : "") +
+      (!noPost ? " | wrote " + posts.length + " POST(s) on a no-op row" : "");
+
+    if (scored) {
+      if (clean) ok++;
+      else { failed++; failures.push(detail); }
+      check("matrix " + row.id, clean, clean ? undefined : detail);
+    } else if (kind === "blocked" || row.after === null) {
+      blockedCount++;
+      blockedRows.push(row.id + " | observed " + JSON.stringify(got) +
+        (error ? " | error " + String(error.message || error).split("\n")[0] : "") +
+        (!htmlOk || !chromeOk || !sentinelOk || !pageOk ? " | invariant broken" : ""));
+    } else {
+      const line = row.id + " | observed " + JSON.stringify(got) +
+        " | expected " + JSON.stringify(row.after) +
+        (!htmlOk || !chromeOk || !sentinelOk || !pageOk ? " | invariant broken" : "") +
+        (error ? " | error " + String(error.message || error).split("\n")[0] : "");
+      if (kind === "known-bug") {
+        // A real defect the triage recorded. It must move to `assert` once
+        // fixed; a row that starts matching is reported as news, not a pass.
+        knownBugRows.push(line);
+        if (same) knownBugFixed++;
+      } else if (kind === "accepted") {
+        // By design (a native convention, or a documented limitation).
+        acceptedCount++;
+        if (same) acceptedMatches++;
+        else acceptedRows.push(line);
+      } else {
+        divergent++;
+        divergences.push(row.id + " [" + kind + "] " +
+          (same ? "matches" : "differs") + " | observed " + JSON.stringify(got) +
+          " | expected " + JSON.stringify(row.after) +
+          (!htmlOk || !chromeOk || !sentinelOk || !pageOk ? " | invariant broken" : ""));
+      }
+    }
+  }
+  page.off("request", onRequest);
+
+  console.log("\n--- behavior matrix (§4) " + "-".repeat(40));
+  console.log("  rows " + rows.length + ": ok " + ok + ", failed " + failed +
+    ", accepted " + acceptedCount + ", known-bug " + knownBugRows.length +
+    ", spec-divergent/engine " + divergent + ", blocked " + blockedCount +
+    ", not expressible " + skipped.length);
+  if (knownBugRows.length) {
+    console.log("  --- KNOWN BUGS: real defects, reported not scored ---");
+    for (const k of knownBugRows) console.log("  bug  " + k);
+    if (knownBugFixed) {
+      console.log("  " + knownBugFixed + " known-bug row(s) now match: move them " +
+        "to \"assert\" in the matrix file.");
+    }
+  }
+  if (acceptedRows.length) {
+    console.log("  --- accepted rows that differ from their transcribed bytes ---");
+    for (const a of acceptedRows) console.log("  acc  " + a);
+  }
+  if (divergences.length) {
+    console.log("  --- reported, not scored (spec-divergent / engine) ---");
+    for (const d of divergences) console.log("  div  " + d);
+  }
+  if (blockedRows.length) {
+    console.log("  --- BLOCKED: the docs pin no expected bytes (observed only) ---");
+    for (const b of blockedRows) console.log("  blk  " + b);
+  }
+  if (skipped.length) {
+    console.log("  --- not expressible as a key row (skipped) ---");
+    for (const s of skipped) console.log("  skip " + s.doc + "  " + s.row + "\n        " + s.reason);
+  }
+  if (failures.length) {
+    console.log("  --- failures ---");
+    for (const f of failures) console.log("  FAIL " + f);
+  }
+  console.log("MATRIX: " + (failed ? "FAIL" : "PASS") + " (" + ok + " ok, " +
+    failed + " failed, " + knownBugRows.length + " known-bug, " +
+    acceptedCount + " accepted, " + divergent + " divergent)");
+}
+
 async function waitForServer(child) {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
@@ -179,6 +536,158 @@ async function main() {
     check("real browser: clean Save then exit leaves the file untouched",
       readNote(NOTE) === SOURCE && fs.statSync(p).mtimeMs === mtimeBefore,
       JSON.stringify(readNote(NOTE)));
+
+    // --- the topbar pencil and Mod+E never discard unsaved work ------
+    // Both used to leave through exit(false), dropping the buffer with no
+    // prompt while Close asked. With autosave on the toggle writes
+    // silently; with it off the toggle asks, exactly like Close.
+    const TOGGLE_NOTE = "notes/toggle.md";
+    const togglePath = path.join(DATA, TOGGLE_NOTE);
+    const TOGGLE_BASE = "Toggle base.\n";
+    const readToggle = () => fs.readFileSync(togglePath, "utf8");
+    const dialogs = [];
+    let acceptNext = false;
+    const onDialog = async (d) => {
+      dialogs.push(d.type() + ": " + d.message());
+      if (acceptNext) await d.accept(); else await d.dismiss();
+    };
+    page.on("dialog", onDialog);
+    const enterToggle = async () => {
+      await page.click("#hybrid-toggle");
+      await page.waitForFunction(
+        () => window.NB.hybrid.isActive(), null, { timeout: 8000 });
+    };
+    const waitToggleExit = async () => {
+      await page.waitForFunction(
+        () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+      await new Promise((r) => setTimeout(r, 250));
+    };
+    const typeInFirstParagraph = async (text) => {
+      await caretInBlock(page, "#viewer-content p", -1);
+      await page.keyboard.press("End");
+      await page.keyboard.type(text);
+    };
+
+    // A fresh note, a fresh boot, and the autosave mode under test.
+    const startToggleCase = async (text, autosave) => {
+      writeNote(TOGGLE_NOTE, TOGGLE_BASE);
+      await gotoNote(page, TOGGLE_NOTE);
+      await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+      // Set after the navigation: a config write the page never flushed
+      // would be lost by the reload.
+      await page.evaluate((on) => NB.app.setAutosave(on), autosave);
+      await enterToggle();
+      if (text) await typeInFirstParagraph(text);
+    };
+
+    try {
+      // Autosave on (the default): the exit writes, and asks nothing.
+      dialogs.length = 0;
+      await startToggleCase(" kept-a", true);
+      await page.click("#hybrid-toggle");
+      await waitToggleExit();
+      check("real browser toggle: autosave on saves the edit instead of dropping it",
+        dialogs.length === 0 && /kept-a/.test(readToggle()),
+        JSON.stringify({ dialogs, file: readToggle() }));
+
+      // Mod+E takes the same path.
+      dialogs.length = 0;
+      await startToggleCase(" kept-b", true);
+      await page.keyboard.press("Control+e");
+      await waitToggleExit();
+      check("real browser toggle: Mod+E saves the edit instead of dropping it",
+        dialogs.length === 0 && /kept-b/.test(readToggle()),
+        JSON.stringify({ dialogs, file: readToggle() }));
+
+      // The source-mode toggle takes the same exit path; it used to drop the
+      // WYSIWYG buffer too.
+      dialogs.length = 0;
+      await startToggleCase(" kept-g", true);
+      await page.click("#edit-toggle");
+      await page.waitForFunction(
+        () => document.getElementById("edit-toggle").classList.contains("editing"),
+        null, { timeout: 8000 });
+      const hybridAfterSource = await page.evaluate(() => window.NB.hybrid.isActive());
+      check("real browser toggle: the source-mode switch saves the WYSIWYG edit",
+        dialogs.length === 0 && !hybridAfterSource && /kept-g/.test(readToggle()),
+        JSON.stringify({ dialogs, hybridAfterSource, file: readToggle() }));
+
+      // Autosave off: the toggle asks. Cancel still means discard.
+      dialogs.length = 0;
+      await startToggleCase(" kept-c", false);
+      await page.click("#hybrid-toggle");
+      await waitToggleExit();
+      check("real browser toggle: autosave off asks before dropping the edit",
+        dialogs.length === 1 && /unsaved changes/.test(dialogs[0]) &&
+        readToggle() === TOGGLE_BASE,
+        JSON.stringify({ dialogs, file: readToggle() }));
+
+      // Autosave off, prompt accepted: the edit reaches the file.
+      dialogs.length = 0;
+      await startToggleCase(" kept-d", false);
+      acceptNext = true;
+      await page.click("#hybrid-toggle");
+      await waitToggleExit();
+      acceptNext = false;
+      check("real browser toggle: accepting the prompt saves the edit",
+        dialogs.length === 1 && /kept-d/.test(readToggle()),
+        JSON.stringify({ dialogs, file: readToggle() }));
+
+      // A clean toggle stays a one-press flip: no prompt.
+      dialogs.length = 0;
+      await startToggleCase(null, true);
+      await page.click("#hybrid-toggle");
+      await waitToggleExit();
+      check("real browser toggle: a clean exit asks nothing",
+        dialogs.length === 0 && readToggle() === TOGGLE_BASE,
+        JSON.stringify({ dialogs, file: readToggle() }));
+
+      // A second press during the exit save must not write twice.
+      dialogs.length = 0;
+      await startToggleCase(" kept-e", true);
+      await page.evaluate(() => {
+        window.__origSaveFile = NB.api.saveFile;
+        window.__saveCalls = 0;
+        NB.api.saveFile = async (...args) => {
+          window.__saveCalls += 1;
+          await new Promise((r) => setTimeout(r, 800));
+          return window.__origSaveFile.apply(NB.api, args);
+        };
+      });
+      await page.click("#hybrid-toggle");
+      await page.click("#hybrid-toggle");
+      await waitToggleExit();
+      const saveCalls = await page.evaluate(() => window.__saveCalls);
+      check("real browser toggle: a second press during the exit save writes once",
+        saveCalls === 1 && /kept-e/.test(readToggle()),
+        JSON.stringify({ saveCalls, file: readToggle() }));
+
+      // A failed exit save alerts and keeps the editor open with the buffer.
+      dialogs.length = 0;
+      await startToggleCase(" kept-f", true);
+      await page.evaluate(() => {
+        NB.api.saveFile = async () => { throw new Error("disk full"); };
+      });
+      await page.click("#hybrid-toggle");
+      await new Promise((r) => setTimeout(r, 800));
+      const stillActive = await page.evaluate(() => window.NB.hybrid.isActive());
+      check("real browser toggle: a failed exit save keeps the buffer and the editor",
+        stillActive && dialogs.some((d) => /Save failed/.test(d)) &&
+        readToggle() === TOGGLE_BASE,
+        JSON.stringify({ stillActive, dialogs, file: readToggle() }));
+      // No restore needed: every case boots the page again, which rebuilds
+      // NB.api. (A window global does not survive the navigation.)
+    } finally {
+      // The autosave flag is persisted, so a throw above must not leave the
+      // rest of the suite running with autosave off.
+      await page.evaluate(() => NB.app.setAutosave(true)).catch(() => {});
+      page.off("dialog", onDialog);
+      fs.rmSync(togglePath, { force: true });
+    }
+
+    // Back to the shared fixture for the sections below.
+    await gotoNote(page, NOTE);
+    await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
 
     // --- the real edit path a browser produces ---------------------
     // Type into the paragraph (the empty heading has zero height in a
@@ -2924,6 +3433,12 @@ async function main() {
       pageErrors.length === 0, pageErrors.join(" | "));
 
     await page.screenshot({ path: path.join(tmp, "hybrid.png") });
+
+    // --- behavior matrix (§4) -------------------------------------
+    // After the suite's own page-error check, so a matrix row can never
+    // change the result of an existing check; the matrix reports its own
+    // page errors per row.
+    await runHybridMatrix(page, pageErrors);
   } finally {
     await browser.close();
     child.kill("SIGTERM");
