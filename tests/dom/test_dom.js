@@ -36425,8 +36425,7 @@ function check(label, cond, extra) {
       chatA1.title === "Explain the intro", "title=" + chatA1.title);
     check("ai chats: the bar shows the chat title and its file",
       pick().value === chatA1.id &&
-      bar().querySelector(".ai-chat-path").textContent === "notes/a.md" &&
-      bar().querySelector(".ai-chat-flag").hidden === true,
+      bar().querySelector(".ai-chat-path").textContent === "notes/a.md",
       "value=" + pick().value);
     check("ai chats: the stored chat carries both entries",
       chatA1.count === 2 && chatA1.messages === 2,
@@ -36601,17 +36600,16 @@ function check(label, cond, extra) {
     filterSearch.dispatchEvent(new window.Event("input", { bubbles: true }));
     await tick(10);
 
-    // (C8) a chat bound to another file is flagged, not blocked.
+    // (C8) a chat bound to another file is usable and unlabeled.
     manageBtn().click();          // close the manager
     await tick(10);
     pickChat(chatB.id);
     await tick(20);
-    check("ai chats: a chat from another file shows the not-open flag",
-      bar().querySelector(".ai-chat-flag").hidden === false &&
-      /not open/.test(bar().querySelector(".ai-chat-flag").textContent) &&
+    check("ai chats: a chat from another file shows its own path, unflagged",
+      !bar().querySelector(".ai-chat-flag") &&
       bar().querySelector(".ai-chat-path").textContent === "notes/b.md" &&
       aiInput().disabled === false,
-      "flag=" + bar().querySelector(".ai-chat-flag").textContent.trim());
+      "path=" + bar().querySelector(".ai-chat-path").textContent);
     pickChat(chatA1.id);
     await tick(20);
 
@@ -36873,10 +36871,9 @@ function check(label, cond, extra) {
       window.NB.viewer.getPath() === "notes/b.md",
       "card=" + !!queuedCard + " active=" + store().activeId +
       " path=" + window.NB.viewer.getPath());
-    check("ai chats: the queued switch waits while the card is pending",
-      bar().querySelector(".ai-chat-flag").hidden === false &&
-      /not open/.test(bar().querySelector(".ai-chat-flag").textContent),
-      "flag=" + bar().querySelector(".ai-chat-flag").textContent.trim());
+    check("ai chats: the queued switch keeps the chat's own path on the bar",
+      bar().querySelector(".ai-chat-path").textContent === "notes/a.md",
+      "path=" + bar().querySelector(".ai-chat-path").textContent);
     // Resolving the card releases the queued switch.
     if (queuedCard) queuedCard.querySelector(".ai-apply").click();
     await tick(250);

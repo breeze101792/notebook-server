@@ -5533,17 +5533,6 @@ body > #nb-menu .submenu.open {
   font-size: var(--text-xs);
   line-height: var(--lh-snug);
 }
-.ai-chat-flag {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-hair);
-  flex: 0 0 auto;
-  color: var(--warn);
-  font-size: var(--text-xs);
-  line-height: var(--lh-flat);
-  white-space: nowrap;
-}
-.ai-chat-flag > .icon { width: var(--icon-sm); height: var(--icon-sm); }
 .ai-chat-actions {
   display: flex;
   align-items: center;

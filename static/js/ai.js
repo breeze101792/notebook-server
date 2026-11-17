@@ -2845,10 +2845,6 @@
     chatMeta.className = "ai-chat-meta";
     const chatPathEl = document.createElement("span");
     chatPathEl.className = "ai-chat-path";
-    const chatFlag = document.createElement("span");
-    chatFlag.className = "ai-chat-flag";
-    chatFlag.hidden = true;
-    chatFlag.innerHTML = chatIcon("nb-icon-warning") + "not open";
     const chatActions = document.createElement("span");
     chatActions.className = "ai-chat-actions";
 
@@ -2881,7 +2877,7 @@
     clearBtn.addEventListener("click", onClearChat);
 
     chatActions.append(newBtn, manageBtn, clearBtn);
-    chatMeta.append(chatPathEl, chatFlag, chatActions);
+    chatMeta.append(chatPathEl, chatActions);
     chatBar.append(chatSelect, chatMeta);
     stack.appendChild(chatBar);
 
@@ -3069,24 +3065,16 @@
         chatSelect.title = "No file open";
         chatPathEl.textContent = "No file open";
         chatPathEl.removeAttribute("title");
-        chatFlag.hidden = true;
       } else if (!chat) {
         chatSelect.disabled = chatLocked();
         chatSelect.title = "No chat yet — " + path;
         chatPathEl.textContent = path;
         chatPathEl.title = path;
-        chatFlag.hidden = true;
       } else {
         chatSelect.disabled = chatLocked();
         chatSelect.title = chat.title + " — " + (chat.file || AI_CHATS_UNFILED);
         chatPathEl.textContent = chat.file || AI_CHATS_UNFILED;
         chatPathEl.title = chat.file || AI_CHATS_UNFILED;
-        const notOpen = !!chat.file && chat.file !== path;
-        chatFlag.hidden = !notOpen;
-        if (notOpen) {
-          chatFlag.title = "This chat belongs to " + chat.file +
-            ", which is not open in the viewer.";
-        }
       }
       newBtn.disabled = noFile || chatLocked();
       manageBtn.disabled = chatLocked();

@@ -344,8 +344,7 @@ Chats are not in-memory only: `persistHistory()` writes a versioned
 `restoreHistory()` rebuilds the active chat and the chat bar on mount. A
 chat is bound to the file it was started from, and the store also keeps the
 last active id, so a reload restores that chat whatever file it belongs to;
-opening another file then switches to that file's newest chat, and the
-bar's `not open` flag reports a chat whose file is not the one on screen.
+opening another file then switches to that file's newest chat.
 The **Clear** button in the chat bar empties the active chat's
 conversation and keeps the chat; deleting the last chat removes the key.
 The legacy single-transcript `nb:aiChat` key is migrated once into one chat
