@@ -57,7 +57,7 @@ the header and the hint, and the manager is a second sibling of the whole chat g
     ├─ .ai-cm-list           flex  THE ZONE THAT SCROLLS: groups and rows
     │   ├─ .ai-cm-group            sticky head (path · current) + .ai-cm-rows
     │   └─ .ai-empty               no chats, or no match
-    └─ .ai-cm-footer         73    New chat · storage line · over-budget warning
+    └─ .ai-cm-footer       73/105  New chat · storage · warning · Delete all chats
 ```
 
 ### 1.2 Heights at 240
@@ -75,7 +75,9 @@ price of a chat name and its file being visible at all times; §2.1 records why 
 bar beats a one-line bar with a 48 px-wide title.
 
 The manager, with the stack hidden, spends 34 + 35 header + 52 search + 73 footer = 194, so
-its list is ≈ 366 at 560.
+its list is ≈ 366 at 560. With Delete all chats visible the footer is 105 — 8 top + 30 New
+chat + 8 + 14 storage line + 8 + 24 button + 12 bottom + 1 border — so the list is ≈ 334. The
+control is `hidden` when the open note has no chats, which is the 73 px case.
 
 Clear's move into the bar (§2.5) does not change that height: the three 24 px actions share
 the existing 24 px meta row and make the group 76 px wide. The one taller case is the
@@ -186,12 +188,15 @@ above it.
 The path line always shows the **active chat's** file, never the open file: the bar answers
 "which chat am I in", and when those two differ the flag says so.
 
-**Not-open origins.** Two, and only two: the user picks another file's chat from the select
-or the manager, or the viewer opens a different file while a turn — or a write/patch card
-awaiting Apply/Reject — is outstanding (the switch to that file's newest chat waits for it to
-finish, so the panel still shows the old chat). The flag informs; it does not disable the
-composer. The transcript is the chat's own, and the assistant can read any file with its
-tools, so a mismatch is context, not a fault.
+**Not-open origins.** One: the viewer opens a different file while a turn — or a write/patch
+card awaiting Apply/Reject — is outstanding, so the switch to that file's newest chat waits for
+it to finish and the panel still shows the old chat. Selecting another note's chat from the
+select or the manager is not an origin: that action opens the note's tab first (§3.1). The flag
+informs; it does not disable the composer. The transcript is the chat's own, and the assistant
+can read any file with its tools, so a mismatch is context, not a fault. Unfiled chats have no
+note to open, so selecting one leaves the viewer where it is. When the open is refused — the
+session's file cap — nothing switches: the picker returns to the active chat and the panel keeps
+the chat it already showed.
 
 **Locked.** The select, New chat and Manage are all disabled for the span of a turn. A chat
 cannot be swapped, created or deleted while a reply is being written into it — deleting the
@@ -307,7 +312,7 @@ takes the focus.
 |---|---|
 | Manage chats pressed | `.ai-chat-stack.hidden = true`, `.ai-chat-manager.hidden = false`; focus moves to `.ai-cm-title` (`tabindex="-1"`) |
 | Close pressed, or `Esc` outside the search field | reverse the two flags; focus returns to the Manage chats button |
-| A row's title pressed | the chat becomes active, the manager closes, focus moves to the chat select |
+| A row's title pressed | the note's tab opens when the chat belongs to another note; the chat becomes active, the manager closes, focus moves to the chat select |
 | `Esc` in a non-empty search field | clears the query and keeps the manager open; a second `Esc` closes it |
 
 The manager replaces the provider row, the log, the attach bar and the composer as one unit.
@@ -383,6 +388,10 @@ the panel header and come back, exactly as the Search view behaves in the same f
       <svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-warning"/></svg>
       Over the 4 MB limit. New messages may not be saved — delete a chat to free space.
     </p>
+    <button type="button" class="ai-cm-btn danger ai-cm-danger" data-test-chat-delete-all
+            aria-label="Delete all 3 chats for this note" title="Delete all 3 chats for this note">
+      <svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-trash"/></svg>Delete all chats
+    </button>
     <p class="sr-only ai-cm-status" role="status" aria-live="polite"></p>
   </div>
 </div>
@@ -390,8 +399,8 @@ the panel header and come back, exactly as the Search view behaves in the same f
 
 `nb-icon-trash` is a new sprite symbol (16 grid, 1.5 stroke, `currentColor`,
 `foundations.md` §9.1); every other symbol already exists in
-`templates/index.html:51-264`. The over-budget warning is the only element in the footer
-that may be absent.
+`templates/index.html:51-264`. The over-budget warning and the Delete all chats button are the
+only footer elements that may be absent.
 
 ### 3.3 Header and search
 
@@ -492,7 +501,7 @@ removed until `Delete` is pressed, and `Cancel` is the first control in DOM orde
 </div>
 ```
 
-### 3.8 Footer: New chat, storage, warning
+### 3.8 Footer: New chat, storage, warning, Delete all chats
 
 | Part | Value |
 |---|---|
@@ -501,6 +510,7 @@ removed until `Delete` is pressed, and `Cancel` is the first control in DOM orde
 | New chat disabled | when no file is open — a chat needs a file |
 | Storage line | `.ai-cm-storage`, `--text-xs`, `--text-muted`, wraps |
 | Warning | `.ai-cm-warn`, `--surface-raised`, 1 px `--warn`, `--radius-sm`, `padding: --space-2`, `--text-xs`, `--lh-snug`, `--text-primary`, 16 px `nb-icon-warning` in `--warn`, `role="status"` |
+| Delete all chats | `.ai-cm-btn.danger.ai-cm-danger`, last item, hidden when the open note has no chats (§3.10) |
 
 The storage line is `n chats · <size> of 4 MB`, where the size is the summed approximate byte
 size of every stored chat. The budget is 4 MiB (`ai.js:168`); the copy rounds it to `4 MB`
@@ -517,9 +527,34 @@ total exceeds the budget, and the line's own numbers keep it honest.
 
 The empty block reuses `.ai-empty` / `.ai-empty-title` / `.ai-empty-hint` from
 `ai-panel.md` §1.5 (`margin: auto` centres it inside the flex list). The footer, its New chat
-button and the storage line stay visible in every empty state. The no-chats block keeps the
-log's `nb-icon-sparkle`; the no-match block swaps the symbol for `nb-icon-search` at the same
-`--icon-lg` size.
+button and the storage line stay visible in every empty state; Delete all chats appears only
+when the open note has chats (§3.10). The no-chats block keeps the log's `nb-icon-sparkle`; the
+no-match block swaps the symbol for `nb-icon-search` at the same `--icon-lg` size.
+
+### 3.10 Delete all chats
+
+| Part | Value |
+|---|---|
+| Placement | the footer's last item, after the over-budget warning: `New chat` → storage line → warning → `Delete all chats` |
+| Look | `.ai-cm-btn.danger.ai-cm-danger`: a text button in `--danger` with a leading 16 px `nb-icon-trash`, `--text-xs`, `--radius-sm`, `padding: 0 var(--space-2)`, `min-height: --control-h-sm`; `align-self: flex-start` so it hugs its text instead of filling the column |
+| Name | `aria-label` and `title` = `Delete all <n> chats for this note`, where `<n>` is the open note's chat count (`Delete all 1 chat for this note` when it is one) |
+| Hidden | no file open, or the open note has no chats: `hidden`, never `disabled` |
+| Scope | every chat whose `file` equals the open note, read from `chatGroups()` so the manager's own grouping decides it; `Unfiled` chats are never included |
+| Confirm | the button is replaced in place by `.ai-chat-confirm` (`role="group"`, `aria-label="Confirm delete all chats"`): `Delete all <n> chats for this note? This cannot be undone.` on its own line, then `Cancel` and `Delete all` (`.ai-cm-btn danger`) right-aligned |
+| Search | a non-empty query never narrows the scope; the confirm appends ` This includes chats hidden by the search.` |
+| Note changes | the confirm names one note and its count, so opening another note drops it |
+| Focus on open | `Cancel`, the safe choice for a destructive step |
+| Cancel | `Cancel`, or `Esc` handled in the block (`stopPropagation`, as the row confirm does): the button returns and takes focus |
+| Confirm | one store write removes the file's chats; the active chat becomes none if it was one of them (`No chat yet` in the bar, the panel's no-chat empty state, the manager's no-chats empty state); the storage line and the warning refresh |
+| Focus after confirm | `#ai-cm-search` — the button it started from is hidden again with no chats for the note |
+| Announcement | `.ai-cm-status` says `Deleted all <n> chats for this note.` |
+| Other confirms | only one confirm is open at a time: opening this one closes a pending row delete or rename, and a row's Delete drops this one (so `Esc` always keeps working) |
+| Locked | no delete while a turn is in flight — the manager is not reachable then (§2.3) |
+
+The control is a text button, not a filled one: it sits at the bottom of a column whose one
+primary action is `New chat`, so the destructive action stays quiet until it is pressed. Like
+the row confirm it is inline — no scrim, no trap, no close button — and it replaces the button
+in the footer's flow, so the footer grows to fit the block's question and action row.
 
 ---
 
@@ -585,6 +620,13 @@ describe the shipped header button and are superseded by this table.
 | `Deleted “<title>”.` | live region after a delete |
 | `Renamed to “<title>”.` | live region after a rename |
 | `Confirm delete` | confirm group `aria-label` |
+| `Delete all chats` | footer danger button |
+| `Delete all <n> chats for this note` | its `aria-label` + `title` (`1 chat` when one) |
+| `Delete all <n> chats for this note? This cannot be undone.` | delete-all confirm text |
+| ` This includes chats hidden by the search.` | appended to that text while the search is non-empty |
+| `Delete all` | delete-all confirm action |
+| `Confirm delete all chats` | delete-all confirm group `aria-label` |
+| `Deleted all <n> chats for this note.` | live region after a delete-all |
 
 Storage sizes: `n < 1024` → `n B`; `< 1024 × 1024` → `n KB`; else `n.n MB`, one decimal, rounded
 down. Counts use `1 chat` / `n chats`, `1 msg` / `n msgs`.
@@ -1142,7 +1184,9 @@ on the element so `#ai-view .ai-clear` keeps resolving.
 | `.ai-chat-row` | 67 | 4 + 17 + 2 + 14 meta + 2 + 24 actions + 4 |
 | `.ai-cm-group-head` | 25 | 24 + 1 |
 | `.ai-cm-footer` | 73 | 8 + 30 + 8 + 14 + 12 + 1 |
+| `.ai-cm-footer` with Delete all chats | 105 | 8 + 30 + 8 + 14 + 8 + 24 + 12 + 1 |
 | `.ai-cm-footer` over budget | ≈ 140 at 240; ≈ 220 at 140 | 73 + 8 + the warning: 3 lines at 240, 9 at 140 |
+| `.ai-cm-footer` over budget, with Delete all chats | ≈ 172 at 240; ≈ 252 at 140 | the row above, plus 32 (8 gap + 24 button) |
 
 ### 7.4 Test hooks
 
@@ -1166,6 +1210,8 @@ changes a class name or a style.
 | `data-test-chat-confirm` | the `.ai-chat-confirm` group |
 | `data-test-chat-new-manager` | the footer's New chat button |
 | `data-test-chat-storage` | the storage line |
+| `data-test-chat-delete-all` | the footer's Delete all chats button |
+| `data-test-chat-delete-all-confirm` | the footer's `.ai-chat-confirm` group |
 
 ---
 
@@ -1186,6 +1232,7 @@ changes a class name or a style.
 | Row | `.ai-chat-row[aria-current="true"]` on the active chat only; the title is a real `<button>` |
 | Row actions | `aria-label` naming the chat, so two rows never share a name |
 | Confirm | `role="group" aria-label="Confirm delete"`, text then actions in DOM order |
+| Delete all chats | `<button class="ai-cm-btn danger ai-cm-danger" aria-label="Delete all <n> chats for this note">`; the confirm group is `aria-label="Confirm delete all chats"` |
 | Warning | `role="status"` |
 | Live region | `.ai-cm-status.sr-only`, `role="status" aria-live="polite"`; announces the delete and the rename, never the filtering |
 
@@ -1238,18 +1285,18 @@ transitions; no state is left half-applied.
 
 | State | Bar | Manager list | Footer | Log / composer |
 |---|---|---|---|---|
-| File open, chats exist | select enabled, path shown | current group first | New chat enabled, storage line | transcript |
-| File open, no chat | select `No chat yet` | current group absent | New chat enabled, storage line | `No chat for this file.` + enabled composer |
-| No file open | select disabled `No file open` | no current group; Unfiled and other files only | **New chat disabled**, storage line | `No file open.` + disabled composer |
-| Active chat's file not open | path + `not open` flag | its group is not the current one | unchanged | the chat's transcript, composer enabled |
+| File open, chats exist | select enabled, path shown | current group first | New chat enabled, storage line, **Delete all chats** | transcript |
+| File open, no chat | select `No chat yet` | current group absent | New chat enabled, storage line, Delete all chats hidden | `No chat for this file.` + enabled composer |
+| No file open | select disabled `No file open` | no current group; Unfiled and other files only | **New chat disabled**, storage line, Delete all chats hidden | `No file open.` + disabled composer |
+| Active chat's file not open | path + `not open` flag | its group is not the current one | unchanged (the control scopes to the open note) | the chat's transcript, composer enabled |
 | A turn is in flight | select, New, Manage disabled; **Clear enabled** | not reachable | — | caret, Stop |
 | A permission card is pending | select, New, Manage disabled | not reachable | — | the card waits for Apply/Reject; composer draftable |
 | A turn in flight, then another file opens | the bar keeps the streaming chat and its path; once the open path differs, the `not open` flag appears | the file's group is not the current one | New chat disabled until the turn ends | the streaming chat's transcript, Stop |
-| No chats at all | select `No chat yet` | `No chats yet.` | New chat enabled when a file is open | `No chat for this file.` |
-| Search with no match | unchanged | `No chats match “<query>”.` | unchanged | — |
+| No chats at all | select `No chat yet` | `No chats yet.` | New chat enabled when a file is open; Delete all chats hidden | `No chat for this file.` |
+| Search with no match | unchanged | `No chats match “<query>”.` | unchanged; Delete all chats keeps the note's chats and says the search hides some | — |
 | Chats at 100 % of budget | unchanged | unchanged | storage line | unchanged |
-| Over budget | unchanged | unchanged | warning below the storage line | unchanged |
-| 140 px | select ~14 characters; with the flag the bar grows to 95 and the path keeps 54 | rows 100 wide, paths clamp | New chat 116 wide, storage wraps | — |
+| Over budget | unchanged | unchanged | warning below the storage line, Delete all chats after it | unchanged |
+| 140 px | select ~14 characters; with the flag the bar grows to 95 and the path keeps 54 | rows 100 wide, paths clamp | New chat 116 wide, storage wraps, Delete all chats hugs its text | — |
 | Coarse pointer | 44 px targets, bar 103 | 44 px row actions | 44 px button | — |
 
 Clear follows §2.5 in every row: enabled when the active chat has a message or a pending chip,

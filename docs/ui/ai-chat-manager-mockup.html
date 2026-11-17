@@ -812,6 +812,17 @@ body {
   line-height: var(--lh-snug);
 }
 .ai-cm-warn > .icon { flex: 0 0 auto; width: var(--icon-md); height: var(--icon-md); color: var(--warn); }
+.ai-cm-danger {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: var(--space-1);
+}
+.ai-cm-danger > .icon {
+  flex: 0 0 auto;
+  width: var(--icon-md);
+  height: var(--icon-md);
+}
 
 /* Mockup-only: a captured focus ring, the streaming caret, and the two
  * disabled faces the bar's boards need. */
@@ -1612,6 +1623,7 @@ body {
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button" data-test-chat-new-manager><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage" data-test-chat-storage>4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -1722,6 +1734,7 @@ body {
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -1832,6 +1845,7 @@ body {
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -1942,6 +1956,7 @@ body {
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2205,6 +2220,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2294,6 +2310,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2383,6 +2400,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2472,6 +2490,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2572,6 +2591,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2657,6 +2677,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2742,6 +2763,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2827,6 +2849,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 21 KB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
             </div>
           </div>
         </div>
@@ -2931,6 +2954,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 4.3 MB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
               <p class="ai-cm-warn" role="status">
                 <svg class="icon" aria-hidden="true"><use href="#i-warning"/></svg>
                 <span>Over the 4 MB limit. New messages may not be saved — delete a chat to free space.</span>
@@ -3024,6 +3048,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 4.3 MB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
               <p class="ai-cm-warn" role="status">
                 <svg class="icon" aria-hidden="true"><use href="#i-warning"/></svg>
                 <span>Over the 4 MB limit. New messages may not be saved — delete a chat to free space.</span>
@@ -3117,6 +3142,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 4.3 MB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
               <p class="ai-cm-warn" role="status">
                 <svg class="icon" aria-hidden="true"><use href="#i-warning"/></svg>
                 <span>Over the 4 MB limit. New messages may not be saved — delete a chat to free space.</span>
@@ -3210,6 +3236,7 @@ group head is 25.
             <div class="ai-cm-footer">
               <button class="ai-cm-new" type="button"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New chat</button>
               <p class="ai-cm-storage">4 chats · 4.3 MB of 4 MB</p>
+              <button class="ai-cm-btn danger ai-cm-danger" type="button" data-test-chat-delete-all aria-label="Delete all 2 chats for this note" title="Delete all 2 chats for this note"><svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>Delete all chats</button>
               <p class="ai-cm-warn" role="status">
                 <svg class="icon" aria-hidden="true"><use href="#i-warning"/></svg>
                 <span>Over the 4 MB limit. New messages may not be saved — delete a chat to free space.</span>

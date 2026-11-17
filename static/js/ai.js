@@ -172,6 +172,10 @@
   const AI_CHATS_IMPORTED_TITLE = "Imported chat";
   const AI_CHATS_UNFILED = "Unfiled";
   const AI_CHATS_TITLE_MAX = 48;
+  /* The manager's per-file "delete all" control: the button label, the
+   * confirm action and the announcement all carry the chat count. */
+  const AI_CM_DELETE_ALL = "Delete all chats";
+  const AI_CM_DELETE_ALL_CONFIRM = "Delete all";
   /* The id is interpolated into a CSS attribute selector, so it is
    * validated on the way in rather than escaped at every use. */
   const AI_CHATS_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -1554,6 +1558,26 @@
     return true;
   }
 
+  /* Delete every chat bound to one file with a single store write. An
+   * empty path never matches, so Unfiled chats are out of scope. */
+  function deleteChatsForFile(path) {
+    if (!path) return [];
+    const removed = chatStore.chats.filter((c) => c.file === path);
+    if (!removed.length) return [];
+    const wasActive = removed.some((c) => c.id === chatStore.activeId);
+    chatStore.chats = chatStore.chats.filter((c) => c.file !== path);
+    if (wasActive) {
+      chatStore.activeId = "";
+      applyActiveChat();
+      attachReset();
+      composerSetPrompt("");
+    }
+    writeChatStore();
+    if (wasActive) showActiveChat();
+    else refreshChatUi();
+    return removed;
+  }
+
   /* Re-render the visible transcript for the active chat. */
   function showActiveChat() {
     const log = mountLog;
@@ -1636,6 +1660,25 @@
     if (bytes < 1024 * 1024) return Math.floor(bytes / 1024) + " KB";
     const mb = Math.floor((bytes / (1024 * 1024)) * 10) / 10;
     return mb.toFixed(1) + " MB";
+  }
+
+  function chatCountLabel(n) {
+    return n + " " + (n === 1 ? "chat" : "chats");
+  }
+
+  /* One sentence per job: the button's name, the confirm's question and
+   * the live-region announcement. All three carry the count. */
+  function deleteAllLabel(n) {
+    return "Delete all " + chatCountLabel(n) + " for this note";
+  }
+
+  function deleteAllConfirmText(n, filtered) {
+    return deleteAllLabel(n) + "? This cannot be undone." +
+      (filtered ? " This includes chats hidden by the search." : "");
+  }
+
+  function deleteAllAnnouncement(n) {
+    return "Deleted all " + chatCountLabel(n) + " for this note.";
   }
 
   const AI_MONTHS = [
@@ -2951,7 +2994,13 @@
     cmStatus.className = "sr-only ai-cm-status";
     cmStatus.setAttribute("role", "status");
     cmStatus.setAttribute("aria-live", "polite");
-    cmFooter.append(cmNew, cmStorage, cmWarn, cmStatus);
+    const cmDeleteAll = document.createElement("button");
+    cmDeleteAll.type = "button";
+    cmDeleteAll.className = "ai-cm-btn danger ai-cm-danger";
+    cmDeleteAll.dataset.testChatDeleteAll = "1";
+    cmDeleteAll.hidden = true;
+    cmDeleteAll.innerHTML = chatIcon("nb-icon-trash") + AI_CM_DELETE_ALL;
+    cmFooter.append(cmNew, cmStorage, cmWarn, cmDeleteAll, cmStatus);
 
     manager.append(cmHeader, cmSearchRow, cmList, cmFooter);
 
@@ -2960,6 +3009,7 @@
     let renamingId = null;
     let renameOrigin = "button";
     let pendingDeleteId = null;
+    let deleteAllBox = null;
     let focusAfterRender = null;
     let groupSeq = 0;
 
@@ -3147,11 +3197,19 @@
         chat.file.toLowerCase().indexOf(q) >= 0;
     }
 
+    /* Every chat bound to the open note: the current group's rows, so the
+     * manager's own order and grouping decide the scope. */
+    function currentFileChats() {
+      const group = chatGroups().find((g) => g.current);
+      return group ? group.rows : [];
+    }
+
     function setSearch(q) {
       searchQuery = q;
       cmSearch.value = q;
       cmSearchClear.hidden = !q;
       renderManagerList();
+      syncDeleteAll();
     }
 
     function announce(text) {
@@ -3163,11 +3221,12 @@
      * still land. */
     function refreshStorage() {
       const n = chatStore.chats.length;
-      cmStorage.textContent = n + " " + (n === 1 ? "chat" : "chats") +
+      cmStorage.textContent = chatCountLabel(n) +
         " · " + formatStoreSize(lastStoreBytes) + " of " + chatBudgetLabel();
       cmWarn.hidden = !storeOverBudget;
       /* A chat needs a file; the footer is not reachable during a turn. */
       cmNew.disabled = !currentPath();
+      syncDeleteAll();
     }
 
     function openManager() {
@@ -3177,6 +3236,7 @@
       manageBtn.setAttribute("aria-expanded", "true");
       renamingId = null;
       pendingDeleteId = null;
+      discardDeleteAllConfirm();
       setSearch("");
       refreshStorage();
       cmTitle.focus();
@@ -3189,6 +3249,7 @@
       manageBtn.setAttribute("aria-expanded", "false");
       renamingId = null;
       pendingDeleteId = null;
+      discardDeleteAllConfirm();
       searchQuery = "";
       cmSearch.value = "";
       cmSearchClear.hidden = true;
@@ -3262,6 +3323,39 @@
         ev.preventDefault();
         ev.stopPropagation();
         cancelDelete(chat.id);
+      });
+      return box;
+    }
+
+    function buildDeleteAllConfirm(count) {
+      const box = document.createElement("div");
+      box.className = "ai-chat-confirm";
+      box.dataset.testChatDeleteAllConfirm = "1";
+      box.dataset.aiCmPath = currentPath();
+      box.setAttribute("role", "group");
+      box.setAttribute("aria-label", "Confirm delete all chats");
+      const text = document.createElement("p");
+      text.className = "ai-chat-confirm-text";
+      text.textContent = deleteAllConfirmText(count, !!searchQuery.trim());
+      const acts = document.createElement("div");
+      acts.className = "ai-chat-confirm-actions";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "ai-cm-btn";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => cancelDeleteAll());
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ai-cm-btn danger";
+      del.textContent = AI_CM_DELETE_ALL_CONFIRM;
+      del.addEventListener("click", () => confirmDeleteAll());
+      acts.append(cancel, del);
+      box.append(text, acts);
+      box.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Escape") return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        cancelDeleteAll();
       });
       return box;
     }
@@ -3457,6 +3551,7 @@
 
     function startDelete(id) {
       if (chatLocked()) return;
+      discardDeleteAllConfirm();
       pendingDeleteId = id;
       renamingId = null;
       focusAfterRender = { id, sel: ".ai-chat-confirm-actions .ai-cm-btn" };
@@ -3483,17 +3578,104 @@
       if (!nextId) cmSearch.focus();
     }
 
-    function selectChatFromRow(chat) {
+    /* The footer's Delete all: one control for every chat of the open
+     * note, whichever rows the search is showing. */
+    function syncDeleteAll() {
+      const count = currentFileChats().length;
+      cmDeleteAll.hidden = !count;
+      if (count) {
+        const label = deleteAllLabel(count);
+        cmDeleteAll.title = label;
+        cmDeleteAll.setAttribute("aria-label", label);
+      } else {
+        cmDeleteAll.removeAttribute("title");
+        cmDeleteAll.removeAttribute("aria-label");
+      }
+      if (!deleteAllBox) return;
+      /* The count, the query and the open note are what the question is
+       * about: edit it in place, or drop it when the note changed. */
+      if (count && deleteAllBox.dataset.aiCmPath === currentPath()) {
+        const text = deleteAllBox.querySelector(".ai-chat-confirm-text");
+        if (text) text.textContent =
+          deleteAllConfirmText(count, !!searchQuery.trim());
+        return;
+      }
+      const hadFocus = deleteAllBox.contains(document.activeElement);
+      discardDeleteAllConfirm();
+      if (hadFocus) cmSearch.focus();
+    }
+
+    function startDeleteAll() {
+      if (chatLocked() || deleteAllBox) return;
+      const count = currentFileChats().length;
+      if (!count) return;
+      /* One confirm at a time: a pending row delete or rename closes as
+       * the footer asks its own question. */
+      renamingId = null;
+      pendingDeleteId = null;
+      announce("");
+      deleteAllBox = buildDeleteAllConfirm(count);
+      cmDeleteAll.replaceWith(deleteAllBox);
+      renderManagerList();
+      deleteAllBox
+        .querySelector(".ai-chat-confirm-actions .ai-cm-btn").focus();
+    }
+
+    function discardDeleteAllConfirm() {
+      if (!deleteAllBox) return;
+      const box = deleteAllBox;
+      deleteAllBox = null;
+      box.replaceWith(cmDeleteAll);
+      /* The same count deleted twice must announce twice: clear it. */
+      announce("");
+    }
+
+    function cancelDeleteAll() {
+      if (!deleteAllBox) return;
+      discardDeleteAllConfirm();
+      cmDeleteAll.focus();
+    }
+
+    function confirmDeleteAll() {
       if (chatLocked()) return;
+      pendingDeleteId = null;
+      discardDeleteAllConfirm();
+      const removed = deleteChatsForFile(currentPath());
+      if (removed.length) announce(deleteAllAnnouncement(removed.length));
+      cmSearch.focus();
+    }
+
+    /* A chat belongs to one note: activating it from another note opens
+     * that note's tab first, so the viewer and the transcript agree. The
+     * file:open handler picks the note's newest chat, then switchChat
+     * lands the one the user pressed. Unfiled chats have no tab. */
+    async function openChatFile(chat) {
+      if (!chat.file || chat.file === currentPath()) return true;
+      if (!NB.tabs || !NB.tabs.open) return true;
+      try {
+        return (await NB.tabs.open(chat.file)) !== false;
+      } catch (_) {
+        return false;
+      }
+    }
+
+    async function selectChatFromRow(chat) {
+      if (chatLocked()) return;
+      if (!await openChatFile(chat)) return;
       switchChat(chat.id);
       showActiveChat();
       closeManager({ focus: "select" });
     }
 
     /* --- wiring ----------------------------------------------------- */
-    chatSelect.addEventListener("change", () => {
+    chatSelect.addEventListener("change", async () => {
       if (chatLocked() || !chatSelect.value) return;
-      switchChat(chatSelect.value);
+      const chat = findChat(chatSelect.value);
+      if (!chat) return;
+      /* A failed open leaves the picker on the chat that never became
+       * active; put it back on the real one. */
+      if (!await openChatFile(chat)) { refreshChatBar(); return; }
+      switchChat(chat.id);
       showActiveChat();
       chatSelect.focus();
     });
@@ -3514,11 +3696,13 @@
       searchQuery = cmSearch.value;
       cmSearchClear.hidden = !searchQuery;
       renderManagerList();
+      syncDeleteAll();
     });
     cmSearchClear.addEventListener("click", () => {
       setSearch("");
       cmSearch.focus();
     });
+    cmDeleteAll.addEventListener("click", () => startDeleteAll());
     manager.addEventListener("keydown", (ev) => {
       if (ev.key !== "Escape") return;
       if (ev.target === cmSearch && cmSearch.value) {
@@ -3526,7 +3710,7 @@
         setSearch("");
         return;
       }
-      if (renamingId || pendingDeleteId) return;   // handled in place
+      if (renamingId || pendingDeleteId || deleteAllBox) return;  // handled in place
       ev.preventDefault();
       closeManager();
     });

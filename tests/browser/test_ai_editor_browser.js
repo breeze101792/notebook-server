@@ -475,6 +475,399 @@ async function main() {
         return sel.value === "stubai";
       }));
 
+    /* ---- chat manager: Delete all chats ---------------------------- *
+     * A fresh context has an empty chat store, so the open note has no
+     * chats: the footer control is hidden. Two footer New chats give it a
+     * count, Cancel keeps them, and Delete all empties the store. */
+    section("ai chat manager · delete all");
+    const deleteAllState = () => page.evaluate(() => {
+      const raw = localStorage.getItem("nb:aiChats");
+      let store = null;
+      try { store = raw ? JSON.parse(raw) : null; } catch (_) { store = null; }
+      const btn = document.querySelector('[data-test-chat-delete-all]');
+      const empty = document.querySelector(".ai-cm-list .ai-empty-title");
+      return {
+        chats: store && Array.isArray(store.chats) ? store.chats.length : 0,
+        stored: raw !== null,
+        hidden: btn ? btn.hidden : null,
+        label: btn ? btn.getAttribute("aria-label") : null,
+        buttonText: btn ? btn.textContent.trim() : null,
+        storage: document.querySelector("[data-test-chat-storage]").textContent,
+        emptyTitle: empty ? empty.textContent : null,
+        status: document.querySelector(".ai-cm-status").textContent,
+        activeId: document.activeElement ? document.activeElement.id : "",
+        activeText: document.activeElement
+          ? document.activeElement.textContent.trim() : "",
+      };
+    });
+
+    await page.click('[data-test-chat-manage]');
+    await page.waitForSelector('[data-test-chat-manager]', { state: "visible" });
+    let cmState = await deleteAllState();
+    check("delete all: hidden when the open note has no chats",
+      cmState.hidden === true, JSON.stringify(cmState));
+    check("delete all: the footer reports the empty store",
+      cmState.storage === "0 chats · 0 B of 4 MB", cmState.storage);
+
+    await page.click('[data-test-chat-new-manager]');
+    await page.click('[data-test-chat-manage]');
+    await page.waitForSelector('[data-test-chat-manager]', { state: "visible" });
+    cmState = await deleteAllState();
+    check("delete all: one chat names the control in the singular",
+      cmState.hidden === false && cmState.label ===
+        "Delete all 1 chat for this note" &&
+        cmState.buttonText === "Delete all chats",
+      JSON.stringify(cmState));
+
+    await page.click('[data-test-chat-new-manager]');
+    await page.click('[data-test-chat-manage]');
+    await page.waitForSelector('[data-test-chat-manager]', { state: "visible" });
+    cmState = await deleteAllState();
+    check("delete all: two chats name the control with the count",
+      cmState.chats === 2 && cmState.label ===
+        "Delete all 2 chats for this note",
+      JSON.stringify(cmState));
+
+    /* A query narrows the rows, never the scope: the confirm says so and
+     * Esc walks away from it. */
+    await page.fill('[data-test-chat-search]', "no-such-chat");
+    await page.click('[data-test-chat-delete-all]');
+    await page.waitForSelector('[data-test-chat-delete-all-confirm]',
+      { state: "visible" });
+    check("delete all: a search does not narrow the scope, and says so",
+      await page.evaluate(() => {
+        const box = document.querySelector('[data-test-chat-delete-all-confirm]');
+        return document.querySelectorAll(".ai-chat-row").length === 0 &&
+          box.querySelector(".ai-chat-confirm-text").textContent ===
+            "Delete all 2 chats for this note? This cannot be undone. " +
+            "This includes chats hidden by the search.";
+      }));
+    await page.press('[data-test-chat-delete-all-confirm] .ai-cm-btn', "Escape");
+    cmState = await deleteAllState();
+    check("delete all: Esc cancels the confirm and keeps the chats",
+      cmState.chats === 2 && cmState.stored &&
+        !(await page.evaluate(() =>
+          !!document.querySelector('[data-test-chat-delete-all-confirm]'))));
+    check("delete all: Esc returns focus to the button",
+      await page.evaluate(() => document.activeElement ===
+        document.querySelector('[data-test-chat-delete-all]')));
+    await page.fill('[data-test-chat-search]', "");
+
+    await page.click('[data-test-chat-delete-all]');
+    await page.waitForSelector('[data-test-chat-delete-all-confirm]',
+      { state: "visible" });
+    check("delete all: the confirm states the scope and its cost",
+      await page.evaluate(() => {
+        const box = document.querySelector('[data-test-chat-delete-all-confirm]');
+        return box.getAttribute("role") === "group" &&
+          box.getAttribute("aria-label") === "Confirm delete all chats" &&
+          box.querySelector(".ai-chat-confirm-text").textContent ===
+            "Delete all 2 chats for this note? This cannot be undone.";
+      }));
+    cmState = await deleteAllState();
+    check("delete all: the confirm focuses Cancel",
+      cmState.activeText === "Cancel", JSON.stringify(cmState));
+
+    /* The confirm's clause tracks the query while the box stays open. */
+    await page.fill('[data-test-chat-search]', "Second");
+    check("delete all: the search clause appears while the confirm is open",
+      await page.evaluate(() => document.querySelector(
+        '[data-test-chat-delete-all-confirm] .ai-chat-confirm-text')
+        .textContent ===
+          "Delete all 2 chats for this note? This cannot be undone. " +
+          "This includes chats hidden by the search."));
+    await page.fill('[data-test-chat-search]', "");
+    check("delete all: the clause leaves with the cleared query",
+      await page.evaluate(() => document.querySelector(
+        '[data-test-chat-delete-all-confirm] .ai-chat-confirm-text')
+        .textContent ===
+          "Delete all 2 chats for this note? This cannot be undone."));
+
+    await page.click('[data-test-chat-delete-all-confirm] .ai-cm-btn:not(.danger)');
+    cmState = await deleteAllState();
+    check("delete all: Cancel keeps both chats",
+      cmState.chats === 2 && cmState.stored, JSON.stringify(cmState));
+    check("delete all: Cancel returns focus to the button",
+      await page.evaluate(() => document.activeElement ===
+        document.querySelector('[data-test-chat-delete-all]')));
+
+    await page.click('[data-test-chat-delete-all]');
+    await page.waitForSelector('[data-test-chat-delete-all-confirm]',
+      { state: "visible" });
+    await page.click('[data-test-chat-delete-all-confirm] .ai-cm-btn.danger');
+    await page.waitForFunction(() => !localStorage.getItem("nb:aiChats"),
+      null, { timeout: 10000 });
+    cmState = await deleteAllState();
+    check("delete all: confirming empties the store",
+      cmState.chats === 0 && !cmState.stored, JSON.stringify(cmState));
+    check("delete all: the manager falls back to its empty state",
+      cmState.emptyTitle === "No chats yet.", cmState.emptyTitle);
+    check("delete all: the storage line reads zero",
+      cmState.storage === "0 chats · 0 B of 4 MB", cmState.storage);
+    check("delete all: the live region announces the delete",
+      cmState.status === "Deleted all 2 chats for this note.", cmState.status);
+    check("delete all: focus moves to the search field",
+      cmState.activeId === "ai-cm-search", cmState.activeId);
+    check("delete all: the control hides again with no chats",
+      cmState.hidden === true, String(cmState.hidden));
+
+    await page.click('[data-test-chat-close]');
+    await page.waitForSelector('[data-test-chat-bar]', { state: "visible" });
+
+    /* ---- scope and the active chat, from a seeded store ------------- *
+     * Two chats for a.md (one active), one for b.md and one Unfiled. The
+     * seed goes through the real loader, so this is the shipped restore
+     * path; the footer control must only take a.md's two. */
+    await page.evaluate(() => {
+      const now = Date.now();
+      const rec = (id, file, title, ago) => ({
+        id, file, title, custom: true,
+        createdAt: now - ago, updatedAt: now - ago,
+        conversation: [], toolFlags: [], lastPrompt: "",
+      });
+      localStorage.setItem("nb:aiChats", JSON.stringify({
+        v: 1,
+        activeId: "a2",
+        chats: [
+          rec("a2", "a.md", "Second A chat", 1000),
+          rec("a3", "a.md", "Third A chat", 1500),
+          rec("a1", "a.md", "First A chat", 2000),
+          rec("b2", "b.md", "B chat newer", 3000),
+          rec("b1", "b.md", "B chat", 4000),
+          rec("u1", "", "Unfiled chat", 5000),
+        ],
+      }));
+    });
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await waitApp(page);
+    if (!(await page.isVisible("#ai-input"))) {
+      await page.click('.activity-btn[data-view="ai"]');
+    }
+    await page.waitForSelector("#ai-input", { state: "visible", timeout: 10000 });
+    await page.waitForFunction(() => {
+      const sel = document.getElementById("ai-model-select");
+      return !!(sel && sel.querySelector('option[value="stubai"]'));
+    }, null, { timeout: 10000 });
+    check("delete all: the seeded store restores the active chat",
+      await page.evaluate(() =>
+        document.querySelector(".ai-chat-pick").value === "a2"));
+
+    await page.click('[data-test-chat-manage]');
+    await page.waitForSelector('[data-test-chat-manager]', { state: "visible" });
+    cmState = await deleteAllState();
+    check("delete all: the label counts the open note, not the store",
+      cmState.chats === 6 && cmState.label ===
+        "Delete all 3 chats for this note", JSON.stringify(cmState));
+
+    /* The question names one note: another note opening drops it. */
+    await page.click('[data-test-chat-delete-all]');
+    await page.waitForSelector('[data-test-chat-delete-all-confirm]',
+      { state: "visible" });
+    await page.evaluate(() => window.NB.tabs.open("b.md"));
+    await page.waitForFunction(
+      () => window.NB.viewer.getPath() === "b.md", null, { timeout: 10000 });
+    await page.waitForFunction(() => !document.querySelector(
+      "[data-test-chat-delete-all-confirm]"), null, { timeout: 10000 });
+    check("delete all: another note opening drops the open confirm",
+      await page.evaluate(() => document.querySelector(
+        "[data-test-chat-delete-all]").getAttribute("aria-label") ===
+        "Delete all 2 chats for this note"));
+    await page.evaluate(() => window.NB.tabs.open("a.md"));
+    await page.waitForFunction(
+      () => window.NB.viewer.getPath() === "a.md", null, { timeout: 10000 });
+    await page.waitForFunction(() => document.querySelector(
+      "[data-test-chat-delete-all]").getAttribute("aria-label") ===
+      "Delete all 3 chats for this note", null, { timeout: 10000 });
+
+    /* ---- switching chats opens the chat's note --------------------- *
+     * Both the picker and a manager row cross files now: the note's tab
+     * opens first, and the pressed chat stays the active one. */
+    await page.waitForFunction(() =>
+      document.querySelector(".ai-chat-pick").value === "a2",
+      null, { timeout: 10000 });
+    await page.click(
+      '[data-test-chat-row][data-chat-id="b1"] [data-test-chat-open]');
+    await page.waitForFunction(() => window.NB.tabs.getActive() === "b.md",
+      null, { timeout: 10000 });
+    check("switch: a row for another note opens that note's tab",
+      await page.evaluate(() => window.NB.tabs.getOpen().includes("b.md")));
+    check("switch: the pressed chat wins over the note's newest",
+      await page.evaluate(() =>
+        document.querySelector(".ai-chat-pick").value === "b1"));
+    check("switch: the manager closes on the row press",
+      await page.evaluate(() =>
+        document.getElementById("ai-chat-manager").hidden === true));
+
+    await page.evaluate(() => window.NB.tabs.open("a.md"));
+    await page.waitForFunction(() => window.NB.tabs.getActive() === "a.md",
+      null, { timeout: 10000 });
+    await page.waitForFunction(() =>
+      document.querySelector(".ai-chat-pick").value === "a2",
+      null, { timeout: 10000 });
+
+    await page.evaluate(() => {
+      const sel = document.querySelector(".ai-chat-pick");
+      sel.value = "b1";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.waitForFunction(() => window.NB.tabs.getActive() === "b.md",
+      null, { timeout: 10000 });
+    check("switch: the select opens the note of the picked chat",
+      await page.evaluate(() => window.NB.tabs.getOpen().includes("b.md")));
+    check("switch: the picked chat becomes active",
+      await page.evaluate(() =>
+        document.querySelector(".ai-chat-pick").value === "b1"));
+
+    await page.evaluate(() => {
+      const sel = document.querySelector(".ai-chat-pick");
+      sel.value = "u1";
+      sel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.waitForFunction(() =>
+      document.querySelector(".ai-chat-pick").value === "u1",
+      null, { timeout: 10000 });
+    check("switch: an Unfiled chat leaves the active tab alone",
+      await page.evaluate(() => window.NB.tabs.getActive() === "b.md"));
+
+    /* A refused open (the session cap) changes nothing. */
+    await page.evaluate(() => {
+      window.__aiTabsOpen = window.NB.tabs.open;
+      window.NB.tabs.open = () => false;
+    });
+    try {
+      await page.evaluate(() => {
+        const sel = document.querySelector(".ai-chat-pick");
+        sel.value = "a2";
+        sel.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await page.waitForTimeout(200);
+      check("switch: a refused open keeps the active tab",
+        await page.evaluate(() => window.NB.tabs.getActive() === "b.md"));
+      check("switch: a refused open puts the picker back",
+        await page.evaluate(() =>
+          document.querySelector(".ai-chat-pick").value === "u1"));
+
+      await page.click('[data-test-chat-manage]');
+      await page.waitForSelector('[data-test-chat-manager]',
+        { state: "visible" });
+      await page.click(
+        '[data-test-chat-row][data-chat-id="a2"] [data-test-chat-open]');
+      await page.waitForTimeout(200);
+      check("switch: a refused row press keeps the active chat",
+        await page.evaluate(() => {
+          const cur = document.querySelector(
+            '.ai-chat-row[aria-current="true"]');
+          return !!cur && cur.dataset.chatId === "u1" &&
+            window.NB.tabs.getActive() === "b.md";
+        }));
+      check("switch: a refused row press keeps the manager open",
+        await page.evaluate(() =>
+          document.getElementById("ai-chat-manager").hidden === false));
+    } finally {
+      await page.evaluate(() => {
+        window.NB.tabs.open = window.__aiTabsOpen;
+        delete window.__aiTabsOpen;
+      });
+    }
+
+    /* Back to the state the delete-all checks expect: a.md open, a2 active. */
+    await page.click('[data-test-chat-close]');
+    await page.evaluate(() => window.NB.tabs.open("a.md"));
+    await page.waitForFunction(() => window.NB.tabs.getActive() === "a.md",
+      null, { timeout: 10000 });
+    await page.waitForFunction(() =>
+      document.querySelector(".ai-chat-pick").value === "a2",
+      null, { timeout: 10000 });
+    await page.click('[data-test-chat-manage]');
+    await page.waitForSelector('[data-test-chat-manager]', { state: "visible" });
+
+    /* A row confirm and the footer confirm exclude each other. */
+    await page.click(
+      '[data-test-chat-row][data-chat-id="a2"] [data-test-chat-delete]');
+    check("delete all: the row confirm opens first",
+      await page.evaluate(() =>
+        !!document.querySelector("[data-test-chat-confirm]")));
+    await page.click('[data-test-chat-delete-all]');
+    check("delete all: the footer confirm replaces the row confirm",
+      await page.evaluate(() => {
+        const row = document.querySelectorAll("[data-test-chat-confirm]");
+        const all = document.querySelectorAll(
+          "[data-test-chat-confirm], [data-test-chat-delete-all-confirm]");
+        return row.length === 0 && all.length === 1 &&
+          !!document.querySelector('[data-test-chat-delete-all-confirm]');
+      }));
+    await page.press('[data-test-chat-delete-all-confirm] .ai-cm-btn', "Escape");
+    check("delete all: one Escape cancels the footer confirm",
+      await page.evaluate(() => !document.querySelector(
+        "[data-test-chat-confirm]") &&
+        document.getElementById("ai-chat-manager").hidden === false));
+    await page.press('[data-test-chat-delete-all]', "Escape");
+    check("delete all: the next Escape still closes the manager",
+      await page.evaluate(() =>
+        document.getElementById("ai-chat-manager").hidden === true));
+
+    await page.click('[data-test-chat-manage]');
+    await page.waitForSelector('[data-test-chat-manager]', { state: "visible" });
+    await page.click('[data-test-chat-delete-all]');
+    await page.waitForSelector('[data-test-chat-delete-all-confirm]',
+      { state: "visible" });
+    await page.click('[data-test-chat-delete-all-confirm] .ai-cm-btn.danger');
+    await page.waitForFunction(() => {
+      const raw = localStorage.getItem("nb:aiChats");
+      if (!raw) return false;
+      return (JSON.parse(raw).chats || []).length === 3;
+    }, null, { timeout: 10000 });
+    check("delete all: chats for other files and Unfiled survive",
+      await page.evaluate(() => {
+        const s = JSON.parse(localStorage.getItem("nb:aiChats"));
+        const files = s.chats.map((c) => c.file).sort();
+        return files.length === 3 && files[0] === "" &&
+          files[1] === "b.md" && files[2] === "b.md" &&
+          !s.chats.some((c) => c.file === "a.md");
+      }));
+    cmState = await deleteAllState();
+    check("delete all: the live region announces the open note's count",
+      cmState.status === "Deleted all 3 chats for this note.", cmState.status);
+    check("delete all: the surviving groups keep the manager list non-empty",
+      await page.evaluate(() => {
+        const list = document.querySelector(".ai-cm-list");
+        return !!list && !list.querySelector(".ai-empty") &&
+          list.textContent.includes("B chat");
+      }));
+    check("delete all: the footer control hides now the note has no chats",
+      cmState.hidden === true, String(cmState.hidden));
+
+    await page.click('[data-test-chat-close]');
+    await page.waitForSelector('[data-test-chat-bar]', { state: "visible" });
+    check("delete all: the bar falls back to No chat yet",
+      await page.evaluate(() => {
+        const sel = document.querySelector(".ai-chat-pick");
+        return !sel.disabled && sel.options.length === 1 &&
+          sel.options[0].textContent === "No chat yet";
+      }));
+    check("delete all: the log shows its no-chat state",
+      await page.evaluate(() => {
+        const t = document.querySelector("#ai-chat-log .ai-empty-title");
+        return !!t && t.textContent === "No chat for this file.";
+      }));
+
+    /* No file open: no scope, so the control is not offered. */
+    await page.evaluate(() =>
+      window.NB.tabs.getOpen().slice().forEach((p) =>
+        window.NB.tabs.close(p, { force: true })));
+    await page.waitForFunction(() => !window.NB.viewer.getPath(),
+      null, { timeout: 10000 });
+    await page.click('[data-test-chat-manage]');
+    await page.waitForSelector('[data-test-chat-manager]', { state: "visible" });
+    check("delete all: hidden with no file open",
+      (await deleteAllState()).hidden === true);
+    await page.click('[data-test-chat-close]');
+    await page.waitForSelector('[data-test-chat-bar]', { state: "visible" });
+    await page.evaluate(() => window.NB.tabs.open("a.md"));
+    await page.waitForFunction(() => window.NB.viewer.getPath() === "a.md",
+      null, { timeout: 10000 });
+    await page.waitForSelector('[data-test-chat-manage]', { state: "visible" });
+
     const stubBefore = stubRequests.length;
     await sendAi(page, "hello assistant");
     await page.waitForFunction(() => {
