@@ -19288,6 +19288,14 @@ function check(label, cond, extra) {
         source: '<h2 id="x" class="y">T</h2>\n' },
       { name: "an authored sized span",
         source: 'x <span style="font-size:20px">big</span> y\n' },
+      // A soft line break in a paragraph renders as a space, and the
+      // serializer writes it as one. Keying the raw newline read every save
+      // of a wrapped paragraph as a divergence and rebuilt the view (which
+      // threw the caret to the top of the note).
+      { name: "a paragraph wrapped across source lines",
+        source: "This is a long paragraph\nwrapped over two lines.\n" },
+      { name: "a wrapped paragraph with an inline element",
+        source: "Line A\nwith *emphasis* here.\n" },
     ];
     for (const c of EQUAL_SOURCES) {
       const vc = await viewEnter(c.source);

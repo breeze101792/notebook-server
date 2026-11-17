@@ -205,6 +205,14 @@
   // empty list item. It is invisible and meaningless, so the content hash
   // ignores it (and domToMarkdown strips it from the output).
   const ZERO_WIDTH_SPACE = "\u200B";
+  // Collapsible whitespace in HTML: a browser renders any run of these as
+  // one space. A Markdown paragraph wrapped across source lines carries a
+  // newline in its text node, while the serializer writes that break as a
+  // space, so the change hash and the saved-render check must key both
+  // forms alike. \u00A0 (non-breaking space) is NOT collapsible and is
+  // never matched here. Code blocks keep their whitespace (see
+  // canonicalSubtree's preserve flag).
+  const COLLAPSIBLE_SPACE_RE = /[ \t\n\r\f]+/g;
   // Void/embedded content that makes an otherwise empty element real: an
   // image, rule, checkbox, canvas, svg, iframe, or embedded media. Shared
   // by the empty-block, empty-cell, and list-merge checks so they cannot
@@ -1548,6 +1556,11 @@
    *     token spans keys exactly like the plain text it unwraps to.
    *   - The zero-width-space placeholder addListPlaceholders injects into
    *     empty list items is ignored: it is invisible and meaningless.
+   *   - Collapsible whitespace outside a <pre> is keyed as one space, the
+   *     way the browser renders it. A paragraph wrapped across source
+   *     lines holds a newline in its text node, but the serializer writes
+   *     that soft break as a space; keying the raw bytes would report every
+   *     save of a wrapped paragraph as a divergence and rebuild the view.
    *
    * This is a cheap deterministic walk, NOT a serialization comparison:
    * comparing emitted markdown would see every `*` bullet and setext
@@ -1557,14 +1570,24 @@
   function canonicalSubtree(root) {
     let out = "";
     let text = "";
+    let textPreserveSpace = false;
     const flush = () => {
       if (!text) return;
-      out += "\u0001t" + text;
+      // A soft line break in a paragraph and the space the serializer
+      // writes for it render identically; key them identically too, or
+      // every save of a wrapped paragraph reads as a divergence. The run
+      // is collapsed as a whole so a break that spans two adjacent text
+      // nodes (around an inline element) still keys as one space.
+      const value = textPreserveSpace
+        ? text
+        : text.replace(COLLAPSIBLE_SPACE_RE, " ");
+      out += "\u0001t" + value;
       text = "";
     };
-    (function walk(node, parent) {
+    (function walk(node, parent, preserveSpace) {
       if (node.nodeType === Node.TEXT_NODE) {
         if (isLayoutSpace(node, parent)) return;
+        textPreserveSpace = preserveSpace;
         text += node.nodeValue.split(ZERO_WIDTH_SPACE).join("");
         return;
       }
@@ -1577,7 +1600,7 @@
       const chrome = chromeNodeKind(node);
       if (chrome === CHROME_REMOVE) return;
       if (chrome === CHROME_UNWRAP) {
-        for (const child of node.childNodes) walk(child, node);
+        for (const child of node.childNodes) walk(child, node, preserveSpace);
         return;
       }
       flush();
@@ -1621,10 +1644,11 @@
       if (node.tagName === "INPUT") {
         out += " checked=" + (node.checked ? "1" : "0");
       }
-      for (const child of node.childNodes) walk(child, node);
+      const keepSpace = preserveSpace || node.tagName === "PRE";
+      for (const child of node.childNodes) walk(child, node, keepSpace);
       flush();
       out += ">";
-    })(root, null);
+    })(root, null, false);
     flush();
     return out;
   }

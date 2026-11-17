@@ -1451,6 +1451,14 @@ check runs often and the rebuild runs only on a defect.
   `CHROME_CLASS_TOKENS` (the gesture classes). Both consumers read the same
   constants, so the serializer, the hash, and the comparison cannot disagree
   about what chrome is.
+- **Collapsible whitespace is one space outside a `<pre>`.** A paragraph wrapped
+  across source lines holds a newline in its text node, but the browser renders
+  it as a space and the serializer writes it as one. `canonicalSubtree` collapses
+  every run of space, tab, newline, CR, and form feed in a text run to a single
+  space, so the change hash and both signature sides key the wrapped and the
+  written form alike; `\u00A0` is not collapsible and is kept. Without this, every
+  save of a wrapped paragraph read as a divergence, rebuilt the view, and threw
+  the caret to the top of the note. A `<pre>` subtree keeps its whitespace.
 - Only elements are compared, in order, and the count must match. Root-level
   text/comment nodes stay covered by `rootAuxCount`; blank-line runs are not
   representable in the DOM and are not compared — the written `md` is their

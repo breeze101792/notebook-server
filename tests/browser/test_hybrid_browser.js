@@ -685,6 +685,52 @@ async function main() {
       fs.rmSync(togglePath, { force: true });
     }
 
+    // --- autosave keeps the caret in a wrapped paragraph --------------
+    // A soft line break in the source renders as a space, and the
+    // serializer writes it as a space. The saved-render check used to key
+    // the raw newline, report a divergence on every save of a wrapped
+    // paragraph, rebuild the view, and drop the caret at the top of the
+    // note. Assert both the caret and the write.
+    const WRAP_NOTE = "notes/wrapped.md";
+    const WRAP_SOURCE =
+      "# Wrapped\n\nThis paragraph is long\nwrapped over two lines.\n\nTail.\n";
+    writeNote(WRAP_NOTE, WRAP_SOURCE);
+    await gotoNote(page, WRAP_NOTE);
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.evaluate(() => {
+      NB.app.setAutosave(true);
+      NB.app.setAutosaveDelay(1);
+    });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(() => NB.hybrid.isActive(), null, { timeout: 8000 });
+    await new Promise((r) => setTimeout(r, 450));
+    await caretInBlock(page, "#viewer-content p", 0);
+    await page.keyboard.press("End");
+    await page.keyboard.type(" Added.");
+    await page.waitForFunction(() => !NB.hybrid.isDirty(), null, { timeout: 15000 });
+    await new Promise((r) => setTimeout(r, 250));
+    const wrapState = await page.evaluate(() => {
+      const sel = window.getSelection();
+      const anchor = sel.anchorNode;
+      const block = anchor && (anchor.nodeType === 3 ? anchor.parentElement : anchor);
+      return {
+        inViewer: !!block &&
+          document.getElementById("viewer-content").contains(block),
+        text: block ? block.textContent : "",
+        active: document.activeElement ? document.activeElement.id : "",
+        toast: (document.querySelector(".toast") || {}).textContent || "",
+      };
+    });
+    check("real browser autosave: a wrapped paragraph keeps the caret in its block",
+      wrapState.active === "viewer-content" && wrapState.inViewer &&
+      /Added\./.test(wrapState.text), JSON.stringify(wrapState));
+    check("real browser autosave: a wrapped paragraph does not rebuild the view",
+      !/rebuilt from the file/.test(wrapState.toast), wrapState.toast);
+    check("real browser autosave: the wrapped paragraph is written",
+      /long wrapped over two lines\. Added\./.test(readNote(WRAP_NOTE)),
+      JSON.stringify(readNote(WRAP_NOTE)));
+    await page.evaluate(() => NB.app.setAutosaveDelay(5));
+
     // Back to the shared fixture for the sections below.
     await gotoNote(page, NOTE);
     await page.waitForSelector("#viewer-content h2", { timeout: 15000 });
