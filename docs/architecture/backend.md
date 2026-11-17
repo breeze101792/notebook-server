@@ -441,9 +441,11 @@ the second built artifact, the Mermaid designer's `visimer.bundle.js`.
 These two are the served files that are not directly editable.
 
 **Mermaid copy.** `static/vendor/mermaid.min.js` is byte-identical to
-`node_modules/mermaid/dist/mermaid.min.js`. Updating it means copying the
-package file, then updating the version strings in `ai.js` and `agent.md`
-in the same change.
+`node_modules/mermaid/dist/mermaid.min.js` (Mermaid 12.3.0). Updating it means
+copying the package file, then updating the version strings in `ai.js`,
+`agent.md`, and the marker in `tests/test_app.py` in the same change, and
+re-checking that `mermaidConfig()` in `mermaid.js` still names the flowchart
+layout explicitly.
 
 **Un-sanitized Markdown.** Notebooks are the user's own files, so
 `viewer.js` renders them un-sanitized. The one untrusted render path is the

@@ -398,6 +398,29 @@ async function main() {
     check("note: the viewer still renders its ```wavedrom fence",
       noteWave.cards === 1 && noteWave.raw === 0, JSON.stringify(noteWave));
 
+    // Guard the layout pin: mermaidConfig() pins ELK per diagram type
+    // (flowchart only). A global pin would override mindmap's own layout
+    // and make mermaid.render reject.
+    const mindmap = await page.evaluate(async () => {
+      const root = document.createElement("div");
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.className = "language-mermaid";
+      code.textContent = "mindmap\n  root((SoC))\n    CPU\n    GPU\n";
+      pre.appendChild(code);
+      root.appendChild(pre);
+      document.body.appendChild(root);
+      await window.NB.mermaid.renderAll(root);
+      const out = {
+        rendered: !!root.querySelector(".mermaid-container"),
+        errored: !!root.querySelector(".mermaid-error"),
+      };
+      root.remove();
+      return out;
+    });
+    check("note: a ```mermaid mindmap fence still renders under the pinned config",
+      mindmap.rendered && !mindmap.errored, JSON.stringify(mindmap));
+
     section("ai panel: one reply carrying all six fences");
     await page.click('.activity-btn[data-view="ai"]');
     await page.waitForSelector("#ai-input", { state: "visible", timeout: 10000 });

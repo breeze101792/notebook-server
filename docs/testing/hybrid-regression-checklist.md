@@ -275,7 +275,7 @@ is given once per area. The authority for "expected" is the linked spec.
 | --- | --- | --- | --- |
 | O1 | Every renderer module is loaded and precached | `index.html` + `sw.js` | `AUTO-js` `blocks completeness: <mod>.js is in index.html`, `... in sw.js PRECACHE`, both from the registry-completeness guard |
 | O2 | Every fence name is documented in `ai.js` and `agent.md` | Both files | `AUTO-js` `blocks completeness: <fence> is documented for the AI`, `... documented in agent.md` |
-| O3 | Fixed vendored versions and html-live limits are in `agent.md` | Mermaid 11.16, WaveDrom 3.3, KaTeX 0.16, Graphviz 2.40.1, sandbox limits | `AUTO` backend `TestAgentGuide` marker checks; **the matching version strings in `ai.js` are not asserted — GAP** |
+| O3 | Fixed vendored versions and html-live limits are in `agent.md` | Mermaid 12.3, WaveDrom 3.3, KaTeX 0.16, Graphviz 2.40.1, sandbox limits | `AUTO` backend `TestAgentGuide` marker checks; **the matching version strings in `ai.js` are not asserted — GAP** |
 
 ## 5. Coverage map summary
 

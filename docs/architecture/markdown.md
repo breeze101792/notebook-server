@@ -242,7 +242,7 @@ works. The renderers are modules that register a descriptor with
 `NB.blocks` (`register()` in `static/js/blocks.js`). Registration order
 is render order.
 
-### `mermaid` — Mermaid 11.16
+### `mermaid` — Mermaid 12.3
 
 Flowcharts, sequence diagrams, class diagrams, state diagrams, ER diagrams,
 gantt charts, and the other Mermaid diagram types.
@@ -263,7 +263,7 @@ full-size lightbox (`mermaid.js` `renderOne()`). A syntax error replaces the blo
 with an in-place `.mermaid-error` box and raises a toast
 (`mermaid.js` `renderOne()`). Rendering is asynchronous; the original fence stays in
 the note, and the rendered container keeps the source in a dataset for the
-hybrid round-trip (`mermaid.js` `renderOne()`). The ~3.5 MB bundle is fetched on
+hybrid round-trip (`mermaid.js` `renderOne()`). The ~5.3 MB bundle is fetched on
 demand, only when a note contains a mermaid block (`mermaid.js` `ensureInitialized()`
 lazy-load gate).
 

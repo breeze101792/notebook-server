@@ -263,7 +263,7 @@ use only syntax that version supports:
 
 | Fence | Renders as |
 | --- | --- |
-| ```` ```mermaid ```` | Mermaid **11.16** diagram (flowchart, sequence, class, state, ER, gantt, …). Rendered with `securityLevel:"strict"` — interactive click/link directives are disabled. |
+| ```` ```mermaid ```` | Mermaid **12.3** diagram (flowchart, sequence, class, state, ER, gantt, …). Rendered with `securityLevel:"strict"` — interactive click/link directives are disabled. |
 | ```` ```wavedrom ```` | WaveDrom **3.3** digital timing / waveform diagram. The body is WaveDrom JSON; unquoted keys are allowed (e.g. `{signal:[{name:'clk',wave:'p...'}]}`), unlike strict JSON. |
 | ```` ```math ```` / ```` ```katex ```` | KaTeX **0.16** LaTeX equation, rendered in display mode. Only KaTeX-supported LaTeX commands work (no full TeX macros). |
 | ```` ```dot ```` / ```` ```graphviz ```` | Graphviz **2.40.1** (Viz.js 2.1.2). Older Graphviz — avoid syntax newer than 2.40. |

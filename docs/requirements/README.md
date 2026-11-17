@@ -75,7 +75,7 @@ linked documents for detail.
 - Markdown via vendored `marked.js` (GFM mode) with `highlight.js` syntax
   highlighting.
 - Six special fenced renderers, registered through the `NB.blocks` registry:
-  Mermaid 11.16 (`securityLevel: strict`), WaveDrom 3.3, KaTeX 0.16
+  Mermaid 12.3 (`securityLevel: strict`), WaveDrom 3.3, KaTeX 0.16
   (`math` / `katex`), Graphviz 2.40.1 / Viz.js 2.1.2 (`dot` / `graphviz`), a
   sandboxed `html-live` iframe, and inline `svg`. Details and versions in
   [markdown](../architecture/markdown.md).

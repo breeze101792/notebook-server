@@ -205,7 +205,7 @@ scrolling ancestor, so an AI reply fits the chat log and a note fits
 
 | Fence | Library | Notes |
 | --- | --- | --- |
-| ` ```mermaid ` | Mermaid 11.16 | `securityLevel: "strict"` disables interactive click/link directives. |
+| ` ```mermaid ` | Mermaid 12.3 | `securityLevel: "strict"` disables interactive click/link directives. |
 | ` ```wavedrom ` | WaveDrom 3.3 | Body is WaveDrom JSON; unquoted keys are allowed. |
 | ` ```math ` / ` ```katex ` | KaTeX 0.16 | Display mode. Only KaTeX-supported commands. |
 | ` ```dot ` / ` ```graphviz ` | Graphviz 2.40.1 / Viz.js 2.1.2 | Older Graphviz; avoid syntax newer than 2.40. |

@@ -938,7 +938,7 @@
       "When the user just asks a question, answer in prose with no nb-tool blocks.",
       "",
       "MARKDOWN RENDERING — the notebook renders these fenced languages specially. Use them when they make the note clearer. Each engine is a fixed vendored version, so use only syntax that version supports:",
-      "- ```mermaid — Mermaid 11.16 diagram (flowchart / sequence / class / state / ER / gantt). Rendered with securityLevel:strict, so interactive click/link directives are disabled.",
+      "- ```mermaid — Mermaid 12.3 diagram (flowchart / sequence / class / state / ER / gantt). Rendered with securityLevel:strict, so interactive click/link directives are disabled.",
       "- ```wavedrom — WaveDrom 3.3 timing / waveform diagram. The body is WaveDrom JSON: unquoted keys are allowed (e.g. {signal:[{name:'clk',wave:'p...'}]}), unlike strict JSON.",
       "- ```math or ```katex — KaTeX 0.16 LaTeX equation, rendered in display mode. Only KaTeX-supported LaTeX commands work (no full TeX macros).",
       "- ```dot or ```graphviz — Graphviz 2.40.1 (Viz.js 2.1.2). That is an older Graphviz; avoid syntax newer than 2.40.",

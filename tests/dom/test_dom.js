@@ -1670,7 +1670,7 @@ window.Blob = class extends __RealBlob {
   }
 };
 
-// Mermaid stub. We don't ship the 3.5MB UMD bundle into the test
+// Mermaid stub. We don't ship the 5.3MB bundle into the test
 // (jsdom can't load the script tag the page would, and the lib
 // needs a real browser DOM). Instead, install a mock that records
 // the calls and returns predictable SVG. Tests that need to
@@ -4013,8 +4013,8 @@ function check(label, cond, extra) {
 
   console.log("== mermaid ==");
   // The mermaid integration is in static/js/mermaid.js + the
-  // viewer's render() pipeline. The vendored UMD bundle is not
-  // loaded in the test (3.5MB + needs a real browser DOM); the
+  // viewer's render() pipeline. The vendored bundle is not
+  // loaded in the test (5.3MB + needs a real browser DOM); the
   // test relies on the window.mermaid stub installed in the
   // harness. Render the test by opening a tab that contains a
   // mermaid block, and watch the .mermaid-container appear.
@@ -32809,7 +32809,7 @@ function check(label, cond, extra) {
   {
     const sys = aiChatLog[0].messages[0].content;
     check("ai: system prompt names the vendored versions",
-      /Mermaid 11\.16/.test(sys) && /WaveDrom 3\.3/.test(sys) &&
+      /Mermaid 12\.3/.test(sys) && /WaveDrom 3\.3/.test(sys) &&
       /KaTeX 0\.16/.test(sys) && /Graphviz 2\.40/.test(sys),
       "");
     check("ai: system prompt states the html-live sandbox restrictions",
@@ -36526,7 +36526,7 @@ function check(label, cond, extra) {
   }
 
   // --- lazy vendor loading -------------------------------------------
-  // The heavy renderer bundles (mermaid 3.5MB, graphviz 2MB, CodeMirror
+  // The heavy renderer bundles (mermaid 5.3MB, graphviz 2MB, CodeMirror
   // 738KB, KaTeX, WaveDrom) must NOT load at boot: eager parsing used to
   // delay DOMContentLoaded -- and the file tree / first note -- by
   // several seconds on a cold load. They are fetched on demand by

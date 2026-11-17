@@ -1,8 +1,8 @@
 /* mermaid.js -- render Markdown code blocks tagged as mermaid diagrams.
  *
- * Mermaid ships as a 3.5MB UMD bundle (see static/vendor/mermaid.min.js)
- * that exposes window.mermaid. We treat it as a black box: the only
- * functions we call are:
+ * Mermaid ships as a 5.3MB single-file bundle (see
+ * static/vendor/mermaid.min.js) that exposes window.mermaid. We treat it as
+ * a black box: the only functions we call are:
  *
  *   mermaid.initialize({ startOnLoad: false, theme: "default"|"dark", ... })
  *     Configure mermaid's runtime. We disable startOnLoad because we
@@ -30,7 +30,7 @@
   // light mode; "dark" works in dark mode. The user can pin a
   // specific theme later if we ever expose that in Settings; for
   // now we follow body[data-theme] like the rest of the app.
-  // The 3.5MB UMD bundle is fetched on demand (see whenReady) instead of
+  // The 5.3MB bundle is fetched on demand (see whenReady) instead of
   // at boot -- most notes have no diagram, so eagerly parsing it just
   // delays first paint. Kept as a named constant so the path has one owner.
   const VENDOR_SRC = "/static/vendor/mermaid.min.js";
@@ -59,17 +59,23 @@
    * startOnLoad:false is critical (otherwise the lib walks the DOM on load
    * and renders things we don't want), securityLevel:"strict" is the
    * safest default (clicks/links disabled), and fontFamily matches the
-   * app's monospace stack so diagram text reads as part of the notebook. */
+   * app's monospace stack so diagram text reads as part of the notebook.
+   * layout:"elk" is pinned per diagram type (flowchart.layout): ELK is the
+   * v12 default for flowcharts and produces the orthogonal edge routing we
+   * want, and naming it keeps a future upstream default change from
+   * silently redrawing every note. A global layout pin would break mindmap,
+   * whose own default layout is not ELK. */
   function mermaidConfig(theme) {
     return {
       startOnLoad: false,
       theme: theme,
       securityLevel: "strict",
+      flowchart: { layout: "elk" },
       fontFamily: '"SFMono-Regular", Menlo, Consolas, monospace',
     };
   }
 
-  // Pull the vendored UMD bundle on first use. Resolves once
+  // Pull the vendored bundle on first use. Resolves once
   // window.mermaid exists, or after the timeout if the bundle fails to
   // load (the viewer then falls back to showing the block as source).
   // The timeout is independent of the fetch so an unreachable bundle
@@ -123,11 +129,9 @@
     if (!window.mermaid) {
       throw new Error("mermaid bundle not available");
     }
-    // Mermaid v10+ exposes initialize + render. The config object
-    // here is intentionally minimal: startOnLoad:false is critical
-    // (otherwise the lib walks the DOM on load and tries to render
-    // things we don't want), securityLevel:"strict" is the safest
-    // default (clicks/links disabled), and theme is light/dark.
+    // Mermaid v10+ exposes initialize + render. Every setting lives in
+    // mermaidConfig() above; this call must not add keys of its own or the
+    // note renderer and the designer canvas can drift apart.
     initializedFor = theme;
     initPromise = Promise.resolve(window.mermaid.initialize(mermaidConfig(theme)));
     await initPromise;
@@ -274,7 +278,7 @@
   async function renderAll(container) {
     if (!container) return;
     const blocks = container.querySelectorAll("pre > code.language-mermaid");
-    // Nothing to render -> don't pull the 3.5MB bundle. Checking for
+    // Nothing to render -> don't pull the 5.3MB bundle. Checking for
     // blocks before whenReady is what keeps a diagram-free note cheap.
     if (!blocks.length) return;
     await whenReady();

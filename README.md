@@ -74,7 +74,7 @@ outline and by `?file=…&heading=…` deep links.
   state, ER, gantt, pie, journey, mindmap, timeline, gitGraph, …). Click
   an SVG in the viewer to open a lightbox; a diagram with a syntax error
   is marked in place with a toast. Rendering is asynchronous, so the raw
-  Mermaid source stays in your note. Mermaid 11.16, `securityLevel: strict`.
+  Mermaid source stays in your note. Mermaid 12.3, `securityLevel: strict`.
 - **WaveDrom timing diagrams** — a fenced block tagged with the
   ` wavedrom ` language renders as a waveform / timing plot
   (`` ```wavedrom `` + a WaveDrom JSON object). Ideal for digital logic

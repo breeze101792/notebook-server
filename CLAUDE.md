@@ -391,7 +391,7 @@ Design: `docs/ui/hybrid-markdown-debug-pane.md`; mechanism:
 languages are documented for two audiences that must stay in sync with the
 code: the built-in assistant's system prompt in `static/js/ai.js`, and the
 `/agent.md` guide served to external agents. Whenever you change a
-renderer's fence name, its vendored library version (e.g. Mermaid 11.16,
+renderer's fence name, its vendored library version (e.g. Mermaid 12.3,
 WaveDrom 3.3, KaTeX 0.16, Graphviz 2.40.1 / Viz.js 2.1.2), or its
 constraints (version-specific syntax, mermaid's `securityLevel:strict`,
 and — always — the `html-live` sandbox limits: `allow-scripts` without

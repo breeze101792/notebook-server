@@ -52,9 +52,9 @@ Most vendor files are direct, byte-for-byte copies of an upstream distribution
 with no local editing:
 
 - `mermaid.min.js` is **byte-identical** to
-  `node_modules/mermaid/dist/mermaid.min.js` (verified with `cmp`; both are
-  `md5 1dd12fadbfa258c3ac600e9e7f1d6a3d`). The `mermaid` dependency in
-  `package.json` exists to source this copy.
+  `node_modules/mermaid/dist/mermaid.min.js` (Mermaid 12.3.0; verified with
+  `cmp`; both are `md5 8b562310c589df12d2000b5192a7bf7e`). The `mermaid`
+  dependency in `package.json` exists to source this copy.
 - `marked.min.js`, `highlight.min.js` with the `highlight-styles/` pair
   (`github.css`, `github-dark.css`), `purify.min.js` (DOMPurify, the AI-reply
   sanitizer), the `turndown*.js` pair, `paged.polyfill.min.js`,

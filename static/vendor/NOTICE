@@ -52,12 +52,36 @@ those exact versions must reproduce the bundle and its sha256.
 Only the JS bundle is vendored. `@visimer/dom` ships no stylesheet; it
 injects its own <style> element at runtime, so there is no visimer.css.
 
+mermaid
+-------
+Version:  12.3.0
+License:  MIT
+Source:   https://github.com/mermaid-js/mermaid
+File:     static/vendor/mermaid.min.js, copied byte-for-byte from
+          node_modules/mermaid/dist/mermaid.min.js, no local modification.
+  size:    5537838 bytes
+  md5:     8b562310c589df12d2000b5192a7bf7e
+
+package.json carries a caret range for this dependency; the md5 above is the
+record of the copy that actually shipped.
+
+elkjs (embedded inside mermaid.min.js)
+--------------------------------------
+Version:  0.12.1 (a dependency of mermaid 12.3.0; not vendored as its own file)
+License:  EPL-2.0 OR GPL-3.0-or-later; this project takes the EPL-2.0 option
+Source:   https://github.com/kieler/elkjs
+          EPL-2.0 text: https://www.eclipse.org/legal/epl-2.0/
+Notes:    the elkjs source inside the bundle is unmodified, and no file in this
+          repository is derived from it. EPL-2.0 is file-scoped: it covers the
+          elkjs files only, not the code that calls them.
+
 MIT License
 -----------
 
-Both @visimer/core and @visimer/dom ship this identical license text:
+The text below covers the two Visimer packages and mermaid:
 
 Copyright (c) 2026 Inkeep
+Copyright (c) 2014 - 2022 Knut Sveidqvist
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
