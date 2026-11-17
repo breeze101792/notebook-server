@@ -136,6 +136,13 @@ profiles. It selects the folder the agent runs in when the ACP profile does not
 set `cwd`, and the open-note hint; an unknown id is **404**
 `unknown_workspace`. OpenAI-compatible profiles ignore the field.
 
+`messages` may carry `image_url` content parts (`data:image/png|jpeg|webp|gif`,
+base64) on user turns. An ACP profile sends the newest user message that
+carries images to the agent as ACP image content blocks; an agent that cannot
+take them fails that turn. An image that is not one of those four types with a
+base64 payload, whose bytes do not match the declared type, that decodes to
+more than 4 MiB, or that pushes the turn over 12 MiB is **400**.
+
 ### Trust boundary
 
 Adding a workspace grants the server process read and write access to that

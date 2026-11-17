@@ -177,10 +177,12 @@ into the same chat panel and the same provider picker (labelled
 note and your global custom prompt. Unlike an OpenAI-compatible profile, the
 agent runs its **own** tools: the notebook's six-tool contract is not sent to
 it and its Apply/Reject cards are not part of the ACP flow — you see the
-agent's streamed text plus a trace line for each tool it starts. ACP agents
-take no images: while an ACP profile is active the attach button offers text
-files only, and any image in a turn (from paste or drag) is dropped before
-sending.
+agent's streamed text plus a trace line for each tool it starts. ACP turns take
+images like any other provider: the newest user turn's images are sent as ACP
+image content blocks. Only that turn is sent — an older image is text-only on
+the wire, so re-attach it if a later question refers back to it. An agent whose
+model cannot see images answers without them, exactly as a text-only
+OpenAI-compatible model would.
 
 **Using it.** Start the server, open the **✨** assistant panel, pick a profile in
 the provider dropdown, and send a message. The agent runs in the notebook folder;

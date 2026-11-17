@@ -184,15 +184,16 @@ selected provider can be ACP. The panel shows two things the OpenAI state does n
 | Badge | `ACP`, outline pill, `--text-xs` 600, `--accent` text and border, padding `1px --space-2` |
 | Note | One or two lines, `--text-xs`, `--text-muted`, `--lh-snug`, padding `0 --space-3 var(--space-1)` |
 | Copy | "Runs its own tools. Changes are applied outside this panel's review." |
-| Attach | `accept="text/*"`; title and label `Attach text files (ACP agents do not accept images)` / `Attach text files` (`ai.js:2343-2353`) |
+| Attach | No `accept` filter; title and label `Attach files` (`ai.js:2298, 2316-2317`). Images work like any provider. |
 
 The note is not a "Read-only" tag. Settings → AI carries that tag for the *profile*, which
 is hand-edited (`settings.js:1361-1378`); in the chat panel the word would read as "chat is
 read-only", which is false. The panel states the actual consequence — the agent's edits are
 not reviewed here — in visible text, per `controls.md` §2.10.
 
-An image that still arrives through paste or drop is stripped before the request and one
-notice is shown; the notice is an `.ai-error` block (`ai.js:1547-1556`, `:1674-1680`).
+An image attached while ACP is active is sent: only the newest genuine user turn
+keeps its image parts, and older image-bearing messages go out as text
+(`ai.js:1515-1543`). There is no inline "not sent" notice any more.
 
 ### 2.4 No provider, disconnected, viewer
 
@@ -575,7 +576,7 @@ its own, and the attach control is a ghost until hover.
 | `Tab` | DOM order is textarea, attach, send/stop (`ai.js:2378`); from the field Tab reaches attach, then the action |
 
 Today `keydown` sends on bare Enter and does not check composition (`ai.js:2666-2671`),
-and there is no `aria-label` on the textarea (`ai.js:2354-2358`).
+and there is no `aria-label` on the textarea (`ai.js:2318-2323`).
 
 The composer stays enabled while a reply streams so the user can draft the next turn; only
 Send is replaced by Stop and attach/select are disabled.
@@ -656,7 +657,7 @@ row does not reflow when the turn ends.
 | Pending card | patch/write awaits a decision | normal | enabled | card with Apply/Reject; Regenerate/Edit disabled | enabled |
 | Applying | Apply or Create pressed | normal | enabled | card busy, both actions disabled | enabled |
 | Applied / errored / rejected | resolution | normal | enabled | status row, actions gone | enabled |
-| ACP active | selected provider is ACP | normal | ACP pill + note; attach text-only | traces; prose | normal, text-only attach |
+| ACP active | selected provider is ACP | normal | ACP pill + note | traces; prose | normal, image-capable attach |
 | Very long | many turns | normal | normal | scrolls; jump control while above the bottom | docked |
 | 140 px | panel at the floor | title ellipsized | value clipped, `title` | wraps; diff scrolls | composer keeps one action row |
 | Phone | drawer | 52, title + Clear + × | 44 high, 16 px | 16 px prose | 16 px field, 44 targets |
@@ -685,13 +686,11 @@ verbatim; "New" or "Changed" is a decision of this pass.
 | `The AI assistant is available to the admin only.` | new | §2.4 |
 | `ACP` (badge) | new | §2.3 |
 | `Runs its own tools. Changes are applied outside this panel's review.` | new | §2.3 |
-| `Attach files` (label + title) | shipped | `ai.js:2327-2328` |
-| `Attach text files (ACP agents do not accept images)` (title) | shipped | `ai.js:2346` |
-| `Attach text files` (aria-label) | shipped | `ai.js:2347` |
-| `Send message` (aria-label) | shipped | `ai.js:2363` |
-| `Send (Enter)` (title) | shipped | `ai.js:2362` |
-| `Stop generating` (label + title) | shipped | `ai.js:2372-2373` |
-| `Ask the AI to write or edit notes; it can list and read files…` | shipped | `ai.js:2358` |
+| `Attach files` (label + title) | shipped | `ai.js:2298, 2316-2317` |
+| `Send message` (aria-label) | shipped | `ai.js:2328` |
+| `Send (Enter)` (title) | shipped | `ai.js:2327` |
+| `Stop generating` (label + title) | shipped | `ai.js:2337-2338` |
+| `Ask the AI to write or edit notes; it can list and read files…` | shipped | `ai.js:2323` |
 | `Message` (aria-label) | new | §5.2 |
 | `Message composer` (form aria-label) | new | §8.1 |
 | `Remove <name>` (chip remove) | shipped | `ai.js:2464` |
@@ -711,17 +710,16 @@ verbatim; "New" or "Changed" is a decision of this pass.
 | `Conversation` (log aria-label) | new | §8.1 |
 | `Your message` / `Assistant reply` (turn group aria-label) | new | §8.1 |
 | `Stopped` | new | §3.5 |
-| `AI request failed: <message>` | shipped (label split for styling) | `ai.js:1748` |
+| `AI request failed: <message>` | shipped (label split for styling) | `ai.js:1718` |
 | `Retry` (turn control, error state) | new label; same action | §3.6 |
 | `Retry the last request` (title) | new | §3.6 |
-| `Regenerate` | shipped | `ai.js:1626` |
-| `Re-run the model on your last question` (title) | shipped | `ai.js:1627` |
-| `Edit` | shipped | `ai.js:1644` |
+| `Regenerate` | shipped | `ai.js:1608` |
+| `Re-run the model on your last question` (title) | shipped | `ai.js:1609` |
+| `Edit` | shipped | `ai.js:1626` |
 | `Edit your last question and resend` (title) | shipped | `ai.js:72` |
 | `Clear the draft and attachments first` (Edit title while blocked) | shipped | `ai.js:73` |
-| `This model rejected the image(s). The selected model may not support image input — switch to a vision model and retry.` | shipped | `ai.js:1758-1760` |
-| `ACP agents do not accept image attachments — the image was not sent.` / `… n images were not sent.` | shipped | `ai.js:1552-1553` |
-| `Message too large to send (<size>, limit 12 MB); remove attachments or Clear the conversation.` | shipped | `ai.js:1509-1511` |
+| `This model rejected the image(s). The selected model may not support image input — switch to a vision model and retry.` | shipped; OpenAI profiles only, never an ACP profile | `ai.js:1725-1732` |
+| `Message too large to send (<size>, limit 12 MB); remove attachments or Clear the conversation.` | shipped | `ai.js:1505-1507` |
 
 ### 7.3 Tool trace and cards
 
@@ -1699,7 +1697,7 @@ deleted:
 | **AC2** | Clear is disabled with an empty conversation and no chips, and enabled after the first turn or attachment | `ai.js` | With no turns and no chips `.ai-clear.disabled === true`; after a send or a chip it is false; clicking clears conversation, log, chips and stored history (`tests/dom/test_dom.js:30969-30976`) |
 | **AC3** | The provider control is a labelled, focusable 36 px select | `ai.js`, `style.css` | `aria-label="Model and provider"`; height 36; a visible 2 px ring; disabled for the whole turn |
 | **AC4** | No provider, fetch failure and viewer are three distinct states | `ai.js` | Three different strings; composer disabled in all three; the fetch failure offers Retry |
-| **AC5** | ACP shows its badge and consequence note, and text-only attachment affordance | `ai.js` | `.ai-acp-tag` reads "ACP"; the note is visible; `#ai-attach` title is "Attach text files (ACP agents do not accept images)" |
+| **AC5** | ACP shows its badge and consequence note, and the attach control accepts images like any provider | `ai.js` | `.ai-acp-tag` reads "ACP"; the note is visible; `#ai-attach` title is "Attach files" and the input has no `accept` filter |
 | **AC6** | The log is a named log and errors are alerts | `ai.js` | `.ai-chat-log[role="log"][aria-label="Conversation"]`; every `.ai-error` has `role="alert"`; `.ai-sr-status[role="status"]` exists |
 | **AC7** | Streaming can be stopped and does not scroll a reader who is above the bottom | `ai.js` | With `scrollTop = 0` and a delta, `scrollTop` stays 0 and `.ai-jump` is visible; Stop aborts and "Stopped" appears |
 | **AC8** | The streaming caret exists and is static under reduced motion | `style.css` | `.ai-stream-caret` in the newest bubble; `animation: none` in the AI reduced-motion block |
@@ -1768,7 +1766,8 @@ Two assertions change with this spec, and must be updated in the same commit:
 - **No auto-retry, background retry or request queue.** Retry is a user action.
 - **No ACP configuration, model detection, "Test" button or "Read-only" tag in this panel.**
   Settings → AI owns the profile; the panel only names the selected one.
-- **No image input for ACP.** The picker accepts text only; the server rejects images 400.
+- **Image input for ACP is on.** Only the newest user turn's images are sent;
+  older image-bearing turns go out as text.
 - **No new provider editor or Settings change.** Out of scope.
 - **No custom tooltip.** Native `title` plus a visible word (`controls.md` §2.10).
 - **No new breakpoint, container query, z-band, shadow or dependency.** The phone query is

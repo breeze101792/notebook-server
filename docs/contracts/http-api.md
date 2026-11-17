@@ -480,9 +480,21 @@ is `{"error": true, "status", "message"}`. The upstream read timeout is 120 s.
 When the posted `server` is not an OpenAI profile but matches an ACP profile
 name (`_acp_profile`, `app.py`), `POST /api/ai/chat` drives that ACP agent
 instead (`ai_chat`). `messages` is validated the same way, then the
-system turn is dropped; a request left with no user/assistant turn is 400, any
-`image_url` content part is 400, and the flattened prompt is capped at
-`ACP_MAX_PROMPT_BYTES` = 8 MiB. An optional body field `workspace` selects the
+system turn is dropped; a request left with no user/assistant turn is 400. The
+newest user message that carries `image_url` parts has them re-wrapped as ACP
+`image` content blocks (`{"type":"image","mimeType":…,"data":<base64>}`) after
+the single text block; all older turns are text-only. An image part must be
+`data:image/png|jpeg|webp|gif;base64,…`, non-empty, ≤ 4 MiB decoded
+(`ACP_MAX_IMAGE_BYTES`), and ≤ 12 MiB decoded per turn
+(`ACP_MAX_IMAGE_TOTAL_BYTES`); otherwise it is **400** (`ACP image attachments
+must be …`, `… is not valid base64`, `… content does not match its media type`,
+`… limited to N MiB each`, `… limited to N MiB per turn`). The flattened prompt is capped at `ACP_MAX_PROMPT_BYTES` = 8 MiB
+(text only). The agent's advertised `promptCapabilities.image` is read but is
+not a gate: the block is sent regardless, and a `false` flag only selects the
+error wording (`ACP agent does not accept image attachments`) when the prompt
+then fails or ends with `refusal`. That is a deliberate deviation from ACP's
+client rule to restrict content to the advertised capabilities, chosen for
+parity with the OpenAI path. An optional body field `workspace` selects the
 workspace whose root becomes the agent's cwd (unless the ACP profile sets
 `cwd`) and whose `workspaceState.<id>.activeFile` is named in the context
 preamble. An unknown id is **404** `unknown_workspace`, not a silent fallback —

@@ -1,15 +1,15 @@
 # Backend test suite
 
-`tests/test_app.py` is 7,106 lines of stdlib `unittest`. It drives the real
+`tests/test_app.py` is 8,116 lines of stdlib `unittest`. It drives the real
 Flask app through Flask's test client, so every test exercises the real
 routing, decorators, path resolution, and write path.
 
-The suite currently holds **538 test methods across 53 test-bearing classes**.
+The suite currently holds **556 test methods across 53 test-bearing classes**.
 The file has 56 `class` statements; four of them hold no tests: the shared
 bases `BaseTest` and `WorkspaceTestBase`, and the two loopback stubs
 `_StubOpenAIHandler` and `_StubWebHandler`. The first table below maps the core
 route/file classes; the second accounts for every other class, so the two tables
-sum to the 538 total. Workspace coverage has its own table in the
+sum to the 556 total. Workspace coverage has its own table in the
 multi-workspace section.
 
 Run it:
@@ -82,14 +82,14 @@ a low cost factor so tests stay fast.
 | 25 | `TestAiChat` | 15 | `POST /api/ai/chat` SSE relay: relays frames and forwards the stored key/model, the message-part array (accepted, bad parts rejected, the eight-image cap, per-message extra keys stripped, an image send writes no file), the 32 MiB body cap returning JSON 413, unknown server, message validation, upstream HTTP error becomes an in-band SSE error event, probe unreachable/reachable/unknown-server, `/api/ai/config` readable while chat stays gated, and an ACP name collision routing to the OpenAI profile |
 | 26 | `TestPathHelpers` | 4 | `_same_file_ignoring_case` and `_is_within`: a symlink and its target are two entries, a hard-link pair with case-variant names is one file, `_is_within` ignores a shared path prefix, and it follows a symlinked source |
 
-The remaining 232 tests live in 19 classes that round out the suite:
+The remaining 235 tests live in 19 classes that round out the suite:
 
 | Class | Tests | Covers |
 | --- | --- | --- |
 | `TestScanTimeout` | 4 | The search and graph scans run under a wall-clock deadline: a timed-out scan is reported as such in every search mode, and `/api/graph` answers 504 |
 | `TestAcpConfig` | 25 | `config/acp.json`: the three accepted shapes, per-entry validation and drop rules, duplicate names keeping the first, an `ai.json` name collision dropping the ACP entry, masked `acps`/`acp` exposure, default resolution, a POST `default` naming an ACP profile and a colliding server name rejected, agent-key resolution and fail-closed unknowns, the agent/command exclusivity rules, model bounds, and the read-only agent detection |
-| `TestAcpChat` | 22 | `POST /api/ai/chat` through the ACP branch against a stub agent: streamed deltas, a tool-call trace frame, the flattened preamble, validation, model negotiation, environment inheritance, permission auto-allow, client-bound capabilities refused, and reaping on EOF/timeout/crash |
-| `TestAcpClient` | 11 | Direct unit tests for `acp_client.run_turn` with no Flask app: exactly one terminal event per turn, dead agent, timeout, version mismatch, model negotiation, and the elicitation override |
+| `TestAcpChat` | 36 | `POST /api/ai/chat` through the ACP branch against a stub agent: streamed deltas, a tool-call trace frame, the flattened preamble, validation, model negotiation, environment inheritance, permission auto-allow, client-bound capabilities refused, reaping on EOF/timeout/crash, and the image path (block shape and order, tool follow-up, invalid/oversized images 400, the no-capability and null-capability cases, a 3 MiB image through stdio) |
+| `TestAcpClient` | 14 | Direct unit tests for `acp_client.run_turn` with no Flask app: exactly one terminal event per turn, dead agent, timeout, version mismatch, model negotiation, image blocks after the text block, null capabilities, and the elicitation override |
 | `TestSeedMigration` | 5 | `seed()`: the legacy `data/` migration (source dropped only when emptied), template/bootstrap branches, and idempotence when a config already exists |
 | `TestBackendHelperBranches` | 17 | Direct unit coverage for helper error/edge branches: `safe_path`, `expect_json`, `build_tree`, boot-state clamping, config parsing, SSE joining, token lookup, stored-hash checks, and logout with auth off |
 | `TestEditValidationBranches` | 2 | Every `_EditError` validation branch in the patch engine leaves the file untouched; `text_to_lines` drops a trailing empty part |

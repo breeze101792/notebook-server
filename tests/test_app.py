@@ -8,6 +8,7 @@ Run:  .venv_$(hostname)/bin/python -m unittest discover -s tests -v
   or:  .venv_$(hostname)/bin/python -m pytest tests   (if pytest is installed)
 """
 
+import base64
 import contextlib
 import io
 import json
@@ -4221,6 +4222,13 @@ class TestAcpChat(BaseTest):
 
     STUB = os.path.join(ROOT, "tests", "fixtures", "stub_acp_agent.py")
     SERVER = "acpstub"
+    # Real magic bytes: the server checks the payload against its declared
+    # media type. PNG is 10 bytes, JPEG 6, so a block's decoded length is
+    # visible in the stub's streamed description.
+    IMAGE_PNG = "data:image/png;base64," + base64.b64encode(
+        b"\x89PNG\r\n\x1a\nab").decode("ascii")
+    IMAGE_JPEG = "data:image/jpeg;base64," + base64.b64encode(
+        b"\xff\xd8\xffabc").decode("ascii")
 
     def setUp(self):
         super().setUp()
@@ -4265,6 +4273,20 @@ class TestAcpChat(BaseTest):
     def _user_turn(self, text="hello"):
         return {"server": self.SERVER,
                 "messages": [{"role": "user", "content": text}]}
+
+    def _image_turn(self, urls, text="look", tail=None):
+        """A user turn carrying text plus one image_url part per data URL.
+
+        `tail` appends a second role:"user" message (the shape the client's
+        tool loop produces) to prove it does not hide the image turn.
+        """
+        messages = [{"role": "user", "content": [
+            {"type": "text", "text": text},
+            *[{"type": "image_url", "image_url": {"url": u}} for u in urls],
+        ]}]
+        if tail:
+            messages.append({"role": "user", "content": tail})
+        return {"server": self.SERVER, "messages": messages}
 
     def _assert_reaped(self, deadline=5.0):
         """The stub writes its PID before doing anything; assert it is gone.
@@ -4438,18 +4460,198 @@ class TestAcpChat(BaseTest):
         self._assert_reaped()
 
     # --- validation / routing -------------------------------------------
-    def test_image_attachment_rejected_400(self):
-        img = "data:image/png;base64,AAAA"
-        r = self._chat({"server": self.SERVER, "messages": [
+    def test_image_attachment_reaches_agent(self):
+        self._configure_acp(mode="image")
+        r = self._chat(self._image_turn([self.IMAGE_PNG]))
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # The text block comes first, then one image block with the sender's
+        # mime type and the decoded payload length.
+        self.assertIn(
+            '{"choices":[{"delta":{"content":'
+            '"blocks=text,image:image/png:10"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+        self.assertNotIn("event: error", body)
+        self._assert_reaped()
+
+    def test_two_images_keep_their_order(self):
+        self._configure_acp(mode="image")
+        r = self._chat(self._image_turn([self.IMAGE_PNG, self.IMAGE_JPEG]))
+        body = r.get_data(as_text=True)
+        self.assertIn(
+            '{"choices":[{"delta":{"content":'
+            '"blocks=text,image:image/png:10,image:image/jpeg:6"}}]}', body)
+        self.assertNotIn("event: error", body)
+
+    def test_tool_follow_up_after_an_image_turn_keeps_the_blocks(self):
+        # The client's tool loop appends a role:"user" follow-up that carries
+        # no image. The newest image-bearing turn must still supply the blocks.
+        self._configure_acp(mode="image")
+        r = self._chat(self._image_turn(
+            [self.IMAGE_PNG], tail="(tool result) read -> ok"))
+        body = r.get_data(as_text=True)
+        self.assertIn(
+            '{"choices":[{"delta":{"content":'
+            '"blocks=text,image:image/png:10"}}]}', body)
+        self.assertNotIn("event: error", body)
+
+    def test_a_turn_without_images_sends_one_text_block(self):
+        self._configure_acp(mode="image")
+        r = self._chat(self._user_turn())
+        body = r.get_data(as_text=True)
+        self.assertIn('{"choices":[{"delta":{"content":"blocks=text"}}]}',
+                      body)
+        self.assertNotIn("event: error", body)
+
+    def test_agent_without_image_capability_still_receives_the_block(self):
+        # No capability gate: the block goes out even when the agent advertises
+        # image=false, and an agent that accepts it completes normally.
+        self._configure_acp(mode="image-nocap")
+        r = self._chat(self._image_turn([self.IMAGE_PNG]))
+        body = r.get_data(as_text=True)
+        self.assertIn(
+            '{"choices":[{"delta":{"content":'
+            '"blocks=text,image:image/png:10"}}]}', body)
+        self.assertNotIn("event: error", body)
+
+    def test_image_rejection_names_the_missing_capability(self):
+        self._configure_acp(mode="image-reject")
+        r = self._chat(self._image_turn([self.IMAGE_PNG]))
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("ACP agent does not accept image attachments", body)
+        self.assertNotIn("data: [DONE]", body)
+
+    def test_image_refusal_names_the_missing_capability(self):
+        # A refused block arrives as a normal result with stopReason
+        # "refusal", not as an error.
+        self._configure_acp(mode="image-refuse")
+        r = self._chat(self._image_turn([self.IMAGE_PNG]))
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("ACP agent does not accept image attachments", body)
+
+    def test_prompt_failure_with_image_capability_stays_generic(self):
+        # Negative control for the image wording: the agent advertises image
+        # support, so a prompt failure is not blamed on the image.
+        self._configure_acp(mode="image-error")
+        r = self._chat(self._image_turn([self.IMAGE_PNG]))
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("ACP turn failed", body)
+        self.assertNotIn("does not accept image attachments", body)
+
+    def test_silent_capability_does_not_blame_the_image(self):
+        # No promptCapabilities at all: the SDK fills a default (image false),
+        # but silence is "unknown", so a prompt failure keeps its generic
+        # wording instead of claiming the agent refuses images.
+        self._configure_acp(mode="image-silent-error")
+        r = self._chat(self._image_turn([self.IMAGE_PNG]))
+        body = r.get_data(as_text=True)
+        self.assertIn("event: error", body)
+        self.assertIn("ACP turn failed", body)
+        self.assertNotIn("does not accept image attachments", body)
+
+    def test_only_the_newest_image_turn_is_sent(self):
+        # An image on an earlier turn must not ride along with a newer one.
+        self._configure_acp(mode="image")
+        body = {"server": self.SERVER, "messages": [
             {"role": "user", "content": [
-                {"type": "text", "text": "look"},
-                {"type": "image_url", "image_url": {"url": img}},
-            ]}]})
+                {"type": "text", "text": "first"},
+                {"type": "image_url", "image_url": {"url": self.IMAGE_PNG}},
+            ]},
+            {"role": "assistant", "content": "got it"},
+            {"role": "user", "content": [
+                {"type": "text", "text": "second"},
+                {"type": "image_url", "image_url": {"url": self.IMAGE_JPEG}},
+            ]},
+        ]}
+        r = self._chat(body)
+        text = r.get_data(as_text=True)
+        self.assertIn('"blocks=text,image:image/jpeg:6"', text)
+        self.assertNotIn("image/png:10", text)
+
+    def test_null_capabilities_do_not_break_the_turn(self):
+        # "agentCapabilities": null must not raise in the client's capability
+        # read (every level of the SDK model is Optional).
+        self._configure_acp(mode="capnull")
+        r = self._chat(self._user_turn())
+        body = r.get_data(as_text=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('{"choices":[{"delta":{"content":"Hello"}}]}', body)
+        self.assertIn("data: [DONE]", body)
+
+    def test_invalid_image_urls_are_rejected_before_spawn(self):
+        self._configure_acp(mode="image")
+        cases = {
+            "svg": ("data:image/svg+xml;base64,YWJjZA==",
+                    "must be a data:image/"),
+            "bmp": ("data:image/bmp;base64,YWJjZA==",
+                    "must be a data:image/"),
+            "no-base64": ("data:image/png,YWJjZA==",
+                          "must be a data:image/"),
+            "empty": ("data:image/png;base64,", "not valid base64"),
+            "space": ("data:image/png;base64,YWJj ZA==",
+                      "not valid base64"),
+            "not-base64": ("data:image/png;base64,!!!!",
+                           "not valid base64"),
+            "wrong-signature": ("data:image/png;base64,YWJjZA==",
+                                "does not match its media type"),
+        }
+        for label, (url, message) in cases.items():
+            with self.subTest(label):
+                r = self._chat(self._image_turn([url]))
+                self.assertEqual(r.status_code, 400)
+                self.assertIn(message, r.get_json()["error"])
+                self.assertFalse(os.path.exists(self._pidfile))
+
+    def test_image_byte_caps_are_enforced(self):
+        self._configure_acp(mode="image")
+        png8 = "data:image/png;base64," + base64.b64encode(
+            b"\x89PNG\r\n\x1a\n").decode("ascii")
+        # At-cap passes, cap+1 is 400: pins `>` rather than `>=`.
+        with mock.patch.object(nb, "ACP_MAX_IMAGE_BYTES", 8):
+            r = self._chat(self._image_turn([png8]))
+            self.assertEqual(r.status_code, 200)
+        with mock.patch.object(nb, "ACP_MAX_IMAGE_BYTES", 7):
+            r = self._chat(self._image_turn([png8]))
         self.assertEqual(r.status_code, 400)
-        self.assertIn("ACP profiles do not support image attachments",
-                      r.get_json()["error"])
-        # Rejected before any agent process is spawned.
+        self.assertIn("each", r.get_json()["error"])
+
+        with mock.patch.object(nb, "ACP_MAX_IMAGE_TOTAL_BYTES", 20):
+            r = self._chat(self._image_turn([self.IMAGE_PNG, self.IMAGE_PNG]))
+            self.assertEqual(r.status_code, 200)
+        with mock.patch.object(nb, "ACP_MAX_IMAGE_TOTAL_BYTES", 19):
+            r = self._chat(self._image_turn([self.IMAGE_PNG, self.IMAGE_PNG]))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("per turn", r.get_json()["error"])
+
+    def test_image_cap_message_reports_the_real_limit(self):
+        # The unpatched wording is part of the HTTP contract.
+        self._configure_acp(mode="image")
+        oversize = base64.b64encode(
+            b"\x89PNG\r\n\x1a\n" + b"\0" * nb.ACP_MAX_IMAGE_BYTES
+        ).decode("ascii")
+        r = self._chat(self._image_turn([
+            "data:image/png;base64," + oversize]))
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("limited to 4 MiB each", r.get_json()["error"])
         self.assertFalse(os.path.exists(self._pidfile))
+
+    def test_a_multi_megabyte_image_round_trips(self):
+        # The transport must carry one large NDJSON line intact (the base64 of
+        # a 3 MiB payload is ~4 MiB), and the agent must decode all of it.
+        self._configure_acp(mode="image", timeout=30)
+        size = 3 * 1024 * 1024
+        payload = base64.b64encode(
+            b"\x89PNG\r\n\x1a\n" + b"\0" * (size - 8)).decode("ascii")
+        url = "data:image/png;base64," + payload
+        r = self._chat(self._image_turn([url]))
+        body = r.get_data(as_text=True)
+        self.assertIn(
+            '"blocks=text,image:image/png:%d"' % size, body)
+        self.assertIn("data: [DONE]", body)
+        self.assertNotIn("event: error", body)
 
     def test_system_only_messages_rejected_400(self):
         # A transcript of only system turns flattens to an empty prompt; the
@@ -4653,14 +4855,14 @@ class TestAcpClient(unittest.TestCase):
     STUB = os.path.join(ROOT, "tests", "fixtures", "stub_acp_agent.py")
 
     def _run(self, mode, timeout=15, command=None, args=None, prompt="User: hi",
-             model=None, env=None):
+             model=None, env=None, images=()):
         import acp_client
         if args is None:
             args = [self.STUB, "--mode", mode]
         return list(acp_client.run_turn(
             sys.executable if command is None else command,
             args=args, cwd=tempfile.gettempdir(), env=env, model=model,
-            prompt=prompt, timeout=timeout))
+            prompt=prompt, timeout=timeout, images=images))
 
     @staticmethod
     def _terminals(events):
@@ -4673,6 +4875,23 @@ class TestAcpClient(unittest.TestCase):
         self.assertIs(terminals[0], events[-1])
         self.assertEqual(terminals[0]["type"], "done")
         self.assertEqual(terminals[0]["stopReason"], "end_turn")
+
+    def test_images_are_sent_after_the_text_block(self):
+        # The client passes the payload through untouched; only the server
+        # validates the signature, so any base64 is fine here.
+        events = self._run("image", images=[("image/png", "YWJjZA==")])
+        text = "".join(e["text"] for e in events if e.get("type") == "text")
+        self.assertEqual(text, "blocks=text,image:image/png:4")
+        self.assertEqual(self._terminals(events)[0]["type"], "done")
+
+    def test_no_images_sends_exactly_one_text_block(self):
+        events = self._run("image")
+        text = "".join(e["text"] for e in events if e.get("type") == "text")
+        self.assertEqual(text, "blocks=text")
+
+    def test_null_agent_capabilities_do_not_fail_the_turn(self):
+        terminal = self._terminals(self._run("capnull"))[0]
+        self.assertEqual(terminal["type"], "done")
 
     def test_mismatch_turn_has_exactly_one_terminal_event(self):
         terminals = self._terminals(self._run("mismatch"))
@@ -4751,7 +4970,10 @@ class TestAcpClient(unittest.TestCase):
         self.assertEqual(self._terminals(events)[0]["type"], "done")
 
     def test_model_without_a_model_option_is_an_inband_error(self):
-        events = self._run("nomodel", model="stub-other")
+        # Images are attached so this also proves a pre-prompt failure keeps
+        # its own wording instead of being blamed on the image.
+        events = self._run("nomodel", model="stub-other",
+                           images=[("image/png", "YWJjZA==")])
         terminals = self._terminals(events)
         self.assertEqual(len(terminals), 1)
         self.assertEqual(terminals[0]["type"], "error")
@@ -4760,8 +4982,9 @@ class TestAcpClient(unittest.TestCase):
 
     def test_model_rejected_by_the_agent_is_an_inband_error(self):
         # A stale/unaccepted model id must fail the turn, never silently run
-        # a different model.
-        events = self._run("modelreject", model="stub-other")
+        # a different model. Images are attached for the same reason as above.
+        events = self._run("modelreject", model="stub-other",
+                           images=[("image/png", "YWJjZA==")])
         terminals = self._terminals(events)
         self.assertEqual(len(terminals), 1)
         self.assertEqual(terminals[0]["type"], "error")

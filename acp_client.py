@@ -30,7 +30,7 @@ import queue
 import threading
 
 import acp
-from acp import spawn_agent_process, text_block
+from acp import spawn_agent_process, image_block, text_block
 from acp import schema as acp_schema
 from acp.interfaces import Client
 
@@ -52,6 +52,10 @@ ACP_QUEUE_MAX = 4096
 # client_info sent at initialize: a stable name/version for the agent's logs.
 ACP_CLIENT_NAME = "notebook-server"
 ACP_CLIENT_VERSION = "1.0"
+# Reported when images were sent, the agent advertised no image prompt
+# capability, and the prompt then failed or was refused. Diagnostic wording
+# only: the image block is sent regardless (see _drive).
+ACP_IMAGE_UNSUPPORTED = "ACP agent does not accept image attachments"
 
 _LOOP_LOCK = threading.Lock()
 _LOOP = None
@@ -184,11 +188,37 @@ def _model_option(options):
     return None
 
 
-async def _drive(client, command, args, cwd, env, prompt, timeout, model):
+def _image_capability(init):
+    """The agent's image prompt capability: True, False, or None (unknown).
+
+    The SDK fills both `agent_capabilities` and `prompt_capabilities` with a
+    default instance when the agent omits them, so presence must be read from
+    the model's field set: a default `image: false` is not an advertisement.
+    None means the agent said nothing and no diagnostic claim is made.
+    """
+    caps = getattr(init, "agent_capabilities", None)
+    if caps is None or "prompt_capabilities" not in getattr(
+            caps, "model_fields_set", ()):
+        return None
+    prompt_caps = getattr(caps, "prompt_capabilities", None)
+    if (prompt_caps is None
+            or "image" not in getattr(prompt_caps, "model_fields_set", ())):
+        return None
+    value = prompt_caps.image
+    return value if isinstance(value, bool) else None
+
+
+async def _drive(client, command, args, cwd, env, prompt, timeout, model,
+                 images=()):
     """Run one ACP turn: spawn -> initialize -> session/new -> prompt.
 
     When `model` is non-empty it is applied to the new session's model config
     option before the prompt, so the configured model actually runs.
+
+    `images` is a sequence of (mime_type, base64_payload) pairs. They are sent
+    as image content blocks after the single text block. The agent's advertised
+    image capability is not a gate: the block is sent either way, and the flag
+    only chooses the error wording when the prompt fails or is refused.
 
     The terminal event is enqueued only in the finally, *after* the spawn
     context manager has exited, so the SDK's subprocess kill ladder always
@@ -232,6 +262,7 @@ async def _drive(client, command, args, cwd, env, prompt, timeout, model):
                     "ACP protocol version mismatch: agent offered %s, "
                     "client requires %d" % (offered, ACP_PROTOCOL_VERSION))})
                 return
+            image_ok = _image_capability(init)
             session = await conn.new_session(
                 cwd=str(cwd) if cwd else os.getcwd(), mcp_servers=[])
             if model:
@@ -261,12 +292,30 @@ async def _drive(client, command, args, cwd, env, prompt, timeout, model):
                     record({"type": "error", "message": (
                         "ACP agent did not apply the configured model")})
                     return
-            result = await asyncio.wait_for(
-                conn.prompt(session_id=session.session_id,
-                            prompt=[text_block(prompt)]),
-                timeout=timeout)
-            record({"type": "done",
-                    "stopReason": str(getattr(result, "stop_reason", ""))})
+            blocks = [text_block(prompt)]
+            blocks.extend(image_block(data=data, mime_type=mime)
+                          for mime, data in images)
+            try:
+                result = await asyncio.wait_for(
+                    conn.prompt(session_id=session.session_id,
+                                prompt=blocks),
+                    timeout=timeout)
+            except (asyncio.TimeoutError, TimeoutError):
+                raise
+            except Exception as exc:
+                # Nested so an initialize/session failure keeps its own
+                # wording; only the prompt call can be an image rejection.
+                if images and image_ok is False:
+                    _log.warning("ACP agent rejected an image prompt: %s", exc)
+                    record({"type": "error", "message": ACP_IMAGE_UNSUPPORTED})
+                    return
+                raise
+            stop_reason = str(getattr(result, "stop_reason", ""))
+            if images and image_ok is False and stop_reason == "refusal":
+                # A refused block arrives as a normal result, not an error.
+                record({"type": "error", "message": ACP_IMAGE_UNSUPPORTED})
+                return
+            record({"type": "done", "stopReason": stop_reason})
     except asyncio.CancelledError:
         # Caller disconnected; re-raise so the context manager unwinds and
         # runs the kill ladder. No terminal event -- no reader remains.
@@ -296,7 +345,7 @@ async def _drive(client, command, args, cwd, env, prompt, timeout, model):
 
 
 def run_turn(command, args=(), cwd=None, env=None, prompt="", timeout=None,
-             keepalive=False, model=None):
+             keepalive=False, model=None, images=()):
     """Drive one ACP turn against `command` and yield its events.
 
     `env` overrides this server's environment rather than replacing it: the
@@ -309,6 +358,10 @@ def run_turn(command, args=(), cwd=None, env=None, prompt="", timeout=None,
     `model`, when non-empty, selects the agent's model after session/new; an
     agent that exposes no model option, or rejects the value, ends the turn
     with an error.
+
+    `images` is a sequence of (mime_type, base64_payload) pairs appended as
+    image content blocks after the text block. It defaults to empty so a caller
+    with no images sends exactly the request it did before.
 
     Yields:
       {"type": "text", "text": str}        streamed agent message text
@@ -336,7 +389,7 @@ def run_turn(command, args=(), cwd=None, env=None, prompt="", timeout=None,
     effective_timeout = ACP_TURN_TIMEOUT_DEFAULT if timeout is None else timeout
     future = asyncio.run_coroutine_threadsafe(
         _drive(client, command, tuple(args), cwd, merged_env, prompt,
-               effective_timeout, model),
+               effective_timeout, model, images),
         loop)
     terminal_seen = False
     try:

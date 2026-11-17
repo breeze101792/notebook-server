@@ -35522,7 +35522,7 @@ function check(label, cond, extra) {
     authEnabled = false; authHasAdmin = false; authRole = null;
     await window.NB.settings.close(); await tick(20);
 
-    // --- ACP image turns: disable, strip, notify, never persist ------
+    // --- ACP image turns: send, no strip, newest turn only -----------
     // Restore the ACP-exposed config and reset the panel transcript.
     aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
       model: "m-1", apiKey: "sk-stub" }], default: "stub",
@@ -35548,45 +35548,65 @@ function check(label, cond, extra) {
     const acpLogText = () =>
       window.document.getElementById("ai-chat-log").textContent;
 
-    // Select ACP. The attach affordance must filter raster images out.
+    // Select ACP. Attachments are uniform across providers now.
     sel.value = ACP.name;
     sel.dispatchEvent(new window.Event("change", { bubbles: true }));
     await tick(20);
     await resetAcp();
-    check("acp image: the attach input filters images out while ACP is active",
+    check("acp image: the attach input offers images while ACP is active",
+      !window.document.getElementById("ai-attach-input").hasAttribute("accept"),
       window.document.getElementById("ai-attach-input")
-        .getAttribute("accept") === "text/*",
-      window.document.getElementById("ai-attach-input").getAttribute("accept"));
+        .getAttribute("accept"));
 
-    // Paste/drop bypasses accept, so a chip still forms; the send strips it.
     window.NB.ai._addFilesForTests([acpImg("acp-shot.png")]);
     await tick(80);
-    check("acp image: the image attaches (a bypassing path) and is pending pre-send",
+    check("acp image: the image chip is pending pre-send",
       window.NB.ai._getAttachmentsForTests().some(a => a.kind === "image"),
       "pending=" + window.NB.ai._getAttachmentsForTests().length);
 
-    aiChatStreams.push([sseFrame("Text only, no image.")]);
+    aiChatStreams.push([sseFrame("I see the screenshot.")]);
     acpInput().value = "look at this screenshot";
     acpSend();
     await tick(200);
 
     const acpBody1 = acpUserReq(0);
-    check("acp image: the image part is stripped from the ACP request body",
+    check("acp image: the ACP request body carries the image_url part",
       aiChatLog.length === 1 && aiChatLog[0].server === ACP.name &&
-      !!acpBody1 && typeof acpBody1.content === "string" &&
-      acpBody1.content.includes("look at this screenshot") &&
-      !JSON.stringify(aiChatLog[0]).includes("image_url"),
-      acpBody1 ? JSON.stringify(acpBody1.content).slice(0, 60) : "no user turn");
-    check("acp image: the panel shows an inline notice that the image was not sent",
-      /ACP agents do not accept image attachments/.test(acpLogText()),
+      !!acpBody1 && Array.isArray(acpBody1.content) &&
+      acpBody1.content.some(p => p.type === "image_url") &&
+      acpBody1.content.some(p => p.type === "text" &&
+        /look at this screenshot/.test(p.text)),
+      acpBody1 ? JSON.stringify(acpBody1.content.map(p => p.type)) : "no user turn");
+    check("acp image: no 'not sent' notice is shown",
+      !/do not accept image/.test(acpLogText()),
       acpLogText().slice(0, 90));
 
-    // A later turn must not carry the image either.
-    aiChatStreams.push([sseFrame("Still text only.")]);
+    // A validation 400 (bad data URL, size) is not a vision-model problem,
+    // so the OpenAI hint must not be shown for an ACP provider.
+    const realAiChat = window.NB.api.aiChat;
+    window.NB.api.aiChat = async () => {
+      const e = new Error("ACP image attachments must be a data:image/… URL");
+      e.status = 400;
+      throw e;
+    };
+    window.NB.ai._addFilesForTests([acpImg("bad.png")]);
+    await tick(80);
+    acpInput().value = "bad image";
+    acpSend();
+    await tick(200);
+    check("acp image: a validation 400 shows the error but no vision hint",
+      /AI request failed/.test(acpLogText()) &&
+        !/switch to a vision model/.test(acpLogText()),
+      acpLogText().slice(-90));
+    window.NB.api.aiChat = realAiChat;
+
+    // A later text turn must not carry the image: only the newest genuine
+    // user turn keeps image parts, and this one has none.
+    aiChatStreams.push([sseFrame("Text only now.")]);
     acpInput().value = "and now?";
     acpSend();
     await tick(200);
-    check("acp image: the image does not persist into a later ACP turn",
+    check("acp image: a later text turn carries no image part",
       aiChatLog.length === 2 &&
       !JSON.stringify(aiChatLog[1]).includes("image_url") &&
       !!acpUserReq(1) && typeof acpUserReq(1).content === "string",
@@ -35610,9 +35630,26 @@ function check(label, cond, extra) {
       oaBody.content.some(p => p.type === "text" && /describe this/.test(p.text)),
       oaBody ? JSON.stringify(oaBody.content.map(p => p.type)) : "none");
 
-    // The original bug: an image already in the transcript (sent under an
-    // OpenAI provider) is re-uploaded every turn. Switching to ACP must
-    // strip it from the request so later turns keep working.
+    // The hint still exists for an OpenAI profile: a 400 on an image turn is
+    // the signal that the selected model has no vision.
+    window.NB.api.aiChat = async () => {
+      const e = new Error("upstream rejected the image");
+      e.status = 400;
+      throw e;
+    };
+    window.NB.ai._addFilesForTests([acpImg("openai-bad.png")]);
+    await tick(80);
+    acpInput().value = "another shot";
+    acpSend();
+    await tick(200);
+    check("acp image: an OpenAI 400 still shows the vision-model hint",
+      /switch to a vision model/.test(acpLogText()),
+      acpLogText().slice(-90));
+    window.NB.api.aiChat = realAiChat;
+
+    // An image already in the transcript, sent under an OpenAI provider, is
+    // re-uploaded every turn. Switching to ACP must send the newest turn
+    // only, with the older image collapsed to text.
     sel.value = ACP.name;
     sel.dispatchEvent(new window.Event("change", { bubbles: true }));
     await tick(20);
@@ -35623,7 +35660,7 @@ function check(label, cond, extra) {
     acpSend();
     await tick(200);
     const acpFollow = aiChatLog[0];
-    check("acp image: switching to ACP strips a transcript image from the re-uploaded history",
+    check("acp image: switching to ACP drops a transcript image from the request",
       !!acpFollow && !JSON.stringify(acpFollow).includes("image_url") &&
       acpFollow.messages.filter(m => m.role === "user").length >= 2 &&
       acpFollow.messages.at(-1).content === "follow up without the image",

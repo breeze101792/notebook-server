@@ -143,17 +143,24 @@ every request, so an edit takes effect on the next send without a restart.
 **One turn.** `POST /api/ai/chat` serves ACP when the posted `server` is not
 an OpenAI profile but matches an ACP profile (`ai_chat`, `app.py`).
 Messages are validated by the same `_validate_chat_messages` used by the
-OpenAI relay, then system messages are dropped, image parts are rejected with
-400, and the surviving user/assistant turns are flattened into one prompt —
+OpenAI relay, then system messages are dropped, the newest user message's
+`image_url` parts are re-wrapped as ACP `image` content blocks, and the
+surviving user/assistant turns are flattened into one prompt —
 `"User: …"` / `"Assistant: …"` blocks joined by blank lines
-(`_flatten_acp_prompt`, `app.py`) — capped at 8 MiB. On the client, an
-ACP-tagged provider narrows the attach input to `text/*` and
-`buildRequestMessages` strips every `image_url` part before the request is
-built (a one-per-turn notice says the image was not sent), so a stale image
-cannot poison every later turn; the server's 400 covers anything that still
-arrives (`activeServerIsAcp` / `buildRequestMessages`,
-`static/js/ai.js`). Multi-turn context is the replayed transcript,
-exactly as for a model. `acp_client.run_turn` spawns a fresh agent process per
+(`_flatten_acp_prompt`, `app.py`) — capped at 8 MiB of text. `_acp_prompt_images`
+walks back to the newest user message that carries an image part, so a tool
+follow-up appended after the image turn cannot hide it; it validates the data
+URL (png/jpeg/webp/gif, canonical base64, non-empty, 4 MiB per image, 12 MiB
+per turn) and returns `(mime, base64)` pairs. On the client,
+`buildRequestMessages` keeps image parts only on the newest genuine user turn
+and collapses older image-bearing messages to their text, so the request body
+does not grow with history (`activeServerIsAcp` / `buildRequestMessages`,
+`static/js/ai.js`). The agent's advertised `promptCapabilities.image` is not a
+gate: the block is sent regardless, and a `false` flag only chooses the error
+wording when the prompt fails or is refused (a deliberate deviation from the
+ACP client rule, for parity with the OpenAI path). Multi-turn context is the
+replayed transcript, exactly as for a model. `acp_client.run_turn` spawns a
+fresh agent process per
 request (`initialize → session/new → prompt`), kills it at turn end, and
 streams `agent_message_chunk` text back as OpenAI delta frames plus
 `data: [DONE]`. When the profile sets `model`, the client applies it to the
@@ -189,7 +196,8 @@ server user with filesystem access, and its own tools execute directly —
 **Known limitation.** The notebook's system message is dropped server-side, so
 the agent uses its own system prompt; the notebook can only rebuild the custom
 prompt and the open-note hint from server state (above), and it does so through
-the preamble rather than by forwarding the system turn. Images are unsupported.
+the preamble rather than by forwarding the system turn. Only the newest user
+turn's images reach the agent, and the agent's capability flag is not a gate.
 The agent's streamed prose and its tool-activity trace lines are rendered; its
 thoughts and plans are not.
 

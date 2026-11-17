@@ -116,7 +116,8 @@ center of the validation in §9.
 **Out of scope / non-goals (accepted).**
 
 - Permission cards, `fs/*`, `terminal`, a cancel route, server-side sessions,
-  multi-turn agent state, images.
+  multi-turn agent state. Images shipped later — see
+  [`acp-image-input.md`](acp-image-input.md).
 - An editable Settings → AI surface for the ACP profiles. Settings → AI shows
   every configured profile and the detected agents read-only; the config file
   is the only write path. "Make default" writes only `ai.json`'s default name.
@@ -194,8 +195,10 @@ MVP piece.
   back to the top-level `activeFile`), then the global `custom_prompt` from
   `config/ai.json`. The surviving user/assistant turns are serialized
   `"User: …"` / `"Assistant: …"` joined by blank lines (`_flatten_acp_prompt`).
-  An empty transcript is rejected 400; image parts are rejected 400; the
-  assembled prompt is capped at `ACP_MAX_PROMPT_BYTES = 8 MiB`.
+  An empty transcript is rejected 400; the newest user message that carries
+  images is sent as ACP image blocks (`_acp_prompt_images`); an invalid or oversized
+  image is 400; the assembled prompt is capped at `ACP_MAX_PROMPT_BYTES = 8 MiB`
+  (text only).
 - **Workspace selection.** An optional body `workspace` id selects the workspace
   root the agent runs in and whose open note goes into the preamble. An unknown
   id is 404 `unknown_workspace`, never a silent fallback.
@@ -227,8 +230,9 @@ MVP piece.
   `currentServer`. `runToolLoop`, `regenerate`, `editLastMessage`, `Clear`, and
   the Stop button are provider-agnostic. The trace renderer inserts each
   `.ai-tool-trace` line above the growing answer bubble. `buildRequestMessages`
-  and `send` strip image parts for an ACP profile and show one notice, so a stale
-  image cannot poison later turns.
+  keeps image parts on the newest genuine user turn only and collapses older
+  image-bearing messages to text, so the request carries the images the agent
+  can act on without growing with history.
 - **Settings → AI shows ACP read-only.** `buildAiAcpSection` renders one panel
   head/help, then one block per profile (`buildAiAcpProfile`: name, a `Default`
   tag or a `Make default` button, the allowlist/command note, and the configured
@@ -271,8 +275,9 @@ until `loadAiConfig` runs again (page load, or a Settings save, which calls it).
 pushes the user turn onto `conversation`, and enters `runToolLoop` (`ai.js`). The
 request posts `{server, messages: [system, …conversation], workspace?}` to
 `/api/ai/chat` (`buildRequestMessages`, `ai.js`). The server detects the ACP name,
-validates and drops the system message, rejects images, flattens the rest into
-one prompt behind `_acp_context_preamble`, spawns the agent, sends
+validates and drops the system message, re-wraps the newest image-bearing user
+message as ACP image blocks, flattens the rest into one prompt behind
+`_acp_context_preamble`, spawns the agent, sends
 `initialize → session/new → session/prompt` and applies the profile's `model`
 between `session/new` and `prompt` when set (`_drive`, `acp_client.py`), and
 streams `agent_message_chunk` text back as OpenAI deltas (`_acp_chat_response`).
@@ -309,8 +314,9 @@ before the stream starts:
   (`_EventQueue`, `acp_client.py`).
 - **SDK not installed** → `"ACP support is unavailable: the agent-client-protocol
   package is not installed"` (`_acp_chat_response`).
-- **Validation** → HTTP 400 JSON: images, empty transcript, prompt too large,
-  unknown server (`_acp_chat_response`, `ai_chat`); an unknown workspace is 404
+- **Validation** → HTTP 400 JSON: an invalid, empty, or oversized image, an
+  empty transcript, a prompt too large, or an unknown server
+  (`_acp_chat_response`, `ai_chat`); an unknown workspace is 404
   `unknown_workspace`.
 The client shows the message in the bubble as `"AI request failed: <message>"`.
 
@@ -344,8 +350,8 @@ All three are unchanged from the OpenAI path:
 | `model` set but the agent exposes no model option | The turn ends with the in-band error "ACP agent does not expose a model option"; the agent does not silently run a different model. |
 | `model` set to a value the agent rejects | The turn ends with the in-band error "ACP agent rejected the configured model". Model ids are the agent's own, e.g. `ollama/qwen3.8:latest` for `opencode acp`. |
 | Agent needs a credential exported by the server | It is inherited: `run_turn` merges the server's full environment with the profile's `env`, so credentials and XDG paths are not trimmed away. A profile `env` value wins on a key collision. |
-| User attaches an image while ACP is selected | The attach picker hides images, and `send` strips any pasted or dropped image parts, keeping the text, before the turn is sent. One inline notice says the image was not sent. `_acp_chat_response` still rejects an image part 400 as a backstop. |
-| Image-bearing turn already in `conversation` | The images stay in the browser conversation and are stripped from the ACP request, so later ACP turns are not poisoned; switching back to an OpenAI profile sends them again. |
+| User attaches an image while ACP is selected | It is sent: the attach picker offers images, and the newest user turn's parts become ACP image blocks after the text block. An agent whose model lacks vision answers without seeing it, like a text-only OpenAI-compatible model. |
+| Image-bearing turn already in `conversation` | Only the newest genuine turn's images go out; older image-bearing messages are sent as text, so later ACP turns keep working. Switching back to an OpenAI profile re-sends all of them. |
 | User expects Settings → AI → Custom prompt to apply to the agent | It does: `_acp_context_preamble` reads `custom_prompt` from `config/ai.json` and prepends it to every ACP prompt. The agent still brings its own system prompt. |
 | User expects the agent to know the open note | It does: the preamble names `The note currently open: <path>` from the workspace state, on every turn. |
 | Active file changes mid-conversation | The preamble is rebuilt server-side on the next turn, so the new open note is named without the browser rebuilding a system prompt. |
@@ -407,15 +413,15 @@ not yet verified.
     *Covered: `test_junk_line_before_valid_response_is_skipped`.*
 12. Backend — a name matching neither list is 400 and never falls through to ACP.
     *Covered: `test_unknown_server_does_not_fall_through_to_acp`.*
-13. Backend — an image-bearing transcript is 400 with the "do not support image
-    attachments" message before any agent is spawned. *Covered:
-    `test_image_attachment_rejected_400`.*
-14. Frontend — attaching an image while ACP is selected strips it from the
-    request, keeps the text, and shows one inline notice; the browser
-    conversation keeps the image so switching back to an OpenAI profile sends it
-    again. **Gap**: the strip and notice are stated in `ai.js`
-    (`buildRequestMessages`, `send`, `showAcpImageNotice`) and not asserted in the
-    DOM suite; the server 400 backstop is covered by criterion 13.
+13. Backend — an image-bearing turn reaches the agent as one text block then
+    one image block per part, in order, and an invalid or oversized image is
+    400 before any agent is spawned. *Covered:
+    `test_image_attachment_reaches_agent`, `test_two_images_keep_their_order`,
+    `test_invalid_image_urls_are_rejected_before_spawn`,
+    `test_image_byte_caps_are_enforced`.*
+14. Frontend — an image attached while ACP is selected stays in the request;
+    a later text turn carries none, and the older turn goes out as text.
+    *Covered: the `acp image:` checks in `tests/dom/test_dom.js`.*
 15. Backend — a prompt over `ACP_MAX_PROMPT_BYTES` is 400. *Covered:
     `test_oversize_prompt_is_rejected`.*
 
@@ -608,10 +614,10 @@ consequence is now documented.**
    comment and a plan. The README now documents the ACP flow, the read-only
    Settings panel, the trust boundary, and the wrapper form of `command`; the
    architecture doc and `agent.md` cover the same ground.
-2. **Assert the ACP image strip in the DOM suite.** *Why:* `buildRequestMessages`
-   and `send` now drop image parts and show one notice, so a stale image cannot
-   poison later turns, but no DOM check asserts the strip or the notice; the
-   server 400 remains covered by criterion 13.
+2. **Assert the ACP image path in the DOM suite.** **Done** — the `acp image:`
+   checks now cover the attach affordance, the image part in the ACP body, the
+   later text-only turn, and the transcript collapse. See
+   [`acp-image-input.md`](acp-image-input.md).
 3. **Render richer agent progress (thought / plan / file-changed).** *Why:* a
    tool-start trace line now shows activity, but the detail the client already
    receives is dropped (`session_update`, `acp_client.py`), so a wrong direction

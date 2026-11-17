@@ -14,6 +14,8 @@ authentication whenever the server is bound to a non-loopback address.
 """
 
 import argparse
+import base64
+import binascii
 import dataclasses
 import fnmatch
 import html
@@ -2349,6 +2351,26 @@ ACP_MAX_ARG_LEN = 1000
 ACP_MAX_MODEL_LEN = 200
 ACP_MAX_PROMPT_BYTES = 8 * 1024 * 1024
 
+# Images in one ACP turn. The browser re-encodes to <= 2 MiB per image and at
+# most four per message, so these caps are a backstop for a client that does
+# not resize; the browser's own 12 MiB wire guard binds first.
+ACP_MAX_IMAGE_BYTES = 4 * 1024 * 1024
+ACP_MAX_IMAGE_TOTAL_BYTES = 12 * 1024 * 1024
+ACP_IMAGE_MIME_ALLOW = ("image/png", "image/jpeg", "image/webp", "image/gif")
+# Leading bytes each allowed format must carry. The declared media type is a
+# label the sender chooses, so the payload is checked against it before it
+# reaches the agent's decoder. WebP needs its RIFF container header checked at
+# a fixed offset, so it is handled separately in _image_signature_ok().
+ACP_IMAGE_SIGNATURES = {
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/gif": (b"GIF87a", b"GIF89a"),
+}
+ACP_IMAGE_WEBP_RIFF = b"RIFF"
+ACP_IMAGE_WEBP_TAG = b"WEBP"
+ACP_IMAGE_WEBP_TAG_OFFSET = 8
+ACP_IMAGE_WEBP_HEADER_LEN = 12
+
 # Prepended to every ACP prompt. An ACP agent brings its own system prompt, so
 # the notebook's system turn is not forwarded; this replaces it with the one
 # fact the agent cannot discover cheaply -- where it is working. Kept to two
@@ -3077,7 +3099,8 @@ def _flatten_acp_prompt(messages):
     turn -- so the browser's re-uploaded transcript is serialized as
     "User: ..." / "Assistant: ..." blocks joined by blank lines, in order.
     System messages are dropped by the caller (the agent brings its own
-    system prompt). Image parts never reach here (rejected earlier).
+    system prompt). Image parts contribute no text; they are sent as separate
+    image content blocks by _acp_prompt_images().
     """
     labels = {"user": "User", "assistant": "Assistant"}
     blocks = []
@@ -3092,6 +3115,106 @@ def _flatten_acp_prompt(messages):
             text = ""
         blocks.append("%s: %s" % (labels.get(m.get("role"), "User"), text))
     return "\n\n".join(blocks)
+
+
+def _base64_max_bytes(payload):
+    """Decoded size of a canonical base64 payload, computed without decoding.
+
+    Defined only for a length divisible by four; the caller rejects every other
+    length as invalid base64 before this is used.
+    """
+    padding = len(payload) - len(payload.rstrip("="))
+    return (len(payload) // 4) * 3 - padding
+
+
+def _image_signature_ok(mime, decoded):
+    """Does the decoded payload start with the signature its label claims?
+
+    Cheap defence against handing arbitrary bytes to the agent's image
+    decoder: the sender picks the mime label, so the label alone proves
+    nothing. Accepts only the four formats in ACP_IMAGE_MIME_ALLOW.
+    """
+    head = decoded[:ACP_IMAGE_WEBP_HEADER_LEN]
+    if mime == "image/webp":
+        tag_end = ACP_IMAGE_WEBP_TAG_OFFSET + len(ACP_IMAGE_WEBP_TAG)
+        return (head[:len(ACP_IMAGE_WEBP_RIFF)] == ACP_IMAGE_WEBP_RIFF
+                and head[ACP_IMAGE_WEBP_TAG_OFFSET:tag_end]
+                == ACP_IMAGE_WEBP_TAG)
+    return any(head.startswith(sig)
+               for sig in ACP_IMAGE_SIGNATURES.get(mime, ()))
+
+
+def _acp_prompt_images(messages):
+    """Extract the newest image-bearing user turn as (mime, base64) pairs.
+
+    ACP takes one prompt, so only one turn's images can be sent. The browser
+    keeps image parts on the newest genuine user turn only (tool follow-ups are
+    plain strings), but this walks back to the newest message that actually
+    carries an image part so a tool follow-up appended after the image turn
+    cannot hide it.
+
+    Returns ([(mime_type, base64_payload), ...], None) on success, or
+    (None, error_response) for an invalid, empty, or oversized image. A
+    transcript with no image part returns ([], None).
+    """
+    for m in reversed(messages):
+        content = m.get("content")
+        if m.get("role") != "user" or not isinstance(content, list):
+            continue
+        parts = [p for p in content if p.get("type") == "image_url"]
+        if not parts:
+            continue
+        images = []
+        total = 0
+        for part in parts:
+            url = part["image_url"]["url"]
+            header, _, payload = url.partition(",")
+            mime, _, encoding = header[len("data:"):].partition(";")
+            if mime not in ACP_IMAGE_MIME_ALLOW or encoding != "base64":
+                return None, err(
+                    "ACP image attachments must be a "
+                    "data:image/(png|jpeg|webp|gif);base64 URL", 400)
+            if not payload:
+                return None, err("ACP image attachment is not valid base64",
+                                 400)
+            if len(payload) % 4:
+                return None, err("ACP image attachment is not valid base64",
+                                 400)
+            # Bound both caps from the encoded length before allocating the
+            # decode, so a 32 MiB body cannot force a 24 MiB decode per part.
+            encoded_max = _base64_max_bytes(payload)
+            if encoded_max > ACP_MAX_IMAGE_BYTES:
+                return None, err(
+                    "ACP image attachments are limited to %d MiB each"
+                    % (ACP_MAX_IMAGE_BYTES // (1024 * 1024)), 400)
+            if total + encoded_max > ACP_MAX_IMAGE_TOTAL_BYTES:
+                return None, err(
+                    "ACP image attachments are limited to %d MiB per turn"
+                    % (ACP_MAX_IMAGE_TOTAL_BYTES // (1024 * 1024)), 400)
+            try:
+                decoded = base64.b64decode(payload, validate=True)
+            except (binascii.Error, ValueError):
+                return None, err("ACP image attachment is not valid base64",
+                                 400)
+            if not decoded or base64.b64encode(decoded).decode() != payload:
+                return None, err("ACP image attachment is not valid base64",
+                                 400)
+            if not _image_signature_ok(mime, decoded):
+                return None, err(
+                    "ACP image attachment content does not match its media "
+                    "type", 400)
+            if len(decoded) > ACP_MAX_IMAGE_BYTES:
+                return None, err(
+                    "ACP image attachments are limited to %d MiB each"
+                    % (ACP_MAX_IMAGE_BYTES // (1024 * 1024)), 400)
+            total += len(decoded)
+            if total > ACP_MAX_IMAGE_TOTAL_BYTES:
+                return None, err(
+                    "ACP image attachments are limited to %d MiB per turn"
+                    % (ACP_MAX_IMAGE_TOTAL_BYTES // (1024 * 1024)), 400)
+            images.append((mime, payload))
+        return images, None
+    return [], None
 
 
 def _acp_context_preamble(workspace_id=None):
@@ -3154,9 +3277,10 @@ def _acp_chat_response(acp, data):
     The ACP profile lives in config/acp.json (never in the ai.json server
     list), so this branch is reached when the POSTed server name matches an
     ACP profile. Message validation is shared with the OpenAI path; system
-    messages are then dropped (the agent has its own prompt) and image parts
-    are rejected (no vision over ACP in v1). The surviving transcript is
-    flattened to one prompt string. The profile's configured model, when set,
+    messages are then dropped (the agent has its own prompt) and the surviving
+    transcript is flattened to one prompt string. The parts of the newest user
+    message that carries images are re-wrapped as ACP image content blocks (the
+    browser sends them as OpenAI-style image_url parts). The profile's configured model, when set,
     is applied by acp_client after session/new. Each SSE event mirrors the
     OpenAI relay's framing so static/js/api.js parses it unchanged: text rides
     the OpenAI delta shape, done is `data: [DONE]`, and a failure is the same
@@ -3170,11 +3294,9 @@ def _acp_chat_response(acp, data):
     if not clean_messages:
         return err("ACP profiles require at least one user or assistant "
                    "message", 400)
-    for m in clean_messages:
-        content = m["content"]
-        if isinstance(content, list) and any(
-                part.get("type") == "image_url" for part in content):
-            return err("ACP profiles do not support image attachments", 400)
+    images, error = _acp_prompt_images(clean_messages)
+    if error:
+        return error
 
     # The optional body workspace id selects the root the agent runs in and
     # the workspace whose open note goes into the preamble. An unknown id is
@@ -3218,7 +3340,8 @@ def _acp_chat_response(acp, data):
         try:
             for event in acp_client.run_turn(
                     command, args=args, cwd=cwd, env=env, model=model,
-                    prompt=prompt, timeout=timeout, keepalive=True):
+                    prompt=prompt, images=images, timeout=timeout,
+                    keepalive=True):
                 etype = event.get("type")
                 if etype == "text":
                     yield "data: %s\n\n" % json.dumps(

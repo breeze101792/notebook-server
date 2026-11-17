@@ -251,9 +251,13 @@ agents' status read-only; the section is never in the editable provider list.
 names a saved server or an ACP profile (so "Make default" always wins), else the
 first profile flagged `default: true`, else `""`; the server never writes
 `config/acp.json`. `POST /api/ai/config` accepts a `default` naming an ACP
-profile and rejects a server name that collides with one (400). An ACP-tagged
-provider strips `image_url` parts client-side, narrows the attach input to
-`text/*`, and the server rejects any image part with 400. `POST /api/ai/chat`
+profile and rejects a server name that collides with one (400). An ACP profile
+takes images: the browser sends the newest genuine user turn's `image_url`
+parts and collapses older image-bearing messages to text (so the re-uploaded
+body does not grow with history), and the server re-wraps that turn's parts as
+ACP `image` content blocks after the single text block. The agent's
+`promptCapabilities.image` is not a gate — it only words the error when the
+prompt then fails or is refused. `POST /api/ai/chat`
 serves it when the posted `server` matches an ACP profile (`_acp_profile`):
 messages go through the same `_validate_chat_messages`, the system turn is
 dropped, and the rest is flattened to one prompt capped at 8 MiB — same SSE

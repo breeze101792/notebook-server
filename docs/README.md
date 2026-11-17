@@ -84,6 +84,7 @@ Start here depending on the job:
 | [`requirements/features/sessions.md`](requirements/features/sessions.md) | Session tab groups: goals, model and invariants, flows, the edge-case table, acceptance criteria, and what must not regress. |
 | [`requirements/features/acp-provider.md`](requirements/features/acp-provider.md) | ACP as a second AI provider: profile shape, agent discovery, context preamble, trace, and acceptance criteria. |
 | [`requirements/features/ai-attachments.md`](requirements/features/ai-attachments.md) | Images and large text files in the AI composer: limits, resize pipeline, and failure messages. |
+| [`requirements/features/acp-image-input.md`](requirements/features/acp-image-input.md) | Implemented: ACP images as `session/prompt` image blocks — the newest turn only, limits, errors, tests, and the no-capability-gate deviation. |
 | [`requirements/features/context-menus.md`](requirements/features/context-menus.md) | The unified right-click menu requirement across the tree, tabs, and hybrid blocks. |
 | [`requirements/features/mermaid-visual-editor.md`](requirements/features/mermaid-visual-editor.md) | The visual Mermaid editor requirement; the shipped design is in `architecture/mermaid-designer.md`. |
 

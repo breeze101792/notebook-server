@@ -432,8 +432,9 @@ implementation. Follow-ups applied:
 - `_Client` refuses `fs/*`, `terminal/*`, and `elicitation/create` with JSON-RPC
   `method_not_found`; spawn failures no longer echo the command line.
 - Frontend: read-only ACP row in Settings → AI (rendered from `cfg.acp`, never
-  in the POST payload), and image attachments stripped/disabled for ACP turns
-  so an image can no longer poison every later turn.
+  in the POST payload); image attachments were stripped for ACP turns at this
+  point, a guard that was later removed when ACP image input shipped
+  (`requirements/features/acp-image-input.md`).
 - No permission cards, no `fs/*` advertisement, no held writes: the agent uses
   its own tools and is trusted; confinement is the launcher in `config/acp.json`.
 

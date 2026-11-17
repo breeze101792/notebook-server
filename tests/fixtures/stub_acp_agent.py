@@ -5,7 +5,9 @@ It speaks newline-delimited JSON-RPC 2.0 on stdin/stdout and drives nothing --
 it answers the three methods the notebook's ACP client sends and streams a
 couple of `session/update` notifications for a prompt:
 
-    initialize    -> {"protocolVersion": 1, "agentCapabilities": {}}
+    initialize    -> {"protocolVersion": 1, "agentCapabilities": {...}}
+                     (loadSession plus promptCapabilities.image, unless the
+                     mode says otherwise)
     session/new   -> {"sessionId": "<id>"}
     session/prompt-> two agent_message_chunk updates, then
                      {"stopReason": "end_turn"}
@@ -43,6 +45,26 @@ variable so one fixture covers every failure path the backend must contain:
     modelreject
               advertise a model option but reject session/set_config_option
               (drives the client's rejected-model error path)
+    image     advertise promptCapabilities.image, then describe the received
+              prompt blocks ("blocks=text,image:image/png:<bytes>") so a test
+              can assert block order, mime type, and decoded size
+    image-nocap
+              same as image but advertise promptCapabilities.image false; the
+              blocks must still arrive (the client does not gate on it)
+    image-reject
+              advertise image false and answer an image-bearing prompt with a
+              JSON-RPC error (drives the client's image-error wording)
+    image-refuse
+              advertise image false and answer an image-bearing prompt with
+              {"stopReason": "refusal"} instead of an error
+    image-error
+              advertise image true and fail every prompt with a JSON-RPC
+              error (the negative control for the image-error wording)
+    image-silent-error
+              no promptCapabilities at all and fail every prompt; silence
+              about images must not be read as "does not accept images"
+    capnull   answer initialize with "agentCapabilities": null, the shape that
+              must not crash the client's capability read
 
 `--pidfile PATH` records the stub's own PID so a test can assert the backend
 reaped the child process. `--session-id ID` overrides the session id.
@@ -52,6 +74,7 @@ Usage (from the tests):
 """
 
 import argparse
+import base64
 import json
 import os
 import signal
@@ -84,6 +107,25 @@ MODE_ENV = "env"
 MODE_MODEL = "model"
 MODE_NO_MODEL = "nomodel"
 MODE_MODEL_REJECT = "modelreject"
+MODE_IMAGE = "image"
+MODE_IMAGE_NO_CAP = "image-nocap"
+MODE_IMAGE_REJECT = "image-reject"
+MODE_IMAGE_REFUSE = "image-refuse"
+MODE_IMAGE_ERROR = "image-error"
+MODE_IMAGE_SILENT_ERROR = "image-silent-error"
+MODE_CAP_NULL = "capnull"
+
+# Prompt-block handling: every image mode reports the blocks it received;
+# only MODE_IMAGE and MODE_IMAGE_ERROR advertise the capability, so the others
+# prove the client does not gate on it.
+IMAGE_MODES = (MODE_IMAGE, MODE_IMAGE_NO_CAP, MODE_IMAGE_REJECT,
+               MODE_IMAGE_REFUSE, MODE_IMAGE_ERROR, MODE_IMAGE_SILENT_ERROR)
+IMAGE_TRUE_MODES = (MODE_IMAGE, MODE_IMAGE_ERROR)
+# Modes that answer initialize without any promptCapabilities: silence about
+# images must read as "unknown", not as "no".
+IMAGE_SILENT_MODES = (MODE_IMAGE_SILENT_ERROR,)
+IMAGE_REJECT_CODE = -32602
+IMAGE_REJECT_MESSAGE = "content block not supported"
 
 # Correlated JSON-RPC ids for the agent->client requests the stub makes. Fixed
 # so the read loop can recognise the matching response; the client only ever
@@ -140,6 +182,28 @@ def _prompt_text(params):
         if isinstance(block, dict) and block.get("type") == "text":
             parts.append(block.get("text") or "")
     return "".join(parts)
+
+
+def _prompt_blocks(params):
+    """Describe the prompt's content blocks in arrival order.
+
+    The text block is reported as "text"; an image block as
+    "image:<mimeType>:<decoded bytes>". A test asserts block order, mime type,
+    and payload size from one streamed line, without the client having to
+    expose its prompt list.
+    """
+    described = []
+    for block in params.get("prompt") or []:
+        if not isinstance(block, dict):
+            continue
+        block_type = block.get("type")
+        if block_type == "text":
+            described.append("text")
+        elif block_type == "image":
+            data = block.get("data") or ""
+            described.append("image:%s:%d" % (
+                block.get("mimeType") or "", len(base64.b64decode(data))))
+    return "blocks=" + ",".join(described)
 
 
 def _stream_chunk(session_id, text):
@@ -304,6 +368,21 @@ def _handle_prompt(args, request_id, params, mode, state):
             _stream_chunk(args.session_id, chunk)
         _reply(request_id, {"stopReason": "end_turn"})
         return
+    if mode in IMAGE_MODES:
+        if mode in (MODE_IMAGE_ERROR, MODE_IMAGE_SILENT_ERROR):
+            _reply_error(request_id, IMAGE_REJECT_CODE, IMAGE_REJECT_MESSAGE)
+            return
+        has_image = any(isinstance(b, dict) and b.get("type") == "image"
+                        for b in params.get("prompt") or [])
+        if mode == MODE_IMAGE_REJECT and has_image:
+            _reply_error(request_id, IMAGE_REJECT_CODE, IMAGE_REJECT_MESSAGE)
+            return
+        _stream_chunk(args.session_id, _prompt_blocks(params))
+        if mode == MODE_IMAGE_REFUSE and has_image:
+            _reply(request_id, {"stopReason": "refusal"})
+            return
+        _reply(request_id, {"stopReason": "end_turn"})
+        return
     if mode == MODE_ECHO:
         chunks = (_prompt_text(params), ECHO_SUFFIX)
     else:
@@ -361,9 +440,20 @@ def main():
         params = message.get("params") or {}
 
         if method == "initialize":
+            if mode == MODE_CAP_NULL:
+                capabilities = None
+            elif mode in IMAGE_SILENT_MODES:
+                capabilities = {"loadSession": False}
+            else:
+                capabilities = {
+                    "loadSession": False,
+                    "promptCapabilities": {
+                        "image": mode in IMAGE_TRUE_MODES,
+                    },
+                }
             _reply(request_id, {
                 "protocolVersion": version,
-                "agentCapabilities": {"loadSession": False},
+                "agentCapabilities": capabilities,
             })
         elif method == "session/new":
             result = {"sessionId": args.session_id}

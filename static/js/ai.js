@@ -142,10 +142,6 @@
   const AI_ATTACH_IMAGE_EXTS = [
     ".png", ".jpg", ".jpeg", ".webp", ".gif",
   ];
-  /* Accept filter for the attach input while an ACP provider is active:
-   * keeps the OS picker from offering raster images the agent cannot take.
-   * The send path strips any image that still gets in (paste/drop). */
-  const AI_ATTACH_TEXT_ACCEPT = "text/*";
 
   /* Chat history survives a reload through localStorage. The key follows
    * the nb:tableView / nb:windowGeometry convention; the payload is
@@ -877,11 +873,9 @@
   let editBtn = null;
   let lastSentPrompt = "";
   let lastSentFiles = [];
-  /* Set by mount(); re-applies the attach control's ACP affordance when the
-   * active provider changes (picker change or a config reload). */
+  /* Set by mount(); re-applies the attach control's default affordance when
+   * the provider changes or the config reloads. */
   let mountSyncAttachAffordance = null;
-  /* One inline ACP image notice per turn, however many rounds/requests. */
-  let acpImageNoticeShown = false;
   /* Pending debounced block-render pass for a streaming reply bubble. */
   let enrichTimer = 0;
   let enrichTarget = null;
@@ -1516,45 +1510,31 @@
   }
 
   /* An ACP profile (config/acp.json) is tagged client-side by loadAiConfig.
-   * It runs a local agent process with no image input: the server answers
-   * 400 for any image_url part, and because the whole transcript is
-   * re-uploaded every turn one stale image would poison every later turn.
-   * So an ACP turn drops image parts and says so. */
+   * It accepts images like any provider, but ACP takes one prompt per turn,
+   * so only the newest genuine user turn's images are worth sending. */
   function activeServerIsAcp() {
     return servers.some((s) => s && s.name === currentServer && s.acp === true);
   }
 
-  /* Messages exactly as they go on the wire. For ACP, every image_url part
-   * is removed and a mixed turn collapses to its text; the conversation
-   * itself is left intact, so switching back to an OpenAI profile restores
-   * the images. */
+  /* Messages exactly as they go on the wire. For ACP, the newest genuine user
+   * turn keeps its image parts and every older image-bearing message collapses
+   * to its text: the server sends one prompt, so older images would only grow
+   * the body. The conversation itself is left intact, so switching back to an
+   * OpenAI profile restores the images. */
   function buildRequestMessages() {
     const messages = [getSystem(), ...conversation];
-    if (!activeServerIsAcp()) return { messages, strippedImages: 0 };
-    let strippedImages = 0;
-    const out = messages.map((m) => {
-      if (!m || !Array.isArray(m.content)) return m;
-      const kept = m.content.filter((p) => !(p && p.type === "image_url"));
-      if (kept.length === m.content.length) return m;
-      strippedImages += m.content.length - kept.length;
-      const text = kept.filter((p) => p && p.type === "text")
-        .map((p) => p.text || "").join("");
-      return Object.assign({}, m, { content: text });
+    if (!activeServerIsAcp()) return { messages };
+    /* +1 for the system turn prepended above. */
+    const keepIndex = lastUserTurnIndex() + 1;
+    const out = messages.map((m, i) => {
+      if (!m || !Array.isArray(m.content) || i === keepIndex) return m;
+      if (!m.content.some((p) => p && p.type === "image_url")) return m;
+      return Object.assign({}, m, {
+        content: m.content.filter((p) => p && p.type === "text")
+          .map((p) => p.text || "").join(""),
+      });
     });
-    return { messages: out, strippedImages };
-  }
-
-  /* The panel's send-problem notice element (.ai-error), shown at most once
-   * per turn. */
-  function showAcpImageNotice(log, count) {
-    if (!log || acpImageNoticeShown) return;
-    acpImageNoticeShown = true;
-    const errEl = document.createElement("div");
-    errEl.className = "ai-error";
-    errEl.textContent = "ACP agents do not accept image attachments — " +
-      (count === 1 ? "the image was not sent." : count + " images were not sent.");
-    log.appendChild(errEl);
-    scrollLog(log);
+    return { messages: out };
   }
 
   /* Does a write/patch permission card still await the user after the last
@@ -1668,18 +1648,7 @@
   async function send(log, userText, ui, files) {
     ui.begin();
     regenerating = false;   // a new prompt is not a retry
-    acpImageNoticeShown = false;
-    /* ACP has no image input. Strip image entries before they can enter the
-     * transcript (they would otherwise be re-uploaded every turn) and say
-     * so; text attachments and the prompt are kept. */
-    let sendFiles = files || [];
-    if (activeServerIsAcp()) {
-      const images = sendFiles.filter((f) => f.kind === "image");
-      if (images.length) {
-        sendFiles = sendFiles.filter((f) => f.kind !== "image");
-        showAcpImageNotice(log, images.length);
-      }
-    }
+    const sendFiles = files || [];
     const userContent = composeUserContent(userText, sendFiles);
     /* Backstop: refuse a request whose serialized body would exceed the
      * wire cap, before it is sent and before the conversation changes. */
@@ -1714,7 +1683,6 @@
        * can exceed it once tool follow-ups are appended mid-turn. Refuse
        * and stop cleanly rather than send an oversize body. */
       const built = buildRequestMessages();
-      if (built.strippedImages) showAcpImageNotice(log, built.strippedImages);
       const size = wireByteSize(JSON.stringify(
         { server: currentServer, messages: built.messages }));
       if (size > AI_ATTACH_MAX_WIRE_BYTES) {
@@ -1752,8 +1720,9 @@
           /* A provider HTTP rejection on an image-bearing turn is the
            * signal the model likely has no vision. The image parts stay
            * in the conversation, so a retry (or a model switch) still
-           * carries them. */
-          if (e.status >= 400 &&
+           * carries them. An ACP 400 is a validation failure (bad data
+           * URL or size), not a missing vision model, so it gets no hint. */
+          if (!activeServerIsAcp() && e.status >= 400 &&
               turnHasImages(conversation[lastUserTurnIndex()])) {
             const hintEl = document.createElement("div");
             hintEl.className = "ai-error";
@@ -1838,7 +1807,6 @@
     conversation = conversation.slice(0, idx + 1);
     persistHistory();
     ui.begin();
-    acpImageNoticeShown = false;
     regenerating = true;
     try {
       await runToolLoop(log, ui);
@@ -2340,19 +2308,13 @@
     attachInput.id = "ai-attach-input";
     attachInput.className = "ai-attach-input";
     attachInput.hidden = true;
-    /* The attach control's image path: hidden from the OS picker while an
-     * ACP provider is active (ACP agents take no images). Text files stay
-     * attachable; paste/drop still bypass accept, so send() strips too. */
+    /* Attachments are uniform across providers: images are always offered and
+     * the server translates them. The hook stays because the provider picker
+     * and a config reload both call it; it resets the control idempotently. */
     function syncAttachAffordance() {
-      if (activeServerIsAcp()) {
-        attachInput.accept = AI_ATTACH_TEXT_ACCEPT;
-        attachBtn.title = "Attach text files (ACP agents do not accept images)";
-        attachBtn.setAttribute("aria-label", "Attach text files");
-      } else {
-        attachInput.removeAttribute("accept");
-        attachBtn.title = "Attach files";
-        attachBtn.setAttribute("aria-label", "Attach files");
-      }
+      attachInput.removeAttribute("accept");
+      attachBtn.title = "Attach files";
+      attachBtn.setAttribute("aria-label", "Attach files");
     }
     const ta = document.createElement("textarea");
     ta.id = "ai-input";
@@ -2653,11 +2615,8 @@
         return;
       }
       /* Checked before clearing so a refused send keeps the pending chips
-       * (and the typed prompt) for the user to adjust. Size the request as
-       * it will actually go out: ACP drops image parts (see send()). */
-      const sendFiles = activeServerIsAcp()
-        ? files.filter((f) => f.kind !== "image") : files;
-      const wireSize = wireSizeOfTurn(composeUserContent(q, sendFiles));
+       * (and the typed prompt) for the user to adjust. */
+      const wireSize = wireSizeOfTurn(composeUserContent(q, files));
       if (wireSize > AI_ATTACH_MAX_WIRE_BYTES) {
         showSendTooLarge(log, wireSize);
         return;
