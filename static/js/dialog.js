@@ -3,7 +3,9 @@
  * open() makes every other direct body child inert, wraps Tab and Shift+Tab
  * at the dialog edges, and makes the aria-modal promise true. close() clears
  * those flags and returns focus to the opener. Each surface keeps its own Esc
- * and backdrop handling; this module owns containment and focus only. */
+ * and backdrop handling; this module owns containment and focus only.
+ * requestClose() lets an outside gesture (the phone's back button) ask the
+ * surface to run its own close path instead of closing it behind its back. */
 (function () {
   "use strict";
   window.NB = window.NB || {};
@@ -76,7 +78,10 @@
   function open(overlay, opts) {
     if (!overlay) return;
     opts = opts || {};
+    const onCloseRequest = typeof opts.onCloseRequest === "function"
+      ? opts.onCloseRequest : null;
     if (active && active.overlay === overlay) {
+      if (onCloseRequest) active.onCloseRequest = onCloseRequest;
       focusEl(opts.initialFocus);
       return;
     }
@@ -89,6 +94,8 @@
       overlay: overlay,
       invoker: document.activeElement,
       fallback: opts.fallbackFocus || null,
+      // The surface's own closer, for a back gesture the surface owns.
+      onCloseRequest: onCloseRequest,
     };
     Array.from(document.body.children).forEach(inertNode);
     // auth.js opens before the later overlays are parsed; inert those too.
@@ -119,5 +126,19 @@
     if (usable(target)) focusEl(target);
   }
 
-  NB.dialog = { open, close };
+  function isOpen() {
+    // Trust the DOM, not just the bookkeeping: a surface that hides its
+    // overlay without calling close() must not keep eating back presses.
+    return !!(active && active.overlay.isConnected && !active.overlay.hidden);
+  }
+
+  // A back gesture asks the surface to close itself through its own path, so
+  // the overlay stays owned by whoever opened it. True only when it closed:
+  // no closer, or a closer that declined, returns false.
+  function requestClose() {
+    if (!active || typeof active.onCloseRequest !== "function") return false;
+    return active.onCloseRequest() === true;
+  }
+
+  NB.dialog = { open, close, isOpen, requestClose };
 })();

@@ -180,7 +180,7 @@ POST /api/file/append  {"path": "Inbox.md", "content": "\n\n" + text.trim() + "\
 - **Hover-only rules:** hide `.tree-star`/`.tree-pin` on mobile (both actions live in the `…` menu — no dead UI) and reveal the code-block copy button: `.tree-star, .tree-pin { display: none; }`, `.copy-btn { opacity: 1; }` inside the phone arm. Before v1 they were hover-gated (`style.css` per research §3.2). No `:hover` rule remains load-bearing in the phone arm.
 - **44 px targets:** the phone arm raises `.activity-btn` (36 px today, `style.css`), drawer rows (27 px), and every `…`/sheet control to ≥44 px with padding (HIG; research §6).
 - **Capture sheet + `visualViewport`:** the sheet is bottom-anchored and listens to `window.visualViewport` `resize`/`scroll` to re-anchor above the open keyboard (iOS does not shrink the layout viewport; research §5/M4). Fallback: `resize` for Android. The field renders at ≥16 px so iOS does not zoom on focus (spec C2).
-- **`#edit-toggle` hidden, `#hybrid-toggle` shown** on mobile. The source editor stays desktop-only; the WYSIWYG pencil is the phone edit entry and is hidden until a note is open and the role can write (§13).
+- **`#edit-toggle` and `#hybrid-toggle` hidden** on mobile. The source editor stays desktop-only, and the phone enters WYSIWYG from the note menu's `Edit note` (§14.4).
 - **`#brand` must not be the mobile title:** it is a reload button — click calls `NB.viewer.reload()` (`viewer.js`) — so a mis-tap would discard the reading position. The phone arm hides it; the title is `#mobile-title` (opens the drawer).
 - **`topbar-hidden` config class:** §3's two rules keep the topbar and back button alive on a phone even when the desktop preference is on (`app.js`, `style.css`).
 
@@ -279,3 +279,163 @@ it was in the top bar, Save stays hidden in hybrid, and the bar keeps wrapping.
 **Not supported on the phone:** drag-reorder handles (table/list `mousedown`
 drags), the right-click formatting menu, and the source editor.
 
+## 14. v3 addendum — phone sidebar access (shipped)
+
+Behaviour: [`../product/mobile.md`](../product/mobile.md) M10. Visual contract:
+[`../ui/mobile-more-sheet.md`](../ui/mobile-more-sheet.md).
+
+The phone rail gains Sessions and one overflow control. Nothing else about the rail changes: same
+DOM, same 56 px bottom bar, same `activate()` path.
+
+### 14.1 One disposition table, no CSS decision
+
+```js
+// activity.js — the rail is a slice of the user's saved order, not a set.
+const PHONE_RAIL_SLOTS = 6;
+// Views with no phone surface: no rail slot and no More row.
+const PHONE_OFF_VIEWS = ["ai"];
+
+function phoneViews() {
+  return visibleViews().filter(v => PHONE_OFF_VIEWS.indexOf(v.id) < 0);
+}
+function railViews() {
+  return isPhone() ? phoneViews().slice(0, PHONE_RAIL_SLOTS) : visibleViews();
+}
+function offRailViews() {
+  return isPhone() ? phoneViews().slice(PHONE_RAIL_SLOTS) : [];
+}
+```
+
+- `renderBar()` iterates `railViews()`; every desktop line is untouched because `railViews()` equals
+  `visibleViews()` off the phone.
+- **`isPhone()` is the existing predicate** (`activity.js:237-239`). It must be extended, not
+  duplicated: `NB.mobile` does not exist during the first `register()` calls, because `activity.js`
+  is parsed before `mobile.js` (`index.html:2055`, `:2059`). Read the CSS token first and keep the
+  `NB.mobile` branch as a fallback, so `renderBar` is correct at first paint and `collapse`/`expand`
+  keep working.
+- `NB.evt.on("mobile:mode", renderBar)` re-renders on a rotation or a resize across the breakpoint.
+  Without it a tablet that rotates into the phone shell keeps the unfiltered bar.
+- `NB.activity` gains `railViews()` and `offRailViews()`; `barItems()` keeps its contract (every
+  view, hidden or not) because Settings' order list reads it (`activity-bar-order.md` §1).
+- The two shipped sessions hides go away: `style.css:9415-9416`, and nothing else. The AI pair
+  (`style.css:8065-8066`) **stays** as belt and braces; `PHONE_OFF_VIEWS` is the decision, the CSS is
+  the guard. This matters: AI is registered and is not in `hiddenViews` (`activity.js:134-136`), so
+  without the exclusion the More sheet would list it and open an empty drawer.
+- `#pinned-view` needs no CSS change: it stays a rail slot by default and its host stays visible.
+- **`app.js:36` is the second phone constant.** `PHONE_HIDDEN_VIEWS = ["ai", "sessions"]` is used at
+  `app.js:1441-1448` to rewrite a saved `activeView` that names a view the phone cannot host.
+  `"sessions"` must be removed from it, or a saved `activeView: "sessions"` still falls back to
+  Explorer and the phone never opens the drawer on Sessions. Only `"ai"` stays, and the constant's
+  comment changes with it.
+
+### 14.2 The overflow control
+
+| Piece | Change |
+|---|---|
+| Markup | `#activity-more-btn`, a `.activity-btn.activity-action` after `#activity-settings-btn` (`index.html:377`); `display: none` on desktop, `display: flex` in the phone arm |
+| Glyph | `#nb-icon-menu` (`index.html:262-264`); the topbar's note menu keeps `#nb-icon-more`, so the two corners never share a glyph or a label |
+| Label | `aria-label`/`title` `More views` against the topbar's `Note menu` (`index.html:344`); the sheet's own title is `More` |
+| Layer | `layer = "views"`: a fourth phone sheet, same mechanics as `settings` — `setLayer`, a branch in `showLayerUi`/`hideLayerUi`, `body.views-open`, the shared scrim, `onKeydown`'s trap branch, `focusOpener` |
+| Host | `#mobile-views-sheet`, a sibling of `#mobile-settings` inside `#app`; `hidden` at rest; joins the four shipped sheet selector lists |
+| Build | `buildViews()` runs on every open and renders from `offRailViews()` and the auth status, so a hide/unhide or reorder needs no live subscription. It reuses the grabber/head/close/body construction of `buildSettings()` (`mobile.js:670-760`); factor that four-line header once instead of copying it |
+| Owned state | `aria-expanded` and `body.views-open` are written only in `showLayerUi`/`hideLayerUi` (`mobile.js:213-250`), the single owner of every layer transition — including the drawer takeover, `onAuthLocked`'s blanket close, and a mode flip |
+| View row | `NB.mobile.openDrawer(id)`; `setLayer("drawer")` reuses the one history entry, so back goes note-ward, not sheet-ward |
+| Settings row | `openSettings(opener)`: the opener is an element with a `focus` method, otherwise `#mobile-more`. The Home row passes a wrapper, never the bare function (`mobile.js:535`), or a `MouseEvent` becomes the opener |
+| Log out row | `NB.auth.status().enabled` gates the row; the click closes the layer and calls `NB.auth.logout()` |
+
+`openMore()` keeps its name and its job (the note menu). The new entry point is `openViews()`.
+
+`updateHome` (`mobile.js:545-547`) enables the back button on `!active`; it must be `!active && !layer`,
+because More is reachable from Home and back is the only close control there besides the scrim.
+
+### 14.3 Sessions on the phone
+
+The list needs no new render path: remove the two hides, size it for touch
+(`sessions.md` §10.2). `#sessions-view` already carries a `.panel-header` with
+`makeCollapseBtn()`, so the phone header rule (`style.css:8113-8120`) gives it a 52 px bar and a 44 px
+`×`, and `focusDrawer()` finds that close button (`mobile.js:342-352`).
+
+**Closing the drawer after a switch** is the one behaviour that needs code, because the shipped paths
+cover only part of it:
+
+| Target session | Shipped path | Contract |
+|---|---|---|
+| Non-empty, different note | `pushNoteHistory` closes the layer and replaces the entry (`mobile.js:949-964`) | works as is |
+| Non-empty, **same note** | `pushNoteHistory` returns at `:953` before the layer branch, so the drawer stays open | move the `if (layer)` branch above the `state.nbFile === path` check. The same fix makes a Search hit on the already-open note close its sheet |
+| **Empty** | `activateSession` opens no file (`tabs.js:872-877`), so nothing closes the drawer | the row handler calls `NB.mobile.closeDrawer()` after the switch; the layer entry pops to the note |
+
+Session switching stays `tabs.js`'s swap path. The phone adds no session state, no config key and no
+localStorage entry.
+
+**The session dialog.** Create and Rename open `#session-dialog`, the first body-level desktop modal
+reachable from the phone (`NB.dialog`, `dialog.js:76-120`, z 2000). Without a guard, hardware back
+fires `popstate` and `onPopState` closes the drawer under the still-open dialog. The dialog is not a
+second layer — the layer model holds one at a time, and stacking would fight `showLayerUi`:
+
+- `dialog.js` gains `isOpen()` and `requestClose()`; `open(overlay, opts)` accepts an
+  `onCloseRequest` and `close()` emits nothing new.
+- `sessions.js` passes `onCloseRequest` for its create/rename dialog, so the closer stays owned by the
+  surface that opened it.
+- `mobile.js`'s `onPopState` runs first: if `NB.dialog.isOpen()` and `requestClose()` reports that the
+  surface actually closed, re-push the layer entry (`history.pushState({ nbLayer: layer })`) when one
+  exists, then return. A closer that declines (the session dialog refuses while a create is in flight)
+  returns `false`, and the back press falls through to the normal layer handling.
+- `isOpen()` checks `active.overlay.isConnected && !active.overlay.hidden`, not just the bookkeeping:
+  the guard now sits on every back press, and a surface that hid its overlay without calling `close()`
+  would otherwise swallow them all.
+
+**Two stale comments go with the change.** `index.html:407-409` still says the phone hides the
+Sessions host and its rail icon, and `style.css:8089-8090` cites a `sessions.md D12` that does not
+exist. Both are rewritten in the same commit.
+
+**The 20-session cap.** `sessions.js` refuses with `aria-disabled`, a `title` and an `sr-only` note
+(`sessions.js:624-640`). A phone has no hover, so the tap appears to do nothing. The disable path
+calls `NB.toast`/`notify` with the same reason on the phone; the title and `aria-describedby` stay for
+desktop.
+
+### 14.4 Home glyphs and the edit entry
+
+Two chrome corrections ride with this change, both visual only.
+
+**Home rows use the desktop sprites.** `homeRow()` (`mobile.js:468-488`) currently takes a text glyph
+and writes it into `.mhr-icon`; it takes an `nb-icon-*` id instead and builds
+`<svg class="icon"><use href="#id"/></svg>`. The mapping is the doc's table:
+search, file (Continue), bookmark, clock, explorer, settings. `.mhr-icon` becomes a 24 × 17 box
+(`--icon-lg`, `--fg-muted`); row height stays 56. No event, key or persistence changes.
+
+**The phone has no top-bar edit button.** `#hybrid-toggle { display: none; }` inside the phone query
+(`style.css`, phone block) hides it; `openMore()` already pushes `Edit note` as the first item when the
+role can write (`mobile.js:786-800`), so the entry exists with no new code. `focusOpener("edit")`
+(`mobile.js:252-258`) returns to `#hybrid-toggle`; on the phone it must return to `#mobile-more`. The
+edit bar's `Done` remains the exit (`architecture` §13). Desktop is untouched.
+
+The two stale comments (§14.3) and `hybrid-mode.md`'s "the button is the only entry control" both
+carry the phone exception.
+
+### 14.5 Tests
+
+| Suite | Assertion |
+|---|---|
+| `tests/dom/test_dom.js` | With `dataset.uiMode = "phone"`: the rail builds six view buttons + More (default order: Explorer, Sessions, Pinned, Bookmarks, Recent, Search); `offRailViews()` is empty and never contains AI; the sheet renders no `Views` group, then Settings and Log out only when auth is enabled; tapping a view row opens the drawer and adds no second history entry; Esc and back close the sheet and re-enable the back button on Home |
+| `tests/dom/test_dom.js` | A bar order that pushes a view to position 7 moves it into `offRailViews()` and out of the rail |
+| `tests/dom/test_dom.js` | `app.js` boot with a saved `activeView: "sessions"` leaves the active view as Sessions on the phone (the `PHONE_HIDDEN_VIEWS` change) |
+| `tests/browser/test_mobile_browser.js` | At 390 × 844: seven rail slots, each ≥44 wide, no horizontal overflow; tap Sessions → drawer with 44 px rows; tap a row → session switches and the drawer closes (same-note and empty-session cases included); tap More → sheet with Settings and Log out; back walks drawer → note |
+| `tests/dom/test_dom.js` | Home rows carry `<svg><use href="#nb-icon-…"/>` and no emoji text; `#hybrid-toggle` is not rendered on the phone; the note menu's first item is `Edit note` for a writer and absent for a viewer |
+| Desktop regression | At 1280 × 800: seven views, no `#activity-more-btn`, `railViews()` unfiltered, `#hybrid-toggle` shown for a writable note, Home rows untouched |
+
+### 14.6 Wiring the spec did not spell out
+
+Found while building; each is one line in the shipped code and none changes a contract.
+
+| Fix | Why |
+|---|---|
+| `setLayer` and `closeLayerNow` call `updateHome()` | Nothing re-ran the back-button predicate when a layer opened on Home, so More left back disabled |
+| `dataset.drawerView` is written **after** `setLayer("drawer")` | Entering from another layer runs `hideLayerUi` first, which deletes the attribute |
+| `requestCloseLayer` pops history only when the current entry still carries `nbLayer` | An empty-session switch rewrites the entry to Home, so `history.back()` would land on a stale `?file=` |
+| `#topbar #edit-toggle, #topbar #hybrid-toggle { display: none; }` | `#topbar .icon-btn { display: grid }` outranked a bare id: the source-editor `</>` had been visible on a phone all along, against `mobile-shell.md` §2 |
+| `.side-panel-view[data-view="sessions"] .collapse-btn` and `.session-more { flex: 0 0 44px }` | The per-view selector outranked the shared phone header rule, and the flex basis clamped the `⋯` width |
+| `sheetHead()` factors the grabber + head + close out of `buildSettings()` | The More sheet needs the same three nodes; a copy would drift |
+| The group label is `var(--text-xs)` (≈11.5 px), not `12px` | The typography ratchet (`tests/static/test_typography.js`) counts literals; `.72rem` is the smallest existing role |
+| `#welcome.welcome { display: none }` on the phone | `#welcome.welcome { display: flex }` outranked the phone's `#welcome { display: none }`, so the desktop welcome painted above Home — the same specificity class as the edit buttons above |
+| `Sign out` is the More row's label | The phone settings sheet already says `Sign out`; the desktop rail says `Log out`. One device, one word |
+| The sheet body is `padding: 0` | The host already applies `calc(12px + safe-area-inset-bottom)`; a body inset doubled it |

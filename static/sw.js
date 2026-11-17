@@ -51,7 +51,10 @@
 /* Bumped v28 -> v29: session rows are drag-reorderable and a sync response can
  * no longer overwrite a newer local change, so sessions.js, tabs.js, app.js
  * and style.css must reach already installed workers. */
-const CACHE = "notebook-v29";
+/* Bumped v29 -> v30: the phone rail is six views plus More, the More sheet is
+ * new, and Sessions is reachable on a phone, so the shell, style.css,
+ * activity.js, mobile.js, sessions.js and dialog.js must refresh together. */
+const CACHE = "notebook-v30";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

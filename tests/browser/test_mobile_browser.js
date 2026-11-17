@@ -115,6 +115,16 @@ async function openFileFromDrawer(page, file) {
     () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
 }
 
+// The drawer keeps whichever view was active last: a session switch leaves
+// Sessions in it, so reopen through the Explorer rail slot before touching
+// the tree. Only used with the drawer closed (the icon then opens it).
+async function openExplorerInDrawer(page) {
+  await page.click('#activity-bar .activity-btn[data-view="explorer"]');
+  await page.waitForFunction(
+    () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+  await page.waitForTimeout(300);
+}
+
 async function main() {
   const child = spawn(PY, ["app.py", "--host", "127.0.0.1", "--port", String(PORT)], {
     cwd: PROJ,
@@ -205,6 +215,26 @@ async function main() {
         "display=" + d.tabDisplay + " height=" + d.tabHeight);
       check("desktop 1280: mobile chrome is hidden",
         d.mobileTitle === "none", d.mobileTitle);
+      const desktopRail = await page.evaluate(() => ({
+        views: Array.from(
+          document.querySelectorAll("#activity-bar .activity-btn[data-view]"))
+          .map((b) => b.dataset.view),
+        more: getComputedStyle(document.getElementById("activity-more-btn")).display,
+        railViews: window.NB.activity.railViews().length,
+        offRail: window.NB.activity.offRailViews().length,
+      }));
+      check("desktop 1280: the rail carries every view and no More button",
+        desktopRail.views.join(",") ===
+          "explorer,sessions,pinned,bookmarks,recent,search,ai" &&
+        desktopRail.more === "none",
+        desktopRail.views.join(",") + " more=" + desktopRail.more);
+      check("desktop 1280: the rail is not sliced",
+        desktopRail.railViews === 7 && desktopRail.offRail === 0,
+        "rail=" + desktopRail.railViews + " off=" + desktopRail.offRail);
+      check("desktop 1280: the edit controls are available for a writable note",
+        await page.evaluate(() =>
+          getComputedStyle(document.getElementById("hybrid-toggle")).display !== "none" &&
+          getComputedStyle(document.getElementById("edit-toggle")).display !== "none"));
       check("desktop 1280: the top-bar session picker is visible",
         d.sessionBar !== "none" && d.sessionBtnW > 0,
         "display=" + d.sessionBar + " w=" + d.sessionBtnW);
@@ -258,8 +288,10 @@ async function main() {
           .filter((b) => getComputedStyle(b).display !== "none")
           .map((b) => {
             const r = b.getBoundingClientRect();
-            return { w: r.width, h: r.height };
+            return { view: b.dataset.view, w: r.width, h: r.height };
           });
+        const moreBtn = document.getElementById("activity-more-btn");
+        const moreRect = moreBtn.getBoundingClientRect();
         return {
           editorW: rect("editor-pane").width,
           viewerW: viewer.width,
@@ -278,6 +310,14 @@ async function main() {
           appBottom: rect("app").bottom,
           homeRows: document.querySelectorAll("#mobile-home .mobile-home-row").length,
           homeHidden: document.getElementById("mobile-home").hidden,
+          homeGlyphs: Array.from(
+            document.querySelectorAll("#mobile-home .mobile-home-row"))
+            .map((row) => {
+              const label = row.querySelector(".mhr-label");
+              const use = row.querySelector(".mhr-icon use");
+              return [label ? label.textContent : "",
+                use ? use.getAttribute("href") : ""];
+            }),
           treeRowH: (() => {
             const el = document.querySelector("#file-tree .tree-row");
             return el ? el.getBoundingClientRect().height : 0;
@@ -290,6 +330,11 @@ async function main() {
           })(),
           targets,
           railButtons,
+          moreBtn: {
+            display: cs("activity-more-btn").display,
+            w: moreRect.width, h: moreRect.height,
+            expanded: moreBtn.getAttribute("aria-expanded"),
+          },
         };
       });
       check(size.name + ": the editor area fills at least one column",
@@ -322,6 +367,30 @@ async function main() {
         layout.railButtons.length > 0 &&
         layout.railButtons.every((b) => b.w >= 44 && b.h >= 44),
         JSON.stringify(layout.railButtons));
+      check(size.name + ": the rail is six views plus More, in bar order",
+        layout.railButtons.map((b) => b.view).join(",") ===
+          "explorer,sessions,pinned,bookmarks,recent,search" &&
+        layout.moreBtn.display === "flex" && layout.moreBtn.expanded === "false",
+        layout.railButtons.map((b) => b.view).join(",") +
+          " more=" + layout.moreBtn.display);
+      check(size.name + ": seven rail slots, each 44 px or wider",
+        layout.railButtons.length + 1 === 7 &&
+        layout.moreBtn.w >= 44 && layout.moreBtn.h >= 44,
+        JSON.stringify(layout.railButtons.map((b) => Math.round(b.w))));
+      check(size.name + ": the rail adds no horizontal overflow",
+        layout.overflow <= 1, String(layout.overflow));
+      // The static five in order; the optional Continue row sits between
+      // Search and Bookmarks, so match by label instead of position.
+      const homeGlyphMap = new Map(layout.homeGlyphs);
+      check(size.name + ": Home rows carry the desktop sprite glyphs",
+        homeGlyphMap.get("Search") === "#nb-icon-search" &&
+        homeGlyphMap.get("Bookmarks") === "#nb-icon-bookmark" &&
+        homeGlyphMap.get("Recent") === "#nb-icon-clock" &&
+        homeGlyphMap.get("Browse") === "#nb-icon-explorer" &&
+        homeGlyphMap.get("Settings") === "#nb-icon-settings" &&
+        layout.homeGlyphs.every(([label, href]) =>
+          !!label && /^#nb-icon-/.test(href)),
+        JSON.stringify(layout.homeGlyphs));
       check(size.name + ": Home is the landing view with all five rows",
         !layout.homeHidden && layout.homeRows >= 5,
         "hidden=" + layout.homeHidden + " rows=" + layout.homeRows);
@@ -437,6 +506,200 @@ async function main() {
       check(size.name + ": browser back closes the drawer first",
         await page.evaluate(() => window.NB.tabs.getActive() === "Welcome.md"));
 
+      // --- Sessions in the drawer -----------------------------------
+      await page.click('#activity-bar .activity-btn[data-view="sessions"]');
+      await page.waitForFunction(
+        () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await page.waitForTimeout(300);
+      const sessGeom = await page.evaluate(() => {
+        const view = document.getElementById("sessions-view");
+        const box = (el) => {
+          const r = el.getBoundingClientRect();
+          return { w: Math.round(r.width), h: Math.round(r.height) };
+        };
+        const list = view.querySelector(".sessions-list");
+        return {
+          visible: !view.hidden && view.getBoundingClientRect().width > 0,
+          row: box(view.querySelector(".session-row")),
+          add: box(view.querySelector(".session-add")),
+          more: box(view.querySelector(".session-more")),
+          close: box(view.querySelector(".panel-header .collapse-btn:last-child")),
+          listPad: getComputedStyle(list).padding,
+        };
+      });
+      check(size.name + ": Sessions opens in the drawer",
+        sessGeom.visible === true);
+      check(size.name + ": session row, +, … and close meet the 44 px target",
+        [sessGeom.row, sessGeom.add, sessGeom.more, sessGeom.close]
+          .every((b) => b.w >= 44 && b.h >= 44),
+        JSON.stringify(sessGeom));
+      check(size.name + ": the phone session list pads 8 px",
+        sessGeom.listPad === "8px 8px 12px", sessGeom.listPad);
+
+      // A second session, created from the drawer's +.
+      await page.click("#sessions-view .session-add");
+      await page.waitForFunction(
+        () => !document.getElementById("session-dialog").hidden, null, { timeout: 5000 });
+      await page.fill("#session-name", "Second");
+      await page.click("#session-submit");
+      await page.waitForFunction(
+        () => document.querySelectorAll("#sessions-view .session-row").length === 2,
+        null, { timeout: 8000 });
+      check(size.name + ": + creates a session and switches to it",
+        await page.evaluate(() =>
+          window.NB.tabs.getActiveSessionId() !== "main" &&
+          document.getElementById("session-dialog").hidden),
+        await page.evaluate(() => window.NB.tabs.getActiveSessionId()));
+
+      // Same note: reopen Welcome in the new session, then tap Main.
+      await page.evaluate(() => window.NB.mobile.closeDrawer());
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await openExplorerInDrawer(page);
+      await openFileFromDrawer(page, "Welcome.md");
+      await page.click('#activity-bar .activity-btn[data-view="sessions"]');
+      await page.waitForFunction(
+        () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await page.waitForTimeout(300);
+      await page.click(
+        '#sessions-view .session-row-wrap[data-session-id="main"] .session-row');
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      check(size.name + ": tapping the session that holds the open note closes the drawer",
+        await page.evaluate(() => window.NB.tabs.getActiveSessionId() === "main" &&
+          window.NB.tabs.getActive() === "Welcome.md"),
+        await page.evaluate(() => window.NB.tabs.getActiveSessionId() + " " +
+          window.NB.tabs.getActive()));
+
+      // Different note: open Second.md in Main, then tap the session that
+      // holds Welcome.md instead.
+      await openExplorerInDrawer(page);
+      await openFileFromDrawer(page, "Second.md");
+      await page.click('#activity-bar .activity-btn[data-view="sessions"]');
+      await page.waitForFunction(
+        () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await page.waitForTimeout(300);
+      await page.click(
+        '#sessions-view .session-row-wrap:not([data-session-id="main"]) .session-row');
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      check(size.name + ": tapping another session switches the note and closes the drawer",
+        await page.evaluate(() => window.NB.tabs.getActiveSessionId() !== "main" &&
+          window.NB.tabs.getActive() === "Welcome.md"),
+        await page.evaluate(() => window.NB.tabs.getActiveSessionId() + " " +
+          window.NB.tabs.getActive()));
+
+      // Empty session: create one, return to a session that holds a note,
+      // then tap the empty row from the drawer.
+      await page.evaluate(async () => {
+        await window.NB.tabs.createSession("Idle");
+        window.NB.mobile.closeDrawer();
+        await window.NB.tabs.swapTo("main");
+      });
+      await page.waitForFunction(
+        () => window.NB.tabs.getActive() === "Second.md", null, { timeout: 8000 });
+      await page.click('#activity-bar .activity-btn[data-view="sessions"]');
+      await page.waitForFunction(
+        () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await page.waitForTimeout(300);
+      const idleId = await page.evaluate(() => {
+        const wrap = Array.from(
+          document.querySelectorAll("#sessions-view .session-row-wrap"))
+          .find((w) => w.querySelector(".session-name").textContent === "Idle");
+        return wrap ? wrap.dataset.sessionId : null;
+      });
+      await page.click(
+        '#sessions-view .session-row-wrap[data-session-id="' + idleId + '"] .session-row');
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      check(size.name + ": tapping an empty session closes the drawer",
+        await page.evaluate((id) => window.NB.tabs.getActiveSessionId() === id &&
+          window.NB.tabs.getActive() === null &&
+          window.location.search === "", idleId),
+        await page.evaluate((id) => window.NB.tabs.getActiveSessionId() + " " +
+          window.NB.tabs.getActive() + " " + window.location.search, idleId));
+
+      // Back with the create dialog open closes the dialog, not the drawer.
+      await page.click('#activity-bar .activity-btn[data-view="sessions"]');
+      await page.waitForFunction(
+        () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      await page.waitForTimeout(300);
+      await page.click("#sessions-view .session-add");
+      await page.waitForFunction(
+        () => !document.getElementById("session-dialog").hidden, null, { timeout: 5000 });
+      await page.goBack();
+      await page.waitForFunction(
+        () => document.getElementById("session-dialog").hidden, null, { timeout: 5000 });
+      check(size.name + ": back closes the session dialog and keeps the drawer open",
+        await page.evaluate(() =>
+          document.getElementById("session-dialog").hidden &&
+          window.NB.dialog.isOpen() === false &&
+          document.body.classList.contains("drawer-open")));
+      await page.evaluate(() => window.NB.mobile.closeDrawer());
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+
+      // --- More: the sheet, a view row and back ---------------------
+      await openExplorerInDrawer(page);
+      await openFileFromDrawer(page, "Welcome.md");
+      await page.evaluate(() => window.NB.activity.register(
+        { id: "demo", icon: "nb-icon-file", label: "Demo" }));
+      await page.click("#activity-more-btn");
+      await page.waitForFunction(
+        () => !document.getElementById("mobile-views-sheet").hidden, null, { timeout: 5000 });
+      await page.waitForTimeout(300);
+      const sheet = await page.evaluate(() => {
+        const host = document.getElementById("mobile-views-sheet");
+        const row = host.querySelector(".mobile-more-row");
+        return {
+          open: !host.hidden && getComputedStyle(host).visibility === "visible",
+          expanded: document.getElementById("activity-more-btn").getAttribute("aria-expanded"),
+          title: host.querySelector("h2").textContent,
+          role: host.getAttribute("role"),
+          modal: host.getAttribute("aria-modal"),
+          groups: Array.from(host.querySelectorAll(".mobile-more-group"))
+            .map((el) => el.textContent),
+          rows: Array.from(host.querySelectorAll(".mobile-more-label"))
+            .map((el) => el.textContent),
+          rowH: Math.round(row.getBoundingClientRect().height),
+          danger: !!host.querySelector(".mobile-more-row.is-danger"),
+          authEnabled: !!(window.NB.auth.status() || {}).enabled,
+          scrim: !document.getElementById("mobile-scrim").hidden,
+        };
+      });
+      check(size.name + ": More opens the sheet as a modal dialog",
+        sheet.open && sheet.role === "dialog" && sheet.modal === "true" &&
+        sheet.title === "More" && sheet.scrim === true,
+        JSON.stringify({ open: sheet.open, role: sheet.role, title: sheet.title }));
+      check(size.name + ": More advertises aria-expanded",
+        sheet.expanded === "true", sheet.expanded);
+      check(size.name + ": the sheet lists Views (the overflow) then App (Settings)",
+        sheet.groups.join("|") === "Views|App" &&
+        sheet.rows.join("|") === "Demo|Settings",
+        sheet.groups.join(",") + " / " + sheet.rows.join(","));
+      check(size.name + ": the sheet rows are 52 px",
+        sheet.rowH >= 52, String(sheet.rowH));
+      check(size.name + ": no Sign out row without auth",
+        sheet.danger === false && sheet.authEnabled === false,
+        "danger=" + sheet.danger + " auth=" + sheet.authEnabled);
+      await page.screenshot({ path: path.join(tmp, "phone-more-" + size.name + ".png") });
+
+      await page.locator("#mobile-views-sheet .mobile-more-row").first().click();
+      await page.waitForFunction(
+        () => document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      check(size.name + ": a More view row opens the drawer and hides the sheet",
+        await page.evaluate(() =>
+          document.getElementById("mobile-views-sheet").hidden &&
+          document.body.dataset.drawerView === "demo" &&
+          document.getElementById("activity-more-btn").getAttribute("aria-expanded") === "false"));
+      await page.goBack();
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      check(size.name + ": back from a view row returns to the note",
+        await page.evaluate(() => window.NB.tabs.getActive() === "Welcome.md" &&
+          window.location.search.indexOf("file=Welcome.md") !== -1),
+        await page.evaluate(() => window.NB.tabs.getActive() + " " + window.location.search));
+
       // Note-header … menu opens without navigating.
       const urlBefore = page.url();
       await page.click("#mobile-more");
@@ -458,10 +721,14 @@ async function main() {
       await page.waitForFunction(
         () => document.getElementById("nb-menu").hidden, null, { timeout: 5000 });
 
-      // --- WYSIWYG editing from the phone top bar --------------------
-      check(size.name + ": the top bar shows the edit pencil",
-        await page.evaluate(() => !document.getElementById("hybrid-toggle").hidden));
-      await page.click("#hybrid-toggle");
+      // --- WYSIWYG editing from the note menu -----------------------
+      check(size.name + ": the top bar has no edit control",
+        await page.evaluate(() =>
+          getComputedStyle(document.getElementById("hybrid-toggle")).display === "none" &&
+          getComputedStyle(document.getElementById("edit-toggle")).display === "none"));
+      await page.click("#mobile-more");
+      await page.waitForSelector("#nb-menu:not([hidden])", { timeout: 5000 });
+      await page.locator("#nb-menu button").first().click();
       await page.waitForFunction(
         () => document.getElementById("viewer-content")
           .getAttribute("contenteditable") === "true", null, { timeout: 5000 });
@@ -551,6 +818,37 @@ async function main() {
         pageErrors.join(" | "));
 
       await page.screenshot({ path: path.join(tmp, "phone-" + size.name + ".png") });
+      await ctx.close();
+    }
+
+    // --- The narrow floor: seven slots still clear 44 px at 320 ----
+    {
+      const ctx = await browser.newContext({
+        viewport: { width: 320, height: 568 },
+        isMobile: true,
+        hasTouch: true,
+        deviceScaleFactor: 2,
+        serviceWorkers: "block",
+      });
+      const page = await ctx.newPage();
+      await page.goto(BASE + "/");
+      await bootApp(page);
+      const rail = await page.evaluate(() => {
+        const bar = document.getElementById("activity-bar");
+        const btns = Array.from(bar.querySelectorAll(".activity-btn"))
+          .filter((b) => b.offsetParent !== null);
+        return {
+          count: btns.length,
+          minW: btns.length ? Math.round(Math.min(...btns.map((b) => b.getBoundingClientRect().width))) : 0,
+          minH: btns.length ? Math.round(Math.min(...btns.map((b) => b.getBoundingClientRect().height))) : 0,
+          overflow: document.documentElement.scrollWidth - window.innerWidth,
+        };
+      });
+      check("320x568: the rail is six views plus More",
+        rail.count === 7, String(rail.count));
+      check("320x568: every rail slot clears the 44 px floor",
+        rail.minW >= 44 && rail.minH >= 44, rail.minW + "x" + rail.minH);
+      check("320x568: no horizontal overflow", rail.overflow <= 1, String(rail.overflow));
       await ctx.close();
     }
 

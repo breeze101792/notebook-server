@@ -32,8 +32,9 @@
   ];
   // Views that exist only in the desktop shell. A saved `activeView` naming
   // one of them must fall back to Explorer on a phone, or the drawer would
-  // open onto a hidden host.
-  const PHONE_HIDDEN_VIEWS = ["ai", "sessions"];
+  // open onto a hidden host. Sessions is a phone view hosted in the drawer,
+  // so only AI stays here.
+  const PHONE_HIDDEN_VIEWS = ["ai"];
   // Same debounce as the config write below.
   const WORKSPACE_SAVE_DELAY_MS = 250;
   // Cross-device sync: the poll interval while the tab is visible, and the
@@ -1433,9 +1434,9 @@
       NB.activity.getActive(), shellPanel.activeView,
       serverCfg && serverCfg.activeView);
     if (bootView) NB.activity.activate(bootView, false);
-    // Phone has no AI or Sessions view; a saved desktop activeView of either,
-    // or any hidden view, must not leave the drawer pointing at an unusable
-    // host. Pick the first visible phone view instead.
+    // Phone has no AI view; a saved desktop activeView of it, or any hidden
+    // view, must not leave the drawer pointing at an unusable host. Pick the
+    // first visible phone view instead.
     if (isPhoneMode() && NB.activity.visible && NB.activity.getActive) {
       const usable = NB.activity.visible()
         .filter(id => PHONE_HIDDEN_VIEWS.indexOf(id) < 0);

@@ -194,7 +194,7 @@ footer content. Settings and the dialogs reference it; they do not redefine its 
 | Dialog boxes | 420 (auth/workspace/session), 520 (export) |
 | Phone drawer | `min(86vw, 340px)` |
 | Phone sheet | 72 dvh cap, 560 max, radius 16 top |
-| Phone rail | 56 + inset, five views |
+| Phone rail | 56 + inset, first six views of the saved order + More |
 | Phone targets | 44 × 44 |
 | Phone fields | 16 px type (stops iOS zoom) |
 
@@ -221,7 +221,7 @@ recording the decision.
 | Settings switch | 36 × 20, native checkbox | The shipped switch contract |
 | Content cards | Own tokens on the block | Diagram libraries own their skin |
 | Graph canvas | `--graph-*-rgb` triples | Canvas needs full colour strings |
-| Phone rail | Five views: Explorer, Pinned, Bookmarks, Recent, Search | AI, Sessions, graph, settings, logout are not phone views |
+| Phone rail | The first six views of the saved bar order, then More | AI has no phone surface; Settings and Log out are More rows (`mobile-more-sheet.md`) |
 | AI phone | Not present | The user rejected it |
 
 ---
@@ -275,7 +275,7 @@ These are real gaps, not defects in a doc:
 | Gap | Where |
 |---|---|
 | The graph has no phone surface (deliberate) | `graph-view.md` §7 |
-| The phone rail keeps five views; Settings/Logout are two taps deeper | `mobile-shell.md` §13 |
+| Settings and Log out are one tap deeper on the phone, behind More | `mobile-more-sheet.md` §1.3 |
 | The Settings desktop modal at 390 is 292 px; the phone uses the sheet | `settings-modal.md` P2 |
 | Image lightbox, sticky table headers, MathML for display math | proposals in `content-blocks.md` |
 

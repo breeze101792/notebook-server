@@ -21,9 +21,9 @@ visual is a proposal in §12.
 
 | Thing | Rule | Source |
 |---|---|---|
-| Activity view | `sessions`, second rail icon on desktop | `activity.js:1328` |
+| Activity view | `sessions`; a rail icon on both shells, ordered by the saved bar order (slot 2 in the default order) | `activity.js:1490`, `mobile-more-sheet.md` §1.2 |
 | Host | `#sessions-view`, a side-panel view, mounted lazily | `index.html:245-247` |
-| Phone | hidden; the rail icon and the host are not rendered | `style.css:7203-7206` |
+| Phone | the same view inside the drawer; no separate phone list | [`mobile-more-sheet.md`](mobile-more-sheet.md) §1.2 |
 | Top-bar picker | a separate control, owned by `sessions.md` history and `topbar-session` (archived); this view does not own it | shell-frame |
 | Order | registration order after Explorer | `activity.js` |
 
@@ -158,7 +158,7 @@ presentational; the row's accessible name carries the state.
 | Renaming | the dialog; list unchanged behind |
 | Empty | impossible: at least one session exists |
 | Narrow 140 | name ellipsizes; count and `⋯` stay |
-| Phone | not reachable |
+| Phone | the same list in the drawer; rows 44, `⋯` and `+` 44; drag unreachable, the row menu is the reorder path |
 
 ---
 
@@ -187,7 +187,7 @@ always visible, so a keyboard user never needs hover.
 | 240 default | the design width |
 | 140 floor | name ellipsizes; count and `⋯` keep their boxes; header title stays |
 | 720–140 | no separate rule; the panel narrows |
-| Phone | the view and its rail icon are hidden; the top-bar picker is the door |
+| Phone 390 | drawer at `min(86vw, 340px)`; rows 44 high, `⋯` 44 × 44, `+` 44 × 44; the row menu and `+` carry every action, so no drag is needed |
 
 The list is the scroller; the header and footer stay fixed. The resize handle sits on the
 right edge; the list keeps an 8 px right inset.
@@ -220,12 +220,22 @@ The view already reads base tokens. No new token is needed.
 .session-more { width: var(--control-h-sm); height: var(--control-h-sm); border-radius: 5px; color: var(--text-muted); }
 .session-more:hover, .session-more[aria-expanded="true"] { color: var(--text-primary); background: var(--accent-soft); }
 .sessions-foot { padding: 9px 12px 10px; border-top: var(--stroke-1) solid var(--border); color: var(--text-muted); font-size: .76rem; line-height: 1.45; }
+/* phone: the drawer is the host; every target reaches the 44 px floor */
+@media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
+  .session-add { width: var(--m-hit); height: var(--m-hit); border-radius: 8px; }
+  .session-row { min-height: var(--m-hit); padding: 0 6px 0 12px; font-size: var(--text-body); }
+  .session-more { flex: 0 0 var(--m-hit); width: var(--m-hit); height: var(--m-hit); border-radius: 8px; }
+  /* Two overrides: the shared phone header rule is outranked by the
+   * per-view selector, and `.session-more`'s flex basis clamps its width. */
+  .side-panel-view[data-view="sessions"] .collapse-btn { width: var(--m-hit); height: var(--m-hit); }
+  .sessions-list { padding: 8px 8px 12px; margin-right: 0; }
+}
 ```
 
 ### 10.3 Geometry
 
 Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76rem`;
-`⋯` 24; footer padding 9/12/10; list gap 2, right inset 8.
+`⋯` 24; footer padding 9/12/10; list gap 2, right inset 8. Phone: row 44, `+` 44, `⋯` 44.
 
 ### 10.4 Exceptions
 
@@ -237,6 +247,8 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 | E4 | Row menu is `NB.menu` with `role="menu"` items | It already behaves as one | none |
 | E5 | Focus ring on the `+` and rows at the shipped offsets | Keyboard users see the control | focus only |
 | E6 | Viewer `+`/rename/delete disabled with a named reason | The shipped title is enough for a pointer, not for AT | none |
+| E7 | Phone reachability: the view and its rail slot are restored, hosted in the drawer | The phone had no session door | +1 rail slot |
+| E8 | Phone row 30 → 44, `+` 24 → 44, `⋯` 24 → 44 | Foundations §10.4: the coarse-pointer floor; the shipped sizes are 30 and 24 | row +14, `+` +20, `⋯` +20 |
 
 ---
 
@@ -244,7 +256,7 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 
 | # | Criterion | File | Observable |
 |---|---|---|---|
-| AC1 | The view is the second desktop rail view and absent on the phone | `activity.js`, `style.css` | `sessions` registered; rail icon and host hidden at 390 |
+| AC1 | The view has a rail icon on both shells, in the saved bar order | `activity.js`, `style.css` | Second icon at 1280 and at 390 in the default order; the phone opens it in the drawer |
 | AC2 | Header: title, total, `+`, collapse | `sessions.js` | `Sessions`, `N sessions`, `+`, chevron; at most two actions before collapse |
 | AC3 | Rows show name, count, dot and `⋯` | `sessions.js` | Unpinned count; dirty dot; `⋯` always visible |
 | AC4 | Active row is tinted and marked | `sessions.js`, `style.css` | `aria-current="true"`; 2 px marker; `--accent-soft`; weight 400 like every row |
@@ -258,6 +270,11 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 | AC12 | The mockup is self-contained | `sessions-mockup.html` | Opens offline, dark and light |
 | AC13 | An admin can drag a row before or after another row, or to the end, and the new order persists and syncs | `sessions.js`, `tabs.js` | Order changes in the model and in the next state write; the active session and its tabs are untouched |
 | AC14 | A viewer cannot reorder by drag; the row wrapper is not draggable and a drag leaves the order unchanged | `sessions.js` | `draggable` false; order unchanged |
+| AC15 | On a phone the view opens in the drawer and switches sessions | `mobile.js`, `sessions.js` | Rail icon → drawer lists sessions; a tap switches the active session and closes the drawer — same note, different note, and empty session alike (`mobile.js:949-964`, moved layer branch; empty session closes through `NB.mobile.closeDrawer`) |
+| AC16 | On a phone every control reaches 44 px | `style.css` | Row ≥44, `+` 44 × 44, `⋯` 44 × 44, header close 44 × 44 |
+| AC17 | On a phone the row menu carries reorder, rename and delete | `sessions.js` | Move up/down, Rename, Delete reachable by tap; a drag is not required |
+| AC18 | A refused `+` says why on touch | `sessions.js` | At the cap, as a viewer, or with no dialog available, a phone tap shows the reason as a toast; the `title` and `aria-describedby` remain for desktop |
+| AC19 | Back closes the create/rename dialog first | `dialog.js`, `mobile.js` | With the dialog open, back closes it and leaves the drawer open on the same layer entry; focus returns to the row or the `+` |
 
 ---
 
@@ -275,7 +292,9 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 
 ## 13. What not to build
 
-- A second Sessions list, a phone version, or a modal.
+- A second Sessions list or a modal. The phone hosts this view in the drawer.
 - A new count rule that includes pinned tabs.
 - A drag-reorder that does not persist and sync with the rest of the session order.
 - A different row shape from the shared list rules.
+- A phone-only session picker in the topbar. The rail slot is the door.
+- A second dialog for the phone. The shipped dialog is hosted as a layer (§11 AC19).

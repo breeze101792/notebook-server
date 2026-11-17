@@ -719,6 +719,7 @@ only what the four views do inside the drawer.
 | Tree | star and pin removed (`display: none`); `…` 44 × 44, always visible | `style.css:7317-7337` |
 | Explorer empty | `No notes yet.` plus a Capture action when the role can write | `mobile-shell.md` §4.4 |
 | Inline top section | still available via the header toggle; same 30 vh cap | measured |
+| Pinned view | rail slot 3 in the default bar order; if the user pushes it past slot 6 it moves to the More sheet, and Explorer's inline block stays the one-tap path | `mobile-more-sheet.md` §1.1 |
 | Bookmarks add | hidden | `style.css:7338` |
 | Bookmarks / Pinned | read-only: no add, remove, reorder, or context menu | `bookmarks.js:190`, `:212`; `style.css:7317-7320` |
 | Recent field | 44 px high, 16 px fixed type — below 16 px iOS zooms the viewport on focus | foundations §4.4; the shipped phone rule sets a 44 px min-height but leaves the 14 px type (§11 C5) |

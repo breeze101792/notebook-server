@@ -475,6 +475,10 @@ body.topbar-hidden { --topbar-h: 0px; }
  * has no active/toggle state -- it just fires a one-shot action. */
 .activity-action.active::before { display: none; }
 
+/* The phone rail's overflow control is phone-only chrome: the desktop rail
+ * has a slot for every view. */
+#activity-more-btn { display: none; }
+
 /* Side panel: hosts the active activity view. Shares one resize handle
  * and one --side-panel-width var; individual views never resize
  * independently. */
@@ -7878,7 +7882,6 @@ body[data-theme="light"] #dw-designer-overlay {
   body.topbar-hidden { --topbar-h: calc(var(--m-topbar-h) + env(safe-area-inset-top)); }
   #brand,
   .topbar-spacer,
-  #edit-toggle,
   #outline-toggle,
   #explorer-top-toggle { display: none; }
   .topbar-actions { flex: 1 1 auto; gap: 4px; align-items: center; min-width: 0; }
@@ -7926,7 +7929,11 @@ body[data-theme="light"] #dw-designer-overlay {
   }
   #mobile-capture { display: flex; }
   #mobile-more { display: flex; }
-  #hybrid-toggle { display: flex; }
+  /* Neither edit button has a phone slot: `Edit note` is the note menu's
+   * first item and the edit bar owns Done. Two ids outrank the shipped
+   * #topbar .icon-btn display, which would otherwise show both. */
+  #topbar #edit-toggle,
+  #topbar #hybrid-toggle { display: none; }
   #mobile-capture[hidden] { display: none; }
   #hybrid-toggle[hidden] { display: none; }
   #mobile-title:active,
@@ -7947,7 +7954,9 @@ body[data-theme="light"] #dw-designer-overlay {
   #tab-bar,
   #outline-pane,
   #cm-host { display: none; }
-  #welcome { display: none; }
+  /* Two classes outrank the desktop `#welcome.welcome` flex rule; Home is
+   * the phone's no-note screen. */
+  #welcome.welcome { display: none; }
   #edit-split { min-height: 0; }
 
   /* ---- WYSIWYG edit bar ------------------------------------------- */
@@ -8064,6 +8073,13 @@ body[data-theme="light"] #dw-designer-overlay {
   #logout-btn,
   .activity-btn[data-view="ai"],
   #side-panel .side-panel-view[data-view="ai"] { display: none; }
+  /* The overflow control takes the seventh slot: a fixed 44 px column the
+   * six view slots divide the rest of the row around. */
+  #activity-more-btn {
+    display: flex;
+    flex: 0 0 var(--m-hit);
+  }
+  #activity-more-btn .icon { width: var(--icon-lg); height: var(--icon-lg); }
 
   /* ---- drawer ----------------------------------------------------- */
   #side-panel {
@@ -8108,7 +8124,8 @@ body[data-theme="light"] #dw-designer-overlay {
   #mobile-scrim[hidden] { display: none; }
   body.drawer-open #mobile-scrim,
   body.capture-open #mobile-scrim,
-  body.settings-open #mobile-scrim { opacity: 1; }
+  body.settings-open #mobile-scrim,
+  body.views-open #mobile-scrim { opacity: 1; }
 
   .panel-header {
     min-height: var(--m-topbar-h);
@@ -8420,7 +8437,15 @@ body[data-theme="light"] #dw-designer-overlay {
     cursor: pointer;
   }
   .mobile-home-row:active { background: var(--accent-soft); }
-  .mhr-icon { width: 24px; flex: 0 0 24px; text-align: center; font-size: 18px; }
+  .mhr-icon {
+    flex: 0 0 24px;
+    width: 24px;
+    height: var(--icon-lg);
+    display: flex;
+    align-items: center;
+    color: var(--fg-muted);
+  }
+  .mhr-icon .icon { width: var(--icon-lg); height: var(--icon-lg); }
   .mhr-label { flex: 1 1 auto; min-width: 0; }
   .mhr-meta {
     max-width: 45%;
@@ -8478,7 +8503,8 @@ body[data-theme="light"] #dw-designer-overlay {
 
   /* ---- capture + settings sheets --------------------------------- */
   #capture-sheet,
-  #mobile-settings {
+  #mobile-settings,
+  #mobile-views-sheet {
     position: fixed;
     left: 0;
     right: 0;
@@ -8499,13 +8525,15 @@ body[data-theme="light"] #dw-designer-overlay {
                 visibility 0s linear .22s;
   }
   body.capture-open #capture-sheet,
-  body.settings-open #mobile-settings {
+  body.settings-open #mobile-settings,
+  body.views-open #mobile-views-sheet {
     transform: none;
     visibility: visible;
     transition: transform .22s cubic-bezier(.2, .8, .2, 1);
   }
   #capture-sheet[hidden],
-  #mobile-settings[hidden] { display: none; }
+  #mobile-settings[hidden],
+  #mobile-views-sheet[hidden] { display: none; }
   .capture-grabber {
     width: 36px;
     height: 4px;
@@ -8515,14 +8543,16 @@ body[data-theme="light"] #dw-designer-overlay {
     background: var(--border);
   }
   .capture-head,
-  .mobile-settings-head {
+  .mobile-settings-head,
+  .mobile-more-head {
     flex: 0 0 52px;
     display: flex;
     align-items: center;
     padding: 0 6px 0 16px;
   }
   .capture-head h2,
-  .mobile-settings-head h2 { flex: 1 1 auto; margin: 0; font-size: 16px; font-weight: 600; }
+  .mobile-settings-head h2,
+  .mobile-more-head h2 { flex: 1 1 auto; margin: 0; font-size: 16px; font-weight: 600; }
   .mobile-sheet-close {
     width: var(--m-hit);
     height: var(--m-hit);
@@ -8628,6 +8658,70 @@ body[data-theme="light"] #dw-designer-overlay {
     margin-top: 4px;
   }
 
+  /* ---- More sheet: the views the rail cannot hold ------------------ */
+  /* The head, grabber, geometry and motion come from the shared sheet
+   * lists above; only the body and the rows are local. */
+  /* The body scrolls; the host owns the sheet's bottom padding, so the rows
+   * stop above one safe-area inset, not two. */
+  .mobile-more-body {
+    padding: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+  .mobile-more-group {
+    padding: 12px 16px 4px;
+    color: var(--fg-muted);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  /* A row is .mobile-settings-row with button chrome: 52 high, gap 12, one
+   * 1 px separator. Its label is the settings sheet's 15 px label span. */
+  .mobile-more-row {
+    width: 100%;
+    padding: 0 16px;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid var(--border);
+    color: var(--fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .mobile-more-row:active { background: var(--accent-soft); }
+  .mobile-more-row:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: var(--focus-offset-inset);
+  }
+  .mobile-more-icon {
+    flex: 0 0 24px;
+    width: 24px;
+    height: var(--icon-lg);
+    color: var(--fg-muted);
+    /* A registered text glyph (no nb-icon- id) lands in this box too. */
+    font-size: var(--icon-lg);
+    line-height: 1;
+    text-align: center;
+  }
+  .mobile-more-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    line-height: 1.3;
+  }
+  .mobile-more-check {
+    flex: 0 0 16px;
+    width: 16px;
+    height: 16px;
+    color: var(--accent);
+  }
+  .mobile-more-row.is-danger,
+  .mobile-more-row.is-danger .mobile-more-icon { color: var(--danger); }
+  .mobile-more-body > .mobile-settings-row:last-child { border-bottom: 0; }
+
   /* ---- toast + menu ---------------------------------------------- */
   .toast {
     left: 16px;
@@ -8653,6 +8747,7 @@ body[data-theme="light"] #dw-designer-overlay {
     #mobile-scrim,
     #capture-sheet,
     #mobile-settings,
+    #mobile-views-sheet,
     .toast { transition: none; }
   }
 }
@@ -9086,7 +9181,8 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
    * control keeps its accessible name. */
   #topbar .topbar-divider { display: none; }
   #workspace-bar { flex: 0 0 auto; }
-  /* Sessions are desktop-only (sessions.md D12); the phone names the note. */
+  /* No top-bar session picker on the phone: the Sessions rail slot opens
+   * the drawer, and the title names the note (sessions.md §9). */
   #session-bar { display: none; }
   #topbar .workspace-switch {
     width: var(--m-hit);
@@ -9406,14 +9502,36 @@ body > #nb-menu button.danger:hover {
 /* ---- dialog: one short label ------------------------------------ */
 #session-dialog .settings-label { flex: 0 0 92px; }
 
-/* ---- phone: the view does not exist ----------------------------- */
-/* Same rule and same treatment as the AI view (style.css:7220-7221). This
- * block is a second copy of the phone query because Appendix A is appended
- * after the shipped one; no existing block is edited. The host is hidden
- * too, so a saved activeView cannot paint an empty drawer. */
+/* ---- phone: the drawer hosts the session list ------------------- */
+/* Sizes only: the view is reachable from its own rail slot and opens in the
+ * drawer. Row, +, ⋯ and the header close all reach the 44 px floor; the
+ * sessions header overrides the shared 24 px collapse box. */
 @media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
-  .activity-btn[data-view="sessions"],
-  #side-panel .side-panel-view[data-view="sessions"] { display: none; }
+  .session-add {
+    width: var(--m-hit);
+    height: var(--m-hit);
+    border-radius: 8px;
+  }
+  .session-row {
+    min-height: var(--m-hit);
+    padding: 0 6px 0 12px;
+  }
+  .session-more {
+    flex: 0 0 var(--m-hit);
+    width: var(--m-hit);
+    height: var(--m-hit);
+    border-radius: 8px;
+  }
+  .side-panel-view[data-view="sessions"] .collapse-btn {
+    width: var(--m-hit);
+    height: var(--m-hit);
+  }
+  /* No resize handle in the drawer, so the right inset the desktop list
+   * reserves for it goes away; rows land at the list's own padding. */
+  .sessions-list {
+    padding: 8px 8px 12px;
+    margin-right: 0;
+  }
 }
 
 /* ------------------------------------------------------------------ */

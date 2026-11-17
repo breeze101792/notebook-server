@@ -1,6 +1,6 @@
 # Mobile (iPhone-first) — functional spec
 
-Status: shipped (phone shell: read, capture, and WYSIWYG edit). Owner: `product-designer`.
+Status: shipped for M1–M10 (phone shell: read, capture, WYSIWYG edit, sidebar access). Owner: `product-designer`.
 Applies to: the mobile layout of the existing shell (`templates/index.html`, `static/css/style.css`, `static/js/*`), `tests/dom/test_dom.js`, and a new real-browser mobile harness.
 Related: [mobile-support research](../research/mobile-support.md) owns the fact pack (tested devices, iOS floor, viewport units, keyboard and safe-area measurements, touch quirks). This document owns observable product behaviour; where it depends on a device fact, the fact lives there.
 
@@ -31,13 +31,14 @@ Before this change the four-column shell collapsed the editor to 0 px on a phone
 | M7 | Deep links and resume | `?file=` opens the right note; the last note on this device is one tap away |
 | M8 | Unreachable states | a clear failure screen with Retry, distinct from sign-in |
 | M9 | WYSIWYG edit | edit the open note in place with a touch formatting bar; Save and back both persist |
+| M10 | Session and sidebar access | switch sessions and reach every sidebar item from the phone, without closing the note |
 
 ### 2.2 Out of scope (with the reason)
 
 | Excluded | Why |
 |---|---|
 | Source (Markdown) editing | WYSIWYG covers the phone job; CM6's line editing is a desktop tool |
-| Tabs UI, TOC / outline sheet | one note at a time; the tab substrate must not be forked; heading links still work |
+| Tabs UI, TOC / outline sheet | one note at a time; the tab substrate must not be forked; heading links still work. Session switching (M10) changes the current tab set but never shows a strip |
 | Per-device theme and text size | v1 uses the existing server-side prefs; no per-device promise |
 | Image/diagram lightbox, pan, pinch-zoom | neither exists on desktop today; fit plus page scroll is enough |
 | AI, export, graph, table/diagram editing, admin settings | large surfaces of their own; none is needed to read or capture |
@@ -99,7 +100,7 @@ Before this change the four-column shell collapsed the editor to 0 px on a phone
 
 ### M6 — Minimal settings
 
-1. The `…` action on Home opens Settings: theme, text size, sign out, server origin and status.
+1. The `…` action on Home, and More on the rail, open Settings: theme, text size, sign out, server origin and status.
 2. Theme and text size change immediately and offer the same choices as desktop. Both are stored server-side in v1, so the sheet states that a change applies to every device using this server.
 3. Server origin shows the address in use and whether the last request reached the server, and states that plain HTTP means no offline reading and no install. Sign out appears only with auth on; AI, export, graph, admin, and token settings are absent.
 
@@ -118,12 +119,23 @@ Before this change the four-column shell collapsed the editor to 0 px on a phone
 
 ### M9 — WYSIWYG edit
 
-1. With a note open, an ✎ control in the top bar and **Edit note** as the first item of the `…` menu enter WYSIWYG mode. Both are absent for a viewer role and with no note open.
+1. With a note open, **Edit note** as the first item of the `…` menu enters WYSIWYG mode. There is no edit button in the top bar: the bar keeps back, the title, capture and the menu, so the title gets the width. The item is absent for a viewer role and with no note open.
 2. The rendered note becomes the editable surface. A single sideways-scrolling formatting strip sits under the top bar with Save and Done pinned at its left; every control is at least 44 px.
 3. Tapping a formatting control keeps the caret and the keyboard. Typing, selection, task checkboxes, lists, headings, quotes, links, and code blocks behave as they do in desktop WYSIWYG mode.
 4. Autosave (server setting) covers idle typing. **Save** writes immediately; **Done** writes when autosave is on, otherwise it asks before leaving unsaved changes.
 5. Back (browser, hardware, the top-bar arrow), Esc, or Done leave edit mode before any navigation. Leaving with autosave off keeps the buffer as a recoverable draft.
 6. The bottom rail and the +/… actions are hidden while editing. The note, its address, and the scroll position do not change when entering or leaving.
+
+### M10 — Session and sidebar access
+
+1. The bottom rail shows the **first six views of the user's saved activity-bar order**, then a **More** control. In the default order that is Explorer, Sessions, Pinned folders, Bookmarks, Recent, Search. Sessions is one tap from any note and switches the session, and with it the open note. A view moved past the sixth on desktop appears in More instead.
+2. Tapping a view icon opens that view in the drawer over the note. Sessions lists the workspace's sessions: tapping a row switches to it and closes the drawer, whether or not the note changes and even when the target session has no tabs; `⋯` opens Move up / Move down / Rename / Delete, and `+` creates a session. Every target is at least 44 px, and no action needs a drag.
+3. More opens a sheet that lists every view the rail does not carry, then Settings, then Sign out when auth is on. Under the default order there is no such view, so the sheet is Settings and Sign out only. Choosing a view opens it in the drawer; Settings opens the settings sheet. AI has no phone surface and is in neither list; Graph is proposed, not built.
+4. A view hidden in Settings → Appearance → Activity bar appears in neither the rail nor More; it is the user's own choice, as on desktop. The order and the hide list are edited on desktop only; the phone obeys both.
+5. Back closes More when it is open, and closes the drawer before it leaves the note. Choosing a view from More turns the sheet into the drawer on the same history entry, so that trip also costs one back step, not two. While a session dialog is up, back closes the dialog and never the drawer under it.
+6. The rail and More are absent while editing a note, and inert while the app is auth-locked, exactly as the other phone chrome.
+7. A session switch that lands on no note (an empty session) shows Home, and Home names the session it is showing.
+8. While reading, the active session is identified by the marked row in the Sessions list. The phone shows no persistent session chip: it has no tab strip to anchor one beside.
 
 ## 5. Edge cases
 
@@ -140,6 +152,10 @@ Before this change the four-column shell collapsed the editor to 0 px on a phone
 | Rotation or keyboard | note, drawer state, and draft survive; scroll position approximately preserved; focused field and Send scroll above the keyboard; no duplicate request | all |
 | Double-tap Send | exactly one append | M5 |
 | Viewer role | reader only; capture and edit absent; a direct write is refused with a message | M1, M5, M9 |
+| Session switch with unsaved edits | switching sessions on the phone goes through the same tab-switch path as desktop: autosave flushes, or a draft is kept with the Recover bar | M10 |
+| 20 sessions | `+` refuses with the cap reason; switching, renaming and deleting still work | M10 |
+| No other session has tabs | its row shows `0`; switching to it leaves the phone on Home, whose subtitle names that session | M10 |
+| A sidebar view hidden on desktop | absent from both the phone rail and More | M10 |
 
 ## 6. Acceptance criteria
 
@@ -171,7 +187,11 @@ Tagged **[H]** manual on a real phone (device matrix in the research document) o
 24. C4 — At the desktop breakpoint the shell is unchanged: same four columns, tab strip, widths, and menus [D].
 25. C5 — Reading a note on a phone changes neither the desktop's open tabs, active file, nor panel widths [D].
 26. C6 — Unreachable and unauthorized are visually distinct: Retry versus sign-in; rotation and keyboard focus preserve the note, drawer state, and draft [H].
-27. M9 — With a note open, ✎ and **Edit note** enter WYSIWYG mode; the toolbar keeps text on the caret, Save writes, and back/Done/Esc leave before navigating [D]. A viewer sees no edit entry [D].
+27. M9 — With a note open, **Edit note** enters WYSIWYG mode; the toolbar keeps text on the caret, Save writes, and back/Done/Esc leave before navigating [D]. A viewer sees no edit entry, and no top-bar edit control exists [D].
+28. M10 — The rail is the first six views of the saved bar order plus More, which is last and opens a sheet; in the default order that is Explorer, Sessions, Pinned folders, Bookmarks, Recent, Search [D].
+29. M10 — Every view with a phone surface that is not hidden is reachable on the phone: each is a rail button or a More row, and choosing one opens it in the drawer. AI is in neither [D].
+30. M10 — Switching sessions on the phone changes the active session and its open note through the desktop tab-switch path; Rename, Delete, Move up/down and the 20 cap work from the row menu and `+` [D].
+31. M10 — Back from a view opened through More takes one step to the note, and back with More open closes the sheet, including from Home where no note is active [H].
 
 ## 7. Out-of-scope confirmation and the v2 boundary
 

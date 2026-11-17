@@ -135,6 +135,7 @@ directly in a browser.
 | [`ui/hybrid-markdown-debug-pane.md`](ui/hybrid-markdown-debug-pane.md) | The hybrid split-view toggle and the read-only Markdown column: anatomy, tokens, states, the 1140 px breakpoint, accessibility, AC1–AC21. Mockup: [`ui/hybrid-markdown-debug-pane-mockup.html`](ui/hybrid-markdown-debug-pane-mockup.html). |
 | [`ui/graph-view.md`](ui/graph-view.md) | The `§graph` tab: header, controls, canvases, gestures, states, keyboard and phone. Mockup: [`ui/graph-view-mockup.html`](ui/graph-view-mockup.html). |
 | [`ui/mobile-shell.md`](ui/mobile-shell.md) | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history and states. Mockup: [`ui/mobile-shell-mockup.html`](ui/mobile-shell-mockup.html). |
+| [`ui/mobile-more-sheet.md`](ui/mobile-more-sheet.md) | The phone rail's view set and the More sheet that carries the rest of the sidebar: model, states, ARIA, tokens, AC1–AC14. Mockup: [`ui/mobile-shell-mockup.html`](ui/mobile-shell-mockup.html). |
 | [`ui/welcome.md`](ui/welcome.md) | Welcome, no tabs, empty/no workspace, load failure, offline and first run. Mockup: [`ui/welcome-mockup.html`](ui/welcome-mockup.html). |
 
 Old design records — the previous per-feature handoffs (`settings-modal`, `mobile-shell`,

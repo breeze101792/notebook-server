@@ -604,7 +604,8 @@ Chrome glyphs are replaced by sprite symbols. Content emoji stay.
 | `≣` outline, `⋯` more, `＋` capture | `:293`, `:180`, `:179` |
 | `↶` `↷` undo/redo, `☑` task, `☰` list, `🔗` link, `🖼` image, `😀` emoji | `:296-326` |
 | `⚠` warning, `👁` preview-only | `:1444`, `:1585`, `:1710`, `:1597` |
-| Rail view icons `🗂` `📌` `🔖` `🕒` `🔍` `📁` `✨` | `static/js/activity.js:1321-1363` |
+| Rail view icons `🗂` `📌` `🔖` `🕒` `🔍` `📁` `✨` | `static/js/activity.js:1480-1519` |
+| Phone Home rows `🔍` `▶` `🔖` `🕒` `🗂` `⚙` | `static/js/mobile.js` `renderHome()` — the same `nb-icon-*` ids the rail draws |
 | `×` close | `:715` and others |
 
 | Keep (content) | Where |

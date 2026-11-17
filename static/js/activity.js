@@ -37,6 +37,14 @@
     return raw.split(",").filter(Boolean);
   }
 
+  // The phone rail is one row of equal columns: the first six visible views
+  // in the saved bar order, then the More action. 7 x 44 = 308 px, so seven
+  // slots still clear the 44 px floor at 320 px.
+  const PHONE_RAIL_SLOTS = 6;
+  // Views with no phone surface at all. They take neither a rail slot nor a
+  // More row, because a row that opens an empty drawer is worse than no row.
+  const PHONE_OFF_VIEWS = ["ai"];
+
   // A side-panel view can be adopted while this script evaluates, before
   // app.js defines NB.app. Read search prefs through these fallbacks; the
   // config:changed load event syncs the controls once app.js boots.
@@ -135,6 +143,24 @@
     return orderedViews().filter(v => !hiddenViews.has(v.id));
   }
 
+  // The views the phone can host: everything visible except the
+  // desktop-only ones, which have no phone surface.
+  function phoneViews() {
+    return visibleViews().filter(v => PHONE_OFF_VIEWS.indexOf(v.id) < 0);
+  }
+
+  // What the activity bar draws. Off the phone it is every visible view;
+  // on the phone it is the first six of the saved order.
+  function railViews() {
+    return isPhone() ? phoneViews().slice(0, PHONE_RAIL_SLOTS) : visibleViews();
+  }
+
+  // The visible views the phone rail cannot hold, in bar order. The More
+  // sheet lists these; off the phone there are none.
+  function offRailViews() {
+    return isPhone() ? phoneViews().slice(PHONE_RAIL_SLOTS) : [];
+  }
+
   function setHidden(ids) {
     hiddenViews.clear();
     if (Array.isArray(ids)) {
@@ -191,7 +217,7 @@
       barEl.insertBefore(viewsEl, pin ? pin.nextSibling : barEl.firstChild);
     }
     viewsEl.innerHTML = "";
-    for (const v of visibleViews()) {
+    for (const v of railViews()) {
       const btn = document.createElement("button");
       btn.className = "activity-btn";
       btn.dataset.view = v.id;
@@ -234,8 +260,17 @@
       '.side-panel-view[data-view="' + id + '"]');
   }
 
+  // mobile.js owns the mode mirror, but activity.js is parsed before it, so
+  // the first register() calls have no NB.mobile to ask. Read the same CSS
+  // token mobile.js mirrors, then fall back to the module.
   function isPhone() {
-    return !!(window.NB && NB.mobile && NB.mobile.isOn && NB.mobile.isOn());
+    if (window.NB && NB.mobile && NB.mobile.isOn) return !!NB.mobile.isOn();
+    try {
+      const token = getComputedStyle(document.documentElement)
+        .getPropertyValue("--ui-mode").trim();
+      if (token) return token === "phone";
+    } catch (_) { /* jsdom / no stylesheet: fall through */ }
+    return document.documentElement.dataset.uiMode === "phone";
   }
 
   function activate(id, toggle) {
@@ -426,6 +461,11 @@
     setBarOrder,
     setHidden,
     visible: () => visibleViews().map(v => v.id),
+    // The rail is a slice of the saved order on the phone; the More sheet
+    // lists the rest. Off the phone the first is every visible view and the
+    // second is empty.
+    railViews,
+    offRailViews,
     adoptShellView,
   };
 
@@ -1474,6 +1514,10 @@
     syncControls();
     setTimeout(() => { try { input.focus(); } catch (_) {} }, 0);
   }
+
+  // A rotation or a resize across the breakpoint re-slices the rail; the
+  // module that mirrors the mode emits this once per real change.
+  NB.evt.on("mobile:mode", renderBar);
 
   /* --- register the built-in views ---------------------------------- */
   // Explorer is the default view; its host (#sidebar) already ships in

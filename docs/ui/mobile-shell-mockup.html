@@ -70,7 +70,8 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
 .home h2{font-size:22px;font-weight:600;margin:4px 0}
 .home .sub{color:var(--text-muted);font-size:14px;margin:0 0 20px}
 .hrow{display:flex;align-items:center;gap:12px;min-height:44px;padding:0 8px;border-radius:8px}
-.hrow .gi{width:24px;text-align:center;font-size:18px;color:var(--text-muted)}
+.hrow .gi{width:24px;height:var(--icon-lg);color:var(--text-muted)}
+.hrow .gi .g{width:var(--icon-lg);height:var(--icon-lg);display:block}
 .hsep{border-top:1px solid var(--border);margin:12px 4px}
 .sheet{position:absolute;left:0;right:0;bottom:0;z-index:600;background:var(--surface-panel);border-radius:var(--m-sheet-radius) var(--m-sheet-radius) 0 0;box-shadow:var(--shadow-sheet);max-height:min(72dvh,560px);display:flex;flex-direction:column}
 .shead{height:52px;display:flex;align-items:center;padding:0 4px 0 16px;border-bottom:1px solid var(--border);font-size:15px;font-weight:600}
@@ -94,11 +95,79 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
 .state p{margin:0;max-width:300px;color:var(--text-muted);font-size:14px}
 .state button{min-height:44px;padding:0 18px;border:1px solid var(--border-strong);border-radius:var(--m-radius);background:var(--surface-raised);color:var(--text-primary)}
 .dim{position:absolute;inset:0;background:rgba(0,0,0,.72);z-index:450}
+/* ---- mobile-more-sheet.md: rail with sprite glyphs, and the More sheet ---- */
+/* `.light` restyles the frame only; the light palette lives on <html> and the
+   semantic aliases resolve where they are declared (foundations.md §2.4).
+   The new boards carry the palette locally so the earlier boards are unchanged. */
+.phone.is-light{
+  border-color:#c9ccd4;color:var(--fg);
+  --bg:#ffffff;--bg-panel:#f6f7f9;--bg-elev:#eceef2;--fg:#1f2330;--fg-muted:#5d6470;
+  --accent:#2f5fd0;--accent-soft:rgba(47,95,208,.12);--accent-fg:#ffffff;
+  --border:#d8dde4;--border-strong:#78828f;--danger:#c0392b;--ok:#16703f;--warn:#8a5a0b;
+  --surface-page:var(--bg);--surface-panel:var(--bg-panel);--surface-raised:var(--bg-elev);
+  --surface-well:#f0f2f5;--code-bg:#f0f2f5;
+  --text-primary:var(--fg);--text-muted:var(--fg-muted);--text-on-accent:var(--accent-fg);
+  --shadow-sheet:0 12px 40px rgba(0,0,0,.2);--shadow-modal:0 20px 60px rgba(0,0,0,.22);
+}
+.icon-sprite{position:absolute;width:0;height:0;overflow:hidden}
+.rail.has-glyphs button{display:grid;place-items:center;padding:0}
+.rail .g{width:var(--icon-lg);height:var(--icon-lg);display:block;color:inherit}
+.more-sheet .grab{width:36px;height:4px;flex:0 0 4px;margin:var(--space-2) auto var(--space-1);border-radius:var(--radius-pill);background:var(--border)}
+.more-head{height:52px;flex:0 0 52px;display:flex;align-items:center;padding:0 6px 0 var(--space-4);border-bottom:1px solid var(--border)}
+.more-head h2{flex:1 1 auto;margin:0;font:600 16px/1.25 var(--font-ui);letter-spacing:0;text-transform:none;color:var(--text-primary)}
+.more-head .close{margin-left:auto;width:44px;height:44px;display:grid;place-items:center;border:0;background:transparent;color:var(--text-muted);font-size:24px;line-height:1}
+.more-body{overflow:auto;padding:0 0 calc(var(--space-3) + 12px)}
+.more-group{padding:var(--space-3) var(--space-4) var(--space-1);color:var(--text-muted);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+.more-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:52px;padding:0 var(--space-4);border:0;border-bottom:1px solid var(--border);background:none;color:var(--text-primary);font:15px/1.3 var(--font-ui);text-align:left}
+.more-row:last-child{border-bottom:0}
+.more-icon{flex:0 0 24px;width:24px;height:var(--icon-lg);display:block;color:var(--text-muted)}
+.more-icon .g{width:var(--icon-lg);height:var(--icon-lg);display:block}
+.more-label{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.more-row.is-danger,.more-row.is-danger .more-icon{color:var(--danger)}
 .foot-note{color:#8b90a0;font-size:12px;margin:8px 0 0;width:390px}
 @media(max-width:900px){.phone{width:100%;max-width:390px}}
 </style>
 </head>
 <body>
+<svg class="icon-sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="nb-icon-explorer" viewBox="0 0 16 16">
+    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.6 1.7h4.4A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="nb-icon-session" viewBox="0 0 16 16">
+    <rect x="2.5" y="3.3" width="11" height="3.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <rect x="2.5" y="8.9" width="11" height="3.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+  </symbol>
+  <symbol id="nb-icon-bookmark" viewBox="0 0 16 16">
+    <path d="M4 2.8h8v10.4l-4-2.6-4 2.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+  </symbol>
+  <symbol id="nb-icon-clock" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M8 4.8V8l2.2 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="nb-icon-search" viewBox="0 0 16 16">
+    <circle cx="6.8" cy="6.8" r="4.3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+    <path d="M10 10l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="nb-icon-menu" viewBox="0 0 16 16">
+    <path d="M2.6 4.5h10.8M2.6 8h10.8M2.6 11.5h10.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="nb-icon-file" viewBox="0 0 16 16">
+    <path d="M4 1.8h5l3 3v9.4H4z" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    <path d="M9 1.8v3h3" fill="none" stroke="currentColor" stroke-width="1.3"/>
+  </symbol>
+  <symbol id="nb-icon-pin" viewBox="0 0 16 16">
+    <path d="M6 2.5h4l-.6 3.2 2.1 2v1H4.5v-1l2.1-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M8 8.7v4.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="nb-icon-settings" viewBox="0 0 16 16">
+    <circle cx="8" cy="8" r="2.1" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    <path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M3.9 3.9l1.1 1.1M11 11l1.1 1.1M12.1 3.9 11 5M5 11l-1.1 1.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+  </symbol>
+  <symbol id="nb-icon-logout" viewBox="0 0 16 16">
+    <path d="M9.5 3H12a1.3 1.3 0 0 1 1.3 1.3v7.4A1.3 1.3 0 0 1 12 13H9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    <path d="M6.5 5.2 3.8 8l2.7 2.8M4 8h5.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </symbol>
+</defs></svg>
 <div class="page">
   <h1>Mobile shell — 390 × 844</h1>
   <p class="lede">Static reference for <b>mobile-shell.md</b>. Topbar 52, rail 56, drawer ≤340,
@@ -109,7 +178,7 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
     <div class="gallery">
       <div class="phone">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
         <div class="body"><div class="prose">
           <h1>I2C bus notes</h1>
           <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
@@ -117,21 +186,37 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
           <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
           <div class="quote">The offset register is volatile.</div>
         </div></div>
-        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" class="active" aria-label="Explorer" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
       </div>
       <div class="phone light">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
         <div class="body"><div class="prose">
           <h1>I2C bus notes</h1>
           <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
           <h2>Timing</h2>
           <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
         </div></div>
-        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" class="active" aria-label="Explorer" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
       </div>
     </div>
-    <p class="foot-note">Chip, back, title, hybrid, capture, more. Rail: Explorer, Pinned, Bookmarks, Recent, Search.</p>
+    <p class="foot-note">Chip, back, title, capture, more — no edit control: `Edit note` is the note menu's first item. Rail: the first six views of the saved order (Explorer, Sessions, Pinned, Bookmarks, Recent, Search) plus More.</p>
   </section>
 
   <section class="sec">
@@ -139,9 +224,17 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
     <div class="gallery">
       <div class="phone">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
         <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
-        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" class="active" aria-label="Explorer" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
         <div class="scrim"></div>
         <div class="drawer">
           <div class="dhead">Files<button class="close">×</button></div>
@@ -166,16 +259,24 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
         <div class="home">
           <h2>Good evening</h2>
           <p class="sub">Pick up where you left off.</p>
-          <div class="hrow"><span class="gi">▶</span>Resume · I2C bus notes</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-file"/></svg></span>Continue · I2C bus notes</div>
           <div class="hsep"></div>
-          <div class="hrow"><span class="gi">🔍</span>Search</div>
-          <div class="hrow"><span class="gi">🔖</span>Bookmarks</div>
-          <div class="hrow"><span class="gi">🕒</span>Recent</div>
-          <div class="hrow"><span class="gi">🗂</span>Browse notes</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></span>Search</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></span>Bookmarks</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></span>Recent</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></span>Browse notes</div>
           <div class="hsep"></div>
-          <div class="hrow"><span class="gi">⚙</span>Settings</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></span>Settings</div>
         </div>
-        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
       </div>
       <div class="phone light">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
@@ -183,16 +284,24 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
         <div class="home">
           <h2>Good evening</h2>
           <p class="sub">Pick up where you left off.</p>
-          <div class="hrow"><span class="gi">▶</span>Resume · I2C bus notes</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-file"/></svg></span>Continue · I2C bus notes</div>
           <div class="hsep"></div>
-          <div class="hrow"><span class="gi">🔍</span>Search</div>
-          <div class="hrow"><span class="gi">🔖</span>Bookmarks</div>
-          <div class="hrow"><span class="gi">🕒</span>Recent</div>
-          <div class="hrow"><span class="gi">🗂</span>Browse notes</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></span>Search</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></span>Bookmarks</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></span>Recent</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></span>Browse notes</div>
           <div class="hsep"></div>
-          <div class="hrow"><span class="gi">⚙</span>Settings</div>
+          <div class="hrow"><span class="gi"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></span>Settings</div>
         </div>
-        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
       </div>
     </div>
   </section>
@@ -202,9 +311,17 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
     <div class="gallery">
       <div class="phone">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
         <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
-        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" class="active" aria-label="Explorer" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
         <div class="scrim"></div>
         <div class="sheet">
           <div class="shead">Quick capture<button class="close">×</button></div>
@@ -214,9 +331,17 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
       </div>
       <div class="phone light">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
         <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
-        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" class="active" aria-label="Explorer" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
         <div class="scrim"></div>
         <div class="sheet">
           <div class="shead">Quick capture<button class="close">×</button></div>
@@ -226,9 +351,17 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
       </div>
       <div class="phone">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
         <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
-        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" class="active" aria-label="Explorer" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
         <div class="scrim"></div>
         <div class="sheet">
           <div class="shead">Quick capture<button class="close">×</button></div>
@@ -244,9 +377,17 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
     <div class="gallery">
       <div class="phone">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
-        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon pen">✎</button><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
         <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
-        <div class="rail"><button class="active">▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" class="active" aria-label="Explorer" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
         <div class="scrim"></div>
         <div class="sheet">
           <div class="shead">Settings<button class="close">×</button></div>
@@ -269,17 +410,153 @@ h1{font-size:24px;margin:0 0 6px}.lede{color:#9aa0ad;margin:0 0 22px;max-width:7
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
         <div class="top" style="opacity:.25"><span class="chip">▦ Lab notebook</span><span class="title">I2C bus notes</span></div>
         <div class="body"><div class="prose"><h1>I2C bus notes</h1><p>The bus runs at 400 kHz.</p></div></div>
-        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
         <div class="dim"></div>
       </div>
       <div class="phone light">
         <div class="status"><span>9:41</span><span>▮▮▮</span></div>
         <div class="top"><span class="chip">▦ Lab notebook</span><span class="title"></span></div>
         <div class="state"><div class="glyph">⚠</div><h2>You’re offline</h2><p>The note is still here. Reconnect to save or reload.</p><button>Retry</button></div>
-        <div class="rail"><button>▤</button><button>📌</button><button>🔖</button><button>🕒</button><button>🔍</button></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" aria-label="Sessions" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
       </div>
     </div>
     <p class="foot-note">Auth-locked dims and disables the shell; offline shows a card with Retry and keeps the draft.</p>
+  </section>
+
+  <section class="sec">
+    <h2>7 · rail — six views plus More</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose">
+          <h1>I2C bus notes</h1>
+          <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
+          <h2>Timing</h2>
+          <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
+          <div class="quote">The offset register is volatile.</div>
+        </div></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" class="active" aria-label="Sessions" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
+      </div>
+      <div class="phone is-light">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose">
+          <h1>I2C bus notes</h1>
+          <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
+          <h2>Timing</h2>
+          <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
+          <div class="quote">The offset register is volatile.</div>
+        </div></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" class="active" aria-label="Sessions" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <p class="foot-note">Sessions is the current view: accent-soft wash, 2 px top indicator at 24–76 %. No hover state.</p>
+  </section>
+
+  <section class="sec">
+    <h2>8 · More sheet over a note</h2>
+    <div class="gallery">
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose">
+          <h1>I2C bus notes</h1>
+          <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
+          <h2>Timing</h2>
+          <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
+        </div></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" class="active" aria-label="Sessions" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="true" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet more-sheet" role="dialog" aria-modal="true" aria-labelledby="more-title-dark">
+          <div class="grab" aria-hidden="true"></div>
+          <div class="more-head"><h2 id="more-title-dark">More</h2><button type="button" class="close" aria-label="Close">×</button></div>
+          <div class="more-body">
+            <div class="more-group">App</div>
+            <button type="button" class="more-row"><span class="more-icon"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></span><span class="more-label">Settings</span></button>
+            <button type="button" class="more-row is-danger"><span class="more-icon"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-logout"/></svg></span><span class="more-label">Sign out</span></button>
+          </div>
+        </div>
+      </div>
+      <div class="phone is-light">
+        <div class="status"><span>9:41</span><span>▮▮▮</span></div>
+        <div class="top"><span class="chip">▦ Lab notebook</span><button class="back">←</button><span class="title">I2C bus notes</span><button class="icon">＋</button><button class="icon">⋯</button></div>
+        <div class="body"><div class="prose">
+          <h1>I2C bus notes</h1>
+          <p>The bus runs at 400 kHz. Pull-ups are 4.7 kΩ on both lines.</p>
+          <h2>Timing</h2>
+          <p>Use <code>t_low</code> and <code>t_high</code> from the scope capture, not the datasheet typicals.</p>
+        </div></div>
+        <div class="rail has-glyphs">
+          <button type="button" aria-label="Explorer" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+          <button type="button" class="active" aria-label="Sessions" aria-pressed="true"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+          <button type="button" aria-label="Pinned folders" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+          <button type="button" aria-label="Bookmarks" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+          <button type="button" aria-label="Recent files" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-clock"/></svg></button>
+          <button type="button" aria-label="Search" aria-pressed="false"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-search"/></svg></button>
+          <button type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="true" title="More views"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
+        </div>
+        <div class="scrim"></div>
+        <div class="sheet more-sheet" role="dialog" aria-modal="true" aria-labelledby="more-title-light">
+          <div class="grab" aria-hidden="true"></div>
+          <div class="more-head"><h2 id="more-title-light">More</h2><button type="button" class="close" aria-label="Close">×</button></div>
+          <div class="more-body">
+            <div class="more-group">App</div>
+            <button type="button" class="more-row"><span class="more-icon"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></span><span class="more-label">Settings</span></button>
+            <button type="button" class="more-row is-danger"><span class="more-icon"><svg class="g" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><use href="#nb-icon-logout"/></svg></span><span class="more-label">Sign out</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="foot-note">Rail slots, budget 7: 1 Explorer · 2 Sessions · 3 Bookmarks · 4 Recent files · 5 Search · 6 spare view
+      slot (reserved, empty today) · 7 More, pinned last. Five views are assigned, so six buttons render at
+      62 px each in a 390 board; the 44 px floor binds at 320. Glyph 17 px; 56 + bottom inset.</p>
+    <p class="foot-note">Sheet row model: grabber 36 × 4 · header 52 with a 44 px × · group label 12 / 600, .08em,
+      uppercase · row 52, gap 12, padding 0 16, icon box 24 wide holding a 17 px sprite, label 15 / 1.3 · 1 px
+      border between rows, none after a group's last · press face accent-soft · danger row danger · cap
+      min(72dvh, 560px), radius 16 top, scrim .45. The scrim (z 400) and the sheet (z 600) paint over the
+      rail (z 150), so More shows no open face: only aria-expanded changes. Under the default order the
+      Views group is empty and is not rendered.</p>
   </section>
 
   <p class="foot-note">Static boards. Drawer, sheet and history behaviour is described in

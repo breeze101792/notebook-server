@@ -26,8 +26,10 @@
   const CAPTURE_PATH = "Inbox.md";
   const CAPTURE_BLOCK = "\n\n";
   const MENU_WIDTH = 196;
+  const SVG_NS = "http://www.w3.org/2000/svg";
 
-  // "drawer" | "capture" | "settings" while a phone layer is open.
+  // "drawer" | "capture" | "settings" | "views" | "edit" while a phone layer
+  // is open.
   let layer = null;
   let layerHistory = false;
   let suppressHistory = false;
@@ -47,6 +49,9 @@
   let serverOnline = true;
   let authLocked = false;
   let signingOut = false;
+  // The element that opened the settings sheet, so focus returns to the
+  // rail More button or the top-bar menu and never to a MouseEvent.
+  let settingsOpener = null;
 
   // Static shell nodes are captured once at load: notes render into the
   // viewer before these ids in document order, so a lazy getElementById can
@@ -64,7 +69,9 @@
     home: document.getElementById("mobile-home"),
     state: document.getElementById("mobile-state"),
     settings: document.getElementById("mobile-settings"),
+    viewsSheet: document.getElementById("mobile-views-sheet"),
     more: document.getElementById("mobile-more"),
+    moreBtn: document.getElementById("activity-more-btn"),
     captureBtn: document.getElementById("mobile-capture"),
     backBtn: document.getElementById("back-btn"),
     sidePanel: document.getElementById("side-panel"),
@@ -219,12 +226,22 @@
     }
     document.body.classList.toggle("capture-open", kind === "capture");
     document.body.classList.toggle("settings-open", kind === "settings");
+    document.body.classList.toggle("views-open", kind === "views");
     document.body.classList.toggle("edit-open", kind === "edit");
+    // The More button advertises its own sheet; this function is the one
+    // owner of every layer transition, so the attribute cannot go stale.
+    if (shell.moreBtn) {
+      shell.moreBtn.setAttribute("aria-expanded",
+        kind === "views" ? "true" : "false");
+    }
     if (kind === "capture") {
       const sheet = shell.captureSheet;
       if (sheet) sheet.hidden = false;
     } else if (kind === "settings") {
       const sheet = shell.settings;
+      if (sheet) sheet.hidden = false;
+    } else if (kind === "views") {
+      const sheet = shell.viewsSheet;
       if (sheet) sheet.hidden = false;
     }
     updateScrim();
@@ -232,8 +249,9 @@
 
   function hideLayerUi(kind) {
     document.body.classList.remove(
-      "drawer-open", "capture-open", "settings-open", "edit-open");
+      "drawer-open", "capture-open", "settings-open", "views-open", "edit-open");
     delete document.body.dataset.drawerView;
+    if (shell.moreBtn) shell.moreBtn.setAttribute("aria-expanded", "false");
     if (shell.sidePanel) {
       shell.sidePanel.removeAttribute("role");
       shell.sidePanel.removeAttribute("aria-modal");
@@ -245,14 +263,18 @@
     } else if (kind === "settings") {
       const sheet = shell.settings;
       if (sheet) sheet.hidden = true;
+    } else if (kind === "views") {
+      const sheet = shell.viewsSheet;
+      if (sheet) sheet.hidden = true;
     }
     updateScrim();
   }
 
   function focusOpener(kind) {
     const el = kind === "capture" ? shell.captureBtn
-      : kind === "settings" ? shell.more
-      : kind === "edit" ? document.getElementById("hybrid-toggle")
+      : kind === "views" ? shell.moreBtn
+      : kind === "settings" ? (settingsOpener || shell.more)
+      : kind === "edit" ? (isOn() ? shell.more : document.getElementById("hybrid-toggle"))
       : shell.title;
     if (el && !el.hidden) { try { el.focus({ preventScroll: true }); } catch (_) {} }
   }
@@ -268,6 +290,8 @@
       } catch (_) { layerHistory = false; }
     }
     showLayerUi(kind);
+    // The back button is enabled while a layer is open, even with no note.
+    updateHome();
   }
 
   function closeLayerNow(restoreFocus, opts) {
@@ -280,6 +304,7 @@
     if (kind === "capture" || kind === "settings") updateKeyboardInset();
     if (kind === "edit") exitEditSession();
     if (restoreFocus !== false) focusOpener(kind);
+    updateHome();
   }
 
   // Leave WYSIWYG mode through the same save path a tab switch uses: an
@@ -307,7 +332,11 @@
   function requestCloseLayer() {
     if (!layer) return false;
     if (layer === "capture") saveDraftNow();
-    if (layerHistory) {
+    let state = null;
+    try { state = history.state; } catch (_) {}
+    // A note open or Home rewrote the entry out from under the layer (an
+    // empty session switch does this); there is no layer entry left to pop.
+    if (layerHistory && state && state.nbLayer) {
       try { history.back(); return true; }
       catch (_) { /* fall through to a direct close */ }
     }
@@ -362,8 +391,10 @@
     }
     const active = (NB.activity && NB.activity.getActive) ? NB.activity.getActive() : null;
     if (!active) return;
-    document.body.dataset.drawerView = active;
     setLayer("drawer");
+    // After setLayer: entering from another layer runs hideLayerUi first,
+    // which clears the attribute.
+    document.body.dataset.drawerView = active;
     checkServer();
     setTimeout(focusDrawer, 220);
   }
@@ -465,6 +496,27 @@
   }
 
   /* --- Home ---------------------------------------------------------- */
+  // One glyph builder for Home and the More sheet, mirroring renderBar(): an
+  // nb-icon-* id becomes an <svg><use> sprite, any other icon is the
+  // registered text glyph. A view has one icon on the rail, Home and More.
+  function glyphEl(icon, cls) {
+    if (typeof icon === "string" && icon.indexOf("nb-icon-") === 0) {
+      const svg = document.createElementNS(SVG_NS, "svg");
+      svg.setAttribute("class", cls);
+      svg.setAttribute("aria-hidden", "true");
+      svg.setAttribute("focusable", "false");
+      const use = document.createElementNS(SVG_NS, "use");
+      use.setAttribute("href", "#" + icon);
+      svg.appendChild(use);
+      return svg;
+    }
+    const span = document.createElement("span");
+    span.className = cls;
+    span.setAttribute("aria-hidden", "true");
+    span.textContent = icon || "?";
+    return span;
+  }
+
   function homeRow(icon, label, meta, handler) {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -472,7 +524,7 @@
     const i = document.createElement("span");
     i.className = "mhr-icon";
     i.setAttribute("aria-hidden", "true");
-    i.textContent = icon;
+    i.appendChild(glyphEl(icon, "icon"));
     const l = document.createElement("span");
     l.className = "mhr-label";
     l.textContent = label;
@@ -503,6 +555,21 @@
     NB.evt.emit("file:open-request", resume.path);
   }
 
+  // M10.7: Home names the session it is showing. Read-only, from the live
+  // model; no new state and no stored key.
+  function homeSubtitle() {
+    let name = "";
+    if (NB.tabs && NB.tabs.getSessionList && NB.tabs.getActiveSessionId) {
+      const id = NB.tabs.getActiveSessionId();
+      const list = NB.tabs.getSessionList() || [];
+      const session = list.find((s) => s && s.id === id);
+      name = (session && session.name) || "";
+    }
+    return name
+      ? name + " \u00B7 Read or capture a note."
+      : "Read or capture a note.";
+  }
+
   function renderHome() {
     const home = shell.home;
     if (!home) return;
@@ -513,26 +580,28 @@
     title.textContent = site;
     const sub = document.createElement("p");
     sub.className = "mobile-home-sub";
-    sub.textContent = "Read or capture a note.";
+    sub.textContent = homeSubtitle();
     home.append(title, sub);
 
     const list = document.createElement("div");
     list.className = "mobile-home-list";
-    list.appendChild(homeRow("\uD83D\uDD0D", "Search", "", () => openDrawer("search")));
+    list.appendChild(homeRow("nb-icon-search", "Search", "", () => openDrawer("search")));
 
     const resume = readResume();
     if (resume) {
-      list.appendChild(homeRow("\u25B6", "Continue", basename(resume.path), openResume));
+      list.appendChild(homeRow("nb-icon-file", "Continue", basename(resume.path), openResume));
     }
-    list.appendChild(homeRow("\uD83D\uDD16", "Bookmarks", "", () => openDrawer("bookmarks")));
-    list.appendChild(homeRow("\uD83D\uDD52", "Recent", "", () => openDrawer("recent")));
-    list.appendChild(homeRow("\uD83D\uDDC2", "Browse", "", () => openDrawer("explorer")));
+    list.appendChild(homeRow("nb-icon-bookmark", "Bookmarks", "", () => openDrawer("bookmarks")));
+    list.appendChild(homeRow("nb-icon-clock", "Recent", "", () => openDrawer("recent")));
+    list.appendChild(homeRow("nb-icon-explorer", "Browse", "", () => openDrawer("explorer")));
     home.appendChild(list);
 
     const sep = document.createElement("div");
     sep.className = "mobile-home-sep";
     home.appendChild(sep);
-    home.appendChild(homeRow("\u2699", "Settings", "", openSettings));
+    // A wrapper, not the bare function: the handler is called with a
+    // MouseEvent, which must never be recorded as the focus opener.
+    home.appendChild(homeRow("nb-icon-settings", "Settings", "", () => openSettings()));
   }
 
   function updateHome() {
@@ -543,7 +612,9 @@
     home.hidden = !show;
     if (isOn()) {
       const back = shell.backBtn;
-      if (back) back.disabled = !active;
+      // A layer is closable too: More is reachable from Home, and back is
+      // the only close control there besides the scrim.
+      if (back) back.disabled = !active && !layer;
     }
     if (show) renderHome();
   }
@@ -667,26 +738,35 @@
     return el;
   }
 
+  // The grabber and the head every bottom sheet shares: a drag hint, the
+  // title, and the 44 px close. Only the head class, title and close label
+  // differ between the sheets.
+  function sheetHead(headClass, titleText, titleId, closeLabel) {
+    const grab = document.createElement("div");
+    grab.className = "capture-grabber";
+    grab.setAttribute("aria-hidden", "true");
+    const head = document.createElement("div");
+    head.className = headClass;
+    const h = document.createElement("h2");
+    h.id = titleId;
+    h.textContent = titleText;
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "mobile-sheet-close";
+    close.setAttribute("aria-label", closeLabel);
+    close.textContent = "\u00D7";
+    close.addEventListener("click", requestCloseLayer);
+    head.append(h, close);
+    return [grab, head];
+  }
+
   function buildSettings() {
     const sheet = shell.settings;
     if (!sheet) return;
     const canWrite = !(NB.auth && NB.auth.canWrite) || NB.auth.canWrite();
     sheet.innerHTML = "";
-    const grab = document.createElement("div");
-    grab.className = "capture-grabber";
-    grab.setAttribute("aria-hidden", "true");
-    const head = document.createElement("div");
-    head.className = "mobile-settings-head";
-    const h = document.createElement("h2");
-    h.id = "mobile-settings-title";
-    h.textContent = "Settings";
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "mobile-sheet-close";
-    close.setAttribute("aria-label", "Close settings");
-    close.textContent = "\u00D7";
-    close.addEventListener("click", requestCloseLayer);
-    head.append(h, close);
+    const [grab, head] = sheetHead(
+      "mobile-settings-head", "Settings", "mobile-settings-title", "Close settings");
 
     const body = document.createElement("div");
     body.className = "mobile-settings-body";
@@ -759,8 +839,12 @@
     sheet.append(grab, head, body);
   }
 
-  function openSettings() {
+  function openSettings(opener) {
     if (!isOn()) return;
+    // Record the opener as an element; the Home row passes a wrapper, and a
+    // MouseEvent can never become the focus target.
+    settingsOpener = (opener && typeof opener.focus === "function")
+      ? opener : shell.more;
     buildSettings();
     setLayer("settings");
     checkServer();
@@ -768,6 +852,92 @@
       const close = shell.settings
         ? shell.settings.querySelector(".mobile-sheet-close") : null;
       if (close) { try { close.focus({ preventScroll: true }); } catch (_) {} }
+    }, 220);
+  }
+
+  /* --- More sheet: the views the rail cannot hold --------------------- */
+  function moreGroup(label) {
+    const el = document.createElement("div");
+    el.className = "mobile-more-group";
+    el.textContent = label;
+    return el;
+  }
+
+  function moreRow(opts) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mobile-settings-row mobile-more-row" +
+      (opts.danger ? " is-danger" : "");
+    if (opts.current) btn.setAttribute("aria-current", "true");
+    btn.appendChild(glyphEl(opts.icon, "mobile-more-icon"));
+    const label = document.createElement("span");
+    label.className = "mobile-settings-label mobile-more-label";
+    label.textContent = opts.label;
+    btn.appendChild(label);
+    if (opts.current) btn.appendChild(glyphEl("nb-icon-check", "mobile-more-check"));
+    btn.addEventListener("click", opts.handler);
+    return btn;
+  }
+
+  // Rebuilt on every open from the live bar, so a hide, an unhide or a
+  // reorder never leaves a stale row behind.
+  function buildViews() {
+    const sheet = shell.viewsSheet;
+    if (!sheet) return;
+    sheet.innerHTML = "";
+    const [grab, head] = sheetHead(
+      "mobile-more-head", "More", "mobile-views-title", "Close");
+    const body = document.createElement("div");
+    body.className = "mobile-more-body";
+
+    const views = (NB.activity && NB.activity.offRailViews)
+      ? NB.activity.offRailViews() : [];
+    const current = (NB.activity && NB.activity.getActive)
+      ? NB.activity.getActive() : null;
+    if (views.length) {
+      body.appendChild(moreGroup("Views"));
+      for (const v of views) {
+        body.appendChild(moreRow({
+          icon: v.icon,
+          label: v.label || v.id,
+          current: v.id === current,
+          handler: () => openDrawer(v.id),
+        }));
+      }
+    }
+
+    body.appendChild(moreGroup("App"));
+    body.appendChild(moreRow({
+      icon: "nb-icon-settings",
+      label: "Settings",
+      handler: () => openSettings(shell.moreBtn),
+    }));
+    const auth = (NB.auth && NB.auth.status) ? NB.auth.status() : null;
+    if (auth && auth.enabled) {
+      body.appendChild(moreRow({
+        icon: "nb-icon-logout",
+        label: "Sign out",
+        danger: true,
+        handler: () => {
+          requestCloseLayer();
+          if (NB.auth && NB.auth.logout) NB.auth.logout();
+        },
+      }));
+    }
+
+    sheet.append(grab, head, body);
+  }
+
+  function openViews() {
+    if (!isOn()) return;
+    buildViews();
+    setLayer("views");
+    setTimeout(() => {
+      // The layer may already have become the drawer or closed.
+      if (layer !== "views") return;
+      const first = shell.viewsSheet
+        ? shell.viewsSheet.querySelector(".mobile-more-row") : null;
+      if (first) { try { first.focus({ preventScroll: true }); } catch (_) {} }
     }, 220);
   }
 
@@ -948,18 +1118,20 @@
 
   function pushNoteHistory(path) {
     if (bootHistory || suppressHistory || !isOn() || !path) return;
-    let state = null;
-    try { state = history.state; } catch (_) {}
-    if (state && state.nbFile === path) return;
     const url = noteUrl(path);
-    // A file chosen from an open drawer replaces the drawer entry with the
-    // note entry, so back does not land on a dead drawer layer.
+    // A file chosen from an open drawer or sheet replaces that entry with
+    // the note entry, so back does not land on a dead layer. This runs
+    // before the already-current check: picking the note that is already
+    // open must still close the layer that picked it.
     if (layer) {
       layerHistory = false;
       closeLayerNow();
       try { history.replaceState({ nbFile: path }, "", url); } catch (_) {}
       return;
     }
+    let state = null;
+    try { state = history.state; } catch (_) {}
+    if (state && state.nbFile === path) return;
     try { history.pushState({ nbFile: path }, "", url); } catch (_) {}
   }
 
@@ -1005,6 +1177,15 @@
 
   async function onPopState(e) {
     if (!isOn()) return;
+    // A body-level dialog owns the back step while it is up: the entry under
+    // it must survive, so close the dialog and put the layer entry back.
+    if (NB.dialog && NB.dialog.isOpen && NB.dialog.isOpen() &&
+        NB.dialog.requestClose && NB.dialog.requestClose()) {
+      if (layer) {
+        try { history.pushState({ nbLayer: layer }, "", location.href); } catch (_) {}
+      }
+      return;
+    }
     if (layer) { closeLayerNow(); return; }
     const state = e && e.state;
     const current = activePath();
@@ -1154,6 +1335,7 @@
     if (e.key === "Tab" && layer && layer !== "edit") {
       const box = layer === "drawer" ? shell.sidePanel
         : layer === "capture" ? shell.captureSheet
+        : layer === "views" ? shell.viewsSheet
         : shell.settings;
       if (!box) return;
       const items = Array.from(box.querySelectorAll(
@@ -1186,6 +1368,8 @@
     if (capture) capture.addEventListener("click", openCapture);
     const more = shell.more;
     if (more) more.addEventListener("click", (e) => { e.stopPropagation(); openMore(); });
+    const moreBtn = shell.moreBtn;
+    if (moreBtn) moreBtn.addEventListener("click", openViews);
     if (more) {
       document.addEventListener("click", () => {
         const menu = shell.menu;

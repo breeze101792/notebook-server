@@ -133,7 +133,7 @@ keeps the saved view lit while the panel is at zero width.
 |---|---|---|
 | Identity | `#brand` | Always present. Yields width first. Never moves. |
 | Context | `#workspace-bar` chip, `#session-bar` chip, one divider before each | Picker mounts only. Absent with no workspace, no session, or an unauthenticated visitor. |
-| Actions | `#hybrid-toggle`, `#edit-toggle` on desktop; `#back-btn`, `#mobile-title`, `#hybrid-toggle`, `#mobile-capture`, `#mobile-more` on phone | Right-aligned. Never shrink, never wrap, never enter a menu. |
+| Actions | `#hybrid-toggle`, `#edit-toggle` on desktop; `#back-btn`, `#mobile-title`, `#mobile-capture`, `#mobile-more` on phone | Right-aligned. Never shrink, never wrap, never enter a menu. The phone's edit entry is the note menu's `Edit note`, not a bar control. |
 
 `.topbar-spacer` is the flexible gap between context and actions (`style.css:190`). It never
 holds a control.
@@ -206,7 +206,7 @@ Rules:
 |---|---|---|---|---|---|
 | 1 | `#back-btn` | **hidden** | shown | phone only | disabled with no history: `--text-muted` at `--opacity-disabled`, `cursor: default` |
 | 2 | `#mobile-title` | hidden | shown, flex 1 | phone | — |
-| 3 | `#hybrid-toggle` | shown | shown | a note is open **and** the role can write (`hybrid.js:9060-9061`) | hidden otherwise; `aria-pressed` reflects the mode |
+| 3 | `#hybrid-toggle` | shown | **hidden** | a note is open **and** the role can write (`hybrid.js:9060-9061`) | hidden otherwise and always on a phone; `aria-pressed` reflects the mode |
 | 4 | `#mobile-capture` | hidden | shown | phone, role can write (`mobile.js:844-849`) | hidden for a viewer |
 | 5 | `#mobile-more` | hidden | shown | phone | — |
 | 6 | `#edit-toggle` | shown | hidden | role can write | hidden for a viewer |
@@ -267,9 +267,11 @@ control that hid itself.
 | 1 | workspace chip | 44 × 44, glyph `--icon-xl` | name clipped to `.sr-only`; caret hidden (`style.css:8198-8222`) |
 | 2 | `#back-btn` | 44 × 44 | |
 | 3 | `#mobile-title` | 44 high, flex 1, min 0 | note basename at 16 px / 600, ellipsis; opens the drawer (`mobile.js:150-159`, `:1134-1139`) |
-| 4 | `#hybrid-toggle` | 44 × 44 | writable note only |
-| 5 | `#mobile-capture` | 44 × 44 | writable role only |
-| 6 | `#mobile-more` | 44 × 44 | opens the note menu |
+| 4 | `#mobile-capture` | 44 × 44 | writable role only |
+| 5 | `#mobile-more` | 44 × 44 | opens the note menu; its first item is `Edit note` |
+
+The pencil has no phone slot. It cost 44 px between the title and capture, and the note menu already
+carries the entry (`mobile-shell.md` §2), so the phone spends that width on the title.
 
 The chip leads. It keeps the same position it has on desktop, so the control does not move when
 the shell flips; back sits next to the title it acts on. `mobile-shell.md` §4.1 predates the
@@ -822,9 +824,9 @@ No framework, no build step, no new dependency.
 | **AC13** | The outline marks the current heading for assistive tech | `outline.js` | Scrolling the reader moves `aria-current="location"` to exactly one link and scrolls it into view; focus does not move. |
 | **AC14** | The outline toggle reports its state | `index.html`, `app.js` | `#outline-toggle` has `aria-pressed`, which flips with the pane; its `aria-label` does not promise the wrong action. |
 | **AC15** | The phone drawer is modal | `mobile.js`, `style.css` | With the drawer open `#side-panel` has `role="dialog"` and `aria-modal="true"`; `Tab` from the last control lands on the first; the topbar, rail and editor are `inert`; closing returns focus to the opener. |
-| **AC16** | The phone rail has five view icons | `style.css` | At 390 the bottom bar shows Explorer, Pinned, Bookmarks, Recent, Search. Sessions, AI, graph, settings and logout are not view buttons. |
-| **AC17** | Every phone topbar target is 44 px | `style.css` | The workspace chip, back, `#hybrid-toggle`, capture and more each measure 44 × 44; the title takes the remainder and ellipsizes. `#edit-toggle` is not shown on a phone. |
-| **AC18** | A viewer sees no write entry and no write shortcut | `viewer.js`, `app.js`, `mobile.js`, `shortcuts.js` | With `role="viewer"`, `#edit-toggle` and `#mobile-capture` are hidden, `#hybrid-toggle` stays hidden, and `Mod+Shift+E` / `Mod+E` do not enter an editor. |
+| **AC16** | The phone rail has six view icons and More | `style.css`, `activity.js` | At 390 in the default order the bottom bar shows Explorer, Sessions, Pinned, Bookmarks, Recent, Search and More; AI is not a view button and graph/settings/logout have no slot (`mobile-more-sheet.md` §1). |
+| **AC17** | Every phone topbar target is 44 px | `style.css` | The workspace chip, back, capture and more each measure 44 × 44; the title takes the remainder and ellipsizes. Neither `#edit-toggle` nor `#hybrid-toggle` is shown on a phone. |
+| **AC18** | A viewer sees no write entry and no write shortcut | `viewer.js`, `app.js`, `mobile.js`, `shortcuts.js` | With `role="viewer"`, `#edit-toggle` and `#mobile-capture` are hidden, the note menu has no `Edit note`, and `Mod+Shift+E` / `Mod+E` do not enter an editor. |
 | **AC19** | Every visible shell control draws the ring | `style.css` | Tabbing at 1280 and at 390 never lands on an unstyled control. At 1280 that includes brand, chips, rail, header actions, separator, outline links and the outline toggle; at 390 the outline controls are not rendered. |
 | **AC20** | No new colour literal; shell geometry is tokenised | `style.css` | The diff adds hex only inside the token blocks; heights, paddings, gaps, radii and widths read a token or one of the three named shell-local variables. The only bare numbers are the clamp ratios (`.6`, `.4`), `0`, and `100vw`. |
 | **AC21** | Reduced motion removes the new transitions | `style.css` | With reduce emulated, the drawer and the resize bar switch state instantly and completely. |

@@ -82,8 +82,9 @@ Ranked by the job the feature does.
 - Drag-a-tab-onto-a-session in the Sessions view, and drag-reorder of sessions.
   Moving a tab is the tab menu's job; session order is creation order in v1.
 - Keyboard shortcuts for sessions — no new binding in v1.
-- Sessions on the phone shell, which has one reader, no tab bar, and no
-  Sessions rail icon; a saved `activeView` of `sessions` falls back to Explorer.
+- Session drag-reorder on the phone shell. The row's `⋯` menu (Move up / Move
+  down) is the phone path; HTML5 drag never fires on touch. Sessions themselves
+  are in scope on the phone — see [`../../product/mobile.md`](../../product/mobile.md) M10.
 - Changing what pin, close, rename, delete, search, or Back/Forward already do.
 
 **MVP line.** Everything in must-have. The row count is the only should-have.
@@ -350,11 +351,11 @@ dialog, `static/js/workspaces.js`, is the closest precedent). Visual design is
 | Hand-edited `activeSessionId` naming nothing | First session becomes active | §4.5(8) |
 | 25 sessions in config | Truncated to the first 20 | §4.5(4) |
 | Two sessions claim the same path | First keeps it; the second loses it | §4.5(6) |
-| Phone opens a note | Phone shell unchanged: one reader, one tab, no session control, no Sessions rail icon; desktop sessions are neither read nor written | `boot()`, §7 AC60 |
+| Phone opens a note | One reader, one tab, no tab strip; the sessions the note belongs to are the workspace's, and the Sessions rail slot opens the list in the drawer | `boot()`, §7 AC60 |
 | Drag a row and drop outside the list | Nothing changes; the marks and the dragging state clear | §11 AC74 |
 | Drop a row on itself | Nothing changes; the list stays as it was | §11 AC74 |
 | Two browsers reorder at once | Both converge on the order of the write the server accepted last | §11 AC74; §10 S5 |
-| Phone loads with a saved `activeView` of `sessions` | Explorer opens instead; no session UI is shown | §7 AC60 |
+| Phone loads with a saved `activeView` of `sessions` | The first drawer open shows the Sessions list; no drawer is opened unprompted | §7 AC60 |
 | Viewer role uses the Sessions view | Switching works in memory; the `+`, Move up/Move down, Rename, Delete, and Move to session are disabled with a read-only reason; nothing persists, and a row cannot be dragged | `workspace_admin_required`, `/api/workspace-state` |
 | Session state pushes the workspace state past 256 KiB | The write fails with `state_too_large`; the app keeps working, the change is lost on reload | `/api/workspace-state` |
 
@@ -599,11 +600,11 @@ request) is unchanged.
 
 **Role and device**
 
-56. **AC56** — On the phone shell there is no Sessions rail icon, no session row,
-    and no session-related item in any menu; opening notes does not read or write
-    desktop sessions, and a later desktop load shows the previous sessions intact.
-    *Observe:* phone activity bar, phone tab bar, menus, then desktop Sessions view
-    and strips.
+56. **AC56** — On the phone shell Sessions has a rail slot (second in the default
+    bar order) and opens the list in the drawer; a tap switches sessions and closes
+    the drawer, and `⋯` / `+` carry reorder, rename and delete at 44 px. Opening
+    notes reads and writes the workspace's active session exactly as desktop does.
+    *Observe:* phone rail, drawer list, a session switch, the row menu.
 57. **AC57** — Signed in as viewer, switching sessions works in memory while the
     `+`, Rename, Delete, and Move to session are disabled with a read-only reason;
     no `POST /api/workspace-state` is issued by any of them; after a reload the
@@ -625,9 +626,9 @@ request) is unchanged.
 
 **Activity bar and phone**
 
-60. **AC60** — The phone shell renders no Sessions rail icon; with a saved
-    `activeView` of `sessions`, the phone opens Explorer on load instead and shows
-    no session UI. *Observe:* activity bar icons, shown view after load, network
+60. **AC60** — The phone shell renders a Sessions rail icon in the first six slots;
+    with a saved `activeView` of `sessions`, the first drawer open shows that list and
+    no drawer opens on load. *Observe:* rail icons, the view the drawer shows, network
     log.
 
 **Multiple occurrences**
@@ -674,8 +675,8 @@ request) is unchanged.
   and the preamble agree.
 - **Deep links.** `?file=…&heading=…` opens the file in the active session
   (adding a tab if needed) and still applies the heading; no session switch.
-- **Phone shell.** One reader, one tab, no tab bar, no Sessions rail icon
-  (`boot()`).
+- **Phone shell.** One reader, one tab, no tab bar; Sessions is a rail slot whose
+  list lives in the drawer (`boot()`, `mobile.js`).
 
 ---
 

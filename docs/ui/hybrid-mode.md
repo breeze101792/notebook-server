@@ -45,7 +45,10 @@ Every claim about current code cites `file:line`.
 | Keyboard | `Mod+E` (`Ctrl+E` outside macOS) | `shortcuts.js:59`; `hybrid.js:9345-9347` |
 | Refused when | the CM6 source editor is open (the chord is yielded to the editor) | `shortcuts.js` |
 
-The button is the only entry control. It never enters a menu and never moves.
+The button is the desktop's entry control. It never enters a menu and never moves — except on a
+phone, where it has no slot: `#hybrid-toggle` is hidden by the phone query and **Edit note**, the note
+menu's first item, is the entry (`mobile.js` `openMore`; `mobile-shell.md` §2). The menu item calls the
+same `NB.hybrid.enter()` path, so nothing else about entry changes.
 
 ### 1.2 Active state
 
@@ -92,13 +95,14 @@ appearance is part of the entry delta, not a hidden cost.
 | Topbar `✎` (desktop) | saves when the bytes differ **if autosave is on** | none while autosave is on; the Close prompt when it is off | `hybrid.js` `toggle()` → `requestExit()` |
 | `Mod+E` | same as the topbar `✎` | same | `hybrid.js` `shortcut:toggleHybrid` |
 | `#edit-toggle` / `Mod+Shift+E` (source mode) | same as the topbar `✎` | same; a failed save keeps WYSIWYG open | `viewer.js` `toggleEdit()` → `NB.hybrid.requestExit()` |
-| Topbar `✎` (phone, active) | saves when the bytes differ **if autosave is on** | the Close prompt when autosave is off | `hybrid.js` `hybridBtn` click handler |
+| Edit-bar **Done** (phone) | saves when the bytes differ **if autosave is on** | the Close prompt when autosave is off | `hybrid.js` `onClose()` |
 | Tab close / tab switch | see §6.4 | — | `hybrid.js` `commitForTabSwitch()` |
 
 Exit removes `contenteditable`, `.hybrid-editing`, `.hybrid-active`, `.editing` and
 `.active`, hides the edit bar, restores Preview and re-activates the tab so the note
 renders from cache (`hybrid.js:7082-7129`). Focus is left on the now non-editable page
-element; nothing moves it. Exception **E5** returns it to `#hybrid-toggle`.
+element; nothing moves it. Exception **E5** returns it to `#hybrid-toggle` on desktop and to
+`#mobile-more` on the phone, the control that opened the mode.
 
 No exit path discards unsaved bytes silently. The toggle paths write when autosave is on
 and ask when it is off (proposal **P1**, applied).
@@ -494,7 +498,7 @@ the state does not exist or paints nothing.
 | Table rectangle | — | — | — | `wash` fill + inset 1 px `--accent` | held selection | cleared |
 | Draft bar | — | — | action rings | raised bar, z 80, Recover accent outline | — | shown only in preview with a draft; `enter()` must re-run `updateDraftBar()` so a preview bar does not stay over the page |
 | Conflict tab | — | — | — | `↻` in `--danger` | — | cleared on reload/save |
-| Phone `#hybrid-toggle` | 44 × 44, transparent, `--text-primary` | — | base ring | `--accent` face (tap = Done) | Done dot | read mode |
+| Phone edit entry | not a bar control: the note menu's first row | — | menu focus | — | — | no note, viewer |
 
 ---
 

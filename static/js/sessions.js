@@ -61,6 +61,8 @@
   const TITLE_READ_ONLY = "Read-only: sessions can’t be changed.";
   const TITLE_NO_DIALOG = "Sessions can’t be changed on this page.";
   const TITLE_LIMIT = MAX_SESSIONS + " sessions is the limit. Delete one first.";
+  // The phone repeats a refused + as a toast, since it has no hover title.
+  const TOAST_MS = 2400;
   const HELP_NEW = "A session is a named set of open tabs. Pinned tabs " +
     "stay in every session.";
   const HELP_RENAME = "Rename only changes the label. Its tabs stay open.";
@@ -625,17 +627,14 @@
    * but it keeps its tab stop so the reason stays reachable. */
   function updateAddBtn() {
     if (!addBtn) return;
-    const writable = isWritable();
-    const full = sessions.length >= MAX_SESSIONS;
-    const noDialog = !dlg;
-    if (!writable || full || noDialog) {
+    const reason = createRefusal();
+    if (reason) {
       addBtn.setAttribute("aria-disabled", "true");
     } else {
       addBtn.removeAttribute("aria-disabled");
     }
-    addBtn.title = !writable ? TITLE_READ_ONLY
-      : (full ? TITLE_LIMIT : (noDialog ? TITLE_NO_DIALOG : LABEL_ADD));
-    if (full) addBtn.setAttribute("aria-describedby", CAP_NOTE_ID);
+    addBtn.title = reason || LABEL_ADD;
+    if (sessions.length >= MAX_SESSIONS) addBtn.setAttribute("aria-describedby", CAP_NOTE_ID);
     else addBtn.removeAttribute("aria-describedby");
   }
 
@@ -815,11 +814,37 @@
     if (!NB.tabs || typeof NB.tabs.swapTo !== "function") return;
     // One instant, local swap; no busy state and no confirm. The
     // tabs:changed it emits re-renders the rows.
-    settle(NB.tabs.swapTo(id));
+    const done = settle(NB.tabs.swapTo(id));
+    // A phone drawer still has to close when the target session opens no
+    // note (an empty one), because nothing else closes it there.
+    Promise.resolve(done).then(() => {
+      if (NB.mobile && NB.mobile.isDrawerOpen && NB.mobile.isDrawerOpen()) {
+        NB.mobile.closeDrawer();
+      }
+    }).catch(() => {});
+    return done;
+  }
+
+  // The reason the header + does nothing, in the order updateAddBtn tests
+  // them. Empty when the action is available.
+  function createRefusal() {
+    if (!isWritable()) return TITLE_READ_ONLY;
+    if (sessions.length >= MAX_SESSIONS) return TITLE_LIMIT;
+    if (!dlg) return TITLE_NO_DIALOG;
+    return "";
   }
 
   function openCreate(openerEl) {
-    if (!isWritable() || sessions.length >= MAX_SESSIONS) return;
+    const reason = createRefusal();
+    if (reason) {
+      // A phone has no hover, so the title never shows: say it out loud,
+      // and keep the title + aria-describedby for a desktop pointer.
+      if (NB.mobile && NB.mobile.isOn && NB.mobile.isOn() &&
+          NB.app && NB.app.notify) {
+        NB.app.notify(reason, TOAST_MS, "warn");
+      }
+      return;
+    }
     openDialog(MODE_CREATE, null, { opener: openerEl || addBtn });
   }
 
@@ -995,13 +1020,17 @@
     NB.dialog.open(dlg.overlay, {
       initialFocus: dlg.name,
       fallbackFocus: opener,
+      // The phone's back gesture closes the dialog, never the drawer under
+      // it; the closer stays owned here.
+      onCloseRequest: closeDialog,
     });
     if (mode === MODE_RENAME) dlg.name.select();
   }
 
   function closeDialog() {
-    if (!dlg || !dialogOpen || submitting) return;
+    if (!dlg || !dialogOpen || submitting) return false;
     finishDialog();
+    return true;
   }
 
   function finishDialog() {
@@ -1146,6 +1175,8 @@
   }
 
   function viewVisible() {
+    // Phone callers only run while the drawer hosts the view; the drawer
+    // stays closed with visibility:hidden, which keeps getClientRects().
     return !!viewEl && !viewEl.hidden && viewEl.getClientRects().length > 0;
   }
 

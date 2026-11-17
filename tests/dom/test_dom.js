@@ -241,6 +241,9 @@ const html = `<!DOCTYPE html><html><head>
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view">🕸</button>
         <button id="logout-btn" class="activity-btn activity-action" hidden>⎋</button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
+        <button id="activity-more-btn" class="activity-btn activity-action" type="button"
+                aria-label="More views" title="More views"
+                aria-haspopup="dialog" aria-expanded="false">≡</button>
       </nav>
       <aside id="side-panel">
         <div id="sidebar" class="side-panel-view" data-view="explorer">
@@ -1541,6 +1544,7 @@ const html = `<!DOCTYPE html><html><head>
     <div class="capture-foot"><button id="capture-send" disabled>Send</button></div>
   </section>
   <section id="mobile-settings" role="dialog" aria-modal="true" aria-labelledby="mobile-settings-title" hidden></section>
+  <section id="mobile-views-sheet" role="dialog" aria-modal="true" aria-labelledby="mobile-views-title" hidden></section>
   <div id="mobile-state" hidden></div>
 </body></html>`;
 
@@ -44069,9 +44073,192 @@ function check(label, cond, extra) {
     check("mobile: a resize re-runs the mode mirror",
       root.dataset.uiMode === "phone" && window.NB.mobile.isOn() === true);
 
+    // --- The rail slice and the More sheet --------------------------
+    // One extra view makes the overflow real: with the shipped seven, AI is
+    // the only one off the rail and it takes no More row. The harness sets
+    // the mirror directly (refreshMode sees no change), so the event that a
+    // real rotation emits is what re-slices the rail here.
+    window.NB.evt.emit("mobile:mode", { mode: "phone" });
+    await tick(20);
+    const railIds = () => Array.from(
+      window.document.querySelectorAll("#activity-bar .activity-btn[data-view]"))
+      .map((b) => b.dataset.view);
+    check("mobile more: the rail is the first six views in bar order",
+      railIds().join(",") === "explorer,sessions,pinned,bookmarks,recent,search",
+      railIds().join(","));
+    check("mobile more: the More button ships in the rail",
+      !!$("activity-more-btn") && $("activity-more-btn").getAttribute("aria-haspopup") === "dialog",
+      !!$("activity-more-btn"));
+    check("mobile more: AI takes no rail slot and no More row",
+      window.NB.activity.railViews().every((v) => v.id !== "ai") &&
+      window.NB.activity.offRailViews().every((v) => v.id !== "ai"),
+      window.NB.activity.railViews().map((v) => v.id).join(","));
+
+    window.NB.activity.register({ id: "demo", icon: "nb-icon-file", label: "Demo" });
+    await tick(20);
+    check("mobile more: a seventh view leaves the rail for the More sheet",
+      railIds().join(",") === "explorer,sessions,pinned,bookmarks,recent,search" &&
+      window.NB.activity.offRailViews().map((v) => v.id).join(",") === "demo",
+      railIds().join(",") + " / " +
+        window.NB.activity.offRailViews().map((v) => v.id).join(","));
+
+    const stateBeforeMore = window.history.state;
+    $("activity-more-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    const moreGroups = Array.from(
+      $("mobile-views-sheet").querySelectorAll(".mobile-more-group"))
+      .map((el) => el.textContent);
+    const moreRows = Array.from(
+      $("mobile-views-sheet").querySelectorAll(".mobile-more-row"))
+      .map((el) => el.querySelector(".mobile-more-label").textContent);
+    check("mobile more: the sheet lists Views then App over one simulated history entry",
+      !$("mobile-views-sheet").hidden &&
+      window.document.body.classList.contains("views-open") &&
+      moreGroups.join("|") === "Views|App" &&
+      moreRows.join("|") === "Demo|Settings" &&
+      !!window.history.state && window.history.state.nbLayer === "views" &&
+      window.history.state !== stateBeforeMore,
+      moreGroups.join(",") + " / " + moreRows.join(",") +
+        " state=" + JSON.stringify(window.history.state));
+    check("mobile more: the More button advertises the open sheet",
+      $("activity-more-btn").getAttribute("aria-expanded") === "true");
+    check("mobile more: no Sign out row without auth",
+      !$("mobile-views-sheet").querySelector(".is-danger"));
+    check("mobile more: the back button is live with no note while a layer is open",
+      $("back-btn").disabled === false);
+
+    const histBeforeRow = window.history.length;
+    const stateBeforeRow = window.history.state;
+    $("mobile-views-sheet").querySelector(".mobile-more-row")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(80);
+    check("mobile more: a view row opens the drawer on that view",
+      window.document.body.classList.contains("drawer-open") &&
+      window.document.body.dataset.drawerView === "demo" &&
+      $("mobile-views-sheet").hidden &&
+      !window.document.body.classList.contains("views-open"),
+      window.document.body.dataset.drawerView);
+    check("mobile more: the row reuses the layer entry, never adds one",
+      window.history.length === histBeforeRow &&
+      window.history.state === stateBeforeRow,
+      String(window.history.length) + " " + JSON.stringify(window.history.state));
+    check("mobile more: the More button drops its open state for the drawer",
+      $("activity-more-btn").getAttribute("aria-expanded") === "false");
+
+    window.dispatchEvent(new window.PopStateEvent("popstate", { state: null }));
+    await tick(90);
+    check("mobile more: back from a view row closes the drawer",
+      !window.document.body.classList.contains("drawer-open"));
+
+    // The rail obeys the saved order: a view pushed past slot 6 moves to More.
+    window.NB.activity.setBarOrder(
+      ["explorer", "sessions", "bookmarks", "recent", "search", "demo", "pinned"]);
+    await tick(20);
+    check("mobile more: the rail is the first six of a reordered bar",
+      window.NB.activity.railViews().map((v) => v.id).join(",") ===
+        "explorer,sessions,bookmarks,recent,search,demo" &&
+      window.NB.activity.offRailViews().map((v) => v.id).join(",") === "pinned" &&
+      railIds().join(",") === "explorer,sessions,bookmarks,recent,search,demo",
+      window.NB.activity.railViews().map((v) => v.id).join(",") + " / " +
+        window.NB.activity.offRailViews().map((v) => v.id).join(","));
+    window.NB.activity.setBarOrder([]);
+    await tick(20);
+
+    // AC9: the Settings row opens the settings sheet and focus returns to the
+    // rail More button, not to the top-bar menu.
+    $("activity-more-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    const settingsRow = Array.from(
+      $("mobile-views-sheet").querySelectorAll(".mobile-more-row"))
+      .find((b) => b.querySelector(".mobile-more-label").textContent === "Settings");
+    if (settingsRow) {
+      settingsRow.dispatchEvent(new window.Event("click", { bubbles: true }));
+    }
+    await tick(280);
+    check("mobile more: the Settings row opens the settings sheet",
+      !!settingsRow && !$("mobile-settings").hidden &&
+      window.document.body.classList.contains("settings-open") &&
+      $("mobile-views-sheet").hidden,
+      "settings=" + $("mobile-settings").hidden +
+        " views=" + $("mobile-views-sheet").hidden);
+    $("mobile-settings").querySelector(".mobile-sheet-close")
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(120);
+    check("mobile more: closing settings returns focus to the rail More button",
+      $("mobile-settings").hidden &&
+      window.document.activeElement === $("activity-more-btn"),
+      (window.document.activeElement && window.document.activeElement.id) || "none");
+
+    // With auth on, Sign out is the sheet's danger row and closes the layer
+    // before it signs out.
+    const realAuthStatus = window.NB.auth.status;
+    const realLogout = window.NB.auth.logout;
+    let logoutCalls = 0;
+    window.NB.auth.status = () => ({ enabled: true, role: "admin" });
+    window.NB.auth.logout = () => { logoutCalls++; };
+    $("activity-more-btn").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(60);
+    const signOutRow = $("mobile-views-sheet").querySelector(".mobile-more-row.is-danger");
+    check("mobile more: Sign out renders with auth on, as the danger row",
+      !!signOutRow &&
+      signOutRow.querySelector(".mobile-more-label").textContent === "Sign out" &&
+      signOutRow.querySelector("use").getAttribute("href") === "#nb-icon-logout",
+      signOutRow ? signOutRow.textContent : "no row");
+    if (signOutRow) {
+      signOutRow.dispatchEvent(new window.Event("click", { bubbles: true }));
+    }
+    await tick(280);
+    check("mobile more: Sign out closes the layer then signs out",
+      logoutCalls === 1 && $("mobile-views-sheet").hidden &&
+      !window.document.body.classList.contains("views-open"),
+      "calls=" + logoutCalls + " hidden=" + $("mobile-views-sheet").hidden);
+    window.NB.auth.status = realAuthStatus;
+    window.NB.auth.logout = realLogout;
+
+    // An open drawer must not survive a note that is already current.
+    await window.NB.tabs.open("notes/a.md");
+    await tick(80);
+    window.NB.mobile.openDrawer("explorer");
+    await tick(60);
+    window.NB.evt.emit("file:open", "notes/a.md");
+    await tick(90);
+    check("mobile more: choosing the already-current note still closes the layer",
+      !window.document.body.classList.contains("drawer-open") &&
+      window.NB.tabs.getActive() === "notes/a.md",
+      window.NB.tabs.getActive());
+
+    // The session dialog owns the back step, not the drawer under it.
+    window.NB.mobile.openDrawer("sessions");
+    await tick(60);
+    window.NB.sessions.openCreate();
+    await tick(40);
+    check("mobile more: the session dialog opens over the drawer",
+      $("session-dialog").hidden === false && window.NB.dialog.isOpen() === true);
+    window.dispatchEvent(new window.PopStateEvent("popstate", { state: null }));
+    await tick(90);
+    check("mobile more: back closes the dialog and leaves the drawer open",
+      $("session-dialog").hidden === true &&
+      window.NB.dialog.isOpen() === false &&
+      window.document.body.classList.contains("drawer-open"),
+      "dialog=" + $("session-dialog").hidden +
+        " drawer=" + window.document.body.classList.contains("drawer-open"));
+    window.NB.mobile.closeDrawer();
+    await tick(80);
+    window.NB.tabs.clearAll();
+    window.NB.activity.setBarOrder([]);
+    await tick(40);
+
     clearMobileStorage();
     await setMode("desktop");
+    window.NB.evt.emit("mobile:mode", { mode: "desktop" });
+    await tick(20);
     check("mobile: desktop mode hides Home", $("mobile-home").hidden);
+    check("mobile: desktop mode restores the unfiltered rail",
+      Array.from(window.document.querySelectorAll(
+        "#activity-bar .activity-btn[data-view]")).length ===
+        window.NB.activity.barItems().filter((v) => !v.hidden).length,
+      String(window.document.querySelectorAll(
+        "#activity-bar .activity-btn[data-view]").length));
   }
 
   console.log("\n== heading ids vs shell ids ==");

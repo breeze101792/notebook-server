@@ -375,6 +375,11 @@
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></button>
         <button id="logout-btn" class="activity-btn activity-action" title="Log out" aria-label="Log out" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-logout"/></svg></button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></button>
+        <!-- The phone rail's overflow control: the views the first six slots
+             cannot hold, plus Settings and Log out. Hidden on desktop. -->
+        <button id="activity-more-btn" class="activity-btn activity-action" type="button"
+                aria-label="More views" title="More views"
+                aria-haspopup="dialog" aria-expanded="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
       </nav>
 
       <!-- Side panel: hosts the currently-active activity view. The
@@ -406,7 +411,7 @@
         <!-- Sessions view: one row per session. sessions.js builds the
              header + list at load (the bookmarks.js pattern); the host stays
              in the DOM so scroll and row state survive view switches.
-             Desktop-only: the phone query hides this host and its rail icon. -->
+             On the phone the view is hosted in the drawer. -->
         <div id="sessions-view" class="side-panel-view" data-view="sessions"
              {% if boot.active_view != 'sessions' %}hidden{% endif %}></div>
 
@@ -1979,6 +1984,9 @@
 
     <section id="mobile-settings" class="nb-settings-sheet" role="dialog"
              aria-modal="true" aria-labelledby="mobile-settings-title" hidden></section>
+
+    <section id="mobile-views-sheet" class="mobile-views-sheet" role="dialog"
+             aria-modal="true" aria-labelledby="mobile-views-title" hidden></section>
 
     <div id="mobile-state" hidden></div>
 

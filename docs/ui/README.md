@@ -56,8 +56,9 @@ line. *Mockup* — the visual reference; the doc beside it is normative.
 | [`hybrid-markdown-debug-pane-mockup.html`](hybrid-markdown-debug-pane-mockup.html) | Mockup — **open this** | Six boards: closed, open dark and light, 900 px, the phone strip, and the empty/failed/focused pane states. |
 | [`graph-view.md`](graph-view.md) | Current spec — pre-implementation | The `§graph` tab: header, controls, canvases, gestures, states, keyboard and phone. AC1–AC11. |
 | [`graph-view-mockup.html`](graph-view-mockup.html) | Mockup — **open this** | 3D loading and ready, 2D, empty, error, large graph, 720, dark and light. |
-| [`mobile-shell.md`](mobile-shell.md) | Current spec — pre-implementation | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history, states. AC1–AC12. |
-| [`mobile-shell-mockup.html`](mobile-shell-mockup.html) | Mockup — **open this** | Ten 390 × 844 boards: reader, drawer, Home, capture states, settings, auth-locked and offline. |
+| [`mobile-shell.md`](mobile-shell.md) | Current spec — pre-implementation | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history, states. AC1–AC14. |
+| [`mobile-shell-mockup.html`](mobile-shell-mockup.html) | Mockup — **open this** | Ten 390 × 844 boards: reader, drawer, Home, capture states, settings, auth-locked and offline, plus the rail with More and the More sheet. |
+| [`mobile-more-sheet.md`](mobile-more-sheet.md) | Current spec — pre-implementation | The phone rail's view set (`PHONE_RAIL_SLOTS` / `PHONE_OFF_VIEWS`) and the More sheet that carries every remaining sidebar item: model, anatomy, states, behaviour, ARIA, tokens, AC1–AC14. |
 | [`welcome.md`](welcome.md) | Current spec — pre-implementation | Welcome, no tabs, empty/no workspace, load failure, offline and first run. AC1–AC10. |
 | [`welcome-mockup.html`](welcome-mockup.html) | Mockup — **open this** | Seven boards, dark and light, including the phone Home reference. |
 
