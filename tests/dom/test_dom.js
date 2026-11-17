@@ -4221,14 +4221,30 @@ function check(label, cond, extra) {
     lightboxBody() && lightboxBody().innerHTML === "",
     "html=" + JSON.stringify(lightboxBody() && lightboxBody().innerHTML));
   // The mermaid container from the previous test block is still in
-  // the DOM (we're before the cleanup section). Click it.
+  // the DOM (we're before the cleanup section).
   const mc = mermaidContainers();
   check("lightbox: mermaid container exists (precondition)", mc.length >= 1,
     "count=" + mc.length);
-  // Click the container (not a child link). The handler clones the SVG.
+  const previewBtn = () => mc[0].querySelector(".nb-preview-btn");
+  const clickPreview = (card) => {
+    const btn = card && card.querySelector(".nb-preview-btn");
+    if (!btn) throw new Error("card has no .nb-preview-btn");
+    btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  };
+  check("lightbox: the card carries a Preview button",
+    !!previewBtn() && previewBtn().textContent === "Preview",
+    "btn=" + (previewBtn() ? JSON.stringify(previewBtn().textContent) : "(none)"));
+  // Clicking the card itself must NOT open the overlay: the card is a
+  // text-selection surface now, and the button is the only trigger.
   mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
   await tick(20);
-  check("lightbox: click on .mermaid-container reveals the lightbox",
+  check("lightbox: clicking the card itself keeps the overlay hidden",
+    lightboxOverlay() && lightboxOverlay().hidden,
+    "hidden=" + (lightboxOverlay() ? lightboxOverlay().hidden : "n/a"));
+  // The Preview button opens it. The handler clones the SVG.
+  clickPreview(mc[0]);
+  await tick(20);
+  check("lightbox: the Preview button opens the overlay",
     lightboxOverlay() && !lightboxOverlay().hidden,
     "hidden=" + (lightboxOverlay() ? lightboxOverlay().hidden : "n/a"));
   check("lightbox: body has an SVG clone",
@@ -4342,7 +4358,7 @@ function check(label, cond, extra) {
     lightboxBody() && lightboxBody().innerHTML === "",
     "html=" + JSON.stringify(lightboxBody() && lightboxBody().innerHTML));
   // Re-open then close via Escape.
-  mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  clickPreview(mc[0]);
   await tick(10);
   check("lightbox: re-open precondition (overlay visible)",
     lightboxOverlay() && !lightboxOverlay().hidden);
@@ -4353,7 +4369,7 @@ function check(label, cond, extra) {
   check("lightbox: Escape closes the overlay",
     lightboxOverlay() && lightboxOverlay().hidden);
   // Backdrop click closes.
-  mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  clickPreview(mc[0]);
   await tick(10);
   check("lightbox: backdrop precondition (overlay visible)",
     lightboxOverlay() && !lightboxOverlay().hidden);
@@ -4364,7 +4380,7 @@ function check(label, cond, extra) {
   check("lightbox: backdrop click closes the overlay",
     lightboxOverlay() && lightboxOverlay().hidden);
   // Click on the SVG itself should NOT close.
-  mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  clickPreview(mc[0]);
   await tick(10);
   check("lightbox: re-open for svg-click test",
     lightboxOverlay() && !lightboxOverlay().hidden);
@@ -4410,7 +4426,7 @@ function check(label, cond, extra) {
   // image (visible as a translate(...) transform on the SVG), and a click
   // that follows a drag should NOT close the overlay.
   {
-    mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+    clickPreview(mc[0]);
     await tick(10);
     window.NB.mermaid.zoomIn();          // leave fit mode -> 100%
     await tick(10);
@@ -4466,7 +4482,7 @@ function check(label, cond, extra) {
   // applies a translate transform and that the 1:1 cursor tracking is
   // correct (dx, not dx/zoomLevel).
   {
-    mc[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+    clickPreview(mc[0]);
     await tick(10);
     // Lightbox is open in fit mode — zoomFit is true, no transform yet.
     const lbSvg2 = () => lightboxBody() && lightboxBody().querySelector("svg");
@@ -4647,9 +4663,9 @@ function check(label, cond, extra) {
   const wdContainers = wavedromContainers();
   check("wavedrom lightbox: wavedrom container exists (precondition)", wdContainers.length >= 1,
     "count=" + wdContainers.length);
-  wdContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  clickPreview(wdContainers[0]);
   await tick(20);
-  check("wavedrom lightbox: click on .wavedrom-container reveals the lightbox",
+  check("wavedrom lightbox: the Preview button reveals the lightbox",
     wdLightboxOverlay() && !wdLightboxOverlay().hidden,
     "hidden=" + (wdLightboxOverlay() ? wdLightboxOverlay().hidden : "n/a"));
   check("wavedrom lightbox: body has an SVG clone",
@@ -4761,7 +4777,7 @@ function check(label, cond, extra) {
     wdLightboxBody() && wdLightboxBody().innerHTML === "",
     "html=" + JSON.stringify(wdLightboxBody() && wdLightboxBody().innerHTML));
   // Re-open then close via Escape.
-  wdContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  clickPreview(wdContainers[0]);
   await tick(10);
   check("wavedrom lightbox: re-open precondition (overlay visible)",
     wdLightboxOverlay() && !wdLightboxOverlay().hidden);
@@ -4772,7 +4788,7 @@ function check(label, cond, extra) {
   check("wavedrom lightbox: Escape closes the overlay",
     wdLightboxOverlay() && wdLightboxOverlay().hidden);
   // Backdrop click closes.
-  wdContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  clickPreview(wdContainers[0]);
   await tick(10);
   wdLightboxOverlay().dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
   await tick(10);
@@ -5001,9 +5017,9 @@ function check(label, cond, extra) {
   const vzContainers = vizContainers();
   check("graphviz lightbox: viz container exists (precondition)", vzContainers.length >= 1,
     "count=" + vzContainers.length);
-  vzContainers[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+  clickPreview(vzContainers[0]);
   await tick(20);
-  check("graphviz lightbox: click on .viz-container reveals the lightbox",
+  check("graphviz lightbox: the Preview button reveals the lightbox",
     vzLightboxOverlay() && !vzLightboxOverlay().hidden,
     "hidden=" + (vzLightboxOverlay() ? vzLightboxOverlay().hidden : "n/a"));
   check("graphviz lightbox: body has an SVG clone",
@@ -5209,17 +5225,40 @@ function check(label, cond, extra) {
   ];
   const cardBtnCount = (sel) => {
     const c = ciViewer.querySelector(sel);
-    return c ? c.querySelectorAll(".code-copy-btn").length : -1;
+    return c
+      ? c.querySelectorAll(".code-copy-btn:not(.nb-preview-btn)").length
+      : -1;
   };
   check("copy image: every card carries the text button then the image button",
     CARD_KINDS.every(([sel]) => {
       const card = ciViewer.querySelector(sel);
-      const btns = card ? Array.from(card.querySelectorAll(".code-copy-btn")) : [];
+      const btns = card
+        ? Array.from(card.querySelectorAll(".code-copy-btn:not(.nb-preview-btn)"))
+        : [];
       return btns.length === 2 &&
         !btns[0].classList.contains("nb-copy-img-btn") &&
         btns[1].classList.contains("nb-copy-img-btn");
     }),
     CARD_KINDS.map(([sel]) => sel + ":" + cardBtnCount(sel)).join(" "));
+  // Diagram cards also carry the Preview action (lightbox.js); the live-HTML
+  // and math cards have no lightbox and must not get one.
+  check("copy image: diagram cards carry the Preview button",
+    [".mermaid-container", ".wavedrom-container", ".viz-container", ".svg-container"]
+      .every((sel) => {
+        const card = ciViewer.querySelector(sel);
+        const btn = card && card.querySelector(".nb-preview-btn");
+        return !!btn && btn.textContent === "Preview";
+      }),
+    [".mermaid-container", ".wavedrom-container", ".viz-container", ".svg-container"]
+      .map((sel) => {
+        const card = ciViewer.querySelector(sel);
+        return sel + ":" + (card && !!card.querySelector(".nb-preview-btn"));
+      }).join(" "));
+  check("copy image: the live-HTML and math cards have no Preview button",
+    !ciViewer.querySelector(".htmlpreview-card .nb-preview-btn") &&
+    !ciViewer.querySelector(".katex-container .nb-preview-btn"),
+    "html=" + !!ciViewer.querySelector(".htmlpreview-card .nb-preview-btn") +
+    " katex=" + !!ciViewer.querySelector(".katex-container .nb-preview-btn"));
   check("copy image: katex keeps exactly the text button (no image action)",
     textBtnCount(".katex-container") === 1 &&
     !ciViewer.querySelector(".katex-container .nb-copy-img-btn"),
@@ -5231,7 +5270,7 @@ function check(label, cond, extra) {
     const expectedCard = card ? card.dataset[key] : "";
     const cardClipBefore = __clipboard.writes;
     const textBtn = card ? card.querySelector(
-      ".code-copy-btn:not(.nb-copy-img-btn)") : null;
+      ".code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn)") : null;
     if (textBtn) {
       textBtn.dispatchEvent(new window.MouseEvent("click",
         { bubbles: true, cancelable: true }));
@@ -5419,6 +5458,17 @@ function check(label, cond, extra) {
   check("copy image: re-scan does not duplicate the katex text button",
     textBtnCount(".katex-container") === 1,
     "count=" + textBtnCount(".katex-container"));
+  check("copy image: re-scan does not duplicate the Preview button",
+    [".mermaid-container", ".wavedrom-container", ".viz-container", ".svg-container"]
+      .every((sel) => {
+        const card = ciViewer.querySelector(sel);
+        return !!card && card.querySelectorAll(".nb-preview-btn").length === 1;
+      }),
+    [".mermaid-container", ".wavedrom-container", ".viz-container", ".svg-container"]
+      .map((sel) => {
+        const card = ciViewer.querySelector(sel);
+        return sel + ":" + (card ? card.querySelectorAll(".nb-preview-btn").length : -1);
+      }).join(" "));
 
   // (2b) The katex text button copies the stored LaTeX source and flips to
   // "Copied!" -- same shared attachTextCopy UX as the <pre> button. Reuse
@@ -6134,9 +6184,9 @@ function check(label, cond, extra) {
     const svgOverlay = () => window.document.getElementById("svg-lightbox");
     const svgBody    = () => window.document.getElementById("svg-lightbox-body");
     check("svg: lightbox overlay exists", !!svgOverlay());
-    cards[0].dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0 }));
+    clickPreview(cards[0]);
     await tick(20);
-    check("svg: click opens the lightbox",
+    check("svg: the Preview button opens the lightbox",
       svgOverlay() && !svgOverlay().hidden,
       "hidden=" + (svgOverlay() ? svgOverlay().hidden : "n/a"));
     check("svg: lightbox holds a clone of the SVG",

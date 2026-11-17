@@ -1,6 +1,8 @@
 /* copy-image.js -- the single owner of the copy-action PAIR on every
  * rendered block in the viewer: "Copy text" (the authored source) and
- * "Copy image" (a PNG of the block).
+ * "Copy image" (a PNG of the block). The same scan appends the diagram
+ * cards' Preview button, built by lightbox.js, so a card's whole action
+ * row is created in one place.
  *
  * One entry point, attachBlockActions(host), wires both actions into every
  * block kind it finds (BLOCK_KINDS below, plus every <pre> fence):
@@ -71,6 +73,9 @@
   // .code-copy-btn). The image button adds its own modifier for the icon.
   const BUTTON_BASE_CLASS = "code-copy-btn";
   const IMAGE_BUTTON_CLASS = "nb-copy-img-btn";
+  // The diagram cards' Preview action (lightbox.js). It shares the base
+  // class, so the text-copy guard must exclude it.
+  const PREVIEW_BUTTON_CLASS = "nb-preview-btn";
   const IMAGE_BUTTON_LABEL = "Copy image";
 
   const TEXT_BUTTON_LABEL = "Copy";
@@ -998,8 +1003,8 @@
    * (viewer.js and the AI panel delegate their <pre> buttons here).
    * Byte-for-byte the same UX: "Copy" -> "Copied!" + .copied for a short
    * hold, plus a toast. Idempotent: a target that already has a TEXT
-   * .code-copy-btn is skipped -- the image button shares that base class,
-   * so it must not count.
+   * .code-copy-btn is skipped -- the image and preview buttons share that
+   * base class, so neither may count.
    *
    * getText, when supplied, is the source getter and is used unchanged
    * (the katex container passes a dataset-source getter). With no getText,
@@ -1010,7 +1015,8 @@
   function attachTextCopy(targetEl, getText) {
     if (!targetEl) return;
     if (targetEl.querySelector(
-      "." + BUTTON_BASE_CLASS + ":not(." + IMAGE_BUTTON_CLASS + ")")) return;
+      "." + BUTTON_BASE_CLASS + ":not(." + IMAGE_BUTTON_CLASS +
+      "):not(." + PREVIEW_BUTTON_CLASS + ")")) return;
     const read = (typeof getText === "function")
       ? getText
       : () => sourceTextOf(targetEl);
@@ -1117,9 +1123,8 @@
     btn.appendChild(buildIcon());
     btn.addEventListener("click", (e) => {
       // Both are required: preventDefault stops the anchor/button default,
-      // stopPropagation stops the delegated lightbox click handler (on the
-      // document body, scoped to the reading roots) from also opening the
-      // full-screen overlay.
+      // stopPropagation keeps the card's own handlers (hybrid click-to-edit
+      // above all) from seeing a click on the button.
       e.preventDefault();
       e.stopPropagation();
       onClick();
@@ -1140,8 +1145,16 @@
   /* The pair for a rendered card, per its BLOCK_KINDS row. The text action
    * copies the AUTHORED fence source from the dataset, never the rendered
    * markup; it is only offered when a source was stored, so a failed render
-   * cannot yield a "Copied!" toast for an empty string. */
+   * cannot yield a "Copied!" toast for an empty string. A diagram card also
+   * gets the full-screen Preview action from lightbox.js, inserted before
+   * the pair so the DOM order matches the visual order. */
   function attachCardActions(card, kind) {
+    // Preview comes first so the DOM order matches the visual left-to-right
+    // order (Preview at the card's left edge, the copy pair at its right).
+    if (NB.lightbox && typeof NB.lightbox.previewButtonFor === "function") {
+      const preview = NB.lightbox.previewButtonFor(card);
+      if (preview) card.appendChild(preview);
+    }
     const read = () => card.dataset[kind.dataset] || "";
     if (read()) attachTextCopy(card, read);
     if (kind.image === "svg") attachImageCopy(card);

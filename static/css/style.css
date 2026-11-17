@@ -3755,13 +3755,23 @@ body > #nb-menu .submenu.open {
  * keeps the base inset (6/6 in the padding box) and the text button sits one
  * icon width plus the gap to its left, so a widening "Copied!" label can
  * never cover it. KaTeX is text-only and keeps the base position. */
-.markdown-body pre:has(> code) > .code-copy-btn:not(.nb-copy-img-btn),
-.mermaid-container > .code-copy-btn:not(.nb-copy-img-btn),
-.wavedrom-container > .code-copy-btn:not(.nb-copy-img-btn),
-.viz-container > .code-copy-btn:not(.nb-copy-img-btn),
-.svg-container > .code-copy-btn:not(.nb-copy-img-btn),
-.htmlpreview-card > .code-copy-btn:not(.nb-copy-img-btn) {
+.markdown-body pre:has(> code) > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+.mermaid-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+.wavedrom-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+.viz-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+.svg-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+.htmlpreview-card > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn) {
   right: calc(var(--copy-btn-inset) + var(--copy-btn-icon-w) + var(--copy-btn-gap));
+}
+/* The full-screen Preview action sits at the card's left edge, clear of the
+ * copy pair and its widening "Copied!" label. Clicking it opens the
+ * lightbox; clicking anywhere else on the card selects text instead. */
+.mermaid-container > .nb-preview-btn,
+.wavedrom-container > .nb-preview-btn,
+.viz-container > .nb-preview-btn,
+.svg-container > .nb-preview-btn {
+  right: auto;
+  left: var(--copy-btn-inset);
 }
 /* Language chip on a code block being edited in hybrid mode. Click and type
  * to change the fence language -- Enter commits, Esc cancels. The box keeps
@@ -3819,7 +3829,6 @@ body > #nb-menu .submenu.open {
   max-width: 100%;
   height: auto;
   width: auto;
-  cursor: zoom-in;
 }
 /* Error box, header, and source pane shared by every plugin renderer
  * (mermaid / wavedrom / katex / viz). The declarations were identical
@@ -3885,7 +3894,6 @@ body > #nb-menu .submenu.open {
   max-width: 100%;
   height: auto;
   width: auto;
-  cursor: zoom-in;
 }
 /* KaTeX math blocks. The .katex-container wraps a typeset equation
  * (HTML, not SVG). KaTeX's own stylesheet handles the glyphs; we just
@@ -3932,7 +3940,6 @@ body > #nb-menu .submenu.open {
   max-width: 100%;
   height: auto;
   width: auto;
-  cursor: zoom-in;
 }
 
 /* Inline SVG blocks. A ```svg fence wraps the author's own <svg> in a
@@ -3994,18 +4001,14 @@ body > #nb-menu .submenu.open {
  * katex / html-live containers, and the four diagram containers (whose
  * image button adds the .nb-copy-img-btn icon modifier). Hidden by default
  * (base .code-copy-btn rule) and revealed on hover / focus within the host
- * or on the button's own focus. The four diagram containers need to be a
- * positioning context for the absolutely-positioned button and the
- * zoom-in cursor for the lightbox click target. */
+ * or on the button's own focus. The four diagram containers are the
+ * positioning context for the absolutely-positioned buttons and carry the
+ * Preview action at the top-left. */
 .mermaid-container,
 .wavedrom-container,
 .viz-container,
 .svg-container {
   position: relative;
-  /* The whole card is the lightbox click target (lightbox.js delegates
-   * from #viewer-content), so the cursor must cover the padding too, not
-   * just the SVG. The copy button sets its own pointer cursor. */
-  cursor: zoom-in;
 }
 /* Icon modifier of the shared .code-copy-btn: square padding and no text
  * line-height. Position, colors, and the reveal all come from the base; the
@@ -8335,12 +8338,12 @@ body[data-theme="light"] #dw-designer-overlay {
    * the icon at the right edge (the rules above / below), the text button one
    * hit-width plus the gap to its left. KaTeX stays a single text button at
    * the right edge. */
-  .markdown-body pre:has(> code) > .code-copy-btn:not(.nb-copy-img-btn),
-  .mermaid-container > .code-copy-btn:not(.nb-copy-img-btn),
-  .wavedrom-container > .code-copy-btn:not(.nb-copy-img-btn),
-  .viz-container > .code-copy-btn:not(.nb-copy-img-btn),
-  .svg-container > .code-copy-btn:not(.nb-copy-img-btn),
-  .htmlpreview-card > .code-copy-btn:not(.nb-copy-img-btn) {
+  .markdown-body pre:has(> code) > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+  .mermaid-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+  .wavedrom-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+  .viz-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+  .svg-container > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn),
+  .htmlpreview-card > .code-copy-btn:not(.nb-copy-img-btn):not(.nb-preview-btn) {
     right: calc(var(--m-hit) + var(--copy-btn-gap));
   }
   .code-copy-btn {
@@ -8351,6 +8354,17 @@ body[data-theme="light"] #dw-designer-overlay {
     padding: 0;
     opacity: 1;
     font-size: 12px;
+  }
+  /* The Preview action keeps its text label in a 44px-tall target at the
+   * card's left edge. */
+  .mermaid-container > .nb-preview-btn,
+  .wavedrom-container > .nb-preview-btn,
+  .viz-container > .nb-preview-btn,
+  .svg-container > .nb-preview-btn {
+    left: 0;
+    right: auto;
+    width: auto;
+    padding: 0 10px;
   }
   .markdown-body table {
     overscroll-behavior-x: contain;

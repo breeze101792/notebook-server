@@ -32,7 +32,7 @@ Every claim about current code cites `file:line`.
 
 ### 1.1 One implementation, four instances
 
-| Instance | Overlay id | Body id | Control prefix | Trigger selector | Caller |
+| Instance | Overlay id | Body id | Control prefix | Card selector | Caller |
 |---|---|---|---|---|---|
 | Mermaid | `#mermaid-lightbox` | `#mermaid-lightbox-body` | `mlb-*` | `.mermaid-container` | `static/js/mermaid.js:320-329` |
 | WaveDrom | `#wavedrom-lightbox` | `#wavedrom-lightbox-body` | `wdlb-*` | `.wavedrom-container` | `static/js/wavedrom.js:255-264` |
@@ -131,20 +131,21 @@ dark and light; only the artefact carries a theme. Nothing here reads `--surface
 
 ### 2.1 Trigger contract
 
-Inherited from `content-blocks.md` §6.3; the code is `lightbox.js:288-305`.
+Inherited from `content-blocks.md` §6.3; the code is `lightbox.js` (the
+`previewButtonFor` factory) and `copy-image.js` (the injection point).
 
 | # | Rule | Source |
 |---|---|---|
-| T1 | One delegated `click` listener on `document.body`; no listener per card | `lightbox.js:288` |
-| T2 | Only clicks inside a reading root open: `#viewer-content` or `.ai-chat-log` | `lightbox.js:45`, `:291` |
-| T3 | Hybrid (WYSIWYG) mode opens nothing; a click means "edit this block" | `lightbox.js:295` |
-| T4 | A click on an `<a>` inside the diagram opens nothing | `lightbox.js:298` |
-| T5 | The node copied is `.nb-figure-viewport > svg`, else the first `svg` in the card | `lightbox.js:301-302` |
-| T6 | No SVG → no overlay | `lightbox.js:303` |
-| T7 | The copy-image button stops propagation, so it never opens the overlay | `copy-image.js:773-783` |
-| T8 | The whole card is the hit target, including its 14/16 px padding and the gutter | `tests/browser/test_figure_sizing_browser.js:661-669` |
-| T9 | Only the four container selectors trigger. Math, images and `html-live` do not | `content-blocks.md` §4.3, §6.3 |
-| T10 | No keyboard path exists: the cards are Tab stops for hybrid editing, but no `Enter`/`Space` handler opens the overlay | `content-blocks.md` §6.9; E3 there proposes one |
+| T1 | One Preview button per card, injected by the copy-action scan; no listener per card click | `copy-image.js:1144-1157`; `lightbox.js` |
+| T2 | Only the button opens the overlay; a click anywhere else on the card selects text | `tests/browser/test_figure_sizing_browser.js:625-690` |
+| T3 | Hybrid (WYSIWYG) mode has no button in the note and opens nothing; a click means "edit this block" (the AI chat log keeps its button, but the click is guarded) | `copy-image.js:1200-1209`; `lightbox.js` |
+| T4 | A click on an `<a>` inside the diagram has no handler to reach | `lightbox.js` |
+| T5 | The node copied is `.nb-figure-viewport > svg`, else the first `svg` in the card | `lightbox.js` (`svgOf`) |
+| T6 | A click on a card with no SVG opens nothing | `lightbox.js` (`buildPreviewButton`) |
+| T7 | The button stops propagation, so the card's own handlers never see the click | `lightbox.js` (`buildPreviewButton`) |
+| T8 | The button sits at the card's top-left, 26 px tall on desktop and 44 px on the phone | `style.css` (`.nb-preview-btn`) |
+| T9 | Only the four container selectors get a button. Math, images and `html-live` do not | `content-blocks.md` §4.3, §6.3 |
+| T10 | The button is a native `button`, so `Enter`/`Space` open the overlay with no extra handler | `content-blocks.md` §6.9 |
 
 ### 2.2 Open sequence
 
@@ -406,15 +407,15 @@ otherwise it wraps its own Tab loop. It must not add an entrance animation (`fou
 
 **The lightbox opens at 390 px.** There is no viewport gate, no pointer check, and no phone rule
 for `.mermaid-lightbox-*`: the overlay rules end at `style.css:3759`, and the mode switch starts
-at `:6975`. The delegated handler (`lightbox.js:288-305`) runs on a tap exactly as on a click, and
-the reader root is the same `#viewer-content`. `mobile.js` has no lightbox code at all
-(`grep lightbox static/js/mobile.js` returns nothing).
+at `:6975`. The card's Preview button (`lightbox.js`, `copy-image.js`) opens it on a tap exactly
+as on a click, and the reader root is the same `#viewer-content`. `mobile.js` has no lightbox
+code at all (`grep lightbox static/js/mobile.js` returns nothing).
 
 What a 390 px user gets:
 
 | Thing | At 390 | Source |
 |---|---|---|
-| Open | tap the card; overlay covers the screen | `lightbox.js:288-305` |
+| Open | tap the card's Preview button; overlay covers the screen | `lightbox.js`, `.nb-preview-btn` |
 | Scrim and blur | the same `.55` and 8 px as desktop | `style.css:3667-3669` |
 | Body padding | still `60px 40px`, so the drawing gets 310 × (height − 120) | `style.css:3736` |
 | Controls | the same pill, 16 px from the top-right, **≈27 px tall, 28 px wide** | `style.css:3693-3707` |
@@ -679,10 +680,10 @@ Each names a file and an observable result. `style.css` is `static/css/style.css
 | **AC9** | Pan works from the drawing only, at any zoom | `lightbox.js:208-244` | `transform: translate(40px, 30px) scale(1)` after a 40/30 drag; a drag from the body closes instead of panning |
 | **AC10** | Wheel zooms one step per event and never scrolls the page behind | `lightbox.js:187-192` | `deltaY: -120` → `125%`; `deltaY: +120` → back; the page's scroll position is unchanged |
 | **AC11** | `Ctrl`/`Cmd` `+`/`=`/`-` and `Esc` work; no bare key does | `lightbox.js:262-278` | From `100%`, `Ctrl+=` → `125%`; `Ctrl+-` → `100%`; a bare `0` changes nothing |
-| **AC12** | The trigger contract holds | `lightbox.js:288-305` | A click on the card padding opens the right overlay; a click in hybrid mode does not; a click on an `<a>` does not; a click on the copy-image button does not |
-| **AC13** | Loading and error cards are not triggers | `lightbox.js:296-303`; `content-blocks.md` §6.4-6.5 | Clicking a fence or a warn box leaves the overlay hidden |
+| **AC12** | The trigger contract holds | `lightbox.js`, `copy-image.js:1144-1157` | The card's Preview button opens the right overlay; clicking the card itself does not; hybrid mode has no button; a click on the copy-image button does not open it |
+| **AC13** | Loading and error cards are not triggers | `content-blocks.md` §6.4-6.5 | Clicking a fence or a warn box leaves the overlay hidden, and neither gets a Preview button |
 | **AC14** | No literal remains in the lightbox rules | `style.css` | The rules in §8.3 read only `var(--space-*)`, `var(--radius-md)`, `var(--stroke-*)`, `var(--z-modal)`, `var(--focus-offset)` and the §8.2 tokens; no hex, px, rem or alpha remains in a selector rule |
-| **AC15** | The phone opens the overlay and keeps the shipped chrome | `static/js/lightbox.js`, `style.css` | At 390, tapping a card shows the overlay; the pill is 16 px from the edge; there is no phone override in the stylesheet |
+| **AC15** | The phone opens the overlay and keeps the shipped chrome | `static/js/lightbox.js`, `style.css` | At 390, the card's 44 px Preview button shows the overlay; the pill is 16 px from the edge; there is no phone override in the lightbox stylesheet |
 | **AC16** | The five exceptions ship without changing a pixel at rest | `templates/index.html`, `lightbox.js`, `style.css` | E1–E3 add attributes and one rule that paints nothing; E4 changes focus only; E5 paints on `:focus-visible` only. E1 hides the reader scroll container behind the scrim |
 | **AC17** | Nothing animates | `style.css` | No `transition` or `animation` property inside `.mermaid-lightbox-*` / `.mlb-*` |
 | **AC18** | The mockup is self-contained | `docs/ui/lightboxes-mockup.html` | Opening it offline shows both themes and every board with zero network requests |
@@ -693,10 +694,10 @@ Existing tests that already cover part of this set:
   `Esc`, backdrop, body-blank click, drawing click.
 - `tests/dom/test_dom.js:4304-4340` — drag-to-pan, left and right button, transform values.
 - `tests/dom/test_dom.js:4293-4302` — the three CSS-source assertions on the class rules.
-- `tests/browser/test_figure_sizing_browser.js:625-672` — the zoom-in cursor and "clicking the card
-  padding opens its lightbox" for all four types.
+- `tests/browser/test_figure_sizing_browser.js:625-690` — no zoom-in cursor, "clicking the card
+  does not open its lightbox", and "the Preview button opens it" for all four types.
 - `tests/browser/test_figure_sizing_browser.js:750-815` — open in fit mode from a tall diagram,
-  close via `Esc`, and the wrapper gutter as a target.
+  close via `Esc`, and the wrapper gutter as a selection surface.
 - `tests/browser/test_ai_blocks_browser.js:500-555` — open from the AI chat log, `Esc`, and no
   overlay for prose or a click outside a reading root.
 

@@ -114,7 +114,7 @@
     }
   }
 
-  /* --- lightbox: click a rendered SVG to see it full-size ------------- */
+  /* --- lightbox: the card's Preview button shows it full-size --------- */
   /* The full-screen overlay + zoom controls live in the shared lightbox
    * module (static/js/lightbox.js). We hand it our element ids and the
    * container selector; it wires the buttons, backdrop click, wheel,
@@ -129,6 +129,7 @@
     fitId:     "svglb-fit",
     pctId:     "svglb-zoom-pct",
     containerSelector: ".svg-container",
+    label: "SVG diagram",
   });
 
   NB.svg = { renderAll,

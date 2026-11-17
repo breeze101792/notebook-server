@@ -517,7 +517,7 @@ The card keeps `14px 16px` padding and the same radius. The only phone rule is
 | Margin | `.7em 0` | same | same | same | same |
 | Overflow | hidden | hidden | hidden | hidden | hidden |
 | `position: relative` | yes | yes | yes | yes | yes |
-| Cursor | `zoom-in` | `zoom-in` | `zoom-in` | `zoom-in` | default |
+| Cursor | default | default | default | default | default |
 | Source | `style.css:3407-3416` | `:3475-3482` | `:3522-3529` | `:3544-3551` | `:3629-3636` |
 
 The WaveDrom white background is deliberate: the library emits a light-skin SVG with its
@@ -526,10 +526,11 @@ plot (`style.css:3467-3474`). In the dark theme it is the one white card in the 
 not theme it without a proposal (§12 P11).
 
 Card SVG rules differ only in display and centring: Mermaid, WaveDrom and Graphviz use
-`display: inline-block; max-width: 100%; height: auto; width: auto; cursor: zoom-in`
+`display: inline-block; max-width: 100%; height: auto; width: auto`
 (`style.css:3418-3424`, `:3484-3490`, `:3531-3537`). SVG uses `display: block; max-width:
 100%; height: auto; margin: 0 auto` (`style.css:3553-3558`). The four cards themselves
-carry `position: relative; cursor: zoom-in` (`style.css:3601-3610`).
+carry `position: relative` (`style.css:3601-3610`). No card shows a `zoom-in` cursor: the
+card is a text-selection surface and only its Preview button opens the lightbox.
 
 ### 6.2 Sizing model
 
@@ -566,12 +567,17 @@ host, font-size changes, the phone/desktop flip, and a `<details>` open
 | Copy text | top-right of every diagram card, the live-HTML card and the math card | text `Copy`; writes the authored fence source stored in the card's dataset (`data-mermaid-source`, `data-wavedrom-source`, `data-viz-source`, `data-svg-source`, `data-htmlpreview-source`, `data-katex-source`) |
 | Copy image | top-right of every diagram card and the live-HTML card | icon button, shared `.code-copy-btn` + `.nb-copy-img-btn`; 16 px glyph; `padding: 4px`; `line-height: 0`; `aria-label` and `title` `Copy image` |
 | Edit | hybrid mode only | click the card, or the context menu / Shift+F10; opens the shared edit window; no visible header button |
-| Open lightbox | click the card in preview | whole card is the hit target; anchors inside the SVG are skipped |
+| Preview | top-left of the four diagram cards | text `Preview`; shared `.code-copy-btn` + `.nb-preview-btn`; opens that card's lightbox; the only trigger in preview mode |
+
+The card itself is **not** a preview trigger. A click anywhere outside the two corners
+selects text, so the authored content can be copied without the overlay covering it.
 
 One `copy-image.js` registry (`BLOCK_KINDS`, `:60-70`) and one entry point
 (`attachBlockActions`, `:1155-1170`) wire the pair into every variant; the renderers only
 store their source (`mermaid.js:205`, `wavedrom.js:170`, `viz.js:123`, `svg.js:95`,
-`htmlpreview.js:261`, `katex.js:128`). The math card is TEXT-ONLY on purpose: its PNG
+`htmlpreview.js:261`, `katex.js:128`). The same entry point appends the Preview button
+the four diagram cards get from `NB.lightbox.previewButtonFor(card)`
+(`lightbox.js`, `copy-image.js:1144-1157`). The math card is TEXT-ONLY on purpose: its PNG
 would be drawn in SVG secure-static mode, which loads no webfonts, so the formula would be
 garbled. Recorded as a follow-up, not shipped broken.
 
@@ -580,18 +586,18 @@ The pair is anchored by the shared tokens `--copy-btn-inset` / `--copy-btn-icon-
 placement: icon `top: 6px; right: 6px`, text `right: calc(var(--copy-btn-inset) +
 var(--copy-btn-icon-w) + var(--copy-btn-gap))` (38 px), both 26 px tall and centred on the
 same line (`style.css:3578-3596`, `:3659-3667`). A widening `Copied!` label grows left, so
-it cannot cover the icon. Both are hidden until hover/focus within the host
-(`style.css:3603-3630`) and both are 44 px on the phone with the icon at the card's right
-edge (`style.css:7803-7820`). A click calls
-`preventDefault` and `stopPropagation`, so it does not also open the lightbox
-(`copy-image.js:1036-1037`, `:1111-1119`). The PNG is rasterised at 2×, capped at 4096 px,
-on a white background (`copy-image.js:98-101`, `:364-380`).
+it cannot cover the icon. The Preview button is `top: 6px; left: 6px`, so the two corners
+never collide. All three are hidden until hover/focus within the host
+(`style.css:3603-3630`) and are 44 px tall on the phone, with the copy pair at the card's
+right edge and Preview at its left (`style.css:7803-7820`). A click calls
+`preventDefault` and `stopPropagation` (`copy-image.js:1036-1037`, `:1111-1119`;
+`lightbox.js`). The PNG is rasterised at 2×, capped at 4096 px, on a white background
+(`copy-image.js:98-101`, `:364-380`).
 
-The lightbox trigger is delegated from `document.body` on `#viewer-content` and
-`.ai-chat-log`, skips hybrid mode, skips `<a>`, and prefers
-`.nb-figure-viewport > svg` so the copy button's own icon cannot be mistaken for the
-diagram (`lightbox.js:292-313`). The overlay chrome is a later document. This document
-specifies only: **clicking the card opens it**.
+The overlay clones `.nb-figure-viewport > svg`, else the first `svg` in the card, so the
+copy buttons' own icons cannot be mistaken for the diagram (`lightbox.js`). The overlay
+chrome is a later document. This document specifies only: **the card's Preview button
+opens it**.
 
 ### 6.4 Loading
 
@@ -673,9 +679,10 @@ script, `foreignObject`, `on*`, and external `href`/`xlink:href`
 - `--nb-ref-size` becomes `calc(16px * var(--font-scale))`, so a font-sized diagram
   starts at the phone prose size and is then width-fitted (`style.css:6988`).
 - The copy-image button inherits the phone `.code-copy-btn` 44 × 44 rule
-  (`style.css:7473-7481`), so it is always visible and finger-sized.
-- The lightbox opens on tap through the same delegated click handler (`lightbox.js:292`).
-- There is no hover; the card still shows `zoom-in` only where a pointer exists.
+  (`style.css:7473-7481`), so it is always visible and finger-sized. The Preview button
+  keeps its text label in a 44 px-tall target at the card's left edge.
+- The lightbox opens from the card's Preview button, which is always visible on touch.
+- There is no hover; the card selects text on tap and shows no `zoom-in` cursor.
 
 ### 6.9 Keyboard and focus
 
@@ -817,7 +824,7 @@ and the reason the band is reserved in every fence.
 | A1 | Light error-box head: white on light `--warn` | 3.11:1 (needs 4.5:1) | `style.css:3444-3445`; light `--warn` `#c9831d` at `:103` |
 | A2 | Light syntax keyword | 4.08:1 on `--code-bg` | `github.css` keyword `#d73a49`; vendor line 1 |
 | A3 | Dark math parse error | 2.66:1 (`#cc0000` on `--bg-panel`) | KaTeX inline style, `katex.js:130-134` |
-| A4 | Diagram cards: no role, name, focus ring, or keyboard open | — | `mermaid.js:200`; `style.css:3601-3610` |
+| A4 | Diagram cards: no role, name, or focus ring (the Preview button is the keyboard path) | — | `mermaid.js:200`; `style.css:3601-3610` |
 | A5 | Table preview controls: 24 px targets on a fine pointer only; hidden on phone | — | `style.css:940-942`, `:7497-7499` |
 | A6 | Rectangle selection is pointer-only | — | `table-select.js:1-22` |
 | A7 | Phone can inherit hidden rows/sort with no visible reset | — | `table-view.js:482-498`; `style.css:7497-7499` |
@@ -834,8 +841,8 @@ These add semantics or keyboard behaviour. None changes a pixel at rest.
 | # | Addition | Why | Visual delta |
 |---|---|---|---|
 | E1 | Copy button keeps `aria-label="Copy code to clipboard"` | The authored token (`js`) has no display-name map today; a guessed name is worse than none | none |
-| E2 | Diagram cards get `role="group"` and `aria-label="<Type> diagram"`; `.svg-container` also becomes `tabindex="0"` | The card is an interactive lightbox trigger and currently unnamed | none |
-| E3 | Diagram cards get `:focus-visible` with `var(--focus-ring)` at `var(--focus-offset)`; `Enter`/`Space` opens the lightbox in preview | Keyboard parity with click | focus ring only |
+| E2 | Diagram cards get `role="group"` and `aria-label="<Type> diagram"`; `.svg-container` also becomes `tabindex="0"` | The card holds an interactive diagram and is currently unnamed | none |
+| E3 | Diagram cards get `:focus-visible` with `var(--focus-ring)` at `var(--focus-offset)`; the Preview button already gives `Enter`/`Space` a keyboard path | Keyboard parity with the pointer | focus ring only |
 | E4 | Every rendered `<th>` gets `scope="col"` after render | Explicit header association | none |
 | E5 | The Rows/Columns chooser popover becomes `role="group"` with an `aria-label`; the native checkbox labels keep their state | A `menu` containing checkbox labels is the wrong pattern | none |
 
@@ -1276,7 +1283,13 @@ rules and before the phone query; the phone overrides stay inside the query at t
 .mermaid-container,
 .wavedrom-container,
 .viz-container,
-.svg-container { cursor: zoom-in; }
+.svg-container { position: relative; }
+.mermaid-container > .nb-preview-btn,
+.wavedrom-container > .nb-preview-btn,
+.viz-container > .nb-preview-btn,
+.svg-container > .nb-preview-btn {
+  right: auto; left: var(--copy-btn-inset);   /* position/top come from .code-copy-btn */
+}
 .katex-container { text-align: left; }
 .katex-container .katex-display {
   display: block; margin: 0; max-width: 100%; text-align: center;
@@ -1357,6 +1370,12 @@ Phone overrides, inside the existing mode query, keep their current numbers:
   top: 0; right: 0; width: var(--control-h-touch); height: var(--control-h-touch);
   padding: 0; opacity: 1; font-size: 12px;
 }
+.mermaid-container > .nb-preview-btn,
+.wavedrom-container > .nb-preview-btn,
+.viz-container > .nb-preview-btn,
+.svg-container > .nb-preview-btn {
+  left: 0; right: auto; width: auto; padding: 0 10px;
+}
 .markdown-body table { overscroll-behavior-x: contain; border-radius: var(--radius-md); }
 .nb-tv-controls, .nb-tv-toolbar,
 #viewer-content thead th .nb-tv-head-menu { display: none; }
@@ -1394,7 +1413,7 @@ Each is testable and names the file or test that observes it.
 | AC14 | Inline `$…$` is not rendered | `katex.js:187` | A paragraph with `$x$` shows the literal characters |
 | AC15 | Each SVG card uses the shared sizing model and never scrolls internally | `blocks.js:536-630`; `style.css:3565-3591` | `.nb-figure-viewport` wraps every SVG; `data-nb-mode` is normal/tall/fit; the wrapper has no max-height or overflow |
 | AC16 | A diagram card loads as its fence and swaps only on success | `mermaid.js:187-219`; `wavedrom.js:155-189`; `viz.js:111-140` | Before resolution the `pre > code.language-*` exists; after, the card exists |
-| AC17 | Every card carries Copy text and Copy image (math: text only), 26 px / 44 px, and neither opens the lightbox | `copy-image.js:1155-1170`; `style.css:3906-3911`, `:7804-7811` | Two `.code-copy-btn` per non-math card, text then image; text writes the dataset source; box sizes; clicking either leaves the overlay hidden |
+| AC17 | Every card carries Copy text and Copy image (math: text only), and the four diagram cards also carry Preview, 26 px / 44 px; only Preview opens the lightbox | `copy-image.js:1144-1157`; `lightbox.js`; `style.css` | Two copy buttons per non-math card, text then image, plus `.nb-preview-btn` on the four diagram cards; text writes the dataset source; box sizes; clicking a copy button or the card leaves the overlay hidden |
 | AC18 | AI replies skip WaveDrom and keep it as a code block | `blocks.js:880-897`; `wavedrom.js:294` | In `test_ai_blocks_browser.js`, `.wavedrom-container` absent, `pre > code.language-wavedrom` present with a copy button |
 | AC19 | `html-live` is a sandboxed iframe that grows and can be resized | `htmlpreview.js:207-238`; `style.css:3629-3649` | `sandbox="allow-scripts"`; no `allow-same-origin`; `resize: vertical`; height grows |
 | AC20 | The phone fence is 44 px band, 44 px copy, always visible | `style.css:7452-7481` | At 390, the copy box is 44 × 44 and `opacity: 1` |
@@ -1402,7 +1421,7 @@ Each is testable and names the file or test that observes it.
 | AC22 | The mockup is self-contained and shows both themes | `docs/ui/content-blocks-mockup.html` | Opening it offline makes zero network requests; both `data-theme` values render |
 | AC23 | The a11y additions add no pixels at rest | `static/css/style.css`, `static/js/*` | E1/E2/E4/E5 add attributes only; E3 paints a ring on `:focus-visible` only |
 | AC24 | Copy writes the visible table as TSV plus an HTML `<table>` | `table-view.js:599-696` | A hidden row and a hidden column are absent from both flavours; the header row is `<th>`, body rows `<td>`; sorted DOM order; the header chevron is absent; toast `Copied table` (or the text-only fallback) |
-| AC26 | Every fence offers Copy text and Copy image, and every card offers the same pair (math: text only) | `copy-image.js:851-980`, `:1135-1170`; `viewer.js:383-385`; `ai.js:1371-1373` | Two `.code-copy-btn` per fence, text then image; the snapshot has no buttons, carries the card background/border/padding from computed styles, keeps syntax colours and the language label; toast `Code copied as image`; no row clipped; AI reply blocks get the same pair |
+| AC26 | Every fence offers Copy text and Copy image, and every card offers the same pair (math: text only), plus Preview on the diagram cards | `copy-image.js:851-980`, `:1144-1157`; `viewer.js:383-385`; `ai.js:1371-1373` | Two copy buttons per fence, text then image; the snapshot has no buttons, carries the card background/border/padding from computed styles, keeps syntax colours and the language label; toast `Code copied as image`; no row clipped; AI reply blocks get the same pair |
 | AC25 | Copy image writes the visible table as a PNG | `table-view.js:714-849`, `copy-image.js:500-607` | A hidden row and a hidden column are absent from the snapshot; the width is the widest visible row plus the 24 px inset and the height is measured from the snapshot; the drawn table's height and column widths match the live table, no row is clipped and no dead band remains; no chevron glyph is drawn; toast `Table copied as image`; the PNG downloads as `table.png` when the image clipboard is unavailable |
 
 Existing tests that already cover part of this set:

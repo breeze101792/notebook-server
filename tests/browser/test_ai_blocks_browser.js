@@ -525,15 +525,23 @@ async function main() {
       const log = document.getElementById("ai-chat-log");
       const card = log.querySelector(".mermaid-container");
       return {
-        total: card.querySelectorAll(".code-copy-btn").length,
+        total: card.querySelectorAll(".code-copy-btn:not(.nb-preview-btn)").length,
         image: card.querySelectorAll(".code-copy-btn.nb-copy-img-btn").length,
+        preview: card.querySelectorAll(".nb-preview-btn").length,
       };
     });
-    check("ai blocks: the chat diagram card gets the copy pair",
-      copyState.total === 2 && copyState.image === 1,
+    check("ai blocks: the chat diagram card gets the copy pair and Preview",
+      copyState.total === 2 && copyState.image === 1 && copyState.preview === 1,
       JSON.stringify(copyState));
 
     await page.locator("#ai-chat-log .mermaid-container .nb-figure-viewport > svg")
+      .first().click();
+    await page.waitForTimeout(200);
+    check("ai blocks: clicking a chat diagram opens no lightbox",
+      await page.evaluate(() =>
+        document.getElementById("mermaid-lightbox").hidden));
+
+    await page.locator("#ai-chat-log .mermaid-container .nb-preview-btn")
       .first().click();
     await page.waitForTimeout(200);
     const lightboxOpen = await page.evaluate(() => {
@@ -544,7 +552,7 @@ async function main() {
         clone: !!(body && body.querySelector("svg")),
       };
     });
-    check("ai blocks: clicking a chat diagram opens the mermaid lightbox",
+    check("ai blocks: the chat card's Preview button opens the mermaid lightbox",
       lightboxOpen.open && lightboxOpen.clone, JSON.stringify(lightboxOpen));
 
     await page.keyboard.press("Escape");
@@ -561,9 +569,8 @@ async function main() {
       lightboxClosed.hidden && lightboxClosed.empty,
       JSON.stringify(lightboxClosed));
 
-    /* The delegated handler sits on the body but is guarded by the reading
-     * roots: a click elsewhere (the panel header) and a click on plain chat
-     * prose must open nothing. */
+    /* The Preview button is the only trigger: a click on the panel header,
+     * on plain chat prose, or on the diagram itself must open nothing. */
     await page.click("#ai-view .panel-header");
     await page.waitForTimeout(150);
     check("ai blocks: a click outside the reading roots opens no lightbox",

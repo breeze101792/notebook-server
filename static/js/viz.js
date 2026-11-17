@@ -168,7 +168,7 @@
     }
   }
 
-  /* --- lightbox: click a rendered graph to see it full-size ---------- */
+  /* --- lightbox: the card's Preview button shows it full-size -------- */
   /* The full-screen overlay + zoom controls live in the shared lightbox
    * module (static/js/lightbox.js). We hand it our element ids and the
    * container selector; it wires the buttons, backdrop click, wheel, and
@@ -185,6 +185,7 @@
     fitId:     "vizlb-fit",
     pctId:     "vizlb-zoom-pct",
     containerSelector: ".viz-container",
+    label: "Graphviz diagram",
   });
 
   NB.viz = { renderAll, whenReady, renderSvgElement,

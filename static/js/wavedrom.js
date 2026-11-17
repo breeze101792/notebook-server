@@ -244,7 +244,7 @@
 
   NB.wavedrom = { renderAll, whenReady, parseSource, renderSvgElement };
 
-  /* --- lightbox: click a rendered waveform to see it full-size -------- */
+  /* --- lightbox: the card's Preview button shows it full-size --------- */
   /* The full-screen overlay + zoom controls live in the shared lightbox
    * module (static/js/lightbox.js). We hand it our element ids and the
    * container selector; it wires the buttons, backdrop click, wheel, and
@@ -261,6 +261,7 @@
     fitId:     "wdlb-fit",
     pctId:     "wdlb-zoom-pct",
     containerSelector: ".wavedrom-container",
+    label: "WaveDrom diagram",
   });
 
   NB.wavedrom = { renderAll, whenReady, parseSource, renderSvgElement,

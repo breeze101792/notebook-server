@@ -99,8 +99,9 @@ The AI panel's reply bubbles render the shared special fences like a note: one
 streamed reply carries all six, five become their container while the
 `wavedrom` fence stays a plain code block (the panel passes `{untrusted:true}`),
 the chat figure is pinned to the chat log's width, the per-host relayout on a
-two-root burst and a window resize, the image copy button, the click-to-zoom
-lightbox (and no lightbox from outside the reading roots), the prose `js`
+two-root burst and a window resize, the image copy button, the card's Preview button and
+the lightbox it opens (and no lightbox from the card itself or outside the
+reading roots), the prose `js`
 fence's single text button, an `nb-tool` fence rendering nothing, and
 DOMPurify sanitization of the reply (event handler, `javascript:` link, form,
 non-checkbox input, and an SVG fence's script/SMIL dropped; markdown, task
@@ -113,7 +114,8 @@ Rendered SVG sizing: font-scale response, the wide/tall/huge/tiny layout
 matrix, per-engine units (Graphviz pt, WaveDrom px, Mermaid viewBox, inline-SVG
 viewBox/explicit), the tall-mode page-growth contract (no nested scroller or
 scroll a11y), no inner scrollbars for math/code/error sources (KaTeX
-fit-to-width and wrapped code), the lightbox from a tall diagram, the phone
+fit-to-width and wrapped code), the Preview button on a tall diagram
+and the lightbox it opens, the phone
 reference token, the HTML-export wrapper/print tokens plus the inline math fit
 script, and a hybrid round-trip byte check. It renders every block type for
 real in Chromium: Mermaid natural max-width versus viewBox and label scale,

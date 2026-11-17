@@ -622,7 +622,7 @@ async function main() {
         text: real420wide.textScreenFont }));
 
     // ---------------------------------------------------------------
-    section("3b. diagram cursor matches the lightbox click target");
+    section("3b. the Preview button is the only lightbox trigger");
     const cursorSpecs = [
       { id: "cur-mermaid", mod: "mermaid", cardClass: "mermaid-container",
         attrs: { viewBox: "0 0 200 100" }, marker: "mermaid" },
@@ -642,6 +642,11 @@ async function main() {
       "cur-viz": "#viz-lightbox",
       "cur-svg": "#svg-lightbox",
     };
+    const overlayOpen = (sel) =>
+      page.evaluate((s) => {
+        const overlay = document.querySelector(s);
+        return !!overlay && !overlay.hidden;
+      }, sel);
     for (const spec of cursorSpecs) {
       const cursors = await page.evaluate((cardId) => {
         const card = document.getElementById(cardId);
@@ -651,22 +656,29 @@ async function main() {
           svg: svg ? getComputedStyle(svg).cursor : "",
         };
       }, spec.id);
-      check(spec.mod + ": the card and SVG use the same zoom-in cursor",
-        cursors.card === "zoom-in" && cursors.svg === "zoom-in",
+      check(spec.mod + ": the card is not a zoom target",
+        cursors.card !== "zoom-in" && cursors.svg !== "zoom-in",
         JSON.stringify(cursors));
 
       const card = page.locator("#" + spec.id);
       await card.scrollIntoViewIfNeeded();
       const box = await card.boundingBox();
-      // Click the card's left padding, outside the SVG: the whole card is
-      // the lightbox target, so this must open the overlay.
-      await page.mouse.click(box.x + 4, box.y + box.height / 2);
+      // Click the card away from its corner buttons. The card selects text
+      // now, so the overlay must stay hidden.
+      await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       await page.waitForTimeout(120);
-      const opened = await page.evaluate((sel) => {
-        const overlay = document.querySelector(sel);
-        return !!overlay && !overlay.hidden;
-      }, cursorOverlays[spec.id]);
-      check(spec.mod + ": clicking the card padding opens its lightbox", opened);
+      check(spec.mod + ": clicking the card does not open its lightbox",
+        !(await overlayOpen(cursorOverlays[spec.id])));
+
+      const previewBtn = page.locator("#" + spec.id + " .nb-preview-btn");
+      check(spec.mod + ": the card carries the Preview button",
+        await previewBtn.count() === 1 &&
+        (await previewBtn.textContent()).trim() === "Preview",
+        "count=" + (await previewBtn.count()));
+      await previewBtn.click();
+      await page.waitForTimeout(120);
+      check(spec.mod + ": the Preview button opens its lightbox",
+        await overlayOpen(cursorOverlays[spec.id]));
       await page.keyboard.press("Escape");
       await page.waitForTimeout(100);
     }
@@ -758,12 +770,13 @@ async function main() {
     await page.evaluate(() => {
       document.getElementById("viewer-scroll").scrollTop = 50;
     });
-    const lbSvg = await box("#f-lb .nb-figure-viewport > svg");
+    const previewLb = page.locator("#f-lb .nb-preview-btn");
+    await previewLb.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(100);
     const beforeLb = await page.evaluate(() => ({
       page: document.getElementById("viewer-scroll").scrollTop,
     }));
-    await page.mouse.click(lbSvg.left + Math.min(20, lbSvg.width / 2),
-      Math.max(0, lbSvg.top) + 40);
+    await previewLb.click();
     await page.waitForTimeout(200);
     const opened = await page.evaluate(() => {
       const overlay = document.getElementById("mermaid-lightbox");
@@ -775,7 +788,7 @@ async function main() {
         percent: (document.getElementById("mlb-zoom-pct") || {}).textContent,
       };
     });
-    check("clicking a tall diagram opens the lightbox in fit mode",
+    check("the tall diagram's Preview button opens the lightbox in fit mode",
       opened.open && opened.fit && opened.clone,
       JSON.stringify(opened));
 
@@ -810,8 +823,8 @@ async function main() {
         hitIsViewport: hit === vp,
       };
     });
-    check("clicking the wrapper gutter opens the lightbox normally",
-      !gutterState.hidden,
+    check("clicking the wrapper gutter selects text and opens nothing",
+      gutterState.hidden,
       JSON.stringify(gutterState));
     await page.keyboard.press("Escape");
     await page.waitForTimeout(150);

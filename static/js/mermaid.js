@@ -315,7 +315,7 @@
     }
   }
 
-  /* --- lightbox: click a rendered diagram to see it full-size -------- */
+  /* --- lightbox: the card's Preview button shows it full-size --------- */
   /* The full-screen overlay + zoom controls live in the shared lightbox
    * module (static/js/lightbox.js). We just hand it our element ids and
    * the container selector; it wires the buttons, backdrop click, wheel,
@@ -330,6 +330,7 @@
     fitId:     "mlb-fit",
     pctId:     "mlb-zoom-pct",
     containerSelector: ".mermaid-container",
+    label: "Mermaid diagram",
   });
 
   NB.mermaid = { renderAll, reinit, whenReady, designerMermaid,

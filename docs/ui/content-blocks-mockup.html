@@ -370,8 +370,11 @@ body {
 .reader--phone .fence.has-code > .copy,
 .reader--phone .card > .copy { top: 0; right: 0; }
 .reader--phone .fence.has-code > .copy:not(.copy--img),
-.reader--phone .card > .copy:not(.copy--img) {
+.reader--phone .card > .copy:not(.copy--img):not(.copy--preview) {
   right: calc(var(--control-h-touch) + var(--content-copy-gap));
+}
+.reader--phone .card > .copy--preview {
+  left: 0; right: auto; width: auto; padding: 0 10px;
 }
 .reader--phone .copy--img { padding: 0; }
 .reader--phone .table-scroll { border-radius: var(--radius-md); }
@@ -456,9 +459,10 @@ body {
 /* The pair: the icon keeps the host's top/right, the text button sits one
  * icon width + the gap to its left. */
 .fence.has-code > .copy:not(.copy--img),
-.card > .copy:not(.copy--img) {
+.card > .copy:not(.copy--img):not(.copy--preview) {
   right: calc(var(--content-band-copy-right) + var(--content-copy-icon-w) + var(--content-copy-gap));
 }
+.card > .copy--preview { right: auto; left: var(--content-copy-offset); }
 .card > .copy {
   top: var(--content-copy-offset);
   right: var(--content-copy-offset);
@@ -745,7 +749,6 @@ tr.nb-tv-hide-row { display: none; }
   border-radius: var(--radius-md);
   text-align: center;
   overflow: hidden;
-  cursor: zoom-in;
 }
 .card--wavedrom { background: #fff; }
 .card .figure { display: block; width: 100%; max-width: 100%; text-align: center; }
@@ -943,12 +946,13 @@ tr.nb-tv-hide-row { display: none; }
             <text class="d-muted" x="215" y="122" text-anchor="middle">mermaid · wavedrom · dot · svg</text>
           </svg>
         </div>
+        <button type="button" class="copy copy--preview" aria-label="Preview Mermaid diagram">Preview</button>
         <button type="button" class="copy copy--img" aria-label="Copy image" title="Copy image">
           <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"></rect><path d="M3 3h8v2M11 10v2H3V4"></path></svg>
         </button>
       </div>
-      <p class="callout">Mermaid card. The whole card is the lightbox trigger; the copy-image
-        button is the only child that does not open it.</p>
+      <p class="callout">Mermaid card. The Preview button (top-left) opens the lightbox; the card
+        itself selects text, and the copy buttons keep working.</p>
 
     </div>
   </div>
@@ -1234,7 +1238,7 @@ GND   ── common
     <div class="board-body">
 
       <div class="demo">
-        <p class="state-label"><b>Ready — Mermaid</b> — whole card is the lightbox trigger</p>
+        <p class="state-label"><b>Ready — Mermaid</b> — the Preview button is the lightbox trigger</p>
         <div class="card is-hover">
           <div class="figure">
             <svg class="diagram" viewBox="0 0 460 170" width="460" height="170" role="img" aria-label="Flowchart: draft to render to read">
@@ -1260,9 +1264,9 @@ GND   ── common
           </button>
         </div>
         <p class="callout">Padding 14 × 16, <code>--bg-panel</code>, 1 px border, radius 8,
-          <code>overflow: hidden</code>. The copy-image button is 24 × 24 and stops the click
-          from opening the lightbox. The card itself is focusable in the shipped code but has
-          no ring or Enter handler (A4; proposal E2/E3).</p>
+          <code>overflow: hidden</code>. The Preview button (top-left) opens the lightbox; the
+          card itself selects text and no longer opens it. The copy-image button is 24 × 24.
+          The card itself is focusable in the shipped code but has no ring (A4; proposal E2/E3).</p>
       </div>
 
       <div class="state-label" style="margin-top: 32px;"><b>Four types × three states</b></div>
@@ -1500,6 +1504,7 @@ printk(<span class="hl-str">"temp: %d.%02d C\n"</span>, temp / <span class="hl-n
             <line class="d-edge" x1="92" y1="62" x2="200" y2="62" marker-end="url(#arrow-mm)"></line>
           </svg>
         </div>
+        <button type="button" class="copy copy--preview" aria-label="Preview Mermaid diagram">Preview</button>
         <button type="button" class="copy copy--img" aria-label="Copy image" title="Copy image">
           <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"></rect><path d="M3 3h8v2M11 10v2H3V4"></path></svg>
         </button>
