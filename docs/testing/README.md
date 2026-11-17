@@ -13,7 +13,7 @@ surface:
 | --- | --- | --- | --- |
 | Backend | `tests/test_app.py` | The real Flask app through its test client | stdlib `unittest` |
 | Frontend DOM | `tests/dom/test_dom.js` | The real app modules in jsdom | Hand-rolled `check()` harness |
-| Frontend browser (hybrid) | `tests/browser/test_hybrid_browser.js`, `test_hybrid_blocks_browser.js`, `test_block_edit_browser.js`, `test_table_editor_browser.js` | The real editing engine, block types, the fence editor, and the table-editor modal via Playwright | Hand-rolled `check()` harness |
+| Frontend browser (hybrid) | `tests/browser/test_hybrid_browser.js` (plus the caret matrix below), `test_hybrid_blocks_browser.js`, `test_block_edit_browser.js`, `test_table_editor_browser.js` | The real editing engine, every construct at every caret position, block types, the fence editor, and the table-editor modal via Playwright | Hand-rolled `check()` harness |
 | Frontend browser (app) | `tests/browser/test_core_ui_browser.js`, `test_auth_export_browser.js`, `test_ai_editor_browser.js`, `test_ai_blocks_browser.js` | Tree, tabs, search, graph, bookmarks, auth, export, PWA, AI, ACP, CodeMirror, and the AI panel's rendered fences | Hand-rolled `check()` harness |
 | Frontend browser (figure sizing) | `tests/browser/test_figure_sizing_browser.js` | Rendered SVG sizing: font scale, layout matrix, engine units, page-growth behaviour (no nested scroller), no inner math/code/error scrollbars, lightbox, phone tokens, export, hybrid round-trip | Hand-rolled `check()` harness |
 | Frontend browser (design/windows) | `tests/browser/test_designer_browser.js`, `test_dw_designer_browser.js`, `test_mobile_browser.js` | Visimer canvas, Graphviz/WaveDrom windows, phone shell | Hand-rolled `check()` harness |
@@ -47,6 +47,7 @@ node tests/dom/test_dom.js          # equivalent once jsdom is resolvable
 npm run test:browser                # chromium, the default
 npm run test:browser:firefox
 npm run test:browser:all            # every browser suite, distinct ports
+npm run test:browser:hybrid         # hybrid suite + the caret matrix
 npm run test:browser:core           # one suite by name; package.json has one
                                     # script per suite: :auth, :ai, :ai-blocks,
                                     # :blocks, :figure-sizing, :hybrid-blocks,
@@ -56,12 +57,48 @@ node tests/browser/run_all.js                  # every browser suite
 node tests/browser/test_typography_browser.js  # computed type, port 5097
 ```
 
-The backend (461 tests), the DOM suite (4,993 checks), and all thirteen browser
+The backend (461 tests), the DOM suite (5,390 checks), and all thirteen browser
 suites pass. The numbers are in
 [`browser-audit.md`](browser-audit.md) and the gate baseline in
 [`hybrid-regression-checklist.md`](hybrid-regression-checklist.md) §2. See
 [`backend.md`](backend.md) and [`frontend.md`](frontend.md) for the details
 of each harness.
+
+## The hybrid caret matrix
+
+`tests/browser/test_hybrid_browser.js` carries a data-driven matrix for hybrid
+(WYSIWYG) editing: every construct in
+[`../architecture/hybrid-editing.md`](../architecture/hybrid-editing.md) §4, at every
+position of the §3 key (S start, T content start, M middle, E content end, B boundary,
+∅ empty) with every key §4 assigns for it. Each row writes its own note, boots it,
+enters hybrid through the real ✎, places the caret, presses the real key, saves, reads
+the file back, and compares the bytes.
+
+```bash
+npm run test:browser:hybrid                     # runs the suite, matrix included
+PORT=5090 node tests/browser/test_hybrid_browser.js   # pick the port
+```
+
+Data: [`../../tests/browser/matrix/hybrid-caret-matrix.json`](../../tests/browser/matrix/hybrid-caret-matrix.json)
+(row schema in its `meta`). Findings, accepted divergences and the harness rules:
+[`hybrid-caret-matrix-findings.md`](hybrid-caret-matrix-findings.md). Priority and
+severity model: [`../product/hybrid-caret-matrix-priority.md`](../product/hybrid-caret-matrix-priority.md).
+
+A row's `status` decides how it is reported:
+
+| status | meaning |
+| --- | --- |
+| absent | must pass; a failure fails the suite |
+| `accepted` | by design or native, and the transcribed §4 cell over-specifies. Reported, not scored |
+| `known-bug` | a real defect. Reported, not scored, so the gate stays usable while it is open |
+| `blocked` | the docs pin no expected bytes, or the fixture has no target element. Observed only |
+| `engine` / `spec-divergent` | a contract row under an open question. Reported, not scored |
+
+To add a row, append an object with exact `before`/`after` bytes and the operation.
+Do not invent an expectation to make a row score: use `blocked` and say why. When a
+`known-bug` row starts matching, the run prints "now match" — move it back to an
+asserted row and close the entry in the findings doc, so the suite proves the fix
+forever.
 
 ## Which suite gets a new test
 

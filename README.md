@@ -609,6 +609,7 @@ node tests/dom/test_dom.js        # equivalent if jsdom already resolvable
 # Real browser (auto-detects Chromium; one suite or all of them)
 node tests/browser/test_core_ui_browser.js
 node tests/browser/run_all.js
+npm run test:browser:hybrid      # hybrid suite + the 159-row caret matrix
 ```
 
 The backend tests redirect `notebook/` and `config/` to a temp dir

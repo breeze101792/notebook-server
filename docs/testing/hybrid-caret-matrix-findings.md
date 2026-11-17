@@ -37,7 +37,10 @@ row at that point, so the suite proves the fix forever.
 ## Current result
 
 86 asserted rows pass, 0 fail. 50 accepted, 0 known-bug, 3 engine, 20 blocked,
-31 not expressible.
+31 not expressible. 159 rows in total.
+
+Last full run: 2026-11-17, commit `4f08b9e`, Chromium 156, headless, port 5090.
+`npm test` in the same tree: 5,390 checks pass.
 
 ## Fixed against this matrix
 
