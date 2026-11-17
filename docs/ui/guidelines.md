@@ -151,6 +151,7 @@ Rules:
 | Side-panel views | [`side-panel-views.md`](side-panel-views.md) | shell-frame, controls |
 | Search | [`search-view.md`](search-view.md) | side-panel-views |
 | AI panel | [`ai-panel.md`](ai-panel.md) | side-panel-views |
+| AI chat bar and chat manager | [`ai-chat-manager.md`](ai-chat-manager.md) | ai-panel, controls |
 | Reader prose | [`reader.md`](reader.md) | foundations |
 | Rendered blocks | [`content-blocks.md`](content-blocks.md) | reader |
 | Shared modal chrome | [`edit-window.md`](edit-window.md) | foundations, controls |

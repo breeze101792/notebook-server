@@ -33,7 +33,8 @@ never scrolls (`style.css:296-300`); the view's own log is the scroller.
 
 ```
 #ai-view  flex column, --surface-panel, overflow hidden
-├─ .panel-header          34   "AI Assistant" · Clear · collapse
+├─ .panel-header          34   "AI Assistant" · collapse
+├─ .ai-chat-bar           69   chat <select> · path · New · Manage · Clear
 ├─ .ai-model-bar          48   provider <select>  (+ .ai-acp-note 24 when ACP)
 ├─ .ai-config-hint        —    only a config failure or the viewer gate
 ├─ .ai-chat-log           flex  THE ZONE THAT SCROLLS
@@ -47,6 +48,10 @@ never scrolls (`style.css:296-300`); the view's own log is the scroller.
 ├─ .ai-attach-bar         0/24+ chips; hidden when empty
 └─ .ai-input-row          113  composer card
 ```
+
+The header is followed by a chat bar (`.ai-chat-bar`) that names the active chat and its file
+and holds New chat and Manage chats; its anatomy, the manager view it opens, the copy and the
+CSS are owned by [`ai-chat-manager.md`](ai-chat-manager.md) and are not repeated here.
 
 | Zone | At 240 | Rule |
 |---|---|---|
@@ -69,7 +74,7 @@ At the floor (`--shell-pane-min` 140) the content box is 116 px.
 
 | Part | Behaviour | Why |
 |---|---|---|
-| Header | Title ellipsizes to "AI Assi…"; Clear and the collapse button both stay | 24 padding + 43 + 2 + 24 = 93, leaving 47 for the title; it is the only flexible item |
+| Header | Title ellipsizes to "AI Assi…" only when needed; the collapse button stays | 24 padding + 8 gap + 24 = 56, leaving 60 for the title; Clear moved to the chat bar (`ai-chat-manager.md` §2.5) |
 | Provider select | 116 wide; the native arrow reserves 24, so the value shows ~4 characters and clips | Full value in `title`; `controls.md` §2.5 keeps the native popup |
 | User bubble | 95 % of 116 ≈ 110 | `max-width: 95%` |
 | Assistant prose | 116 px ≈ 15 characters per line at `--text-body` | No second layout; the log wraps |
@@ -98,7 +103,7 @@ extends upward into the log, and focus itself changes only the border and the ha
 
 | Zone | Scrolls? | Why |
 |---|---|---|
-| Header | no | Collapse and Clear must never leave the view |
+| Header | no | Collapse must never leave the view. Clear moved into the chat bar, which also stays pinned |
 | Provider row | no | The active provider is context for every turn |
 | Config / viewer banner | no | It explains why the composer is inert |
 | Chat log | **yes** | The one zone that scrolls; `scrollbar-gutter: stable` keeps the measure from jumping |
@@ -136,16 +141,13 @@ and its own actions (`ai.js:2251-2287`).
 |---|---|---|
 | Box | 36 high, padding `0 var(--space-3)`, bottom 1 px `--border`, `--surface-panel` | `.panel-header` (`style.css:329-343`) is 8/12 padding; the frame target wins |
 | Title | `<h2 class="panel-title">AI Assistant</h2>`, `--text-xs`, `--tracking-label`, `--text-muted`, ellipsis | A `span` today (`ai.js:2253-2255`); the heading gives the view a landmark |
-| Actions | Clear, then the frame's collapse button, gap `--space-hair` | Same order; group already exists (`ai.js:2257-2286`) |
-| Clear | Ghost button, `min-height: --control-h-sm`, padding `0 --space-2`, `--text-xs`, `--text-muted`; hover `--accent-soft` + `--text-primary`; disabled `--opacity-disabled` | Today ≈20 px tall with its own border (`style.css:5684-5693`) |
-| Clear disabled | When the conversation is empty **and** no attachment chip is pending | Today always enabled (`ai.js:2259-2281`) |
-| Clear action | Immediate: abort, clear conversation, system cache, log, controls, attachments, stored history | Unchanged (`ai.js:2264-2281`); no confirm — §12 C10 |
+| Actions | The frame's collapse button only, gap `--space-hair` | Clear moved to the chat bar (`ai-chat-manager.md` §2.5) |
 | Collapse / close | The frame's `makeCollapseBtn()`; `‹` desktop, `×` phone | `activity.js:278-288` |
 
-Clear keeps its word. A trash glyph in a 24 px header target is ambiguous with a delete
-action elsewhere, and this is the only destructive control in the view; the word is the
-accessible name and needs no tooltip. Its `title` carries the same message with the
-assistant named instead of "the model" (§7).
+Clear no longer lives here: it moved to the chat bar as a 24 px icon over the active chat —
+[`ai-chat-manager.md`](ai-chat-manager.md) §2.5 owns its anatomy, states and copy and
+supersedes this section's old Clear rows and §7.1's; this header is title plus collapse
+only.
 
 ### 2.2 Provider control
 
@@ -634,7 +636,7 @@ before sending and keeps the chips (`ai.js:2650-2659`).
 | Drag over the view | `outline: var(--stroke-2) dashed var(--accent); outline-offset: calc(-1 * var(--stroke-2))` on `#ai-view`; the drag highlight is the only change |
 | Drop | Same `addFiles` path (`ai.js:2693-2708`) |
 | Paste | Clipboard files go through `addFiles`; plain text paste is untouched (`ai.js:2677-2683`) |
-| Focus order | Header Clear → collapse → select → log controls (traces, links, copy, turn controls, card Reject/Apply) → chip removes → textarea → attach → send/stop |
+| Focus order | Collapse → chat select → New → Manage → Clear → provider select → log controls (traces, links, copy, turn controls, card Reject/Apply) → chip removes → textarea → attach → send/stop |
 | Ring | 2 px `--focus-ring`, offset 2; the card uses `:focus-within` and the inner field has none |
 
 A disabled attach control stays visible while a turn runs; it does not disappear, so the
@@ -660,7 +662,7 @@ row does not reflow when the turn ends.
 | ACP active | selected provider is ACP | normal | ACP pill + note | traces; prose | normal, image-capable attach |
 | Very long | many turns | normal | normal | scrolls; jump control while above the bottom | docked |
 | 140 px | panel at the floor | title ellipsized | value clipped, `title` | wraps; diff scrolls | composer keeps one action row |
-| Phone | drawer | 52, title + Clear + × | 44 high, 16 px | 16 px prose | 16 px field, 44 targets |
+| Phone | drawer | 52, title + × | 44 high, 16 px | 16 px prose | 16 px field, 44 targets |
 
 ---
 
@@ -674,8 +676,6 @@ verbatim; "New" or "Changed" is a decision of this pass.
 | String | Status | Source |
 |---|---|---|
 | `AI Assistant` | shipped | `ai.js:2255` |
-| `Clear` | shipped | `ai.js:2262` |
-| `Clear the conversation (the assistant forgets the context)` | changed from "the model forgets context" | `ai.js:2263` |
 | `No provider configured` (option) | changed from `no provider configured` | `ai.js:2782` |
 | `<name> · <model>` / `<name> · <baseUrl>` | shipped | `ai.js:2791` |
 | `Model and provider` (aria-label) | new | §2.2 |
@@ -699,6 +699,9 @@ verbatim; "New" or "Changed" is a decision of this pass.
 | `Dismiss error` (aria-label) | new | §5.4 |
 | `No messages yet.` | new | §1.5 |
 | `Ask about a note, or describe an edit. Nothing changes until you apply it.` | new | §1.5 |
+
+Clear's copy (`Clear conversation`, its tooltip, and the "the chat stays" scope) lives with
+its anatomy in [`ai-chat-manager.md`](ai-chat-manager.md) §5.1.
 
 ### 7.2 Message area
 
@@ -790,14 +793,17 @@ started and it stopped or failed. The reply itself is read on demand.
 
 | Order | Stop |
 |---|---|
-| 1 | Clear |
-| 2 | Collapse / close |
-| 3 | Provider select |
-| 4 | Trace summaries, prose links, code-block copy buttons and card buttons, in DOM order (the card's Reject then Apply are the last controls before the chips) |
-| 5 | Turn controls in DOM order: Edit (in the user turn), then Regenerate (in the assistant turn) |
-| 6 | Attachment remove buttons |
-| 7 | Textarea |
-| 8 | Attach |
+| 1 | Collapse / close |
+| 2 | Chat select |
+| 3 | New chat |
+| 4 | Manage chats |
+| 5 | Clear conversation |
+| 6 | Provider select |
+| 7 | Trace summaries, prose links, code-block copy buttons and card buttons, in DOM order (the card's Reject then Apply are the last controls before the chips) |
+| 8 | Turn controls in DOM order: Edit (in the user turn), then Regenerate (in the assistant turn) |
+| 9 | Attachment remove buttons |
+| 10 | Textarea |
+| 11 | Attach |
 | 9 | Send / Stop |
 
 Rules:
@@ -922,7 +928,7 @@ a new palette.
 | # | Change | Where |
 |---|---|---|
 | 1 | The AI and diff tokens are declared in foundations Appendix A; no local declaration | `style.css` token blocks |
-| 2 | Header: `h2` title with the UA margin and weight reset, tokenised Clear | `ai.js:2251-2287`; `style.css:5023-5031`, `:5684-5693` |
+| 2 | Header: `h2` title with the UA margin and weight reset. Clear is not a header rule: its bar anatomy and CSS are owned by `ai-chat-manager.md` §7 | `ai.js:2251-2287`; `style.css:5023-5031` |
 | 3 | Provider bar: 36 px select, well face, strong border, focus, disabled; ACP pill and note. On a config failure keep the last `servers`/`currentServer` and set `configFailed` instead of clearing them | `ai.js:2296-2309`, `:2762-2767`, `:2774-2800`; `style.css:5044-5056` |
 | 4 | Log: role, padding, gap, empty state, jump control, follow rule | `ai.js:2311-2314`, `:1262-1264`; `style.css:5058-5066` |
 | 5 | Messages: user, prose, trace, status, error, turn controls | `style.css:5068-5240`, `:5195-5229`, `:5644-5682` |
@@ -1693,8 +1699,8 @@ deleted:
 
 | # | Criterion | Where | Observable |
 |---|---|---|---|
-| **AC1** | The AI view uses the frame header | `ai.js`, `style.css` | `#ai-view .panel-title` is an `<h2>` reading "AI Assistant"; the header is 36 high; Clear and the collapse control are the only actions |
-| **AC2** | Clear is disabled with an empty conversation and no chips, and enabled after the first turn or attachment | `ai.js` | With no turns and no chips `.ai-clear.disabled === true`; after a send or a chip it is false; clicking clears conversation, log, chips and stored history (`tests/dom/test_dom.js:30969-30976`) |
+| **AC1** | The AI view uses the frame header | `ai.js`, `style.css` | `#ai-view .panel-title` is an `<h2>` reading "AI Assistant"; the header is 36 high; the collapse control is its only action (Clear moved to the chat bar, `ai-chat-manager.md` AC21) |
+| **AC2** | Clear is disabled with an empty conversation and no chips, and enabled after the first turn or attachment | `ai.js` | In the chat bar, `.ai-clear.disabled === true` with no turns and no chips; after a send or a chip it is false; clicking empties the active chat's conversation, log and chips but keeps the chat (`tests/dom/test_dom.js`, the chats block's C10 and C17) |
 | **AC3** | The provider control is a labelled, focusable 36 px select | `ai.js`, `style.css` | `aria-label="Model and provider"`; height 36; a visible 2 px ring; disabled for the whole turn |
 | **AC4** | No provider, fetch failure and viewer are three distinct states | `ai.js` | Three different strings; composer disabled in all three; the fetch failure offers Retry |
 | **AC5** | ACP shows its badge and consequence note, and the attach control accepts images like any provider | `ai.js` | `.ai-acp-tag` reads "ACP"; the note is visible; `#ai-attach` title is "Attach files" and the input has no `accept` filter |
@@ -1750,7 +1756,7 @@ Two assertions change with this spec, and must be updated in the same commit:
 | **C7** | `acp-provider.md:287-288` says the provider picker is disabled while a turn is in flight; `ai.js:2409-2412` disables only attach and send. | Disable the select for the whole turn. | A provider switch between tool rounds would send round 2 to a different provider (`ai.js:1714-1717`). |
 | **C8** | `.ai-btn.ai-apply` paints `#fff` on `--accent` (`style.css:5421-5424`); white on the dark accent is 2.61:1. | `--text-on-accent` at rest; hover is a 3 px halo, not `opacity: .88`. | D1 in `controls.md:36`; one of the eight fixes in `foundations.md:209-224`. |
 | **C9** | The shipped card leaves Reject live during Apply (`ai.js:503-526`) and dims a rejected card to `.65` (`style.css:5259`). | Both actions disabled while applying; a rejected card keeps normal text. | A landed patch under a "rejected" label is a lie; opacity lowers the contrast of the status the user must read. |
-| **C10** | Clear erases the conversation and the stored history in one click (`ai.js:2264-2281`). | Keep it immediate; disable it when there is nothing to clear. No confirm, no undo. | The transcript is local and reconstructible; the action is a named word in a header with one purpose, and a confirm would add a layer to the smallest control. Recorded as a deliberate rejection, not an oversight. |
+| **C10** | Clear empties the active chat in one click; the chat, its title and its file survive (`ai.js`, chat bar). | Keep it immediate; disable it when there is nothing to clear. No confirm, no undo. | The action is a named scope with its own glyph in the chat bar, and it must abort a bad reply in one press; a confirm in front of an escape hatch is the wrong shape. The chat survives, so there is no object to lose. Recorded as a deliberate rejection, not an oversight. |
 | **C11** | Restored history has no traces and no cards (`ai.js:1130-1146`). | Keep that. Do not synthesise a card from a stored tool follow-up. | A restored `patch` card's anchor may be stale; the server would reject it, and a diff against an old file is worse than no card. |
 | **C12** | The shipped trace output is always open and can be 9 em tall (`style.css:5672-5681`). | Wrap output in a `<details>`; the summary stays one line. | The trace answers "what is it doing"; the output is for the curious. The selectors and text the tests assert are preserved. |
 | **C13** | The shipped card appends Apply then Reject (`ai.js:503-526`), so the primary action sits on the left. | Reject then Apply in the DOM; Apply is the rightmost control. | A commit action belongs at the reading end of the row. The classes and the test selectors are unchanged, so no test asserts the order. |

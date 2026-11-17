@@ -33170,7 +33170,10 @@ function check(label, cond, extra) {
   await tick(20);
   check("ai: Clear empties the conversation + log",
     window.NB.ai._getConversationForTests().length === 0 &&
-    window.document.querySelectorAll("#ai-chat-log > *").length === 0,
+    window.document.querySelectorAll(
+      "#ai-chat-log .ai-msg, #ai-chat-log .ai-edit-card, " +
+      "#ai-chat-log .ai-tool-trace, #ai-chat-log .ai-error").length === 0 &&
+    !!window.document.querySelector("#ai-chat-log .ai-empty"),
     "");
 
   // --- Global custom prompt: appended to the system prompt -------------
@@ -34661,7 +34664,8 @@ function check(label, cond, extra) {
       await tick(30);
       check("ai regenerate: no genuine user turn -> regenerate is a no-op",
         aiChatLog.length === chatBefore2 && regenBtns().length === 0 &&
-        regenLog().children.length === 0,
+        regenLog().querySelectorAll(
+          ".ai-msg, .ai-edit-card, .ai-tool-trace, .ai-error").length === 0,
         "requests+" + (aiChatLog.length - chatBefore2));
 
       // (5c) a write permission card pending: the control exists but is
@@ -35121,7 +35125,8 @@ function check(label, cond, extra) {
       await tick(30);
       check("ai edit: no genuine user turn -> editLastMessage() is a no-op",
         aiChatLog.length === chatB4 && editBtns().length === 0 &&
-        editLog().children.length === 0,
+        editLog().querySelectorAll(
+          ".ai-msg, .ai-edit-card, .ai-tool-trace, .ai-error").length === 0,
         "requests+" + (aiChatLog.length - chatB4));
     }
 
@@ -35884,16 +35889,19 @@ function check(label, cond, extra) {
   }
 
   console.log("== ai history persistence ==");
-  // The transcript survives a reload: persistHistory() writes a versioned
-  // blob to localStorage["nb:aiChat"] on every mutation; mount() (and the
-  // _restoreHistoryForTests seam) rebuilds it. These checks drive real
-  // turns through the same fetch-stubbed loop as the blocks above, then
-  // assert on the stored blob and on a simulated reload.
+  // Per-file chats survive a reload: persistHistory() writes the versioned
+  // store to localStorage["nb:aiChats"] on every mutation; mount() (and the
+  // _restoreHistoryForTests seam) rebuilds the active chat and the bar.
+  // These checks drive real turns through the same fetch-stubbed loop as
+  // the blocks above, then assert on the stored store and on a simulated
+  // reload. The per-chat behaviours (creation, switching, rename, delete,
+  // search, migration) live in the "ai chats" block that follows.
   {
-    const histKey = "nb:aiChat";
+    const histKey = "nb:aiChats";
     const histLog = () => window.document.getElementById("ai-chat-log");
     const histStored = () => window.NB.ai._getStoredHistoryForTests();
     const histRaw = () => window.localStorage.getItem(histKey);
+    const histChats = () => window.NB.ai._getChatsForTests();
     const userBubbles = () =>
       Array.from(histLog().querySelectorAll(".ai-msg-user"));
     const asstBubbles = () =>
@@ -36028,47 +36036,94 @@ function check(label, cond, extra) {
         cards().length === 0, "cards=" + cards().length);
     }
 
-    // (H4) Clear removes the stored key.
+    // (H4) Clear empties the active chat's stored conversation but keeps
+    // the chat and its title; deleting the last chat is what removes the
+    // key.
     {
       await histReset();
       aiChatStreams.push([sseFrame("Clear me.")]);
       firePrompt("history: clear test");
       await tick(120);
-      check("ai history: precondition, the key exists before Clear",
-        histRaw() !== null, "key=" + (histRaw() === null ? "null" : "present"));
+      const before = histChats();
+      check("ai history: precondition, the chat is stored before Clear",
+        histRaw() !== null && before.chats.length === 1,
+        "key=" + (histRaw() === null ? "null" : "present") +
+        " chats=" + before.chats.length);
+      const titleBefore = before.chats.length ? before.chats[0].title : "";
       window.document.querySelector("#ai-view .ai-clear")
         .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
       await tick(20);
-      check("ai history: Clear removes localStorage[\"nb:aiChat\"]",
-        histRaw() === null && histStored() === null,
-        "raw=" + (histRaw() === null ? "null" : "present"));
+      const after = histChats();
+      const storedAfter = histStored();
+      check("ai history: Clear empties the active chat's stored conversation",
+        !!storedAfter && storedAfter.conversation.length === 0 &&
+        storedAfter.lastPrompt === "",
+        storedAfter ? "n=" + storedAfter.conversation.length : "none");
+      check("ai history: Clear keeps the chat, its title and the active id",
+        after.chats.length === 1 && after.chats[0].title === titleBefore &&
+        after.activeId === after.chats[0].id && histRaw() !== null,
+        "chats=" + after.chats.length + " title=" +
+        (after.chats[0] ? after.chats[0].title : "none"));
+      window.NB.ai._deleteChatForTests(after.chats[0].id);
+      await tick(10);
+      check("ai history: deleting the last chat removes localStorage[\"nb:aiChats\"]",
+        histRaw() === null && histStored() === null &&
+        histChats().activeId === "",
+        "key=" + (histRaw() === null ? "null" : "present"));
     }
 
-    // (H5) invalid stored payloads are ignored and the key is dropped.
+    // (H5) invalid stored stores are ignored and the key is dropped.
     {
+      const badChat = (patch) => Object.assign({
+        id: "c-bad", file: "notes/a.md", title: "bad", custom: false,
+        createdAt: 1, updatedAt: 1,
+        conversation: [{ role: "user", content: "x" }],
+        toolFlags: [false], lastPrompt: "",
+      }, patch || {});
       const badPayloads = [
         ["bad JSON", "{not json at all"],
-        ["wrong version", JSON.stringify({ v: 999,
-          conversation: [{ role: "user", content: "x" }] })],
-        ["non-array conversation", JSON.stringify({ v: 1,
-          conversation: { role: "user", content: "x" } })],
-        ["non-string role entry", JSON.stringify({ v: 1,
-          conversation: [{ role: 5, content: "x" }] })],
+        ["wrong version", JSON.stringify({ v: 999, activeId: "", chats: [] })],
+        ["non-array chats", JSON.stringify({ v: 1, activeId: "", chats: {} })],
+        ["non-string activeId", JSON.stringify({ v: 1, activeId: 5, chats: [] })],
+        ["chat with no file field", JSON.stringify({ v: 1, activeId: "c-bad",
+          chats: [badChat({ file: undefined })] })],
+        ["non-array conversation", JSON.stringify({ v: 1, activeId: "c-bad",
+          chats: [badChat({ conversation: { role: "user", content: "x" } })] })],
+        ["non-string role entry", JSON.stringify({ v: 1, activeId: "c-bad",
+          chats: [badChat({ conversation: [{ role: 5, content: "x" }] })] })],
         // Role whitelist: only user/assistant survive a restore (a stored
         // "system" turn would otherwise re-enter the wire body).
-        ["system role entry", JSON.stringify({ v: 1,
-          conversation: [{ role: "system", content: "x" }] })],
+        ["system role entry", JSON.stringify({ v: 1, activeId: "c-bad",
+          chats: [badChat({ conversation: [{ role: "system", content: "x" }] })] })],
+        // The id reaches a CSS attribute selector; anything outside the
+        // safe charset is rejected rather than escaped at every use.
+        ["chat id outside the safe charset", JSON.stringify({ v: 1,
+          activeId: "c-bad",
+          chats: [badChat({ id: 'c-bad"]' })] })],
+        ["duplicate chat ids", JSON.stringify({ v: 1, activeId: "c-bad",
+          chats: [badChat(), badChat()] })],
       ];
+      // Precondition: a valid store really does load into memory, so the
+      // drop below is an observable state change rather than a tautology.
+      window.localStorage.setItem(histKey, JSON.stringify({
+        v: 1, activeId: "c-valid",
+        chats: [badChat({ id: "c-valid", title: "valid chat" })],
+      }));
+      window.NB.ai._restoreHistoryForTests(histLog());
+      check("ai history: precondition, a valid store loads one chat",
+        histChats().chats.length === 1 && histChats().activeId === "c-valid",
+        "chats=" + histChats().chats.length);
       for (const [label, raw] of badPayloads) {
-        // _resetMemoryForTests keeps the set payload; then restore must
-        // reject it and remove the key.
-        window.NB.ai._resetMemoryForTests();
+        // The payload replaces the valid store: restore must reject it,
+        // drop the chat that was in memory and remove the key.
         window.localStorage.setItem(histKey, raw);
         window.NB.ai._restoreHistoryForTests(histLog());
         check("ai history: " + label + " is ignored and the key removed",
           window.NB.ai._getConversationForTests().length === 0 &&
+          histChats().chats.length === 0 &&
           histRaw() === null,
           "conv=" + window.NB.ai._getConversationForTests().length +
+          " chats=" + histChats().chats.length +
           " key=" + (histRaw() === null ? "null" : "present"));
       }
     }
@@ -36108,6 +36163,13 @@ function check(label, cond, extra) {
         !!inMemUser && inMemUser.content.some(p =>
           p.type === "image_url" && /^data:image\/png/.test(p.image_url.url)),
         inMemUser ? JSON.stringify(inMemUser.content.map(p => p.type)) : "none");
+      check("ai history: the storage line reports the staged write, not memory",
+        window.NB.ai._getChatsForTests().bytes <= 4 * 1024 * 1024 &&
+        / of 4 MB$/.test(window.document.querySelector(
+          "[data-test-chat-storage]").textContent),
+        "bytes=" + window.NB.ai._getChatsForTests().bytes +
+        " line=" + window.document.querySelector(
+          "[data-test-chat-storage]").textContent);
     }
 
     // (H7) abandoned pending card: a reload while a write/patch card awaits
@@ -36219,6 +36281,622 @@ function check(label, cond, extra) {
     // Leave the panel idle and the storage clean for later blocks.
     await histReset();
     window.NB.ai._resetImageCodec();
+  }
+
+  console.log("== ai chats (per-file store) ==");
+  // The chat bar and the manager: one browser-local chat per conversation,
+  // bound to the file it was started from. Covers creation and the derived
+  // title, the file:open switch, the select and the manager as switch
+  // paths, New chat, inline rename, the two-step delete and its fallback,
+  // Clear's scope, search, the legacy migration, and the budget warning.
+  {
+    const chatsLog = () => window.document.getElementById("ai-chat-log");
+    const bar = () => window.document.querySelector("[data-test-chat-bar]");
+    const pick = () => window.document.querySelector("[data-test-chat-select]");
+    const newBtn = () => window.document.querySelector("[data-test-chat-new]");
+    const manageBtn = () =>
+      window.document.querySelector("[data-test-chat-manage]");
+    const manager = () =>
+      window.document.querySelector("[data-test-chat-manager]");
+    const rows = () =>
+      Array.from(manager().querySelectorAll("[data-test-chat-row]"));
+    const store = () => window.NB.ai._getChatsForTests();
+    const chatById = (id) =>
+      store().chats.find((c) => c.id === id) || null;
+    const fire = (text) => { aiInput().value = text; aiSend(); };
+    const emptyTitle = () => {
+      const el = chatsLog().querySelector(".ai-empty-title");
+      return el ? el.textContent : "";
+    };
+    const rowEl = (id) =>
+      manager().querySelector('[data-chat-id="' + id + '"]');
+    const chatsReset = async () => {
+      const clearBtn = window.document.querySelector("#ai-view .ai-clear");
+      if (clearBtn) {
+        clearBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      }
+      window.NB.ai._resetForTests();
+      aiChatLog = [];
+      aiChatStreams = [];
+      await tick(10);
+    };
+    const pickChat = (id) => {
+      pick().value = id;
+      pick().dispatchEvent(new window.Event("change", { bubbles: true }));
+    };
+
+    aiConfig = { servers: [{ name: "stub", baseUrl: "http://stub",
+      model: "m-1", apiKey: "sk-stub" }], default: "stub",
+      customPrompt: "", searxngUrl: "" };
+    await window.NB.ai.loadAiConfig();
+    await tick(10);
+
+    // (C1) the bar is mounted between the panel header and the hint, and
+    // a file with no chat shows the panel's empty state.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    check("ai chats: the bar sits inside the chat stack above the hint",
+      !!bar() && bar().parentElement.classList.contains("ai-chat-stack") &&
+      bar().nextElementSibling &&
+      bar().nextElementSibling.id === "ai-config-hint",
+      bar() ? "next=" + (bar().nextElementSibling &&
+        bar().nextElementSibling.className) : "no bar");
+    check("ai chats: no chat for the open file shows No chat yet",
+      pick().options.length === 1 &&
+      pick().options[0].textContent === "No chat yet" &&
+      emptyTitle() === "No chat for this file.",
+      "opt=" + (pick().options[0] && pick().options[0].textContent) +
+      " empty=" + emptyTitle());
+
+    // (C2) the first prompt creates the chat and derives its title.
+    aiChatStreams.push([sseFrame("Here is the answer.")]);
+    fire("Explain the intro\nand the rest");
+    await tick(150);
+    let s = store();
+    const chatA1 = Object.assign({}, s.chats[0] || {});
+    check("ai chats: the first prompt creates a chat for the open file",
+      s.chats.length === 1 && chatA1.file === "notes/a.md" &&
+      s.activeId === chatA1.id,
+      "n=" + s.chats.length + " file=" + chatA1.file);
+    check("ai chats: the title derives from the first prompt's first line",
+      chatA1.title === "Explain the intro", "title=" + chatA1.title);
+    check("ai chats: the bar shows the chat title and its file",
+      pick().value === chatA1.id &&
+      bar().querySelector(".ai-chat-path").textContent === "notes/a.md" &&
+      bar().querySelector(".ai-chat-flag").hidden === true,
+      "value=" + pick().value);
+    check("ai chats: the stored chat carries both entries",
+      chatA1.count === 2 && chatA1.messages === 2,
+      "count=" + chatA1.count);
+    check("ai chats: the bar sits between the header and the hint (order)",
+      window.document.getElementById("ai-view").children[0]
+        .classList.contains("panel-header") &&
+      window.document.getElementById("ai-view").children[1]
+        .classList.contains("ai-chat-stack") &&
+      window.document.getElementById("ai-view").children[2]
+        .classList.contains("ai-chat-manager"),
+      "children=" + window.document.getElementById("ai-view").children.length);
+
+    // (C3) New chat: a second chat for the same file, active and empty.
+    newBtn().click();
+    await tick(20);
+    s = store();
+    const chatA2 = Object.assign({}, s.chats[1] || {});
+    check("ai chats: New chat creates a second chat for the same file",
+      s.chats.length === 2 && chatA2.file === "notes/a.md" &&
+      chatA2.title === "New chat" && s.activeId === chatA2.id,
+      "n=" + s.chats.length + " title=" + chatA2.title);
+    check("ai chats: the new chat starts with the empty state",
+      chatsLog().querySelectorAll(".ai-msg").length === 0 &&
+      emptyTitle() === "No messages yet.",
+      "empty=" + emptyTitle());
+    check("ai chats: focus moves to the composer after New chat",
+      window.document.activeElement === aiInput(), "");
+
+    // (C4) file:open follows the viewer: no chat, then its own chat.
+    await window.NB.tabs.open("notes/b.md");
+    await tick(40);
+    check("ai chats: opening a file with no chat clears the active chat",
+      store().activeId === "" && emptyTitle() === "No chat for this file.",
+      "active=" + store().activeId + " empty=" + emptyTitle());
+    aiChatStreams.push([sseFrame("B answer.")]);
+    fire("Why is B short");
+    await tick(150);
+    s = store();
+    const chatB = Object.assign({}, s.chats.find((c) => c.file === "notes/b.md") || {});
+    check("ai chats: sending in the new file creates its own chat",
+      !!chatB.id && chatB.title === "Why is B short" &&
+      s.activeId === chatB.id,
+      "title=" + chatB.title);
+
+    // (C5) reopening the file picks its newest chat; the select switches.
+    await window.NB.tabs.open("notes/a.md");
+    await tick(40);
+    check("ai chats: reopening a file switches to its newest chat",
+      store().activeId === chatA2.id,
+      "active=" + store().activeId + " want=" + chatA2.id);
+    pickChat(chatA1.id);
+    await tick(20);
+    check("ai chats: picking a chat in the select swaps the transcript",
+      store().activeId === chatA1.id &&
+      chatsLog().querySelectorAll(".ai-msg-user").length === 1 &&
+      /Explain the intro/.test(chatsLog().textContent),
+      "active=" + store().activeId);
+    check("ai chats: switching chats does not bump updatedAt",
+      chatById(chatA1.id).updatedAt === chatA1.updatedAt,
+      "was=" + chatA1.updatedAt + " now=" +
+      (chatById(chatA1.id) && chatById(chatA1.id).updatedAt));
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    check("ai chats: re-activating the open tab keeps the picked chat",
+      store().activeId === chatA1.id, "active=" + store().activeId);
+
+    // (C6) the manager: groups, order, footer, search.
+    manageBtn().click();
+    await tick(20);
+    check("ai chats: Manage swaps the chat stack for the manager",
+      manager().hidden === false &&
+      bar().closest(".ai-chat-stack").hidden === true,
+      "managerHidden=" + manager().hidden);
+    check("ai chats: the manager lists the current file first",
+      rows().length === 3 &&
+      manager().querySelector(".ai-cm-group .ai-cm-group-flag")
+        .textContent === "current" &&
+      manager().querySelector(".ai-cm-group-path").textContent === "notes/a.md",
+      "rows=" + rows().length);
+    check("ai chats: the active row is marked current",
+      !!rowEl(store().activeId) &&
+      rowEl(store().activeId).getAttribute("aria-current") === "true", "");
+    check("ai chats: the footer reports the chat count and the store size",
+      /^3 chats · .+ of 4 MB$/.test(
+        manager().querySelector("[data-test-chat-storage]").textContent),
+      manager().querySelector("[data-test-chat-storage]").textContent);
+    const search = manager().querySelector("[data-test-chat-search]");
+    search.value = "explain";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    check("ai chats: search filters by title, case-insensitively",
+      rows().length === 1 && /Explain the intro/.test(rows()[0].textContent),
+      "rows=" + rows().length);
+    search.value = "b.md";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    check("ai chats: search matches the file path",
+      rows().length === 1 && /Why is B short/.test(rows()[0].textContent),
+      "rows=" + rows().length);
+    search.value = "zzz";
+    search.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    check("ai chats: no match shows the no-match empty state",
+      rows().length === 0 &&
+      manager().querySelector(".ai-empty-title").textContent ===
+        "No chats match “zzz”.",
+      manager().querySelector(".ai-empty-title").textContent);
+    search.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true }));
+    await tick(10);
+    check("ai chats: Esc clears the query and keeps the manager open",
+      search.value === "" && manager().hidden === false && rows().length === 3,
+      "rows=" + rows().length);
+    search.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true }));
+    await tick(10);
+    check("ai chats: a second Esc closes it and returns focus to Manage",
+      manager().hidden === true &&
+      window.document.activeElement === manageBtn(), "");
+
+    // (C7) inline rename: Enter commits, Esc cancels.
+    manageBtn().click();
+    await tick(20);
+    rowEl(chatB.id).querySelector("[data-test-chat-rename]").click();
+    await tick(10);
+    const renameInput = manager().querySelector(".ai-cm-rename");
+    check("ai chats: Rename opens a field seeded with the full title",
+      !!renameInput && renameInput.value === "Why is B short" &&
+      window.document.activeElement === renameInput, "");
+    renameInput.value = "B budget";
+    renameInput.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Enter", bubbles: true }));
+    await tick(10);
+    check("ai chats: Enter commits the title and marks it custom",
+      chatById(chatB.id).title === "B budget" &&
+      chatById(chatB.id).custom === true,
+      "title=" + (chatById(chatB.id) && chatById(chatB.id).title));
+    check("ai chats: the renamed row shows the new title",
+      !!rowEl(chatB.id) &&
+      rowEl(chatB.id).querySelector(".ai-chat-open").textContent === "B budget",
+      "");
+    rowEl(chatB.id).querySelector("[data-test-chat-rename]").click();
+    await tick(10);
+    const renameInput2 = manager().querySelector(".ai-cm-rename");
+    renameInput2.value = "Discarded";
+    renameInput2.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true }));
+    await tick(10);
+    check("ai chats: Esc cancels a rename and restores the title",
+      chatById(chatB.id).title === "B budget" &&
+      manager().querySelector(".ai-cm-rename") === null,
+      "title=" + (chatById(chatB.id) && chatById(chatB.id).title));
+    // A commit that filters the row out must not leave focus on <body>.
+    const filterSearch = manager().querySelector("[data-test-chat-search]");
+    filterSearch.value = "budget";
+    filterSearch.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+    rowEl(chatB.id).querySelector("[data-test-chat-rename]").click();
+    await tick(10);
+    const filteredRename = manager().querySelector(".ai-cm-rename");
+    filteredRename.value = "No longer matching";
+    filteredRename.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Enter", bubbles: true }));
+    await tick(10);
+    check("ai chats: a rename that filters its row out focuses the search",
+      rows().length === 0 &&
+      window.document.activeElement === filterSearch,
+      "rows=" + rows().length + " active=" +
+      (window.document.activeElement && window.document.activeElement.className));
+    filterSearch.value = "";
+    filterSearch.dispatchEvent(new window.Event("input", { bubbles: true }));
+    await tick(10);
+
+    // (C8) a chat bound to another file is flagged, not blocked.
+    manageBtn().click();          // close the manager
+    await tick(10);
+    pickChat(chatB.id);
+    await tick(20);
+    check("ai chats: a chat from another file shows the not-open flag",
+      bar().querySelector(".ai-chat-flag").hidden === false &&
+      /not open/.test(bar().querySelector(".ai-chat-flag").textContent) &&
+      bar().querySelector(".ai-chat-path").textContent === "notes/b.md" &&
+      aiInput().disabled === false,
+      "flag=" + bar().querySelector(".ai-chat-flag").textContent.trim());
+    pickChat(chatA1.id);
+    await tick(20);
+
+    // (C9) delete is two steps and the active chat falls back.
+    manageBtn().click();
+    await tick(20);
+    const beforeDelete = store().chats.length;
+    rowEl(chatB.id).querySelector("[data-test-chat-delete]").click();
+    await tick(10);
+    check("ai chats: Delete asks first and removes nothing yet",
+      !!manager().querySelector("[data-test-chat-confirm]") &&
+      store().chats.length === beforeDelete,
+      "confirm=" + !!manager().querySelector("[data-test-chat-confirm]"));
+    check("ai chats: the confirm focuses Cancel",
+      window.document.activeElement ===
+        manager().querySelector(".ai-chat-confirm-actions .ai-cm-btn"), "");
+    manager().querySelector("[data-test-chat-confirm] .ai-cm-btn.danger").click();
+    await tick(20);
+    check("ai chats: confirming Delete removes the chat",
+      store().chats.length === beforeDelete - 1 && !chatById(chatB.id),
+      "n=" + store().chats.length);
+    manageBtn().click();          // close
+    await tick(10);
+    window.NB.ai._deleteChatForTests(chatA1.id);
+    await tick(20);
+    check("ai chats: deleting the active chat falls back to the file's newest",
+      store().activeId === chatA2.id &&
+      chatsLog().querySelectorAll(".ai-msg").length === 0,
+      "active=" + store().activeId);
+    aiInput().value = "half typed draft";
+    aiInput().dispatchEvent(new window.Event("input", { bubbles: true }));
+    window.NB.ai._addFilesForTests([{
+      name: "draft.txt", type: "text/plain", size: 6,
+      arrayBuffer: async () => new TextEncoder().encode("draft\n").buffer,
+    }]);
+    await tick(60);
+    window.NB.ai._deleteChatForTests(chatA2.id);
+    await tick(20);
+    check("ai chats: deleting the last chat of the file leaves none active",
+      store().activeId === "" && emptyTitle() === "No chat for this file.",
+      "active=" + store().activeId + " empty=" + emptyTitle());
+    check("ai chats: deleting the active chat clears the draft and the chips",
+      aiInput().value === "" &&
+      window.NB.ai._getAttachmentsForTests().length === 0 &&
+      window.document.querySelector("#ai-view .ai-attach-bar").hidden === true,
+      "draft=" + JSON.stringify(aiInput().value) +
+      " chips=" + window.NB.ai._getAttachmentsForTests().length);
+
+    // (C10) Clear empties only the active chat.
+    aiChatStreams.push([sseFrame("First answer.")]);
+    fire("First chat question");
+    await tick(150);
+    newBtn().click();
+    await tick(20);
+    aiChatStreams.push([sseFrame("Second answer.")]);
+    fire("Second chat question");
+    await tick(150);
+    s = store();
+    const keepChat = Object.assign({}, s.chats.find(
+      (c) => c.title === "First chat question") || {});
+    const clearChat = Object.assign({}, s.chats.find(
+      (c) => c.title === "Second chat question") || {});
+    window.document.querySelector("#ai-view .ai-clear")
+      .dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await tick(20);
+    check("ai chats: Clear empties only the active chat",
+      !!keepChat.id && !!clearChat.id &&
+      chatById(clearChat.id).count === 0 &&
+      chatById(keepChat.id).count === 2,
+      "active=" + (chatById(clearChat.id) &&
+        chatById(clearChat.id).count) +
+      " other=" + (chatById(keepChat.id) && chatById(keepChat.id).count));
+    manageBtn().click();
+    await tick(20);
+    rowEl(keepChat.id).querySelector(".ai-chat-open").click();
+    await tick(20);
+    check("ai chats: a manager row opens the chat and closes the manager",
+      store().activeId === keepChat.id && manager().hidden === true &&
+      window.document.activeElement === pick(),
+      "active=" + store().activeId);
+    const plainEdit = chatsLog().querySelector(".ai-edit");
+    check("ai chats: Edit stays enabled for a switched-to plain text turn",
+      !!plainEdit && plainEdit.disabled === false,
+      plainEdit ? "disabled=" + plainEdit.disabled : "no control");
+
+    // (C10b) Edit is disabled for a switched-to turn whose attachments
+    // cannot be restored; a resend would silently drop them.
+    window.NB.ai._addFilesForTests([{
+      name: "note.txt", type: "text/plain", size: 8,
+      arrayBuffer: async () => new TextEncoder().encode("hello\n").buffer,
+    }]);
+    await tick(60);
+    aiChatStreams.push([sseFrame("Read it.")]);
+    fire("summarize this attachment");
+    await tick(150);
+    const attachChatId = store().activeId;
+    const posted = aiChatLog[aiChatLog.length - 1] || { messages: [] };
+    check("ai chats: precondition, the turn posted an inline attachment",
+      posted.messages.some((m) => typeof m.content === "string" &&
+        m.content.indexOf("[Attached file: note.txt") >= 0), "");
+    newBtn().click();
+    await tick(20);
+    window.NB.ai._switchChatForTests(attachChatId);
+    await tick(20);
+    check("ai chats: Edit is disabled for a switched-to turn with attachments",
+      (() => {
+        const btn = chatsLog().querySelector(".ai-edit");
+        return !!btn && btn.disabled === true && /attachments/i.test(btn.title);
+      })(),
+      (() => {
+        const btn = chatsLog().querySelector(".ai-edit");
+        return btn ? "disabled=" + btn.disabled + " title=" + btn.title
+          : "no control";
+      })());
+
+    // (C11) the legacy single transcript migrates once into a bound chat.
+    await chatsReset();
+    window.localStorage.setItem("nb:aiChat", JSON.stringify({
+      v: 1,
+      conversation: [
+        { role: "user", content: "legacy question" },
+        { role: "assistant", content: "legacy answer" },
+      ],
+      toolFlags: [false, false],
+      lastPrompt: "legacy question",
+    }));
+    window.NB.ai._resetMemoryForTests();
+    window.NB.ai._restoreHistoryForTests(chatsLog());
+    await tick(30);
+    s = store();
+    check("ai chats: the legacy transcript migrates into one bound chat",
+      s.chats.length === 1 && s.chats[0].file === "notes/a.md" &&
+      s.chats[0].title === "legacy question" && s.chats[0].count === 2,
+      "n=" + s.chats.length + " title=" +
+      (s.chats[0] && s.chats[0].title));
+    check("ai chats: the legacy key is removed after the new store writes",
+      window.localStorage.getItem("nb:aiChat") === null, "");
+    check("ai chats: the migrated transcript renders with its tool flags",
+      chatsLog().querySelectorAll(".ai-msg-user").length === 1 &&
+      !!window.NB.ai._getStoredHistoryForTests() &&
+      window.NB.ai._getStoredHistoryForTests().toolFlags.length === 2, "");
+
+    // (C12) over the 4 MiB budget: the write is skipped and flagged, and
+    // the manager reports it. The oversized entry is a tool follow-up, so
+    // nothing is rendered for it.
+    const bigText = "x".repeat(4 * 1024 * 1024 + 600 * 1024);   // ~4.6 MiB
+    window.localStorage.setItem("nb:aiChats", JSON.stringify({
+      v: 1,
+      activeId: "cbig",
+      chats: [{
+        id: "cbig", file: "notes/a.md", title: "Big chat", custom: true,
+        createdAt: 1, updatedAt: 1,
+        conversation: [{ role: "user", content: bigText }],
+        toolFlags: [true], lastPrompt: "",
+      }],
+    }));
+    window.NB.ai._resetMemoryForTests();
+    window.NB.ai._restoreHistoryForTests(chatsLog());
+    await tick(30);
+    window.NB.ai._renameChatForTests("cbig", "Bigger chat");
+    check("ai chats: an over-budget store sets the warning flag",
+      store().overBudget === true, "over=" + store().overBudget);
+    const skippedRaw = window.localStorage.getItem("nb:aiChats");
+    const skippedStore = skippedRaw ? JSON.parse(skippedRaw) : null;
+    check("ai chats: a skipped write leaves the previous payload in storage",
+      !!skippedStore && skippedStore.chats[0].title === "Big chat" &&
+      skippedStore.chats[0].conversation[0].content.length === bigText.length,
+      "title=" + (skippedStore && skippedStore.chats[0].title) +
+      " bytes=" + (skippedRaw ? skippedRaw.length : 0));
+    manageBtn().click();
+    await tick(20);
+    check("ai chats: the manager shows the over-budget warning",
+      manager().querySelector(".ai-cm-warn").hidden === false &&
+      /Over the 4 MB limit/.test(
+        manager().querySelector(".ai-cm-warn").textContent), "");
+    manageBtn().click();
+    await tick(10);
+
+    // (C13) no file open: the select and the create paths are inert.
+    const realGetPath = window.NB.viewer.getPath;
+    window.NB.viewer.getPath = () => "";
+    try {
+      window.NB.evt.emit("file:open", "");
+      await tick(20);
+      check("ai chats: no file open disables the select, New and the composer",
+        pick().disabled === true &&
+        pick().options.length === 1 &&
+        pick().options[0].textContent === "No file open" &&
+        newBtn().disabled === true && manageBtn().disabled === false &&
+        aiInput().disabled === true && emptyTitle() === "No file open.",
+        "opt=" + (pick().options[0] && pick().options[0].textContent) +
+        " empty=" + emptyTitle());
+      manageBtn().click();
+      await tick(10);
+      check("ai chats: the manager's New chat is disabled with no file open",
+        manager().querySelector("[data-test-chat-new-manager]").disabled === true,
+        "");
+      manageBtn().click();
+      await tick(10);
+    } finally {
+      window.NB.viewer.getPath = realGetPath;
+      window.NB.evt.emit("file:open", "notes/a.md");
+      await tick(20);
+    }
+    check("ai chats: reopening a file re-enables the composer and the bar",
+      aiInput().disabled === false && pick().disabled === false &&
+      newBtn().disabled === false, "");
+
+    // (C14) a turn in flight locks the bar; Clear stays live.
+    await chatsReset();
+    const realAiChat = window.NB.api.aiChat;
+    let releaseTurn;
+    const turnGate = new Promise((res) => { releaseTurn = res; });
+    window.NB.api.aiChat = (body) => {
+      aiChatLog.push(body);
+      return turnGate.then(() => undefined);
+    };
+    try {
+      fire("lock the bar");
+      await tick(60);
+      check("ai chats: a turn disables the select, New and Manage",
+        pick().disabled === true && newBtn().disabled === true &&
+        manageBtn().disabled === true &&
+        window.document.querySelector("#ai-view .ai-clear").disabled === false,
+        "pick=" + pick().disabled + " new=" + newBtn().disabled +
+        " manage=" + manageBtn().disabled);
+    } finally {
+      window.NB.api.aiChat = realAiChat;
+      releaseTurn();
+      await tick(120);
+    }
+    check("ai chats: the bar unlocks when the turn ends",
+      pick().disabled === false && newBtn().disabled === false &&
+      manageBtn().disabled === false, "");
+
+    // (C15) a file:open queued behind a pending permission card keeps the
+    // card on screen: the switch waits for the Apply/Reject decision.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    const queuedCardPath = "notes/queued-card.md";
+    delete FILES[queuedCardPath];
+    aiChatStreams.push({ gapMs: 150, frames: [sseFrame(
+      "Creating it.\n\n```nb-tool\n" + JSON.stringify({
+        tool: "write", path: queuedCardPath, content: "# queued\n" }) +
+      "\n```")] });
+    fire("queue a write card");
+    await tick(40);
+    const cardChatId = store().activeId;
+    check("ai chats: precondition, the turn has an active chat",
+      !!cardChatId, "active=" + cardChatId);
+    // Open another file while the stream is still open.
+    await window.NB.tabs.open("notes/b.md");
+    await tick(250);
+    const queuedCard = chatsLog().querySelector("[data-test-write-card]");
+    check("ai chats: a file:open during the turn does not destroy the card",
+      !!queuedCard && !!queuedCard.querySelector(".ai-apply") &&
+      store().activeId === cardChatId &&
+      window.NB.viewer.getPath() === "notes/b.md",
+      "card=" + !!queuedCard + " active=" + store().activeId +
+      " path=" + window.NB.viewer.getPath());
+    check("ai chats: the queued switch waits while the card is pending",
+      bar().querySelector(".ai-chat-flag").hidden === false &&
+      /not open/.test(bar().querySelector(".ai-chat-flag").textContent),
+      "flag=" + bar().querySelector(".ai-chat-flag").textContent.trim());
+    // Resolving the card releases the queued switch.
+    if (queuedCard) queuedCard.querySelector(".ai-apply").click();
+    await tick(250);
+    check("ai chats: applying the card releases the queued file switch",
+      store().activeId === "" &&
+      window.NB.viewer.getPath() === "notes/b.md" &&
+      emptyTitle() === "No chat for this file.",
+      "active=" + store().activeId + " empty=" + emptyTitle());
+    check("ai chats: the applied card created its file",
+      typeof FILES[queuedCardPath] === "string", "");
+    delete FILES[queuedCardPath];
+
+    // (C16) a quota rejection is reported, not silently dropped; the next
+    // successful write clears the warning.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiChatStreams.push([sseFrame("Stored.")]);
+    fire("quota test");
+    await tick(150);
+    const quotaChatId = store().activeId;
+    check("ai chats: precondition, the chat has a stored size",
+      !!quotaChatId && store().bytes > 0,
+      "bytes=" + store().bytes);
+    const storageProto = Object.getPrototypeOf(window.localStorage);
+    const realSetItem = storageProto.setItem;
+    storageProto.setItem = () => { throw new Error("QuotaExceededError"); };
+    try {
+      window.NB.ai._renameChatForTests(quotaChatId, "Quota chat");
+    } finally {
+      storageProto.setItem = realSetItem;
+    }
+    check("ai chats: a quota rejection raises the warning",
+      store().overBudget === true &&
+      window.document.querySelector("#ai-view .ai-cm-warn").hidden === false,
+      "over=" + store().overBudget);
+    window.NB.ai._renameChatForTests(quotaChatId, "Quota chat again");
+    check("ai chats: the next successful write clears the warning",
+      store().overBudget === false &&
+      window.document.querySelector("#ai-view .ai-cm-warn").hidden === true,
+      "over=" + store().overBudget);
+
+    // (C17) Clear is a bar action, scoped to the chat; the panel header
+    // keeps only the title and the collapse button.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiChatStreams.push([sseFrame("Clear me.")]);
+    fire("clear from the bar");
+    await tick(150);
+    const barActs = bar().querySelector(".ai-chat-actions");
+    const clearBarBtn = bar().querySelector(".ai-clear");
+    check("ai chats: Clear is the last action in the chat bar",
+      !!clearBarBtn && barActs.lastElementChild === clearBarBtn &&
+      /nb-icon-broom/.test(clearBarBtn.innerHTML),
+      clearBarBtn ? "last=" + (barActs.lastElementChild === clearBarBtn) +
+        " icon=" + /nb-icon-broom/.test(clearBarBtn.innerHTML) : "no button");
+    check("ai chats: the panel header holds only the title and collapse",
+      !window.document.querySelector("#ai-view .panel-header .ai-clear") &&
+      window.document.querySelectorAll(
+        "#ai-view .panel-header-actions button").length === 1,
+      "header buttons=" + window.document.querySelectorAll(
+        "#ai-view .panel-header-actions button").length);
+    check("ai chats: Clear is enabled for a chat with messages",
+      !!clearBarBtn && clearBarBtn.disabled === false,
+      clearBarBtn ? "disabled=" + clearBarBtn.disabled : "no button");
+    if (clearBarBtn) clearBarBtn.click();
+    await tick(30);
+    check("ai chats: Clear empties the chat, keeps its title, focuses the composer",
+      store().chats.length === 1 && !!chatById(store().activeId) &&
+      chatById(store().activeId).count === 0 &&
+      store().chats[0].title === "clear from the bar" &&
+      clearBarBtn.disabled === true &&
+      window.document.activeElement ===
+        window.document.getElementById("ai-input"),
+      "n=" + store().chats.length + " count=" +
+        (chatById(store().activeId) && chatById(store().activeId).count) +
+        " focus=" + (window.document.activeElement &&
+          window.document.activeElement.id));
+
+    // Leave the panel idle and the storage clean for later blocks.
+    await chatsReset();
   }
 
   console.log("== ai block enrichment ==");
@@ -36341,15 +37019,24 @@ function check(label, cond, extra) {
     // (B4) a restored transcript's assistant fence enriches on mount.
     {
       await beReset();
-      window.localStorage.setItem("nb:aiChat", JSON.stringify({
+      window.localStorage.setItem("nb:aiChats", JSON.stringify({
         v: 1,
-        conversation: [
-          { role: "user", content: "blocks: restored prompt" },
-          { role: "assistant",
-            content: "Restored diagram:\n\n```mermaid\ngraph TD; R-->S;\n```\n" },
-        ],
-        toolFlags: [false, false],
-        lastPrompt: "blocks: restored prompt",
+        activeId: "cb4",
+        chats: [{
+          id: "cb4",
+          file: window.NB.viewer.getPath() || "",
+          title: "blocks: restored prompt",
+          custom: true,
+          createdAt: 1,
+          updatedAt: 1,
+          conversation: [
+            { role: "user", content: "blocks: restored prompt" },
+            { role: "assistant",
+              content: "Restored diagram:\n\n```mermaid\ngraph TD; R-->S;\n```\n" },
+          ],
+          toolFlags: [false, false],
+          lastPrompt: "blocks: restored prompt",
+        }],
       }));
       const before = beLog().querySelectorAll(".mermaid-container").length;
       window.NB.ai._resetMemoryForTests();

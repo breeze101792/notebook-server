@@ -31,6 +31,13 @@
  * full history (system + past turns + tool records), so follow-up
  * questions keep context without the model re-reading files.
  *
+ * Chats: the conversation is the ACTIVE CHAT's transcript. Each chat is
+ * bound to the note it was started from and stored in one browser-local
+ * key (`nb:aiChats`); a bar above the provider row picks the chat and a
+ * manager view lists, renames and deletes them. There is no server API
+ * and no server persistence for chats -- switching swaps the live array,
+ * and the system prompt names the active chat's file.
+ *
  * Regenerate: once a turn finishes (success, error, or stop) the newest
  * assistant bubble carries a "↻ Regenerate" footer button. regenerate()
  * trims the conversation back to the latest genuine user turn and re-runs
@@ -71,6 +78,8 @@
     '<polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>';
   const AI_EDIT_TITLE = "Edit your last question and resend";
   const AI_EDIT_DRAFT_TITLE = "Clear the draft and attachments first";
+  const AI_EDIT_ATTACH_LOST_TITLE =
+    "Attachments cannot be restored after switching chats, so this turn cannot be re-edited";
 
   /* Regenerate re-sends the trimmed turn, so without a hint the model
    * tends to answer the same question the same way. The hint rides the
@@ -143,21 +152,35 @@
     ".png", ".jpg", ".jpeg", ".webp", ".gif",
   ];
 
-  /* Chat history survives a reload through localStorage. The key follows
-   * the nb:tableView / nb:windowGeometry convention; the payload is
-   * versioned and toolFlags is parallel to the conversation so restored
-   * tool follow-ups keep their structural tag. An over-size write drops
-   * image data URLs (rewritten to a text placeholder) rather than
-   * exhausting the quota, and is skipped entirely if it still doesn't
-   * fit. */
-  const AI_HISTORY_KEY = "nb:aiChat";
-  const AI_HISTORY_VERSION = 1;
-  const AI_HISTORY_MAX_BYTES = 4 * 1024 * 1024;
-  const AI_HISTORY_IMAGE_PLACEHOLDER = "[image not saved in history]";
+  /* Per-file chats survive a reload through ONE browser-local store. The
+   * key follows the nb:tableView / nb:windowGeometry convention; the
+   * payload is versioned and each chat carries a toolFlags array parallel
+   * to its conversation, so a restored tool follow-up keeps its
+   * structural tag. The whole store shares one 4 MiB budget: over it,
+   * image data URLs are rewritten to a text placeholder (other chats
+   * oldest first, then the active one) rather than exhausting the quota,
+   * and the write is skipped entirely if it still doesn't fit. A chat is
+   * never deleted to free space. The legacy single transcript
+   * (`nb:aiChat`) is migrated once and then removed. */
+  const AI_CHATS_KEY = "nb:aiChats";
+  const AI_CHATS_LEGACY_KEY = "nb:aiChat";
+  const AI_CHATS_VERSION = 1;
+  const AI_CHATS_MAX_BYTES = 4 * 1024 * 1024;
+  const AI_CHATS_MB = 1024 * 1024;
+  const AI_CHATS_IMAGE_PLACEHOLDER = "[image not saved in history]";
+  const AI_CHATS_DEFAULT_TITLE = "New chat";
+  const AI_CHATS_IMPORTED_TITLE = "Imported chat";
+  const AI_CHATS_UNFILED = "Unfiled";
+  const AI_CHATS_TITLE_MAX = 48;
+  /* The id is interpolated into a CSS attribute selector, so it is
+   * validated on the way in rather than escaped at every use. */
+  const AI_CHATS_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
   /* Substring of the tool-loop's "awaiting user approval" follow-up; a
    * restored transcript whose last entry carries it gets an abandoned
-   * outcome (the permission card is gone after reload). */
+   * outcome (the permission card is gone after reload). The ledger prefix
+   * keeps that rewrite from recognising its own output on the next load. */
   const AI_ABANDONED_MARK = "awaiting user approval";
+  const AI_TOOL_RESULT_MARK = "(tool result)";
 
   /* ------------------------------------------------------------------ *
    * nb-edit parsing (user-facing proposal cards) + nb-tool blocks
@@ -492,8 +515,12 @@
   function removeActions(card) {
     const a = card.querySelector(".ai-edit-actions");
     if (a) a.remove();
-    /* Resolving a permission card may unblock the turn controls. */
+    /* Resolving a permission card may unblock the turn controls and a
+     * file:open that arrived while the card awaited the decision. */
     updateTurnDisabled();
+    if (mountChatUi && mountChatUi.flushFileSwitch) {
+      mountChatUi.flushFileSwitch();
+    }
   }
 
   function applyButtons(card, applyLabel, onApply, onReject) {
@@ -880,15 +907,39 @@
   let enrichTimer = 0;
   let enrichTarget = null;
 
+  /* The chat store: every per-file chat plus the active id. `conversation`
+   * above is the ACTIVE chat's live array; the other chats keep their own.
+   * `activeChatSig` is the active chat's persisted signature, so a write
+   * bumps updatedAt only when the conversation or the title changed --
+   * never when only activeId changes. */
+  let chatStore = emptyChatStore();
+  let storeOverBudget = false;
+  /* Bytes of the last successful (possibly staged) write, so the manager's
+   * line needs no serialization and can never claim more than the budget
+   * while writes still land. */
+  let lastStoreBytes = 0;
+  let activeChatSig = "";
+  /* The mounted panel's chat DOM (null before mount) and its log reset. */
+  let mountChatUi = null;
+  let mountResetLog = null;
+
   function currentPath() {
     return NB.viewer.getPath() || "";
+  }
+
+  /* The file a turn is about: the active chat's, falling back to the
+   * viewer's when the chat is unfiled or there is no active chat. */
+  function chatPath() {
+    const chat = activeChat();
+    if (chat && chat.file) return chat.file;
+    return currentPath();
   }
 
   function systemPrompt() {
     /* The agentic contract: tool syntax, capability boundaries, the
      * write-vs-patch rule, and the current-file context. Rebuilt when
      * the active file changes. */
-    const path = currentPath();
+    const path = chatPath();
     return [
       "You are the built-in assistant of a markdown notebook web app.",
       "The user's current file is: " + (path || "(none open)"),
@@ -955,8 +1006,6 @@
       : "";
   }
 
-  function systemCacheKey() { return currentPath(); }
-
   function getSystem() {
     /* Return a chat message ({role, content}), not a bare string. A retry
      * gets the retry instruction appended; it is not cached, because the
@@ -986,7 +1035,7 @@
   function recordToolOutcome(t, status, note) {
     pushToolMessage({
       role: "user",
-      content: "(tool result) " + t.tool + " -> " + note,
+      content: AI_TOOL_RESULT_MARK + " " + t.tool + " -> " + note,
     });
   }
 
@@ -1003,6 +1052,24 @@
     return -1;
   }
 
+  /* The chip list Edit restores lives in memory for one session, so a
+   * turn restored from storage -- or one belonging to a chat that is not
+   * active -- has its attachments in the conversation but not in
+   * `lastSentFiles`. Edit is disabled for such a turn rather than
+   * silently dropping the attachments on the resend. */
+  function lastTurnAttachmentsLost() {
+    if (lastSentFiles.length) return false;
+    const idx = lastUserTurnIndex();
+    if (idx < 0) return false;
+    const entry = conversation[idx];
+    if (!entry) return false;
+    if (Array.isArray(entry.content)) {
+      return entry.content.some((p) => p && p.type === "image_url");
+    }
+    return typeof entry.content === "string" &&
+      entry.content.indexOf(AI_ATTACH_MARK_OPEN) >= 0;
+  }
+
   /* An image-bearing turn uses a content-part array with image_url parts. */
   function turnHasImages(entry) {
     return !!entry && Array.isArray(entry.content) &&
@@ -1010,57 +1077,597 @@
   }
 
   /* ------------------------------------------------------------------ *
-   * Persistence (chat history survives a reload)
+   * Persistence (per-file chats survive a reload)
    * ------------------------------------------------------------------ */
-  /* The transcript is text and small except when a turn carries image
-   * data URLs, which can be megabytes. persistHistory() is the single
-   * write chokepoint: the size guard rewrites image parts to a text
-   * placeholder before storing, and skips the write when even the
-   * reduced copy is too large. Nothing here may throw -- a full or
-   * disabled localStorage only means the chat is not restored. */
-  function persistHistory() {
-    try {
-      const payload = {
-        v: AI_HISTORY_VERSION,
-        conversation: conversation,
-        toolFlags: conversation.map((m) => toolMessages.has(m)),
-        lastPrompt: typeof lastSentPrompt === "string" ? lastSentPrompt : "",
-      };
-      let serialized = JSON.stringify(payload);
-      if (wireByteSize(serialized) > AI_HISTORY_MAX_BYTES) {
-        payload.conversation = conversation.map(reduceHistoryEntry);
-        serialized = JSON.stringify(payload);
-      }
-      if (wireByteSize(serialized) > AI_HISTORY_MAX_BYTES) return;
-      localStorage.setItem(AI_HISTORY_KEY, serialized);
-    } catch (e) {
-      /* Quota exceeded or storage unavailable: keep any previous value. */
+  /* One versioned store holds every chat: the active id plus one record
+   * per chat (file, title, timestamps, conversation, parallel toolFlags,
+   * last prompt). The active chat's conversation is the module-level
+   * `conversation` array itself, so a turn mutates the chat directly;
+   * switching swaps the live array. persistHistory() is the single write
+   * chokepoint and always syncs the active chat first, because regenerate
+   * and edit reassign `conversation` with slice(). Over the 4 MiB budget
+   * it rewrites image data URLs to a placeholder -- other chats oldest
+   * first, then the active one -- and skips the write if even that does
+   * not fit, leaving a flag the manager reports. Nothing here may throw:
+   * a full or disabled localStorage only means the chats are not
+   * restored. */
+
+  function emptyChatStore() {
+    return { v: AI_CHATS_VERSION, activeId: "", chats: [] };
+  }
+
+  function newChatId() {
+    return "c" + Date.now().toString(36) +
+      Math.random().toString(36).slice(2, 8);
+  }
+
+  function makeChatRecord(file, now) {
+    return {
+      id: newChatId(),
+      file: file || "",
+      title: AI_CHATS_DEFAULT_TITLE,
+      custom: false,
+      createdAt: now,
+      updatedAt: now,
+      conversation: [],
+      toolFlags: [],
+      lastPrompt: "",
+    };
+  }
+
+  function activeChat() {
+    for (const chat of chatStore.chats) {
+      if (chat.id === chatStore.activeId) return chat;
     }
+    return null;
   }
 
-  /* An over-size entry loses its image_url parts; role and text parts
-   * stay, so the restored turn still reads as the user's words. */
-  function reduceHistoryEntry(m) {
-    if (!m || !Array.isArray(m.content)) return m;
-    let changed = false;
-    const content = m.content.map((p) => {
-      if (p && p.type === "image_url") {
-        changed = true;
-        return { type: "text", text: AI_HISTORY_IMAGE_PLACEHOLDER };
-      }
-      return p;
-    });
-    return changed ? Object.assign({}, m, { content }) : m;
-  }
-
-  function clearStoredHistory() {
-    try { localStorage.removeItem(AI_HISTORY_KEY); } catch (e) { /* noop */ }
+  function findChat(id) {
+    for (const chat of chatStore.chats) {
+      if (chat.id === id) return chat;
+    }
+    return null;
   }
 
   function isHistoryEntry(m) {
     return !!m && typeof m === "object" &&
       (m.role === "user" || m.role === "assistant") &&
       (typeof m.content === "string" || Array.isArray(m.content));
+  }
+
+  /* Strict shape check: a store that fails it is dropped whole, exactly
+   * like the single-transcript key before it. */
+  function isChatRecord(c) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) return false;
+    if (typeof c.id !== "string" || !AI_CHATS_ID_RE.test(c.id)) return false;
+    if (typeof c.file !== "string") return false;
+    if (typeof c.title !== "string" || !c.title) return false;
+    if (typeof c.custom !== "boolean") return false;
+    if (!Number.isFinite(c.createdAt)) return false;
+    if (!Number.isFinite(c.updatedAt)) return false;
+    if (!Array.isArray(c.conversation)) return false;
+    if (!c.conversation.every(isHistoryEntry)) return false;
+    if (c.toolFlags != null && !Array.isArray(c.toolFlags)) return false;
+    if (c.lastPrompt != null && typeof c.lastPrompt !== "string") return false;
+    return true;
+  }
+
+  function isValidChatStore(s) {
+    if (!s || typeof s !== "object" || Array.isArray(s)) return false;
+    if (s.v !== AI_CHATS_VERSION) return false;
+    if (typeof s.activeId !== "string") return false;
+    if (!Array.isArray(s.chats)) return false;
+    return s.chats.every(isChatRecord);
+  }
+
+  /* Rebuild a stored record into clean {role, content} entries and tag the
+   * tool follow-ups in the shared WeakSet, so switching back to this chat
+   * keeps Regenerate/Edit correct. Anything extra a tampered payload
+   * carried must never reach the wire body. */
+  function hydrateChatRecord(record) {
+    const chat = {
+      id: record.id,
+      file: record.file,
+      title: record.title,
+      custom: record.custom === true,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      conversation: [],
+      toolFlags: [],
+      lastPrompt: typeof record.lastPrompt === "string" ? record.lastPrompt : "",
+    };
+    const flags = Array.isArray(record.toolFlags) ? record.toolFlags : [];
+    for (let i = 0; i < record.conversation.length; i++) {
+      const src = record.conversation[i];
+      const entry = { role: src.role, content: src.content };
+      chat.conversation.push(entry);
+      if (flags[i] === true) toolMessages.add(entry);
+    }
+    resolveAbandonedIn(chat.conversation);
+    chat.toolFlags = chat.conversation.map((m) => toolMessages.has(m));
+    return chat;
+  }
+
+  /* A reload can land while a write/patch card awaits Apply/Reject: the
+   * last entry is the "awaiting user approval" follow-up but the card is
+   * gone, so the model would wait forever. Record the abandonment once per
+   * chat, as a tagged tool result. Only tool entries are appended, so a
+   * chat can never gain the marker twice. */
+  function resolveAbandonedIn(list) {
+    const last = list[list.length - 1];
+    if (!last || !toolMessages.has(last)) return;
+    if (typeof last.content !== "string" ||
+        last.content.indexOf(AI_ABANDONED_MARK) < 0) return;
+    /* The abandonment entry itself carries the same words; appending it
+     * again on the next load would loop. */
+    if (last.content.indexOf(AI_TOOL_RESULT_MARK) === 0) return;
+    const entry = {
+      role: "user",
+      content: AI_TOOL_RESULT_MARK + " " + AI_ABANDONED_MARK +
+        ": the page was reloaded before the user decided",
+    };
+    list.push(entry);
+    toolMessages.add(entry);
+  }
+
+  function clearStoredChats() {
+    try { localStorage.removeItem(AI_CHATS_KEY); } catch (e) { /* noop */ }
+  }
+
+  function clearLegacyHistory() {
+    try { localStorage.removeItem(AI_CHATS_LEGACY_KEY); } catch (e) { /* noop */ }
+  }
+
+  function readStoredChats() {
+    try { return localStorage.getItem(AI_CHATS_KEY); } catch (e) { return null; }
+  }
+
+  /* Load the store, migrating the legacy single transcript once. An
+   * invalid payload drops the key and starts empty. */
+  function loadChatStore() {
+    chatStore = emptyChatStore();
+    storeOverBudget = false;
+    lastStoreBytes = 0;
+    const raw = readStoredChats();
+    if (raw !== null) {
+      let parsed = null;
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+      if (!isValidChatStore(parsed)) {
+        clearStoredChats();
+        return;
+      }
+      const hydrated = parsed.chats.map(hydrateChatRecord);
+      const ids = new Set();
+      for (const chat of hydrated) {
+        if (ids.has(chat.id)) {   // duplicate id: ambiguous reference
+          clearStoredChats();
+          return;
+        }
+        ids.add(chat.id);
+      }
+      chatStore = {
+        v: AI_CHATS_VERSION,
+        activeId: parsed.activeId,
+        chats: hydrated,
+      };
+      if (chatStore.activeId && !ids.has(chatStore.activeId)) {
+        chatStore.activeId = "";
+      }
+      lastStoreBytes = wireByteSize(raw);
+      return;
+    }
+    migrateLegacyChat();
+  }
+
+  /* `nb:aiChat` held one transcript with no file binding. Import it as a
+   * chat bound to the file that is open now, titled from its first
+   * prompt, and drop the old key only after the new store has written. */
+  function migrateLegacyChat() {
+    let raw = null;
+    try { raw = localStorage.getItem(AI_CHATS_LEGACY_KEY); } catch (e) { raw = null; }
+    if (raw === null) return;
+    let legacy = null;
+    try { legacy = JSON.parse(raw); } catch (e) { legacy = null; }
+    if (!legacy || legacy.v !== AI_CHATS_VERSION ||
+        !Array.isArray(legacy.conversation) ||
+        !legacy.conversation.every(isHistoryEntry)) {
+      clearLegacyHistory();
+      return;
+    }
+    const now = Date.now();
+    const chat = hydrateChatRecord({
+      id: newChatId(),
+      file: currentPath(),
+      title: AI_CHATS_DEFAULT_TITLE,
+      custom: false,
+      createdAt: now,
+      updatedAt: now,
+      conversation: legacy.conversation,
+      toolFlags: Array.isArray(legacy.toolFlags) ? legacy.toolFlags : [],
+      lastPrompt: typeof legacy.lastPrompt === "string" ? legacy.lastPrompt : "",
+    });
+    const text = firstUserText(chat.conversation);
+    chat.title = text ? deriveChatTitle(text) : AI_CHATS_IMPORTED_TITLE;
+    chatStore = { v: AI_CHATS_VERSION, activeId: chat.id, chats: [chat] };
+    writeChatStore();
+    if (!storeOverBudget && readStoredChats() !== null) clearLegacyHistory();
+  }
+
+  function serializeChatStore(chats) {
+    return JSON.stringify({
+      v: AI_CHATS_VERSION,
+      activeId: chatStore.activeId,
+      chats: chats,
+    });
+  }
+
+  function refreshChatUi() {
+    if (mountChatUi) mountChatUi.refreshChats();
+  }
+
+  /* An over-size chat loses its image_url parts; role and text parts
+   * stay, so the restored turn still reads as the user's words. The copy
+   * is shallow: only the entries that changed are new objects, so the
+   * live conversation keeps its images. */
+  function reduceHistoryEntry(m) {
+    if (!m || !Array.isArray(m.content)) return m;
+    let changed = false;
+    const content = m.content.map((p) => {
+      if (p && p.type === "image_url") {
+        changed = true;
+        return { type: "text", text: AI_CHATS_IMAGE_PLACEHOLDER };
+      }
+      return p;
+    });
+    return changed ? Object.assign({}, m, { content }) : m;
+  }
+
+  function reduceChatImages(chat) {
+    return Object.assign({}, chat, {
+      conversation: chat.conversation.map(reduceHistoryEntry),
+    });
+  }
+
+  function reduceStoredChatImages(chats, id) {
+    return chats.map((c) => (c.id === id ? reduceChatImages(c) : c));
+  }
+
+  /* `bytes` is the serialized size the caller already computed, cached as
+   * the storage line's number -- it reports the last write that landed,
+   * which may be a staged (image-reduced) copy. */
+  function commitChatStore(serialized, bytes) {
+    try {
+      localStorage.setItem(AI_CHATS_KEY, serialized);
+      storeOverBudget = false;
+      lastStoreBytes = bytes;
+    } catch (e) {
+      /* Quota exceeded or storage unavailable: the previous value stays,
+       * and the manager says new messages may not be saved. */
+      storeOverBudget = true;
+    }
+    refreshChatUi();
+  }
+
+  /* Write the whole store. A store with no chats removes the key (the
+   * legacy Clear behaviour, now the result of deleting the last chat).
+   * The budget is checked against the serialized payload, so the
+   * manager's storage line and its warning always agree. */
+  function writeChatStore() {
+    if (!historyVisible()) return;
+    if (!chatStore.chats.length) {
+      clearStoredChats();
+      storeOverBudget = false;
+      lastStoreBytes = 0;
+      refreshChatUi();
+      return;
+    }
+    let chats = chatStore.chats.slice();
+    let serialized = serializeChatStore(chats);
+    let bytes = wireByteSize(serialized);
+    if (bytes <= AI_CHATS_MAX_BYTES) {
+      commitChatStore(serialized, bytes);
+      return;
+    }
+    const others = chatStore.chats
+      .filter((c) => c.id !== chatStore.activeId)
+      .sort((a, b) => a.updatedAt - b.updatedAt);
+    for (const chat of others) {
+      chats = reduceStoredChatImages(chats, chat.id);
+      serialized = serializeChatStore(chats);
+      bytes = wireByteSize(serialized);
+      if (bytes <= AI_CHATS_MAX_BYTES) {
+        commitChatStore(serialized, bytes);
+        return;
+      }
+    }
+    chats = reduceStoredChatImages(chats, chatStore.activeId);
+    serialized = serializeChatStore(chats);
+    bytes = wireByteSize(serialized);
+    if (bytes <= AI_CHATS_MAX_BYTES) {
+      commitChatStore(serialized, bytes);
+      return;
+    }
+    storeOverBudget = true;
+    refreshChatUi();
+  }
+
+  function chatSignature(chat) {
+    return JSON.stringify(chat.conversation) + "\u0000" + chat.title;
+  }
+
+  /* The text of one entry: a string turn, or the joined text parts of an
+   * image-bearing turn. */
+  function entryText(m) {
+    if (!m) return "";
+    if (typeof m.content === "string") return m.content;
+    if (Array.isArray(m.content)) {
+      return m.content
+        .filter((p) => p && p.type === "text")
+        .map((p) => p.text || "")
+        .join("");
+    }
+    return "";
+  }
+
+  /* The first genuine user turn's text, with attachment blocks stripped.
+   * Tool follow-ups are skipped: they are not the user's words. */
+  function firstUserText(list) {
+    for (const m of list) {
+      if (!m || m.role !== "user" || toolMessages.has(m)) continue;
+      const text = stripAttachBlocks(entryText(m)).trim();
+      if (text) return text;
+    }
+    return "";
+  }
+
+  /* First line, trimmed, at most 48 characters, one ellipsis when cut. */
+  function deriveChatTitle(text) {
+    const line = String(text || "").trim().split("\n")[0].trim();
+    if (line.length <= AI_CHATS_TITLE_MAX) return line;
+    return line.slice(0, AI_CHATS_TITLE_MAX - 1) + "…";
+  }
+
+  function deriveChatTitleIfNeeded(chat) {
+    if (!chat || chat.custom) return;
+    if (chat.title !== AI_CHATS_DEFAULT_TITLE) return;
+    const text = firstUserText(chat.conversation);
+    if (text) chat.title = deriveChatTitle(text);
+  }
+
+  /* Assign the live conversation from the active chat and reset every
+   * per-chat piece of module state. The signature is left null: a switch
+   * writes only activeId, and the next content persist bumps once and
+   * records it. That keeps a chat switch from serializing the whole
+   * transcript just to compare it. */
+  function applyActiveChat() {
+    const chat = activeChat();
+    conversation = chat ? chat.conversation : [];
+    lastSentPrompt = chat && typeof chat.lastPrompt === "string"
+      ? chat.lastPrompt : "";
+    lastSentFiles = [];
+    systemCache = null;
+    regenerating = false;
+    activeChatSig = null;
+  }
+
+  /* Sync the ACTIVE chat and write the whole store. updatedAt moves only
+   * when the conversation or the title changed, so persisting a switch
+   * (a new activeId) leaves every timestamp alone. */
+  function persistHistory() {
+    if (!historyVisible()) return;
+    const chat = activeChat();
+    if (chat) {
+      chat.conversation = conversation;
+      chat.toolFlags = conversation.map((m) => toolMessages.has(m));
+      chat.lastPrompt = typeof lastSentPrompt === "string" ? lastSentPrompt : "";
+      deriveChatTitleIfNeeded(chat);
+      /* Every caller of persistHistory has changed the content or the
+       * title; the signature only suppresses a redundant timestamp bump. */
+      const sig = chatSignature(chat);
+      if (activeChatSig === null || sig !== activeChatSig) {
+        activeChatSig = sig;
+        chat.updatedAt = Date.now();
+      }
+    }
+    writeChatStore();
+  }
+
+  /* Persist a store whose only change is activeId: no signature, no
+   * conversation sync, no timestamp. */
+  function persistActiveChatId() {
+    if (!historyVisible()) return;
+    writeChatStore();
+  }
+
+  function switchChat(id) {
+    const chat = findChat(id);
+    if (!chat) return false;
+    chatStore.activeId = chat.id;
+    applyActiveChat();
+    persistActiveChatId();
+    return true;
+  }
+
+  function newestChatForFile(path) {
+    let best = null;
+    for (const chat of chatStore.chats) {
+      if (chat.file !== path) continue;
+      if (!best || chat.updatedAt > best.updatedAt) best = chat;
+    }
+    return best;
+  }
+
+  /* Follow the viewer: the file's newest chat, or no active chat. */
+  function switchToFile(path) {
+    const next = path ? newestChatForFile(path) : null;
+    chatStore.activeId = next ? next.id : "";
+    applyActiveChat();
+    persistActiveChatId();
+    showActiveChat();
+  }
+
+  /* A chat cannot be created without a file: it would have no binding. */
+  function createChatForActiveFile() {
+    const file = currentPath();
+    if (!file) return null;
+    const chat = makeChatRecord(file, Date.now());
+    chatStore.chats.push(chat);
+    chatStore.activeId = chat.id;
+    applyActiveChat();
+    persistHistory();
+    return chat;
+  }
+
+  function renameChat(id, title) {
+    const chat = findChat(id);
+    if (!chat) return false;
+    const clean = deriveChatTitle(title);
+    if (!clean) return false;
+    chat.title = clean;
+    chat.custom = true;
+    chat.updatedAt = Date.now();
+    if (chat.id === chatStore.activeId) activeChatSig = chatSignature(chat);
+    writeChatStore();
+    return true;
+  }
+
+  /* Deleting the active chat falls back to the open file's newest
+   * remaining chat, else to no active chat. Deleting the last one removes
+   * the key. */
+  function deleteChat(id) {
+    const idx = chatStore.chats.findIndex((c) => c.id === id);
+    if (idx < 0) return false;
+    const wasActive = chatStore.activeId === id;
+    chatStore.chats.splice(idx, 1);
+    if (wasActive) {
+      const path = currentPath();
+      const next = path ? newestChatForFile(path) : null;
+      chatStore.activeId = next ? next.id : "";
+      applyActiveChat();
+      /* The chips and the draft belonged to the chat that is gone. */
+      attachReset();
+      composerSetPrompt("");
+    }
+    writeChatStore();
+    if (wasActive) showActiveChat();
+    else refreshChatUi();
+    return true;
+  }
+
+  /* Re-render the visible transcript for the active chat. */
+  function showActiveChat() {
+    const log = mountLog;
+    if (log) {
+      resetLogDom();
+      if (enrichTimer) {
+        window.clearTimeout(enrichTimer);
+        enrichTimer = 0;
+      }
+      enrichTarget = null;
+      removeTurnControls(log);
+      renderRestoredHistory(log);
+    }
+    refreshChatUi();
+    if (mountChatUi) {
+      mountChatUi.syncLogEmpty();
+      mountChatUi.syncSend();
+    }
+  }
+
+  function resetLogDom() {
+    if (mountResetLog) { mountResetLog(); return; }
+    if (mountLog) mountLog.innerHTML = "";
+  }
+
+  /* --- chat store presentation -------------------------------------- *
+   * Grouping, ordering, sizes and recency are shared by the bar's select
+   * and the manager's list, so both read one function and can never
+   * disagree. */
+
+  /* Current file first, then every other file by its newest chat, then
+   * Unfiled. Rows inside a group are newest first. */
+  function chatGroups() {
+    const path = currentPath();
+    const byFile = new Map();
+    for (const chat of chatStore.chats) {
+      const key = chat.file || "";
+      if (!byFile.has(key)) byFile.set(key, []);
+      byFile.get(key).push(chat);
+    }
+    const sortRows = (rows) => rows.sort((a, b) => b.updatedAt - a.updatedAt);
+    const groups = [];
+    if (path && byFile.has(path)) {
+      groups.push({
+        key: path,
+        label: path,
+        current: true,
+        rows: sortRows(byFile.get(path)),
+      });
+      byFile.delete(path);
+    }
+    const others = [];
+    for (const [file, rows] of byFile) {
+      if (!file) continue;
+      others.push({ key: file, label: file, current: false,
+        rows: sortRows(rows) });
+    }
+    others.sort((a, b) => b.rows[0].updatedAt - a.rows[0].updatedAt);
+    groups.push(...others);
+    if (byFile.has("")) {
+      groups.push({ key: "", label: AI_CHATS_UNFILED, current: false,
+        rows: sortRows(byFile.get("")) });
+    }
+    return groups;
+  }
+
+  /* The shared budget as copy: "4 MB", with one decimal only when the
+   * constant is not a whole number of MiB. */
+  function chatBudgetLabel() {
+    const mb = AI_CHATS_MAX_BYTES / AI_CHATS_MB;
+    const rounded = Math.round(mb * 10) / 10;
+    return (Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)) +
+      " MB";
+  }
+
+  /* `n < 1024` -> `n B`; under a MiB -> `n KB`; else `n.n MB` (rounded
+   * down, one decimal). */
+  function formatStoreSize(bytes) {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return Math.floor(bytes / 1024) + " KB";
+    const mb = Math.floor((bytes / (1024 * 1024)) * 10) / 10;
+    return mb.toFixed(1) + " MB";
+  }
+
+  const AI_MONTHS = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+
+  /* now / 5m / 3h / yesterday / 4d / 12 Mar / 12 Mar 2025 */
+  function formatRelativeTime(ts) {
+    const now = Date.now();
+    const diff = Math.max(0, now - ts);
+    const minute = 60 * 1000;
+    const hour = 60 * minute;
+    const day = 24 * hour;
+    if (diff < minute) return "now";
+    if (diff < hour) return Math.floor(diff / minute) + "m";
+    if (diff < day) return Math.floor(diff / hour) + "h";
+    if (diff < 2 * day) return "yesterday";
+    if (diff < 7 * day) return Math.floor(diff / day) + "d";
+    const d = new Date(ts);
+    const label = d.getDate() + " " + AI_MONTHS[d.getMonth()];
+    return d.getFullYear() === new Date(now).getFullYear()
+      ? label : label + " " + d.getFullYear();
+  }
+
+  /* Messages the user can see: tool follow-ups were never rendered. */
+  function chatMessageCount(chat) {
+    let n = 0;
+    for (const m of chat.conversation) {
+      if (!toolMessages.has(m)) n++;
+    }
+    return n;
   }
 
   /* The AI API is admin-only and the transcript can hold note contents the
@@ -1071,56 +1678,29 @@
     return !(s && s.enabled && s.role !== "admin");
   }
 
-  /* A reload can land while a write/patch CARD awaits Apply/Reject: the
-   * stored transcript ends with the "awaiting user approval" follow-up but
-   * the card is gone after reload, so the model would wait forever. Record
-   * the abandonment once so the transcript stays honest. */
-  function resolveAbandonedPending() {
-    const last = conversation[conversation.length - 1];
-    if (!last || !toolMessages.has(last)) return;
-    if (typeof last.content !== "string" ||
-        last.content.indexOf(AI_ABANDONED_MARK) < 0) return;
-    pushToolMessage({
-      role: "user",
-      content: "(tool result) " + AI_ABANDONED_MARK +
-        ": the page was reloaded before the user decided",
-    });
-  }
-
-  /* Rebuild the transcript and the visible log from a stored payload. An
-   * invalid shape drops the key and is ignored. The system prompt is not
-   * persisted (it names the current file), so it is rebuilt fresh. */
+  /* Rebuild the store and the visible transcript from storage. An invalid
+   * store drops the key and starts empty; a legacy transcript migrates
+   * first. The system prompt is not persisted (it names a file), so it is
+   * rebuilt fresh. */
   function restoreHistory(log) {
     if (!historyVisible()) return;
-    let raw = null;
-    try { raw = localStorage.getItem(AI_HISTORY_KEY); } catch (e) { raw = null; }
-    if (!raw) return;
-    let payload = null;
-    try { payload = JSON.parse(raw); } catch (e) { payload = null; }
-    if (!payload || payload.v !== AI_HISTORY_VERSION ||
-        !Array.isArray(payload.conversation) ||
-        !payload.conversation.every(isHistoryEntry)) {
-      clearStoredHistory();
-      return;
+    loadChatStore();
+    applyActiveChat();
+    if (log) {
+      resetLogDom();
+      if (enrichTimer) {
+        window.clearTimeout(enrichTimer);
+        enrichTimer = 0;
+      }
+      enrichTarget = null;
+      renderRestoredHistory(log);
     }
-    const flags = Array.isArray(payload.toolFlags) ? payload.toolFlags : [];
-    conversation = [];
-    for (let i = 0; i < payload.conversation.length; i++) {
-      /* Rebuild clean {role, content} entries: anything extra a tampered
-       * payload carried must never reach the wire body. */
-      const entry = {
-        role: payload.conversation[i].role,
-        content: payload.conversation[i].content,
-      };
-      conversation.push(entry);
-      if (flags[i] === true) toolMessages.add(entry);
-    }
-    lastSentPrompt = typeof payload.lastPrompt === "string"
-      ? payload.lastPrompt : "";
-    lastSentFiles = [];
-    resolveAbandonedPending();   // persists on its own via pushToolMessage
-    if (log) renderRestoredHistory(log);
     invalidateSystem();
+    refreshChatUi();
+    if (mountChatUi) {
+      mountChatUi.syncLogEmpty();
+      mountChatUi.syncSend();
+    }
   }
 
   /* Re-render the bubbles in order. Tool follow-ups are skipped (they were
@@ -1247,10 +1827,12 @@
       pre.textContent = text;
       div.appendChild(pre);
       log.appendChild(div);
+      if (mountChatUi) mountChatUi.syncLogEmpty();
       scrollLog(log);
       return div;
     }
     log.appendChild(div);
+    if (mountChatUi) mountChatUi.syncLogEmpty();
     scrollLog(log);
     return div;
   }
@@ -1506,6 +2088,7 @@
       ", limit " + (AI_ATTACH_MAX_WIRE_BYTES / AI_ATTACH_MB) +
       " MB); remove attachments or Clear the conversation.";
     log.appendChild(errEl);
+    if (mountChatUi) mountChatUi.syncLogEmpty();
     scrollLog(log);
   }
 
@@ -1593,8 +2176,10 @@
     const hasDraft = mountDraftNonEmpty() || mountHasPendingAttachments();
     if (regenBtn) regenBtn.disabled = busy;
     if (editBtn) {
-      editBtn.disabled = busy || hasDraft;
-      editBtn.title = hasDraft ? AI_EDIT_DRAFT_TITLE : AI_EDIT_TITLE;
+      const attachLost = lastTurnAttachmentsLost();
+      editBtn.disabled = busy || hasDraft || attachLost;
+      editBtn.title = hasDraft ? AI_EDIT_DRAFT_TITLE
+        : attachLost ? AI_EDIT_ATTACH_LOST_TITLE : AI_EDIT_TITLE;
     }
   }
 
@@ -1667,6 +2252,8 @@
     if (sendFiles.length) appendUserFiles(userBubble, sendFiles);
     conversation.push({ role: "user", content: userContent });
     persistHistory();
+    /* The turn now has content: Clear must be live (it is the abort). */
+    if (mountChatUi) mountChatUi.syncSend();
     await runToolLoop(log, ui);
   }
 
@@ -1826,6 +2413,7 @@
     /* Mirror the button's disabled rule so a direct call cannot silently
      * discard the user's draft or pending attachments. */
     if (mountDraftNonEmpty() || mountHasPendingAttachments()) return;
+    if (lastTurnAttachmentsLost()) return;
     const idx = lastUserTurnIndex();
     if (idx < 0) return;                // no genuine user turn to edit
     clearLastTurnDom(log, true);        // drop the user bubble + its tail
@@ -2226,17 +2814,328 @@
     header.appendChild(title);
     const actions = document.createElement("div");
     actions.className = "panel-header-actions";
+    if (NB.activity && NB.activity.makeCollapseBtn) {
+      actions.appendChild(NB.activity.makeCollapseBtn());
+    }
+    header.appendChild(actions);
+    host.appendChild(header);
+
+    /* ---- chat bar + chat manager (browser-local per-file chats) ------ *
+     * The bar sits above the provider row; the manager replaces the whole
+     * chat group below the panel header. Both are inert in a viewer
+     * session, where the transcript is neither restored nor written. */
+    const stack = document.createElement("div");
+    stack.className = "ai-chat-stack";
+
+    function chatIcon(id) {
+      return '<svg class="icon" aria-hidden="true" focusable="false">' +
+        '<use href="#' + id + '"/></svg>';
+    }
+
+    const chatBar = document.createElement("div");
+    chatBar.className = "ai-chat-bar";
+    chatBar.dataset.testChatBar = "1";
+
+    const chatSelect = document.createElement("select");
+    chatSelect.className = "ai-chat-pick";
+    chatSelect.dataset.testChatSelect = "1";
+    chatSelect.setAttribute("aria-label", "Active chat");
+
+    const chatMeta = document.createElement("div");
+    chatMeta.className = "ai-chat-meta";
+    const chatPathEl = document.createElement("span");
+    chatPathEl.className = "ai-chat-path";
+    const chatFlag = document.createElement("span");
+    chatFlag.className = "ai-chat-flag";
+    chatFlag.hidden = true;
+    chatFlag.innerHTML = chatIcon("nb-icon-warning") + "not open";
+    const chatActions = document.createElement("span");
+    chatActions.className = "ai-chat-actions";
+
+    const newBtn = document.createElement("button");
+    newBtn.type = "button";
+    newBtn.className = "ai-chat-btn";
+    newBtn.dataset.testChatNew = "1";
+    newBtn.setAttribute("aria-label", "New chat");
+    newBtn.title = "New chat";
+    newBtn.innerHTML = chatIcon("nb-icon-plus");
+
+    const manageBtn = document.createElement("button");
+    manageBtn.type = "button";
+    manageBtn.className = "ai-chat-btn";
+    manageBtn.dataset.testChatManage = "1";
+    manageBtn.setAttribute("aria-label", "Manage chats");
+    manageBtn.title = "Manage chats";
+    manageBtn.setAttribute("aria-expanded", "false");
+    manageBtn.setAttribute("aria-controls", "ai-chat-manager");
+    manageBtn.innerHTML = chatIcon("nb-icon-list");
+
     const clearBtn = document.createElement("button");
     clearBtn.type = "button";
-    clearBtn.className = "ai-clear";
-    clearBtn.textContent = "Clear";
-    clearBtn.title = "Clear the conversation (the model forgets context)";
-    clearBtn.addEventListener("click", () => {
+    clearBtn.className = "ai-chat-btn ai-clear";
+    clearBtn.dataset.testChatClear = "1";
+    clearBtn.setAttribute("aria-label", "Clear conversation");
+    clearBtn.title =
+      "Clear the conversation (the assistant forgets this chat's context)";
+    clearBtn.innerHTML = chatIcon("nb-icon-broom");
+    clearBtn.addEventListener("click", onClearChat);
+
+    chatActions.append(newBtn, manageBtn, clearBtn);
+    chatMeta.append(chatPathEl, chatFlag, chatActions);
+    chatBar.append(chatSelect, chatMeta);
+    stack.appendChild(chatBar);
+
+    const manager = document.createElement("div");
+    manager.className = "ai-chat-manager";
+    manager.id = "ai-chat-manager";
+    manager.dataset.testChatManager = "1";
+    manager.setAttribute("role", "region");
+    manager.setAttribute("aria-labelledby", "ai-cm-title");
+    manager.hidden = true;
+
+    const cmHeader = document.createElement("div");
+    cmHeader.className = "ai-cm-header";
+    const cmTitle = document.createElement("h3");
+    cmTitle.className = "ai-cm-title";
+    cmTitle.id = "ai-cm-title";
+    cmTitle.tabIndex = -1;
+    cmTitle.textContent = "Chats";
+    const cmClose = document.createElement("button");
+    cmClose.type = "button";
+    cmClose.className = "ai-chat-btn";
+    cmClose.dataset.testChatClose = "1";
+    cmClose.setAttribute("aria-label", "Close chat manager");
+    cmClose.title = "Close chat manager";
+    cmClose.innerHTML = chatIcon("nb-icon-close");
+    cmHeader.append(cmTitle, cmClose);
+
+    const cmSearchRow = document.createElement("div");
+    cmSearchRow.className = "ai-cm-search";
+    const cmSearchWrap = document.createElement("div");
+    cmSearchWrap.className = "ai-cm-search-wrap";
+    const cmSearch = document.createElement("input");
+    cmSearch.type = "search";
+    cmSearch.className = "ai-cm-search-input";
+    cmSearch.id = "ai-cm-search";
+    cmSearch.dataset.testChatSearch = "1";
+    cmSearch.setAttribute("aria-label", "Search chats");
+    cmSearch.placeholder = "Search chats";
+    const cmSearchClear = document.createElement("button");
+    cmSearchClear.type = "button";
+    cmSearchClear.className = "ai-cm-search-clear";
+    cmSearchClear.setAttribute("aria-label", "Clear search");
+    cmSearchClear.title = "Clear search";
+    cmSearchClear.hidden = true;
+    cmSearchClear.innerHTML = chatIcon("nb-icon-close");
+    cmSearchWrap.append(cmSearch, cmSearchClear);
+    cmSearchRow.appendChild(cmSearchWrap);
+
+    const cmList = document.createElement("div");
+    cmList.className = "ai-cm-list";
+
+    const cmFooter = document.createElement("div");
+    cmFooter.className = "ai-cm-footer";
+    const cmNew = document.createElement("button");
+    cmNew.type = "button";
+    cmNew.className = "ai-cm-new";
+    cmNew.dataset.testChatNewManager = "1";
+    cmNew.innerHTML = chatIcon("nb-icon-plus") + "New chat";
+    const cmStorage = document.createElement("p");
+    cmStorage.className = "ai-cm-storage";
+    cmStorage.dataset.testChatStorage = "1";
+    const cmWarn = document.createElement("p");
+    cmWarn.className = "ai-cm-warn";
+    cmWarn.setAttribute("role", "status");
+    cmWarn.hidden = true;
+    cmWarn.innerHTML = chatIcon("nb-icon-warning");
+    cmWarn.appendChild(document.createTextNode(
+      "Over the " + chatBudgetLabel() +
+      " limit. New messages may not be saved — delete a chat to free space."));
+    const cmStatus = document.createElement("p");
+    cmStatus.className = "sr-only ai-cm-status";
+    cmStatus.setAttribute("role", "status");
+    cmStatus.setAttribute("aria-live", "polite");
+    cmFooter.append(cmNew, cmStorage, cmWarn, cmStatus);
+
+    manager.append(cmHeader, cmSearchRow, cmList, cmFooter);
+
+    /* --- manager-local view state ----------------------------------- */
+    let searchQuery = "";
+    let renamingId = null;
+    let renameOrigin = "button";
+    let pendingDeleteId = null;
+    let focusAfterRender = null;
+    let groupSeq = 0;
+
+    function chatLocked() {
+      return !!ctl || hasPendingCard(log);
+    }
+
+    function setEmptyState(el, iconId, titleText, hintText) {
+      el.innerHTML =
+        '<svg class="ai-empty-icon" aria-hidden="true" focusable="false">' +
+        '<use href="#' + iconId + '"/></svg>' +
+        '<p class="ai-empty-title"></p><p class="ai-empty-hint"></p>';
+      el.querySelector(".ai-empty-title").textContent = titleText;
+      el.querySelector(".ai-empty-hint").textContent = hintText;
+    }
+
+    function syncLogEmpty() {
+      if (!logEmpty) return;
+      const hasContent = !!log.querySelector(
+        ".ai-msg, .ai-edit-card, .ai-tool-trace, .ai-error");
+      logEmpty.hidden = hasContent;
+      if (hasContent) return;
+      if (!currentPath()) {
+        setEmptyState(logEmpty, "nb-icon-sparkle", "No file open.",
+          "Open a note to chat about it.");
+      } else if (!activeChat()) {
+        setEmptyState(logEmpty, "nb-icon-sparkle", "No chat for this file.",
+          "Ask a question below to start one.");
+      } else {
+        setEmptyState(logEmpty, "nb-icon-sparkle", "No messages yet.",
+          "Ask about a note, or describe an edit. Nothing changes until you apply it.");
+      }
+    }
+
+    function resetLog() {
+      log.innerHTML = "";
+      log.appendChild(logEmpty);
+      syncLogEmpty();
+    }
+
+    /* --- the bar ---------------------------------------------------- */
+    function optionEl(value, label) {
+      const opt = document.createElement("option");
+      opt.value = value;
+      opt.textContent = label;
+      return opt;
+    }
+
+    function buildChatOptions(selectedId) {
+      chatSelect.innerHTML = "";
+      const groups = chatGroups();
+      if (!groups.length) {
+        chatSelect.appendChild(optionEl("", "No chat yet"));
+        chatSelect.value = "";
+        return;
+      }
+      for (const g of groups) {
+        const og = document.createElement("optgroup");
+        og.label = g.current ? "This file" : g.label;
+        for (const chat of g.rows) {
+          og.appendChild(optionEl(chat.id, chat.title));
+        }
+        chatSelect.appendChild(og);
+      }
+      chatSelect.value = selectedId;
+    }
+
+    /* Rebuilding <option>s closes the platform picker, so it happens only
+     * when the list (ids, titles, files) or the active id changed. The
+     * manager remains the authoritative recency-ordered list; the picker
+     * keeps its order until the next such change. */
+    let barKey = "";
+
+    function refreshChatBar() {
+      if (!historyVisible()) {
+        chatBar.hidden = true;
+        return;
+      }
+      chatBar.hidden = false;
+      const path = currentPath();
+      const chat = activeChat();
+      const noFile = !path;
+      const selected = chat ? chat.id : "";
+      const key = (noFile ? "no-file" : "file") + "\u0000" + path +
+        "\u0000" + selected + "\u0000" +
+        chatStore.chats.map((c) => c.id + ":" + c.title + ":" + c.file)
+          .join("|");
+      if (key !== barKey) {
+        barKey = key;
+        chatSelect.innerHTML = "";
+        if (noFile) {
+          chatSelect.appendChild(optionEl("", "No file open"));
+        } else if (!chat) {
+          chatSelect.appendChild(optionEl("", "No chat yet"));
+        } else {
+          buildChatOptions(chat.id);
+        }
+      } else if (chatSelect.value !== selected) {
+        chatSelect.value = selected;
+      }
+      if (noFile) {
+        chatSelect.disabled = true;
+        chatSelect.title = "No file open";
+        chatPathEl.textContent = "No file open";
+        chatPathEl.removeAttribute("title");
+        chatFlag.hidden = true;
+      } else if (!chat) {
+        chatSelect.disabled = chatLocked();
+        chatSelect.title = "No chat yet — " + path;
+        chatPathEl.textContent = path;
+        chatPathEl.title = path;
+        chatFlag.hidden = true;
+      } else {
+        chatSelect.disabled = chatLocked();
+        chatSelect.title = chat.title + " — " + (chat.file || AI_CHATS_UNFILED);
+        chatPathEl.textContent = chat.file || AI_CHATS_UNFILED;
+        chatPathEl.title = chat.file || AI_CHATS_UNFILED;
+        const notOpen = !!chat.file && chat.file !== path;
+        chatFlag.hidden = !notOpen;
+        if (notOpen) {
+          chatFlag.title = "This chat belongs to " + chat.file +
+            ", which is not open in the viewer.";
+        }
+      }
+      newBtn.disabled = noFile || chatLocked();
+      manageBtn.disabled = chatLocked();
+    }
+
+    /* Disabled flags only: safe to run on every composer keystroke. */
+    function syncChatControls() {
+      if (chatBar.hidden) return;
+      const locked = chatLocked();
+      const noFile = !currentPath();
+      chatSelect.disabled = locked || noFile;
+      newBtn.disabled = locked || noFile;
+      manageBtn.disabled = locked;
+    }
+
+    function refreshChats() {
+      if (!historyVisible()) {
+        chatBar.hidden = true;
+        manager.hidden = true;
+        stack.hidden = false;
+        return;
+      }
+      refreshChatBar();
+      refreshStorage();
+      if (!manager.hidden) renderManagerList();
+    }
+
+    function newChatFromBar() {
+      if (chatLocked()) return false;
+      if (!createChatForActiveFile()) return false;
+      showActiveChat();
+      return true;
+    }
+
+    /* Clear the ACTIVE chat's transcript and keep the chat: its title,
+     * file and row survive. It stays live during a turn (abort is the
+     * point) and disabled when the chat is empty (syncSend owns that). */
+    function onClearChat() {
       if (ctl) ctl.abort();   // an in-flight reply must not land in the reset
       conversation = [];
+      const chat = activeChat();
+      if (chat) {
+        chat.conversation = conversation;
+        chat.toolFlags = [];
+        chat.lastPrompt = "";
+      }
       systemCache = null;
       regenerating = false;
-      log.innerHTML = "";
+      resetLog();
       /* The bubble a pending enrich pass was waiting for is gone. */
       if (enrichTimer) {
         window.clearTimeout(enrichTimer);
@@ -2247,22 +3146,409 @@
       removeTurnControls(log);
       lastSentPrompt = "";
       lastSentFiles = [];
-      clearStoredHistory();   // a true reset: the chat must not come back
+      persistHistory();
+      syncLogEmpty();
       syncSend();
-    });
-    actions.appendChild(clearBtn);
-    if (NB.activity && NB.activity.makeCollapseBtn) {
-      actions.appendChild(NB.activity.makeCollapseBtn());
+      /* The button disables itself in this frame; keep focus in the view. */
+      ta.focus();
     }
-    header.appendChild(actions);
-    host.appendChild(header);
+
+    /* --- the manager ------------------------------------------------ */
+    function chatMatchesQuery(chat, q) {
+      return chat.title.toLowerCase().indexOf(q) >= 0 ||
+        chat.file.toLowerCase().indexOf(q) >= 0;
+    }
+
+    function setSearch(q) {
+      searchQuery = q;
+      cmSearch.value = q;
+      cmSearchClear.hidden = !q;
+      renderManagerList();
+    }
+
+    function announce(text) {
+      cmStatus.textContent = text;
+    }
+
+    /* The number is the last successful write's size, so no serialization
+     * runs here and the line can never read above the budget while writes
+     * still land. */
+    function refreshStorage() {
+      const n = chatStore.chats.length;
+      cmStorage.textContent = n + " " + (n === 1 ? "chat" : "chats") +
+        " · " + formatStoreSize(lastStoreBytes) + " of " + chatBudgetLabel();
+      cmWarn.hidden = !storeOverBudget;
+      /* A chat needs a file; the footer is not reachable during a turn. */
+      cmNew.disabled = !currentPath();
+    }
+
+    function openManager() {
+      if (!historyVisible() || chatLocked()) return;
+      manager.hidden = false;
+      stack.hidden = true;
+      manageBtn.setAttribute("aria-expanded", "true");
+      renamingId = null;
+      pendingDeleteId = null;
+      setSearch("");
+      refreshStorage();
+      cmTitle.focus();
+    }
+
+    function closeManager(opts) {
+      if (manager.hidden) return;
+      manager.hidden = true;
+      stack.hidden = false;
+      manageBtn.setAttribute("aria-expanded", "false");
+      renamingId = null;
+      pendingDeleteId = null;
+      searchQuery = "";
+      cmSearch.value = "";
+      cmSearchClear.hidden = true;
+      const focus = opts && opts.focus;
+      if (focus === "select") chatSelect.focus();
+      else if (focus !== "none") manageBtn.focus();
+      syncLogEmpty();
+      syncSend();
+    }
+
+    function separatorEl() {
+      const s = document.createElement("span");
+      s.className = "ai-chat-sep";
+      s.setAttribute("aria-hidden", "true");
+      s.textContent = "·";
+      return s;
+    }
+
+    function cmRowBtn(icon, extra, label) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ai-chat-btn" + (extra ? " " + extra : "");
+      btn.innerHTML = chatIcon(icon);
+      btn.setAttribute("aria-label", label);
+      btn.title = label;
+      return btn;
+    }
+
+    function currentRowIds() {
+      return Array.from(cmList.querySelectorAll(".ai-chat-row"))
+        .map((row) => row.dataset.chatId || "");
+    }
+
+    function focusRowNow() {
+      if (!focusAfterRender) return;
+      const spec = focusAfterRender;
+      focusAfterRender = null;
+      const row = cmList.querySelector('[data-chat-id="' + spec.id + '"]');
+      const el = row ? row.querySelector(spec.sel) : null;
+      if (el) { el.focus(); return; }
+      /* The row can be filtered out (a rename or delete that no longer
+       * matches the query): never leave focus on <body>. */
+      cmSearch.focus();
+    }
+
+    function buildConfirm(chat) {
+      const box = document.createElement("div");
+      box.className = "ai-chat-confirm";
+      box.dataset.testChatConfirm = "1";
+      box.setAttribute("role", "group");
+      box.setAttribute("aria-label", "Confirm delete");
+      const text = document.createElement("p");
+      text.className = "ai-chat-confirm-text";
+      text.textContent = "Delete “" + chat.title + "”?";
+      const acts = document.createElement("div");
+      acts.className = "ai-chat-confirm-actions";
+      const cancel = document.createElement("button");
+      cancel.type = "button";
+      cancel.className = "ai-cm-btn";
+      cancel.textContent = "Cancel";
+      cancel.addEventListener("click", () => cancelDelete(chat.id));
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "ai-cm-btn danger";
+      del.textContent = "Delete";
+      del.addEventListener("click", () => confirmDelete(chat));
+      acts.append(cancel, del);
+      box.append(text, acts);
+      box.addEventListener("keydown", (ev) => {
+        if (ev.key !== "Escape") return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        cancelDelete(chat.id);
+      });
+      return box;
+    }
+
+    function buildChatRow(chat) {
+      const li = document.createElement("li");
+      const row = document.createElement("div");
+      row.className = "ai-chat-row";
+      row.dataset.testChatRow = "1";
+      row.dataset.chatId = chat.id;
+      if (chat.id === chatStore.activeId) row.setAttribute("aria-current", "true");
+
+      if (renamingId === chat.id) {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "ai-cm-rename";
+        input.maxLength = AI_CHATS_TITLE_MAX;
+        input.setAttribute("aria-label", "Chat title");
+        input.value = chat.title;
+        input.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") {
+            ev.preventDefault();
+            commitRename(chat, input.value);
+          } else if (ev.key === "Escape") {
+            ev.preventDefault();
+            ev.stopPropagation();
+            cancelRename();
+          }
+        });
+        input.addEventListener("blur", () => {
+          if (renamingId === chat.id) commitRename(chat, input.value);
+        });
+        row.appendChild(input);
+        li.appendChild(row);
+        return li;
+      }
+
+      const open = document.createElement("button");
+      open.type = "button";
+      open.className = "ai-chat-open";
+      open.dataset.testChatOpen = "1";
+      open.textContent = chat.title;
+      open.title = chat.title;
+      open.addEventListener("click", () => selectChatFromRow(chat));
+      open.addEventListener("keydown", (ev) => {
+        if (ev.key !== "F2") return;
+        ev.preventDefault();
+        startRename(chat.id, "title");
+      });
+      row.appendChild(open);
+
+      if (pendingDeleteId === chat.id) {
+        row.appendChild(buildConfirm(chat));
+        li.appendChild(row);
+        return li;
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "ai-chat-row-meta";
+      const pathEl = document.createElement("span");
+      pathEl.className = "ai-chat-path";
+      pathEl.textContent = chat.file || AI_CHATS_UNFILED;
+      pathEl.title = chat.file || AI_CHATS_UNFILED;
+      const timeEl = document.createElement("span");
+      timeEl.className = "ai-chat-time";
+      timeEl.textContent = formatRelativeTime(chat.updatedAt);
+      timeEl.title = new Date(chat.updatedAt).toLocaleString();
+      const count = chatMessageCount(chat);
+      const countEl = document.createElement("span");
+      countEl.className = "ai-chat-count";
+      countEl.textContent = count + (count === 1 ? " msg" : " msgs");
+      meta.append(pathEl, separatorEl(), timeEl, separatorEl(), countEl);
+
+      const acts = document.createElement("span");
+      acts.className = "ai-chat-row-actions";
+      const renameBtn = cmRowBtn("nb-icon-pencil", "",
+        "Rename “" + chat.title + "”");
+      renameBtn.dataset.testChatRename = "1";
+      renameBtn.addEventListener("click", () => startRename(chat.id, "button"));
+      const delBtn = cmRowBtn("nb-icon-trash", "danger",
+        "Delete “" + chat.title + "”");
+      delBtn.dataset.testChatDelete = "1";
+      delBtn.addEventListener("click", () => startDelete(chat.id));
+      acts.append(renameBtn, delBtn);
+      meta.appendChild(acts);
+      row.appendChild(meta);
+      li.appendChild(row);
+      return li;
+    }
+
+    function buildGroup(group, rows) {
+      const section = document.createElement("section");
+      section.className = "ai-cm-group" +
+        (group.current ? " ai-cm-group--current" : "");
+      const head = document.createElement("h4");
+      head.className = "ai-cm-group-head";
+      groupSeq++;
+      head.id = "ai-cm-g" + groupSeq;
+      const headPath = document.createElement("span");
+      headPath.className = "ai-cm-group-path";
+      headPath.textContent = group.label;
+      headPath.title = group.label;
+      head.appendChild(headPath);
+      if (group.current) {
+        const flag = document.createElement("span");
+        flag.className = "ai-cm-group-flag";
+        flag.textContent = "current";
+        head.appendChild(flag);
+      }
+      section.setAttribute("aria-labelledby", head.id);
+      section.appendChild(head);
+      const ul = document.createElement("ul");
+      ul.className = "ai-cm-rows";
+      for (const chat of rows) ul.appendChild(buildChatRow(chat));
+      section.appendChild(ul);
+      return section;
+    }
+
+    function renderManagerList() {
+      cmList.innerHTML = "";
+      groupSeq = 0;
+      const q = searchQuery.trim().toLowerCase();
+      let shown = 0;
+      for (const group of chatGroups()) {
+        const rows = q
+          ? group.rows.filter((c) => chatMatchesQuery(c, q))
+          : group.rows;
+        if (!rows.length) continue;
+        shown += rows.length;
+        cmList.appendChild(buildGroup(group, rows));
+      }
+      if (!shown) {
+        const empty = document.createElement("div");
+        empty.className = "ai-empty";
+        if (q) {
+          setEmptyState(empty, "nb-icon-search",
+            "No chats match “" + searchQuery.trim() + "”.",
+            "Try a different word, or clear the search.");
+        } else if (currentPath()) {
+          setEmptyState(empty, "nb-icon-sparkle", "No chats yet.",
+            "A chat belongs to one note and is saved in this browser. " +
+            "Start one with New chat.");
+        } else {
+          setEmptyState(empty, "nb-icon-sparkle", "No chats yet.",
+            "Open a note to start a chat about it.");
+        }
+        cmList.appendChild(empty);
+      }
+      if (renamingId) {
+        const input = cmList.querySelector(".ai-cm-rename");
+        if (input) { input.focus(); input.select(); }
+      }
+      focusRowNow();
+    }
+
+    function startRename(id, origin) {
+      if (chatLocked()) return;
+      renamingId = id;
+      renameOrigin = origin || "button";
+      pendingDeleteId = null;
+      renderManagerList();
+    }
+
+    function renameFocusSpec(id) {
+      return { id, sel: renameOrigin === "title"
+        ? ".ai-chat-open" : "[data-test-chat-rename]" };
+    }
+
+    function cancelRename() {
+      const id = renamingId;
+      renamingId = null;
+      const chat = id ? findChat(id) : null;
+      if (!chat) { renderManagerList(); return; }
+      focusAfterRender = renameFocusSpec(chat.id);
+      renderManagerList();
+    }
+
+    function commitRename(chat, value) {
+      if (renamingId !== chat.id) return;
+      renamingId = null;
+      const clean = deriveChatTitle(value);
+      if (!clean) {
+        focusAfterRender = renameFocusSpec(chat.id);
+        renderManagerList();
+        return;
+      }
+      renameChat(chat.id, clean);
+      refreshChatBar();
+      focusAfterRender = { id: chat.id, sel: ".ai-chat-open" };
+      renderManagerList();
+      announce("Renamed to “" + clean + "”.");
+    }
+
+    function startDelete(id) {
+      if (chatLocked()) return;
+      pendingDeleteId = id;
+      renamingId = null;
+      focusAfterRender = { id, sel: ".ai-chat-confirm-actions .ai-cm-btn" };
+      renderManagerList();
+    }
+
+    function cancelDelete(id) {
+      pendingDeleteId = null;
+      focusAfterRender = { id, sel: "[data-test-chat-delete]" };
+      renderManagerList();
+    }
+
+    function confirmDelete(chat) {
+      const order = currentRowIds();
+      const idx = order.indexOf(chat.id);
+      const nextId = order[idx + 1] || order[idx - 1] || null;
+      pendingDeleteId = null;
+      focusAfterRender = nextId
+        ? { id: nextId, sel: ".ai-chat-open" } : null;
+      deleteChat(chat.id);
+      announce("Deleted “" + chat.title + "”.");
+      if (manager.hidden) return;
+      renderManagerList();
+      if (!nextId) cmSearch.focus();
+    }
+
+    function selectChatFromRow(chat) {
+      if (chatLocked()) return;
+      switchChat(chat.id);
+      showActiveChat();
+      closeManager({ focus: "select" });
+    }
+
+    /* --- wiring ----------------------------------------------------- */
+    chatSelect.addEventListener("change", () => {
+      if (chatLocked() || !chatSelect.value) return;
+      switchChat(chatSelect.value);
+      showActiveChat();
+      chatSelect.focus();
+    });
+    newBtn.addEventListener("click", () => {
+      if (newChatFromBar()) composerFocus();
+    });
+    manageBtn.addEventListener("click", () => {
+      if (manager.hidden) openManager();
+      else closeManager();
+    });
+    cmClose.addEventListener("click", () => closeManager());
+    cmNew.addEventListener("click", () => {
+      if (!newChatFromBar()) return;
+      closeManager({ focus: "none" });
+      composerFocus();
+    });
+    cmSearch.addEventListener("input", () => {
+      searchQuery = cmSearch.value;
+      cmSearchClear.hidden = !searchQuery;
+      renderManagerList();
+    });
+    cmSearchClear.addEventListener("click", () => {
+      setSearch("");
+      cmSearch.focus();
+    });
+    manager.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Escape") return;
+      if (ev.target === cmSearch && cmSearch.value) {
+        ev.preventDefault();
+        setSearch("");
+        return;
+      }
+      if (renamingId || pendingDeleteId) return;   // handled in place
+      ev.preventDefault();
+      closeManager();
+    });
 
     const hint = document.createElement("div");
     hint.className = "ai-config-hint";
     hint.id = "ai-config-hint";
     hint.hidden = true;
     hint.textContent = "No AI provider configured. Open Settings → AI to add one (any OpenAI-compatible endpoint works).";
-    host.appendChild(hint);
+    stack.appendChild(hint);
 
     const modelBar = document.createElement("div");
     modelBar.className = "ai-model-bar";
@@ -2277,17 +3563,21 @@
       syncAttachAffordance();
     });
     modelBar.appendChild(sel);
-    host.appendChild(modelBar);
+    stack.appendChild(modelBar);
 
     const log = document.createElement("div");
     log.className = "ai-chat-log";
     log.id = "ai-chat-log";
-    host.appendChild(log);
+    const logEmpty = document.createElement("div");
+    logEmpty.className = "ai-empty";
+    logEmpty.hidden = true;
+    log.appendChild(logEmpty);
+    stack.appendChild(log);
 
     const attachBar = document.createElement("div");
     attachBar.className = "ai-attach-bar";
     attachBar.hidden = true;
-    host.appendChild(attachBar);
+    stack.appendChild(attachBar);
 
     const form = document.createElement("form");
     form.className = "ai-input-row";
@@ -2342,7 +3632,8 @@
     stopBtn.hidden = true;
     form.append(ta, attachBtn, sendBtn, stopBtn);
     form.appendChild(attachInput);
-    host.appendChild(form);
+    stack.appendChild(form);
+    host.append(stack, manager);
 
     /* The card's padding and empty action row behave like the field. */
     form.addEventListener("click", (ev) => {
@@ -2372,11 +3663,17 @@
     let ctl = null;
 
     function syncSend() {
+      const noFile = !currentPath();
       const empty = !ta.value.trim() && chipTotal === 0;
-      sendBtn.disabled = !!ctl || pendingReads > 0 || empty;
+      sendBtn.disabled = noFile || !!ctl || pendingReads > 0 || empty;
       sendBtn.hidden = !!ctl;
-      attachBtn.disabled = !!ctl;
-      if (clearBtn) clearBtn.disabled = conversation.length === 0 && chipTotal === 0;
+      attachBtn.disabled = noFile || !!ctl;
+      ta.disabled = noFile;
+      if (clearBtn) {
+        clearBtn.disabled = !activeChat() ||
+          (conversation.length === 0 && chipTotal === 0);
+      }
+      syncChatControls();
       /* Keep the newest turn's controls in step with the live state. */
       updateTurnDisabled();
     }
@@ -2584,9 +3881,35 @@
         ctl = null;
         form.classList.remove("ai-streaming");
         syncSend();
+        scheduleFileSwitch();
       },
       signal() { return ctl ? ctl.signal : undefined; },
     };
+    /* A file:open that arrives mid-turn is remembered and applied after
+     * the turn ends, so the streaming chat is never swapped out from
+     * under the reply. The timeout lets the tool loop's own tail (the
+     * regenerate/edit controls on the last bubble) finish first. */
+    let pendingFileOpen = null;
+    /* The file the panel last followed. Re-activating the open tab emits
+     * file:open again; that must not reset a chat the user picked by hand
+     * for this file. */
+    let followedPath = currentPath();
+    /* Apply a queued file:open once nothing is in the way: no turn and no
+     * permission card. ui.end() flushes the turn case; removeActions()
+     * flushes the card case, because a card outlives the turn that made
+     * it. */
+    function scheduleFileSwitch() {
+      if (pendingFileOpen === null || ctl || hasPendingCard(log)) return;
+      const target = pendingFileOpen;
+      window.setTimeout(() => {
+        if (pendingFileOpen !== target) return;   // superseded
+        if (ctl || hasPendingCard(log)) return;   // still blocked
+        pendingFileOpen = null;
+        if (target === followedPath) return;      // back where we started
+        followedPath = target;
+        switchToFile(target);
+      }, 0);
+    }
     /* Hand regenerate() and the footer control's disabled check the live
      * controller state and the mounted log. */
     mountLog = log;
@@ -2603,6 +3926,7 @@
       e.preventDefault();
       if (ctl) return;                      // a request is already running
       if (pendingReads > 0) return;         // wait for the attachment reads
+      if (!currentPath()) return;           // no file: the composer is inert
       const q = ta.value.trim();
       const files = attachments.slice();
       if (!q && !files.length) return;
@@ -2612,7 +3936,15 @@
         errEl.textContent = "No AI provider configured — open Settings → AI.";
         log.appendChild(errEl);
         scrollLog(log);
+        syncLogEmpty();
         return;
+      }
+      /* The first prompt with no active chat starts one for the open
+       * file; its title is derived from this prompt by the persist that
+       * follows the push. */
+      if (!activeChat()) {
+        if (!createChatForActiveFile()) return;
+        showActiveChat();
       }
       /* Checked before clearing so a refused send keeps the pending chips
        * (and the typed prompt) for the user to adjust. */
@@ -2679,6 +4011,18 @@
     composerFocus = () => { ta.focus(); };
     autoGrow();
 
+    /* The chat DOM's entry point for the data layer. Installed before the
+     * restore so its refreshes reach the bar and the manager. */
+    mountResetLog = resetLog;
+    mountChatUi = {
+      refreshChats,
+      syncLogEmpty,
+      syncSend,
+      flushFileSwitch: scheduleFileSwitch,
+      focusComposer: () => ta.focus(),
+    };
+    refreshChats();
+
     // Restore any history saved before the reload now that the log and the
     // panel's references exist. It does not need the provider list.
     restoreHistory(log);
@@ -2689,8 +4033,26 @@
     loadAiConfig();
 
     // The system prompt names the user's current file: rebuild it when
-    // the active file changes (also see app.js's NB viewer events).
-    NB.evt.on("file:open", () => invalidateSystem());
+    // the active file changes (also see app.js's NB viewer events). The
+    // panel follows the viewer to that file's newest chat; while a turn
+    // is in flight the switch waits for it to finish.
+    NB.evt.on("file:open", (path) => {
+      invalidateSystem();
+      const target = path || currentPath();
+      if (target === followedPath) {
+        pendingFileOpen = null;     // re-activated the same file: keep the chat
+        return;
+      }
+      /* A turn and a pending write/patch card both block the switch: the
+       * card is a decision in progress and must stay on screen. The open
+       * is queued and applied once the turn ends or the card resolves. */
+      if (ctl || hasPendingCard(log)) {
+        pendingFileOpen = target;
+        return;
+      }
+      followedPath = target;
+      switchToFile(target);
+    });
     NB.evt.on("file:external-change", () => invalidateSystem());
   }
 
@@ -2801,13 +4163,19 @@
       conversation = [];
       systemCache = null;
       regenerating = false;
+      chatStore = emptyChatStore();
+      storeOverBudget = false;
+      lastStoreBytes = 0;
+      activeChatSig = "";
       attachReset();
       if (mountLog) removeTurnControls(mountLog);
       regenBtn = null;
       editBtn = null;
       lastSentPrompt = "";
       lastSentFiles = [];
-      clearStoredHistory();   // isolate test blocks
+      clearStoredChats();       // isolate test blocks
+      clearLegacyHistory();
+      refreshChatUi();
     },
     /* Erase in-memory state WITHOUT touching localStorage, so a test can
      * persist, drop memory, then restore from what was stored. */
@@ -2815,10 +4183,14 @@
       conversation = [];
       systemCache = null;
       regenerating = false;
+      chatStore = emptyChatStore();
+      storeOverBudget = false;
+      lastStoreBytes = 0;
+      activeChatSig = "";
       attachReset();
       if (mountLog) {
         removeTurnControls(mountLog);
-        mountLog.innerHTML = "";
+        resetLogDom();
       }
       regenBtn = null;
       editBtn = null;
@@ -2826,13 +4198,60 @@
       lastSentFiles = [];
     },
     _restoreHistoryForTests(log) { restoreHistory(log); },
+    /* The active chat's stored record, in the shape the single-transcript
+     * key used to have, so the existing persistence checks keep their
+     * assertions. It reads storage, never memory. */
     _getStoredHistoryForTests() {
       try {
-        const raw = localStorage.getItem(AI_HISTORY_KEY);
-        return raw ? JSON.parse(raw) : null;
+        const raw = localStorage.getItem(AI_CHATS_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!isValidChatStore(parsed)) return null;
+        let chat = null;
+        for (const c of parsed.chats) {
+          if (c.id === parsed.activeId) { chat = c; break; }
+        }
+        if (!chat) return null;
+        return {
+          v: AI_CHATS_VERSION,
+          conversation: chat.conversation,
+          toolFlags: Array.isArray(chat.toolFlags) ? chat.toolFlags : [],
+          lastPrompt: typeof chat.lastPrompt === "string" ? chat.lastPrompt : "",
+        };
       } catch (e) {
         return null;
       }
     },
+    /* Store summary for the per-file chat checks. */
+    _getChatsForTests() {
+      return {
+        v: AI_CHATS_VERSION,
+        activeId: chatStore.activeId,
+        overBudget: storeOverBudget,
+        bytes: lastStoreBytes,
+        chats: chatStore.chats.map((c) => ({
+          id: c.id,
+          file: c.file,
+          title: c.title,
+          custom: c.custom,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+          count: c.conversation.length,
+          messages: chatMessageCount(c),
+        })),
+      };
+    },
+    _switchChatForTests(id) {
+      if (!switchChat(id)) return false;
+      showActiveChat();
+      return true;
+    },
+    _newChatForTests() {
+      if (!createChatForActiveFile()) return false;
+      showActiveChat();
+      return true;
+    },
+    _deleteChatForTests(id) { return deleteChat(id); },
+    _renameChatForTests(id, title) { return renameChat(id, title); },
   };
 })();

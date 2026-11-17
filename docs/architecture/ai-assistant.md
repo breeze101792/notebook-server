@@ -402,6 +402,69 @@ keep context without re-reading files. Applied, rejected, and blocked
 outcomes are appended through `recordToolOutcome`, so the model sees what
 happened to its proposals.
 
+### Chats
+
+`conversation` is the **active chat's** live array. Chats are browser-local
+and per file: one chat belongs to the note it was started from, and the
+panel's bar and manager switch between them. There is no server API and no
+server persistence for chats.
+
+The store is one `localStorage["nb:aiChats"]` key, version 1:
+
+```jsonc
+{
+  "v": 1,
+  "activeId": "c...",          // the active chat, "" when none
+  "chats": [{
+    "id": "c...",              // "c" + base36 Date.now() + random suffix
+    "file": "notes/a.md",      // notebook path; "" = Unfiled
+    "title": "New chat",       // derived, or manual once renamed
+    "custom": false,           // true once the user renamed it
+    "createdAt": 0,
+    "updatedAt": 0,
+    "conversation": [{ "role": "user", "content": "..." }],
+    "toolFlags": [false],      // parallel; true = tool follow-up
+    "lastPrompt": ""
+  }]
+}
+```
+
+- **Validation.** A store that fails the shape check (version, types, role
+  whitelist, entry arrays, a finite timestamp, an id of `[A-Za-z0-9_-]{1,64}`,
+  no duplicate ids) is dropped and the panel starts empty, the same policy
+  the single-transcript key had. A dangling `activeId` resets to `""`
+  without touching the chats.
+- **Migration.** The legacy `nb:aiChat` transcript (`{v, conversation,
+  toolFlags, lastPrompt}`) is imported once as a chat bound to the file open
+  at load, titled from its first genuine prompt (else `Imported chat`); the
+  old key is removed only after the new store has written.
+- **Writing.** `persistHistory()` keeps its name and now writes the whole
+  store. It first syncs the active chat (`conversation` is reassigned by
+  `.slice()` in regenerate and edit), derives `toolFlags` from the
+  `toolMessages` WeakSet, and derives a title from the first genuine user
+  prompt while the chat is still `New chat` and not `custom`. `updatedAt`
+  moves only when the conversation or the title changed, so switching chats
+  (which persists `activeId`) never reorders the list.
+- **Switching.** `activeChat()` is the chat with the store's `activeId`.
+  Switching assigns `conversation = chat.conversation`,
+  `lastSentPrompt = chat.lastPrompt`, clears `lastSentFiles`, and drops
+  `systemCache`, so the system prompt names the active chat's file (falling
+  back to the viewer's) and the restored transcript keeps Regenerate/Edit
+  correct. Every chat's tool entries are tagged into `toolMessages` on load,
+  not just the active one. Attachments are per session: a turn restored from
+  storage, or reached by switching chats, cannot rebuild its attachment chip
+  list, so Edit is disabled for it rather than resending without them.
+- **Budget.** The whole store shares one 4 MiB budget
+  (`AI_CHATS_MAX_BYTES`; the copy is derived from it). Over it, image data
+  URLs are rewritten to the existing text placeholder — other chats oldest
+  first, then the active one — and the write is skipped if even that does
+  not fit, leaving a flag the manager reports. A chat is never deleted to make room; deleting the last
+  chat is what removes the key. The manager's storage line reports the size
+  of the last successful write (a staged copy can be smaller than memory),
+  and a quota rejection raises the same warning as an over-budget skip.
+- **Viewer sessions.** The AI API is admin-only, so a viewer session neither
+  restores the store nor writes it, and the bar and manager stay hidden.
+
 ### Attachments
 
 The user can attach local text files and images to a message. Both kinds
@@ -427,7 +490,8 @@ share one pending chip list (max 8 chips).
   image (`composeUserContent`). Image data URLs
   carry the sniffed output MIME, never the filename.
 - **Persistence.** The full content, base64 image parts included, is
-  re-uploaded every turn and every tool round. `Clear` resets it.
+  re-uploaded every turn and every tool round. `Clear` empties the active
+  chat's copy of it.
 - **Wire backstop.** `send` refuses a request whose serialized body would
   exceed 12 MiB before calling the API, without mutating the conversation;
   the same check runs in the submit handler before the pending chips are
@@ -437,10 +501,14 @@ An upstream rejection of an image-bearing turn (HTTP status ≥ 400) shows
 "this model may not support image input"; the image parts stay in the
 conversation so a retry or a model switch still carries them.
 
-The **Clear** button resets the conversation and system cache
-(the `clearBtn` handler in `mount()`). Switching tabs changes the
-"current file" named in the system prompt; the prompt is invalidated on
-`file:open` (the `NB.evt.on("file:open")` hook in `mount()`).
+The **Clear** button aborts an in-flight turn, empties the active chat's
+conversation, system cache, log and attachments, and keeps the chat and its
+title (the `clearBtn` handler in `mount()`). It is disabled when there is no
+active chat or the chat is already empty with no attachment chips. Opening a
+file switches the panel to that file's newest chat, or to no active chat;
+the system prompt is invalidated on `file:open`, which also carries the
+switch (the `NB.evt.on("file:open")` hook in `mount()`). A switch that
+arrives mid-turn waits for `ui.end()`.
 
 ## Configuration
 

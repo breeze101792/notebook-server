@@ -592,7 +592,7 @@ IndexedDB.
 | --- | --- | --- |
 | `nb:windowGeometry` | `static/js/windows.js` | Per-modal position and size for the floating windows |
 | `nb:tableView` · `nb:<id>:tableView` | `static/js/table-view.js` | Versioned per-file, per-table view state (hidden rows/columns, sort), schema v2. Applies only when the header text, a hash of every cell, and the table's same-header ordinal all match; otherwise it is ignored. The default workspace keeps `nb:tableView`; other workspaces use `nb:<id>:tableView`. |
-| `nb:aiChat` | `static/js/ai.js` | Versioned AI transcript (conversation + tool flags + newest prompt). **Clear** removes it. |
+| `nb:aiChats` | `static/js/ai.js` | Versioned per-file AI chats (`{v, activeId, chats[]}`; each chat carries its file, title, conversation, tool flags and newest prompt). Deleting the last chat removes it; **Clear** only empties the active chat. The old `nb:aiChat` key is migrated once and removed. |
 | `nb:mobileResume` · `nb:<id>:mobileResume` | `static/js/mobile.js` | Phone Home resume state: last path and scroll. The default workspace keeps the legacy key. |
 | `nb:captureDraft` · `nb:<id>:captureDraft` | `static/js/mobile.js` | Quick-capture draft, kept across a 401. The default workspace keeps the legacy key. |
 

@@ -163,7 +163,7 @@ implemented today.
 | `dot-designer.js` | 2184 | `NB.dotDesign` | Graphviz design window over a line-local single-graph subset; untouched lines stay byte-identical. |
 | `wavedrom-designer.js` | 1588 | `NB.wavedromDesign` | WaveDrom design window; the parsed object is the model and Apply writes strict JSON. |
 | `vimnav.js` | 533 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
-| `ai.js` | 2869 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; a versioned transcript persisted in `localStorage["nb:aiChat"]`; `MAX_TOOL_ROUNDS = 5`. See [ai-assistant.md](ai-assistant.md). |
+| `ai.js` | 4246 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; per-file chats in a versioned store at `localStorage["nb:aiChats"]` with a bar and a manager in the panel; `MAX_TOOL_ROUNDS = 5`. See [ai-assistant.md](ai-assistant.md). |
 | `activity.js` | 1371 | `NB.activity` | Left activity bar and side-panel view switcher. Registers seven views: Explorer, Sessions, Pinned, Bookmarks, Recent (fuzzy quick-open), Search, AI. The Search view has a clear × inside the query field (hidden for an empty/whitespace query); match case, target, grouping, and sort live in the Advanced disclosure. `openSearch()` activates Search, expands the panel or phone drawer, and focuses the query. Boots into whichever `.side-panel-view` host the server rendered visible (`adoptShellView`). |
 | `bookmarks.js` | 453 | `NB.bookmarks` | Bookmarks side-panel view: ordered list, star toggle, drag reorder, context menu, auto-prune, rename re-key. |
 | `shortcuts.js` | 411 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+Shift+E`, toggleHybrid `Mod+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |
@@ -320,7 +320,7 @@ Seven keys, all namespaced:
 | --- | --- | --- |
 | `nb:windowGeometry` | `windows.js` | Per-modal position and size for the floating settings windows. The maximized state is a transient class and is never stored. |
 | `nb:tableView` | `table-view.js` | Per-file, per-table view state, schema v2. An entry stores the header signature (`sig`), a hash of every cell (`bodySig`), and the table's ordinal among tables with the same header; it applies only when all three match, so a shifted table fails closed. Caps: `MAX_FILES = 50`, `MAX_TABLES = 20`, `MAX_BYTES = 100000`. |
-| `nb:aiChat` | `ai.js` | Versioned AI transcript (conversation + tool flags + newest prompt). Over-size image data URLs are replaced by a placeholder; **Clear** removes the key. |
+| `nb:aiChats` | `ai.js` | Versioned per-file AI chats: `{v, activeId, chats[]}`, each chat carrying its file, title, timestamps, conversation, parallel tool flags and newest prompt. Over-size image data URLs are replaced by a placeholder; deleting the last chat removes the key, **Clear** only empties the active chat. The pre-chats `nb:aiChat` key is migrated once and removed. |
 | `nb:mobileResume` | `mobile.js` | Last file and scroll position for the phone Home screen. |
 | `nb:captureDraft` | `mobile.js` | Quick-capture draft, kept across a 401. |
 | `nb:activeSession` | `app.js` | **Planned** (sync §17.8). The session this device last had on screen. Written from the `tabs:changed` listener, skipped while a remote state is being applied. |
@@ -337,12 +337,19 @@ just the current workspace's (`auth.js` `clearDeviceLocalState()`, whose
 
 `nb:tableView` data never reaches the note, the server, or an export.
 
-### AI transcript
+### AI chats
 
-The AI transcript is not in-memory only: `persistHistory()` writes a
-versioned `localStorage["nb:aiChat"]` blob after every mutation and
-`restoreHistory()` rebuilds it on mount. The **Clear** button in the panel
-header resets the conversation and removes the key.
+Chats are not in-memory only: `persistHistory()` writes a versioned
+`localStorage["nb:aiChats"]` store after every mutation and
+`restoreHistory()` rebuilds the active chat and the chat bar on mount. A
+chat is bound to the file it was started from, and the store also keeps the
+last active id, so a reload restores that chat whatever file it belongs to;
+opening another file then switches to that file's newest chat, and the
+bar's `not open` flag reports a chat whose file is not the one on screen.
+The **Clear** button in the chat bar empties the active chat's
+conversation and keeps the chat; deleting the last chat removes the key.
+The legacy single-transcript `nb:aiChat` key is migrated once into one chat
+and then removed.
 
 ## 6. PWA and offline
 
