@@ -24,6 +24,8 @@ line. *Mockup* — the visual reference; the doc beside it is normative.
 | [`side-panel-views.md`](side-panel-views.md) | Current spec — pre-implementation | Explorer, Pinned, Bookmarks, Recent, and the conventions they share: headers, rows, top-section modes, context menus, empty and error states, phone, AC1–AC18. |
 | [`sessions.md`](sessions.md) | Current spec — pre-implementation | The Sessions view: header, rows, counts, dirty dot, row menu, cap, read-only, keyboard and phone. AC1–AC12. |
 | [`sessions-mockup.html`](sessions-mockup.html) | Mockup — **open this** | Normal, menu, cap, read-only and 140 px, dark and light. |
+| [`tabs-view.md`](tabs-view.md) | Current spec — pre-implementation (new view) | The Tabs side-panel view: why it exists, host and placement, rows and their slots, drag reorder, empty state, keyboard and ARIA, the phone drawer, and the hidden top strip with the rail's outline twin. AC1–AC16. |
+| [`tabs-view-mockup.html`](tabs-view-mockup.html) | Mockup — **open this** | Normal, row anatomy, the state strip, empty, the 140 px floor, the 390 phone drawer, and the shell with the strip visible and hidden, dark and light. |
 | [`side-panel-views-mockup.html`](side-panel-views-mockup.html) | Mockup — **open this** | Every list view, its empty state, the 140 px panel and the phone drawer. |
 | [`search-view.md`](search-view.md) | Current spec — pre-implementation | Search: query row, options, Advanced, results listbox, states, copy, keyboard, phone, AC1–AC30. |
 | [`search-view-mockup.html`](search-view-mockup.html) | Mockup — **open this** | Twelve boards from idle to timeout, Advanced open, 140 px and phone. |
@@ -75,7 +77,7 @@ session picker, the workspace picker, and their mockups) are frozen under
 | Design or restyle a control | [`controls.md`](controls.md) after the foundations: anatomy, states, markup, ARIA, and the state matrix. |
 | Choose a text size, or replace a `font-size` literal | [`typography.md`](typography.md): the role table, choosing a role, the retired literals and their deltas. |
 | Build the app shell | [`shell-frame.md`](shell-frame.md): grid, topbar, rail, panel frame, outline, phone. Then [`tab-bar.md`](tab-bar.md) for the strip. |
-| Build or change a side-panel view | [`side-panel-views.md`](side-panel-views.md) for Explorer, Pinned, Bookmarks and Recent; [`sessions.md`](sessions.md) for Sessions; [`search-view.md`](search-view.md) for Search; [`ai-panel.md`](ai-panel.md) for AI. |
+| Build or change a side-panel view | [`side-panel-views.md`](side-panel-views.md) for Explorer, Pinned, Bookmarks and Recent; [`tabs-view.md`](tabs-view.md) for Tabs; [`sessions.md`](sessions.md) for Sessions; [`search-view.md`](search-view.md) for Search; [`ai-panel.md`](ai-panel.md) for AI. |
 | Build or extend an edit window | [`edit-window.md`](edit-window.md) for the shared chrome, then [`table-editor.md`](table-editor.md) or [`diagram-designers.md`](diagram-designers.md) for the body. |
 | Match a shipped surface that has no new spec | Use the frozen record under [`../archive/`](../archive/README.md) as source material, then write the new spec. |
 | Change a shipped surface | Write the new spec first, then implement. Do not revive an archived doc as current. |

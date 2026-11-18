@@ -104,6 +104,7 @@ value here — a panel that disagrees is the drift this contract exists to stop.
 | Weight | 400 on every row, current included | a selected row is still the same row; selection is face and colour, never bold |
 | Name | one line, ellipsis, `title` = the full value | never wraps, never truncates without a way to read it |
 | Rest face | transparent | no zebra stripes |
+| Mark and state columns | reserved: fixed width, present on every row, `visibility: hidden` when idle; identity marks lead the name, state marks trail it | a mark that appears on some rows only would shift every name after it; insert marks into a slot, never in front of the name |
 | Hover | `--accent-soft` | the row is one click target |
 | Current | `--accent-soft` + 600, accent marker or accent text | one signal per surface, see the surface doc |
 | Focus | inset ring, `--focus-offset-inset` | the list clips |
@@ -149,6 +150,7 @@ Rules:
 | Desktop shell, topbar, rail, side panel, outline, phone conversion | [`shell-frame.md`](shell-frame.md) | foundations, controls |
 | Tab strip | [`tab-bar.md`](tab-bar.md) | foundations, controls |
 | Side-panel views | [`side-panel-views.md`](side-panel-views.md) | shell-frame, controls |
+| Tabs view | [`tabs-view.md`](tabs-view.md) | side-panel-views, tab-bar |
 | Search | [`search-view.md`](search-view.md) | side-panel-views |
 | AI panel | [`ai-panel.md`](ai-panel.md) | side-panel-views |
 | AI chat bar and chat manager | [`ai-chat-manager.md`](ai-chat-manager.md) | ai-panel, controls |
@@ -186,7 +188,7 @@ footer content. Settings and the dialogs reference it; they do not redefine its 
 | Activity rail | 48 px desktop, 56 + inset phone |
 | Side panel | 240 default, 140 floor, 480 cap |
 | Outline | 220 default, 520 cap |
-| Tab bar | 34 px |
+| Tab bar | 34 px; 0 when `hideTabBar` is on |
 | Markdown edit bar | 63 px at 772 (2 rows), 119 at 353 (4 rows) |
 | Modal edit bar | 57 px line, 44 px controls |
 | Modal box | `min(1320px, 96vw) × min(85vh, 92vh)` |

@@ -71,6 +71,8 @@ saved bar order**, then More.
 The six are a slice of the saved bar order, not a set: reorder the bar on desktop and the rail follows
 it; a view pushed past slot 6 moves to the More sheet (`mobile-more-sheet.md` §1.1). AI is the one view
 with no phone surface, so it takes neither a slot nor a More row. Settings and Sign out are More rows.
+The Tabs view registers after AI, so in the default order it is the first view past the six and opens
+from the More sheet until the user promotes it ([`tabs-view.md`](tabs-view.md) §2).
 
 Each button is `flex: 1 1 0`, min 44 wide, rail height, radius 0. A sprite glyph is `--icon-lg` (17 px);
 a text glyph is 22 px. Active gets `--accent-soft` and a 2 px top indicator at 24–76 %. There is no
@@ -293,6 +295,8 @@ scrim .45; sheet radius 16; field 16 px.
 - A second phone layout, a tablet shell, or a landscape variant.
 - A phone graph, a phone AI view, or a settings modal.
 - A second Sessions list; Sessions uses the drawer and its shipped rows.
+- A second tab list, a tabs sheet, or a swipe-between-tabs gesture. The drawer's Tabs view is the
+  phone's only tab surface ([`tabs-view.md`](tabs-view.md) §8).
 - A custom keyboard bar, swipe navigation, or pull-to-refresh.
 - A new breakpoint or a container query for the drawer.
 - A per-view CSS hide rule for the rail. The order and `PHONE_RAIL_SLOTS` decide, not a stylesheet.

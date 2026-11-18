@@ -557,7 +557,31 @@ whole contract; do not add a `role="status"` child to the bar.
 
 ---
 
-## 8. Phone
+## 8. Hidden, and the phone
+
+### 8.1 Hidden on desktop
+
+The strip can be hidden: `hideTabBar`, default `false`, owned by [`shell-frame.md`](shell-frame.md)
+§1.3. The state is the `hidden` attribute on `#tab-bar` plus one rule,
+`.tab-bar[hidden] { display: none }` — no `<body>` class, because `.tab-bar { display: flex }`
+outranks the UA `[hidden]` rule and because the boot template's assertion at
+`tests/dom/test_dom.js:37550` is body-class-specific. The server renders the attribute from
+`boot_state()` (`app.py:1547`), so the first frame is correct; no script measures the bar's height,
+so nothing else moves and the reader gains the 34 px.
+
+Hiding the strip moves one control: the outline pane's only toggle is a child of `#tab-bar`
+(`templates/index.html:463`, `app.js:1155`). The rail's `#outline-rail-btn` is shown under
+`body:has(#tab-bar[hidden])`, the `#workspace-rail-btn` pattern (`shell-frame.md` §3.1), and shares
+the handler. The bar keeps its own toggle; the two are never both visible. `:has()` is already
+shipped in the stylesheet (`style.css:424`).
+
+The strip's structure is unchanged while hidden: the same three children, the same tablists, the
+same DOM. `hidden` does not unmount `tabs.js`; every strip path no-ops at zero width
+(`tabs.js:722-723`). With the strip hidden, the open set is reached through the Tabs view
+([`tabs-view.md`](tabs-view.md)), and the active file's name is the Tabs row — the desktop shell has
+no other chrome-level title (`tabs-view.md` §10).
+
+### 8.2 Phone
 
 `#tab-bar` is `display: none` under the mode switch (`style.css:7085`); `#outline-toggle` is
 hidden separately (`:7020`) because it only exists for the desktop outline pane. The DOM stays,
@@ -568,12 +592,14 @@ What replaces tab switching:
 | Job | On the phone |
 |---|---|
 | Name the current file | `#mobile-title` in the topbar shows the active file's base name (`static/js/mobile.js:150-158`, `:853`). It is a 44 px button, `aria-label="Note {name} — browse notes"`. |
-| Switch file | Tapping the title opens the drawer, which lists the files (`static/js/mobile.js:1143-1149`). One file is open at a time in practice; the tab set still exists underneath. |
-| Close the current file | The topbar `⋯` menu (`#mobile-more`), not a tab. |
-| Pin, reorder, bulk close | Not offered. The strip's whole feature set is desktop-only, by `mobile-shell.md` §3.4. |
+| See every open file | The drawer's **Tabs** view: one row per open file, the strip's states, a close per unpinned row ([`tabs-view.md`](tabs-view.md) §8). A tap opens the note and closes the drawer. |
+| Switch file | That same list, or tapping the title to browse the tree (`static/js/mobile.js:1143-1149`). |
+| Close the current file | The row's close button, or the topbar `⋯` menu (`#mobile-more`). |
+| Pin, reorder, bulk close | Not offered. Pin, reorder and the bulk closes stay desktop-only (`mobile-shell.md` §14). |
 
-Do not add a mobile tab strip, a swipe-between-tabs gesture, or a "recent files" chip row to
-approximate it. The phone has one title and one drawer, and that is the model.
+The Tabs view is the phone's only tab surface. Do not add a second tab list, a mobile tab strip, a
+swipe-between-tabs gesture, or a "recent files" chip row beside it. The phone has one title, one
+drawer, and the drawer's Tabs list.
 
 ---
 

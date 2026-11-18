@@ -513,16 +513,17 @@ not clickable (`workspaces.js:859`). A missing folder renders the row as a disab
 | 3 | Row: `Theme` + 3 chips | `Auto` `Dark` `Light` | live → `theme`; `Auto` follows the system |
 | 4 | Row: `Font size · 12.6 px` (value follows the setting) + 4 preview tiles | `Aa` `Aa` `Aa` `Aa` over `S 12.6 px` `M 14 px` `L 16.1 px` `XL 18.2 px` | live → `fontSize`; sets `--font-scale` 0.9 / 1 / 1.15 / 1.3 and the root to 12.6 / 14 / 16.1 / 18.2 px. Anatomy, states and ARIA: §3.6.1 |
 | 5 | Row: `Hide top bar` + switch | off | live → `hideTopbar`; the topbar collapses to 0 px |
-| 6 | Row: `Graph background particles` + switch | off | live → `graphParticles` |
-| 7 | Group title | `Activity bar` | — |
-| 8 | Help paragraph `#settings-sidebar-order-help` | "Order of the side-bar icons. Drag a row by its handle to reorder it, and use Hide to remove a view from the activity bar. Unhide restores it." | `id` so the list can name it via `aria-describedby`; names both paths |
-| 9 | List `#settings-sidebar-order` | 7 cards, 40 px each, gap 8: handle, the view's own 14 px icon, view label, `Hide` / `Unhide` button | `role="list"`, rows `role="listitem"` with `aria-posinset` / `aria-setsize`; dragged by the handle only; a hidden row stays in the list, muted, with `Unhide`; live on a drop → `sidebarOrder`, live on Hide/Unhide → `sidebarHidden`; focus stays on the moved or toggled row's button |
-| 10 | Live region `#settings-sidebar-order-status` | `<View> moved to position <n> of 7.` · `<View> hidden.` · `<View> shown.` | `.sr-only`, `role="status"`; written after a completed move or visibility change, silent on a cancelled or no-op drag |
-| 11 | Group title | `Modal size` | — |
-| 12 | Row: `Settings modal width` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalWidth` (60/75/90 vw) |
-| 13 | Row: `Settings modal height` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalHeight` (80/85/90 vh) |
-| 14 | Group title | `Wallpaper` | — |
-| 15 | Row: `Wallpaper` + 3 chips | `None` `Lines` `Grid` | live → `wallpaper` |
+| 6 | Row: `Hide tab bar` + switch | off | live → `hideTabBar`; `#tab-bar` takes `hidden` and the rail's outline twin appears (`shell-frame.md` §1.3, §3.1; `tab-bar.md` §8.1) |
+| 7 | Row: `Graph background particles` + switch | off | live → `graphParticles` |
+| 8 | Group title | `Activity bar` | — |
+| 9 | Help paragraph `#settings-sidebar-order-help` | "Order of the side-bar icons. Drag a row by its handle to reorder it, and use Hide to remove a view from the activity bar. Unhide restores it." | `id` so the list can name it via `aria-describedby`; names both paths |
+| 10 | List `#settings-sidebar-order` | 8 cards, 40 px each, gap 8: handle, the view's own 14 px icon, view label, `Hide` / `Unhide` button | `role="list"`, rows `role="listitem"` with `aria-posinset` / `aria-setsize`; dragged by the handle only; a hidden row stays in the list, muted, with `Unhide`; live on a drop → `sidebarOrder`, live on Hide/Unhide → `sidebarHidden`; focus stays on the moved or toggled row's button |
+| 11 | Live region `#settings-sidebar-order-status` | `<View> moved to position <n> of 8.` · `<View> hidden.` · `<View> shown.` | `.sr-only`, `role="status"`; written after a completed move or visibility change, silent on a cancelled or no-op drag |
+| 12 | Group title | `Modal size` | — |
+| 13 | Row: `Settings modal width` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalWidth` (60/75/90 vw) |
+| 14 | Row: `Settings modal height` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalHeight` (80/85/90 vh) |
+| 15 | Group title | `Wallpaper` | — |
+| 16 | Row: `Wallpaper` + 3 chips | `None` `Lines` `Grid` | live → `wallpaper` |
 | 16 | Row: `Wallpaper scroll` + 2 chips | `Scroll with content` `Fixed in viewport` | live → `wallpaperScroll` |
 | 17 | Row: `Wallpaper color` + 5 chips | `Neutral` `Blue` `Green` `Purple` `Amber` | live → `wallpaperColor` |
 | 18 | Row: `Wallpaper intensity` + 3 chips | `Subtle` `Medium` `Bold` | live → `wallpaperIntensity` |

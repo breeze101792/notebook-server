@@ -97,6 +97,7 @@ width.
 | `outlineWidth` | number (px) | 220 | drag end | boot inline style; `app.js:495-503` |
 | `outlineCollapsed` | bool | false | header `›`, tab-bar toggle | same |
 | `hideTopbar` | bool | false | Settings checkbox (`settings.js:474-477`), Mod+Shift+T (`app.js:786`) | `templates/index.html:42`, `app.js:393` |
+| `hideTabBar` | bool | false | Settings checkbox, Mod+Shift+B | `templates/index.html` (`#tab-bar[hidden]`), `app.js` |
 | `activeView` | string | `explorer` | every activation (`app.js:742-745`) | server render; `activity.js` adopts it |
 
 `activeView` is not geometry, but the collapsed-but-active state in §4.6 depends on it: the rail
@@ -295,17 +296,19 @@ frame changes; do not add a second lock treatment.
 |---|---|---|---|---|---|
 | 1 | top, pinned | `#workspace-rail-btn` | `nb-icon-workspace` | topbar hidden only | hidden |
 | 2 | views | `explorer` | `nb-icon-files` | eager, server-rendered host | shown |
-| 3 | views | `sessions` | `nb-icon-sessions` | host ships, filled by `sessions.js` | **hidden** (`style.css:8515-8516`) |
+| 3 | views | `sessions` | `nb-icon-sessions` | host ships, filled by `sessions.js` | shown (drawer) |
 | 4 | views | `pinned` | `nb-icon-pin` | lazy on first activation | shown |
 | 5 | views | `bookmarks` | `nb-icon-bookmark` | host ships, filled by `bookmarks.js` | shown |
 | 6 | views | `recent` | `nb-icon-clock` | lazy | shown |
 | 7 | views | `search` | `nb-icon-search` | lazy | shown |
 | 8 | views | `ai` | `nb-icon-sparkle` | lazy | **hidden** (`:7189-7196`) |
+| 9 | views | `tabs` | `nb-icon-tabs` | host ships, filled by `tabs-view.js` | More sheet (first six of the saved order) |
 | — | spacer | `.activity-bar-spacer` | — | — | hidden (`:7189`) |
-| 9 | bottom | `#topbar-show-btn` | `nb-icon-topbar` | topbar hidden only | hidden |
-| 10 | bottom | `#activity-graph-btn` | `nb-icon-graph` | action | hidden |
-| 11 | bottom | `#logout-btn` | `nb-icon-logout` | auth on | hidden |
-| 12 | bottom | `#activity-settings-btn` | `nb-icon-gear` | action | hidden |
+| 10 | bottom | `#topbar-show-btn` | `nb-icon-topbar` | topbar hidden only | hidden |
+| 11 | bottom | `#outline-rail-btn` | `nb-icon-outline` | tab bar hidden only | hidden |
+| 12 | bottom | `#activity-graph-btn` | `nb-icon-graph` | action | hidden |
+| 13 | bottom | `#logout-btn` | `nb-icon-logout` | auth on | hidden |
+| 14 | bottom | `#activity-settings-btn` | `nb-icon-gear` | action | hidden |
 
 View order is `sidebarOrder` (Settings → Appearance), seeded from the
 server-rendered `data-sidebar-order` attribute; unnamed views follow in
@@ -313,7 +316,17 @@ registration order (`static/js/activity.js:96-168`). `hiddenViews` removes
 icons from the strip; hiding the active view switches to the first visible
 one, and hiding every view collapses the panel. `renderBar()` renders into
 `.activity-bar-views` after the pin (`activity.js:170-200`). The static actions live in the
-markup (`templates/index.html:198-214`). The seven views are the set; a new view appends.
+markup (`templates/index.html:198-214`). The nine views are the set; a new view appends.
+
+The Tabs view ([`tabs-view.md`](tabs-view.md)) registers last, so with an empty `sidebarOrder` it is
+the eighth view and, on the phone, the first view past the six-slot rail — a More row until the user
+promotes it ([`mobile-more-sheet.md`](mobile-more-sheet.md) §1.2, `activity.js:43-46`, `:148-162`).
+
+`#outline-rail-btn` is the outline pane's second mount, the `#workspace-rail-btn` pattern
+(`templates/index.html:359-363`, `style.css:8874-8878`): `display: none` until
+`body:has(#tab-bar[hidden])`, because the control's first mount lives in the tab strip
+([`tab-bar.md`](tab-bar.md) §8.1). The strip's toggle is untouched; exactly one of the two is
+visible at a time.
 
 The split is structural, not visual: **views** select a panel and carry an active state;
 **actions** fire once and never take `aria-pressed`. `.activity-action.active::before` is already

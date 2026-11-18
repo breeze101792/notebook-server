@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tabs view — mockup</title>
+<style>
+/* Page theme switch (no script). Light is the default; the paired board
+   below forces both themes on its own two panels. */
+:root,.theme-dark{
+  --bg:#1a1b1f;--bg-panel:#22232a;--bg-elev:#2a2b34;--fg:#e6e6ea;--fg-muted:#9799a4;
+  --accent:#7c9cff;--accent-soft:rgba(124,156,255,.18);--accent-fg:#14151a;
+  --border:#383a45;--border-strong:#7b8194;--surface-well:#14151a;--code-bg:#14151a;
+  --surface-page:var(--bg);--surface-panel:var(--bg-panel);--surface-raised:var(--bg-elev);
+  --text-primary:var(--fg);--text-muted:var(--fg-muted);--text-on-accent:var(--accent-fg);
+  --warn:#f3b454;--danger:#ff6b6b;
+  --page-bg:#0b0c10;--page-card:#121319;--page-fg:#e6e6ea;--page-muted:#9aa0ad;--page-line:#2f313b;
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --text-2xs:9px;--text-xs:.72rem;--text-sm:.8rem;--text-ui:.86rem;--text-ui-lg:.93rem;--text-body:1rem;
+  --fw-regular:400;--fw-medium:500;--fw-semibold:600;
+  --lh-tight:1.2;--lh-snug:1.35;--lh-normal:1.5;
+  --tracking-label:.08em;
+  --space-hair:2px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;
+  --radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-pill:999px;--radius-circle:50%;
+  --stroke-1:1px;--stroke-2:2px;--stroke-3:3px;
+  --control-h-sm:24px;--control-h-md:30px;--control-h-lg:36px;--control-h-touch:44px;
+  --icon-sm:14px;--icon-md:16px;--icon-lg:17px;
+  --focus-ring:2px solid var(--accent);--focus-offset:2px;--focus-offset-inset:-2px;
+  --opacity-disabled:.45;--opacity-drag:.4;
+  --m-hit:44px;--m-topbar-h:52px;--m-rail-h:56px;--m-sheet-radius:16px;--m-scrim:.45;
+  --z-rail:150;--z-drawer:410;--z-scrim:400;--z-popover:1000;
+  --shadow-pop:0 6px 24px rgba(0,0,0,.35);
+}
+html:has(#t-light:checked){
+  --bg:#ffffff;--bg-panel:#f6f7f9;--bg-elev:#eceef2;--fg:#1f2330;--fg-muted:#5d6470;
+  --accent:#2f5fd0;--accent-soft:rgba(47,95,208,.12);--accent-fg:#ffffff;
+  --border:#d8dde4;--border-strong:#78828f;--surface-well:#f0f2f5;--code-bg:#f0f2f5;
+  --warn:#8a5a0b;--danger:#c0392b;--border-strong:#78828f;--shadow-pop:0 6px 24px rgba(0,0,0,.16);
+  --page-bg:#eef1f6;--page-card:#ffffff;--page-fg:#1f2330;--page-muted:#4a5261;--page-line:#cdd3dc;
+}
+.theme-light{
+  --bg:#ffffff;--bg-panel:#f6f7f9;--bg-elev:#eceef2;--fg:#1f2330;--fg-muted:#5d6470;
+  --accent:#2f5fd0;--accent-soft:rgba(47,95,208,.12);--accent-fg:#ffffff;
+  --border:#d8dde4;--border-strong:#78828f;--surface-well:#f0f2f5;--code-bg:#f0f2f5;
+  --warn:#8a5a0b;--danger:#c0392b;--shadow-pop:0 6px 24px rgba(0,0,0,.16);
+}
+*{box-sizing:border-box}html{font-size:14px}
+body{margin:0;background:var(--page-bg);color:var(--page-fg);font:400 .86rem/1.5 var(--font-ui);padding:28px}
+.page{max-width:1240px;margin:0 auto}
+h1{font-size:24px;margin:0 0 6px}
+.lede{color:var(--page-muted);margin:0 0 18px;max-width:78ch}
+.sec{margin:0 0 30px}
+.sec h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--page-muted);margin:0 0 12px;font-weight:600}
+.gallery{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.cap{color:var(--page-muted);font-size:12px;margin:8px 0 0;max-width:430px;line-height:1.55}
+.cap b{color:var(--page-fg);font-weight:600}
+code{font-family:var(--font-mono);font-size:11px;color:var(--page-fg);background:var(--page-line);padding:1px 4px;border-radius:3px}
+
+/* switch */
+.switch{display:inline-flex;align-items:center;gap:2px;padding:2px;border:1px solid var(--page-line);border-radius:var(--radius-pill);background:var(--page-card);margin:0 0 22px}
+.switch input{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0)}
+.switch label{padding:5px 14px;border-radius:var(--radius-pill);font-size:12px;color:var(--page-muted);cursor:pointer}
+.switch label:hover{color:var(--page-fg)}
+.switch input:focus-visible + label{outline:var(--focus-ring);outline-offset:1px}
+html:has(#t-light:checked) label[for="t-light"],
+html:has(#t-dark:checked) label[for="t-dark"]{background:var(--accent-soft);color:var(--text-primary)}
+
+/* ---- panel --------------------------------------------------------- */
+.panel{width:240px;height:430px;display:flex;flex-direction:column;background:var(--surface-panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;color:var(--text-primary)}
+.panel.floor{width:140px}
+.phead{height:34px;display:flex;align-items:center;gap:var(--space-2);padding:0 var(--space-3);border-bottom:1px solid var(--border);background:var(--surface-panel);flex:0 0 auto}
+.ptitle{font-size:var(--text-xs);line-height:var(--lh-tight);letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--text-muted);font-weight:var(--fw-regular)}
+.total{min-width:20px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);font-size:var(--text-2xs);font-weight:600;font-variant-numeric:tabular-nums}
+.pactions{margin-left:auto;display:flex;gap:2px}
+.pactions button{width:24px;height:24px;display:grid;place-items:center;border:0;border-radius:5px;background:transparent;color:var(--text-muted);font:inherit;cursor:pointer}
+.pactions button:hover{color:var(--text-primary);background:var(--accent-soft)}
+
+/* ---- the list ------------------------------------------------------ */
+.tabs-list{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;margin-right:8px;padding:6px 6px 10px;overflow:auto;scrollbar-gutter:stable}
+.tab-item-wrap{flex:0 0 auto;display:flex;align-items:center;gap:2px;min-width:0}
+.tab-item{position:relative;flex:1;min-width:0;display:flex;align-items:center;min-height:var(--control-h-md);padding:3px 6px 3px 10px;border:0;border-radius:var(--radius-xs);background:none;color:var(--text-primary);font:inherit;font-size:var(--text-body);line-height:var(--lh-normal);text-align:left;white-space:nowrap;cursor:pointer}
+.tabs-list .tab-item-wrap:hover .tab-item:not([aria-current="true"]){background:var(--surface-raised)}
+.tab-item-wrap.is-hover .tab-item{background:var(--surface-raised)}
+.tab-item[aria-current="true"]{background:var(--accent-soft)}
+.tab-item[aria-current="true"]::before{content:"";position:absolute;left:0;top:50%;width:2px;height:14px;margin-top:-7px;border-radius:0 1px 1px 0;background:var(--accent)}
+.tab-item:focus-visible,.tab-item-wrap.is-focus .tab-item{outline:var(--focus-ring);outline-offset:var(--focus-offset-inset)}
+
+/* Four fixed boxes: mark 14 | label flex | state 14 | close 24. Hidden boxes
+   keep their space, so both edges hold on every row. */
+.tab-item-mark{flex:0 0 var(--icon-sm);display:grid;place-items:center;width:var(--icon-sm);height:var(--icon-sm);color:var(--text-muted)}
+.tab-item-mark.is-empty{visibility:hidden}
+.tab-item-name{flex:1;min-width:0;margin-left:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab-item-name.is-special{color:var(--text-muted);font-style:italic}
+.tab-item-state{flex:0 0 var(--icon-sm);display:grid;place-items:center;width:var(--icon-sm);height:var(--icon-sm)}
+.tab-item-state.is-empty{visibility:hidden}
+.tab-item-state svg{width:var(--icon-sm);height:var(--icon-sm);color:var(--warn)}
+.tab-item-dot{width:var(--space-2);height:var(--space-2);border-radius:var(--radius-circle);background:var(--accent)}
+.tab-item-close{flex:0 0 var(--control-h-sm);width:var(--control-h-sm);height:var(--control-h-sm);display:grid;place-items:center;padding:0;border:0;border-radius:5px;background:none;color:var(--text-muted);cursor:pointer}
+.tab-item-gap{flex:0 0 var(--control-h-sm);width:var(--control-h-sm);height:var(--control-h-sm)}
+.tabs-list .tab-item-wrap:hover .tab-item-close{color:var(--text-primary)}
+.tab-item-close:hover{color:var(--danger);background:var(--accent-soft)}
+.tab-item-close:focus-visible{outline:var(--focus-ring);outline-offset:var(--focus-offset-inset)}
+.tab-item-close svg{width:var(--icon-md);height:var(--icon-md)}
+.tab-item-mark svg{display:block;width:var(--icon-sm);height:var(--icon-sm)}
+
+.tabs-foot{flex:0 0 auto;margin:0;padding:9px 12px 10px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-start;color:var(--text-muted);font-size:var(--text-sm);line-height:1.45}
+.tab-foot-pin{flex:0 0 auto}
+.tab-foot-pin svg{width:11px;height:11px}
+.tabs-empty{flex:1 1 auto;margin:0;padding:10px 12px;color:var(--text-muted);font-size:var(--text-sm);font-style:italic}
+
+/* ---- column guide -------------------------------------------------- */
+.colguide{display:flex;align-items:center;gap:2px;padding:0 16px 0 10px;font-size:10px;color:var(--page-muted)}
+.colguide span{border-left:1px dashed var(--border-strong);padding-left:4px;height:14px;line-height:14px;white-space:nowrap;overflow:hidden}
+.colguide .g-mark{flex:0 0 var(--icon-sm)}
+.colguide .g-name{flex:1}
+.colguide .g-state{flex:0 0 var(--icon-sm)}
+.colguide .g-close{flex:0 0 var(--control-h-sm)}
+
+/* ---- state strip --------------------------------------------------- */
+.states{display:flex;flex-direction:column;gap:6px;width:580px}
+.state-row{display:grid;grid-template-columns:340px 220px;align-items:center;gap:14px}
+.state-row .plate{background:var(--surface-panel);border:1px solid var(--border);border-radius:6px;padding:2px}
+.state-row .label{color:var(--page-muted);font-size:12px}
+.state-row .label b{color:var(--page-fg);font-weight:600}
+
+/* ---- anatomy ------------------------------------------------------- */
+.anatomy{width:470px;padding:16px;background:var(--surface-panel);border:1px solid var(--border);border-radius:8px;color:var(--text-primary)}
+
+/* ---- phone --------------------------------------------------------- */
+.phone{width:390px;height:844px;position:relative;background:var(--surface-page);border:1px solid var(--border);border-radius:26px;overflow:hidden;display:flex;flex-direction:column;color:var(--text-primary)}
+.phone .m-top{height:52px;flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:0 8px;background:var(--surface-panel);border-bottom:1px solid var(--border)}
+.phone .m-title{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px;font-weight:600}
+.phone .m-btn{width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:8px;background:none;color:var(--text-primary)}
+.phone .m-body{flex:1;min-height:0;padding:18px 16px;color:var(--text-muted);font-size:13px}
+.phone .m-rail{height:56px;flex:0 0 auto;display:flex;align-items:center;background:var(--surface-panel);border-top:1px solid var(--border);position:relative;z-index:var(--z-rail)}
+.phone .rail-btn{flex:1 1 0;min-width:44px;height:56px;display:grid;place-items:center;border:0;background:none;color:var(--text-muted);position:relative}
+.phone .rail-btn.on{color:var(--accent);background:var(--accent-soft)}
+.phone .rail-btn.on::before{content:"";position:absolute;top:0;left:24%;right:24%;height:2px;background:var(--accent)}
+.phone .scrim{position:absolute;inset:0;background:rgba(0,0,0,var(--m-scrim));z-index:var(--z-scrim)}
+.phone .drawer{position:absolute;top:0;bottom:56px;left:0;width:340px;background:var(--surface-panel);z-index:var(--z-drawer);display:flex;flex-direction:column;border-right:1px solid var(--border)}
+.phone .dhead{height:52px;flex:0 0 auto;display:flex;align-items:center;gap:4px;padding:0 var(--space-1) 0 var(--space-4);border-bottom:1px solid var(--border)}
+.phone .dhead .ptitle{font-size:12px;flex:1}
+.phone .dclose{width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:8px;background:none;color:var(--text-muted)}
+.phone .tabs-list{padding:8px 8px 12px;margin-right:0}
+.phone .tab-item{min-height:var(--m-hit);padding:0 8px 0 12px}
+.phone .tab-item-close,.phone .tab-item-gap{flex:0 0 var(--m-hit);width:var(--m-hit);height:var(--m-hit);border-radius:8px}
+.phone .tabs-foot{font-size:var(--text-sm);padding:10px 12px}
+
+/* ---- shell --------------------------------------------------------- */
+.shell{width:900px;height:430px;display:flex;flex-direction:column;background:var(--surface-page);border:1px solid var(--border);border-radius:8px;overflow:hidden;color:var(--text-primary)}
+.shell .top{height:46px;flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:0 12px;background:var(--surface-panel);border-bottom:1px solid var(--border);font-size:13px}
+.shell .brand{font-weight:600}
+.shell .chip{height:24px;display:inline-flex;align-items:center;padding:0 8px;border:1px solid var(--border);border-radius:var(--radius-pill);color:var(--text-muted);font-size:11px}
+.shell .spacer{flex:1}
+.shell .grid{flex:1;min-height:0;display:grid;grid-template-columns:48px 240px minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.shell .rail{background:var(--surface-panel);border-right:1px solid var(--border);display:flex;flex-direction:column;align-items:center;gap:2px;padding:8px 0}
+.shell .rb{width:40px;height:36px;display:grid;place-items:center;border:0;border-radius:6px;background:none;color:var(--text-muted);position:relative}
+.shell .rb.on{color:var(--accent);background:var(--accent-soft)}
+.shell .rb.on::before{content:"";position:absolute;left:-4px;top:50%;width:2px;height:20px;margin-top:-10px;background:var(--accent)}
+.shell .rail-spacer{flex:1}
+.shell .editor{display:flex;flex-direction:column;min-width:0}
+.shell .strip{height:34px;flex:0 0 auto;display:flex;align-items:flex-end;gap:2px;padding:0 4px;background:var(--surface-panel);border-bottom:1px solid var(--border)}
+.shell .strip .t{height:28px;display:flex;align-items:center;padding:0 10px;border:1px solid var(--border);border-bottom:0;border-radius:6px 6px 0 0;background:var(--surface-raised);color:var(--text-muted);font-size:13px;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shell .strip .t.a{background:var(--surface-page);border-color:var(--accent);color:var(--text-primary)}
+.shell .strip .grow{flex:1}
+.shell .page-body{flex:1;min-height:0;padding:22px 28px;overflow:hidden}
+.shell .ln{height:9px;border-radius:3px;background:var(--border);margin:0 0 12px}
+.shell .ln.w1{width:38%;height:14px;background:var(--border-strong)}
+.shell .ln.w2{width:92%}.shell .ln.w3{width:87%}.shell .ln.w4{width:64%}
+.shell.hidden-strip .strip{display:none}
+.shell .panel{width:auto;height:auto;border:0;border-right:1px solid var(--border);border-radius:0}
+
+/* ---- icons --------------------------------------------------------- */
+.i{width:16px;height:16px;display:block;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-tabs" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="11" height="4.5" rx="1.2"/></symbol>
+  <symbol id="i-session" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="4" rx="1"/><rect x="2.5" y="9" width="11" height="4" rx="1"/></symbol>
+  <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+  <symbol id="i-conflict" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.5 2.5V5H11"/></symbol>
+  <symbol id="i-graph" viewBox="0 0 16 16"><circle cx="4" cy="11" r="1.6"/><circle cx="8" cy="4.5" r="1.6"/><circle cx="12" cy="10" r="1.6"/><path d="M5.2 9.8l1.9-3.6M9.2 5.7l1.9 3"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="M9.5 3.5L5 8l4.5 4.5"/></symbol>
+  <symbol id="i-outline" viewBox="0 0 16 16"><path d="M3 4h10M3 7h7M3 10h9M3 13h5"/></symbol>
+  <symbol id="i-explorer" viewBox="0 0 16 16"><path d="M2.5 4.5h4l1 1.5h6v6h-11z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M8 4.8V8l2.2 1.6"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 16 16"><path d="M4.5 2.5h7v11l-3.5-2.6-3.5 2.6z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9L12 12M12 4l-1.1 1.1M5.1 10.9L4 12"/></symbol>
+  <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1"/><circle cx="8" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 16 16"><path d="M6 2.5h4l-.7 3.2 2 2.3H4.7l2-2.3z"/><path d="M8 8v5.5"/></symbol>
+</svg>
+
+<div class="page">
+  <h1>Tabs view</h1>
+  <p class="lede">Static reference for <b>tabs-view.md</b>. The open files of the active session as a
+    side-panel list. 240 default, 140 floor, 34 header, 30 rows, 24 actions; phone rows 44. Every row
+    has the same four boxes: mark 14 (pin or module), label flex, state 14 (dirty or conflict), close
+    24 — the first, third and fourth reserved even when empty, so both edges hold.</p>
+
+  <div class="switch" role="group" aria-label="Page theme">
+    <input type="radio" name="theme" id="t-light" checked><label for="t-light">Light</label>
+    <input type="radio" name="theme" id="t-dark"><label for="t-dark">Dark</label>
+  </div>
+
+  <!-- 1 ─ normal -->
+  <section class="sec">
+    <h2>1 · normal — both themes</h2>
+    <div class="gallery">
+      <figure style="margin:0">
+        <div class="theme-dark"><div class="panel ">
+          <div class="phead"><span class="ptitle">Tabs</span><span class="total">7</span>
+            <div class="pactions"><button aria-label="Collapse panel"><svg class="i"><use href="#i-chevron-left"/></svg></button></div>
+          </div>
+          <div class="tabs-list">
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-current="true" aria-label="driver-bringup.md, pinned">
+                <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">driver-bringup.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <span class="tab-item-gap" aria-hidden="true"></span>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="Inbox.md, pinned">
+                <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">Inbox.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <span class="tab-item-gap" aria-hidden="true"></span>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="adc-cal.md, unsaved changes">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">adc-cal.md</span><span class="tab-item-state"><span class="tab-item-dot"></span></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close adc-cal.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="bench-log.md, unsaved changes, changed on disk">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">bench-log.md</span><span class="tab-item-state"><svg class="i"><use href="#i-conflict"/></svg></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close bench-log.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="Graph">
+                <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-graph"/></svg></span><span class="tab-item-name is-special">Graph</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close Graph"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="Datasheet notes.md">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Datasheet notes.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close Datasheet notes.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="a-very-long-file-name-that-truncates.md">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">a-very-long-file-name-that-truncates.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close a-very-long-file-name-that-truncates.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+          </div>
+          <p class="tabs-foot"><span class="tab-foot-pin" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span>Pinned tabs are shared by every session.</span></p>
+        </div></div>
+        <figcaption class="cap"><b>Dark.</b> Active row: wash, 2 px marker, weight 400. Pinned rows
+          draw the pin in the mark column and keep the close column as an inert gap.</figcaption>
+      </figure>
+      <figure style="margin:0">
+        <div class="theme-light"><div class="panel ">
+          <div class="phead"><span class="ptitle">Tabs</span><span class="total">7</span>
+            <div class="pactions"><button aria-label="Collapse panel"><svg class="i"><use href="#i-chevron-left"/></svg></button></div>
+          </div>
+          <div class="tabs-list">
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-current="true" aria-label="driver-bringup.md, pinned">
+                <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">driver-bringup.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <span class="tab-item-gap" aria-hidden="true"></span>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="Inbox.md, pinned">
+                <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">Inbox.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <span class="tab-item-gap" aria-hidden="true"></span>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="adc-cal.md, unsaved changes">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">adc-cal.md</span><span class="tab-item-state"><span class="tab-item-dot"></span></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close adc-cal.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="bench-log.md, unsaved changes, changed on disk">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">bench-log.md</span><span class="tab-item-state"><svg class="i"><use href="#i-conflict"/></svg></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close bench-log.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="Graph">
+                <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-graph"/></svg></span><span class="tab-item-name is-special">Graph</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close Graph"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="Datasheet notes.md">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Datasheet notes.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close Datasheet notes.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="a-very-long-file-name-that-truncates.md">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">a-very-long-file-name-that-truncates.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close a-very-long-file-name-that-truncates.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+          </div>
+          <p class="tabs-foot"><span class="tab-foot-pin" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span>Pinned tabs are shared by every session.</span></p>
+        </div></div>
+        <figcaption class="cap"><b>Light.</b> The same rows and the same faces, from the light token
+          block. Captions and page chrome follow the switch above; this board pins its own theme.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 2 ─ anatomy -->
+  <section class="sec">
+    <h2>2 · row anatomy — four boxes</h2>
+    <div class="gallery">
+      <div class="anatomy">
+        <div class="colguide"><span class="g-mark">mark 14</span><span class="g-name">label flex</span><span class="g-state">state 14</span><span class="g-close">close 24</span></div>
+        <div style="margin-top:6px">
+  <div class="tab-item-wrap">
+    <button class="tab-item" aria-current="true" aria-label="driver-bringup.md, pinned">
+      <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">driver-bringup.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+    </button>
+    <span class="tab-item-gap" aria-hidden="true"></span>
+  </div>
+  <div class="tab-item-wrap">
+    <button class="tab-item" aria-label="adc-cal.md, unsaved changes">
+      <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">adc-cal.md</span><span class="tab-item-state"><span class="tab-item-dot"></span></span>
+    </button>
+    <button class="tab-item-close" aria-label="Close adc-cal.md"><svg class="i"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="tab-item-wrap">
+    <button class="tab-item" aria-label="bench-log.md, unsaved changes, changed on disk">
+      <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">bench-log.md</span><span class="tab-item-state"><svg class="i"><use href="#i-conflict"/></svg></span>
+    </button>
+    <button class="tab-item-close" aria-label="Close bench-log.md"><svg class="i"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="tab-item-wrap">
+    <button class="tab-item" aria-label="Datasheet notes.md">
+      <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Datasheet notes.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+    </button>
+    <button class="tab-item-close" aria-label="Close Datasheet notes.md"><svg class="i"><use href="#i-close"/></svg></button>
+  </div>
+        </div>
+      </div>
+      <p class="cap" style="max-width:390px">Identity leads, state trails. The pin or module icon sits
+        in a reserved box before the name; the unsaved dot and the conflict glyph share one reserved
+        box after it, because a conflict only exists on an unsaved file. Inserting either mark only
+        where it applies is what made the names ragged; keeping the unsaved dot in front of the name
+        is what made a clean row look different from a dirty one.</p>
+    </div>
+  </section>
+
+  <!-- 3 ─ states -->
+  <section class="sec">
+    <h2>3 · states</h2>
+    <div class="states">
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap">
+            <button class="tab-item" aria-label="rest">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">rest</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close rest"><svg class="i"><use href="#i-close"/></svg></button>
+          </div></div>
+        <div class="label"><b>Rest.</b> transparent face</div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap is-hover">
+            <button class="tab-item" aria-label="hover">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">hover</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close hover"><svg class="i"><use href="#i-close"/></svg></button>
+          </div></div>
+        <div class="label"><b>Hover.</b> <code>--surface-raised</code></div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap">
+            <button class="tab-item" aria-current="true" aria-label="current">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">current</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close current"><svg class="i"><use href="#i-close"/></svg></button>
+          </div></div>
+        <div class="label"><b>Current.</b> wash + 2 px marker</div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap">
+            <button class="tab-item" aria-label="dirty, unsaved changes">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">dirty</span><span class="tab-item-state"><span class="tab-item-dot"></span></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close dirty"><svg class="i"><use href="#i-close"/></svg></button>
+          </div></div>
+        <div class="label"><b>Dirty.</b> state column, right of the name</div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap">
+            <button class="tab-item" aria-label="changed.md, unsaved changes, changed on disk">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">changed.md</span><span class="tab-item-state"><svg class="i"><use href="#i-conflict"/></svg></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close changed.md"><svg class="i"><use href="#i-close"/></svg></button>
+          </div></div>
+        <div class="label"><b>Conflict.</b> one state column, glyph instead of dot</div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap">
+            <button class="tab-item" aria-label="pinned, pinned">
+              <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">pinned</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <span class="tab-item-gap" aria-hidden="true"></span>
+          </div></div>
+        <div class="label"><b>Pinned.</b> pin leads; the close column is an inert gap</div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap">
+            <button class="tab-item" aria-label="special">
+              <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-graph"/></svg></span><span class="tab-item-name is-special">special</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close special"><svg class="i"><use href="#i-close"/></svg></button>
+          </div></div>
+        <div class="label"><b>Special.</b> module sprite + italic label</div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap is-focus">
+            <button class="tab-item" aria-label="focus">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">focus</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close focus"><svg class="i"><use href="#i-close"/></svg></button>
+          </div></div>
+        <div class="label"><b>Focus.</b> inset ring</div>
+      </div>
+    </div>
+    <p class="cap">Hover is neutral; only the current row is tinted. Weight is 400 everywhere. The
+      state box is always present, so the name's truncation point does not move when a file becomes
+      dirty.</p>
+  </section>
+
+  <!-- 4 ─ empty + floor -->
+  <section class="sec">
+    <h2>4 · empty and the 140 px floor</h2>
+    <div class="gallery">
+      <figure style="margin:0">
+        <div class="panel" style="height:230px">
+          <div class="phead"><span class="ptitle">Tabs</span><span class="total">0</span>
+            <div class="pactions"><button aria-label="Collapse panel"><svg class="i"><use href="#i-chevron-left"/></svg></button></div>
+          </div>
+          <p class="tabs-empty">No files are open. Open one in Explorer.</p>
+          <p class="tabs-foot"><span class="tab-foot-pin" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span>Pinned tabs are shared by every session.</span></p>
+        </div>
+        <figcaption class="cap"><b>Empty.</b> One line, outside the scroller; the footer stays. The
+          count reads 0.</figcaption>
+      </figure>
+
+      <figure style="margin:0">
+        <div class="panel floor">
+          <div class="phead"><span class="ptitle">Tabs</span>
+            <div class="pactions"><button aria-label="Collapse panel"><svg class="i"><use href="#i-chevron-left"/></svg></button></div>
+          </div>
+          <div class="tabs-list">
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-current="true" aria-label="driver-bringup.md, pinned">
+                <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">driver-bringup.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <span class="tab-item-gap" aria-hidden="true"></span>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="adc-cal.md, unsaved changes">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">adc-cal.md</span><span class="tab-item-state"><span class="tab-item-dot"></span></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close adc-cal.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tab-item-wrap">
+              <button class="tab-item" aria-label="bench-log.md">
+                <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">bench-log.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+              </button>
+              <button class="tab-item-close" aria-label="Close bench-log.md"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <figcaption class="cap"><b>140 floor.</b> The label ellipsizes; mark, state and close keep
+          their boxes. The count leaves the line and stays in the accessibility tree.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 5 ─ phone -->
+  <section class="sec">
+    <h2>5 · phone — the same list, in the drawer</h2>
+    <div class="gallery">
+      <figure style="margin:0">
+        <div class="phone">
+          <div class="m-top">
+            <button class="m-btn" aria-label="Back"><svg class="i"><use href="#i-chevron-left"/></svg></button>
+            <span class="m-title">driver-bringup.md</span>
+            <button class="m-btn" aria-label="More"><svg class="i"><use href="#i-more"/></svg></button>
+          </div>
+          <div class="m-body">The note renders behind the drawer.</div>
+          <div class="scrim"></div>
+          <aside class="drawer">
+            <div class="dhead">
+              <span class="ptitle">Tabs</span>
+              <span class="total">6</span>
+              <button class="dclose" aria-label="Close panel"><svg class="i"><use href="#i-close"/></svg></button>
+            </div>
+            <div class="tabs-list">
+              <div class="tab-item-wrap">
+                <button class="tab-item" aria-current="true" aria-label="driver-bringup.md, pinned">
+                  <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">driver-bringup.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+                </button>
+                <span class="tab-item-gap" aria-hidden="true"></span>
+              </div>
+              <div class="tab-item-wrap">
+                <button class="tab-item" aria-label="Inbox.md, pinned">
+                  <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">Inbox.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+                </button>
+                <span class="tab-item-gap" aria-hidden="true"></span>
+              </div>
+              <div class="tab-item-wrap">
+                <button class="tab-item" aria-label="adc-cal.md, unsaved changes">
+                  <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">adc-cal.md</span><span class="tab-item-state"><span class="tab-item-dot"></span></span>
+                </button>
+                <button class="tab-item-close" aria-label="Close adc-cal.md"><svg class="i"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab-item-wrap">
+                <button class="tab-item" aria-label="bench-log.md, unsaved changes, changed on disk">
+                  <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">bench-log.md</span><span class="tab-item-state"><svg class="i"><use href="#i-conflict"/></svg></span>
+                </button>
+                <button class="tab-item-close" aria-label="Close bench-log.md"><svg class="i"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab-item-wrap">
+                <button class="tab-item" aria-label="Datasheet notes.md">
+                  <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Datasheet notes.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+                </button>
+                <button class="tab-item-close" aria-label="Close Datasheet notes.md"><svg class="i"><use href="#i-close"/></svg></button>
+              </div>
+              <div class="tab-item-wrap">
+                <button class="tab-item" aria-label="Scratch.md">
+                  <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Scratch.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+                </button>
+                <button class="tab-item-close" aria-label="Close Scratch.md"><svg class="i"><use href="#i-close"/></svg></button>
+              </div>
+            </div>
+            <p class="tabs-foot"><span class="tab-foot-pin" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span>Pinned tabs are shared by every session.</span></p>
+          </aside>
+          <div class="m-rail">
+            <button class="rail-btn" aria-label="Explorer"><svg class="i"><use href="#i-explorer"/></svg></button>
+            <button class="rail-btn on" aria-label="Tabs" aria-pressed="true"><svg class="i"><use href="#i-tabs"/></svg></button>
+            <button class="rail-btn" aria-label="Sessions"><svg class="i"><use href="#i-session"/></svg></button>
+            <button class="rail-btn" aria-label="Pinned folders"><svg class="i"><use href="#i-pin"/></svg></button>
+            <button class="rail-btn" aria-label="Bookmarks"><svg class="i"><use href="#i-bookmark"/></svg></button>
+            <button class="rail-btn" aria-label="Recent files"><svg class="i"><use href="#i-clock"/></svg></button>
+            <button class="rail-btn" aria-label="More" aria-haspopup="dialog" aria-expanded="false"><svg class="i"><use href="#i-more"/></svg></button>
+          </div>
+        </div>
+        <figcaption class="cap"><b>390 × 844.</b> Drawer 340, header 52 with a 44 close, rows 44,
+          close 44. Tapping a row opens the note and closes the drawer. The rail shows the promoted
+          case — Tabs in slot 2, Search moved to More; by default Tabs is a More row
+          (<code>tabs-view.md</code> §2).</figcaption>
+      </figure>
+
+      <p class="cap" style="max-width:420px">
+        <b>Columns on the phone.</b> The mark and state boxes keep their sizes; the close and the
+        pinned row's gap grow to 44, so both edges hold at 390.<br><br>
+        <b>Back.</b> The drawer is a layer: the system back button closes it before the note
+        (<code>mobile-shell.md</code> §8). The view adds no layer of its own.
+      </p>
+    </div>
+  </section>
+
+  <!-- 6 ─ shell -->
+  <section class="sec">
+    <h2>6 · the shell — strip visible, strip hidden</h2>
+    <div class="gallery">
+      <figure style="margin:0">
+        <div class="shell">
+          <div class="top"><span class="brand">Field Notes</span><span class="chip">Lab notebook</span><span class="chip">Bench tests</span><span class="spacer"></span><span class="chip">Edit</span></div>
+          <div class="grid">
+            <nav class="rail">
+              <button class="rb"><svg class="i"><use href="#i-explorer"/></svg></button>
+              <button class="rb"><svg class="i"><use href="#i-tabs"/></svg></button>
+              <button class="rb on"><svg class="i"><use href="#i-session"/></svg></button>
+              <button class="rb"><svg class="i"><use href="#i-bookmark"/></svg></button>
+              <div class="rail-spacer"></div>
+              <button class="rb"><svg class="i"><use href="#i-settings"/></svg></button>
+            </nav>
+            <div class="panel">
+              <div class="phead"><span class="ptitle">Sessions</span><span class="total">4</span><div class="pactions"><button>+</button><button><svg class="i"><use href="#i-chevron-left"/></svg></button></div></div>
+              <div class="tabs-list">
+                <div class="tab-item-wrap"><button class="tab-item" aria-current="true"><span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Bench tests</span><span class="tab-item-state is-empty" aria-hidden="true"></span></button><span class="tab-item-gap" aria-hidden="true"></span></div>
+                <div class="tab-item-wrap"><button class="tab-item"><span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Driver bring-up</span><span class="tab-item-state is-empty" aria-hidden="true"></span></button><span class="tab-item-gap" aria-hidden="true"></span></div>
+                <div class="tab-item-wrap"><button class="tab-item"><span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Datasheet notes</span><span class="tab-item-state is-empty" aria-hidden="true"></span></button><span class="tab-item-gap" aria-hidden="true"></span></div>
+              </div>
+            </div>
+            <div class="editor">
+              <div class="strip">
+                <div class="t a">driver-bringup.md</div>
+                <div class="t">adc-cal.md</div>
+                <div class="t">bench-log.md</div>
+                <div class="grow"></div>
+                <button class="rb" style="width:24px;height:24px;align-self:center" aria-label="Toggle outline pane"><svg class="i"><use href="#i-outline"/></svg></button>
+              </div>
+              <div class="page-body"><div class="ln w1"></div><div class="ln w2"></div><div class="ln w3"></div><div class="ln w4"></div></div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="cap"><b>Default.</b> The strip is on; the Tabs view is a rail icon like any
+          other. Nothing about the shipped layout changed.</figcaption>
+      </figure>
+
+      <figure style="margin:0">
+        <div class="shell hidden-strip">
+          <div class="top"><span class="brand">Field Notes</span><span class="chip">Lab notebook</span><span class="chip">Bench tests</span><span class="spacer"></span><span class="chip">Edit</span></div>
+          <div class="grid">
+            <nav class="rail">
+              <button class="rb"><svg class="i"><use href="#i-explorer"/></svg></button>
+              <button class="rb on"><svg class="i"><use href="#i-tabs"/></svg></button>
+              <button class="rb"><svg class="i"><use href="#i-session"/></svg></button>
+              <button class="rb"><svg class="i"><use href="#i-bookmark"/></svg></button>
+              <div class="rail-spacer"></div>
+              <button class="rb" aria-label="Toggle outline pane"><svg class="i"><use href="#i-outline"/></svg></button>
+              <button class="rb"><svg class="i"><use href="#i-settings"/></svg></button>
+            </nav>
+            <div class="panel">
+              <div class="phead"><span class="ptitle">Tabs</span><span class="total">4</span><div class="pactions"><button aria-label="Collapse panel"><svg class="i"><use href="#i-chevron-left"/></svg></button></div></div>
+              <div class="tabs-list">
+                <div class="tab-item-wrap">
+                  <button class="tab-item" aria-current="true" aria-label="driver-bringup.md, pinned">
+                    <span class="tab-item-mark" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span class="tab-item-name">driver-bringup.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+                  </button>
+                  <span class="tab-item-gap" aria-hidden="true"></span>
+                </div>
+                <div class="tab-item-wrap">
+                  <button class="tab-item" aria-label="adc-cal.md, unsaved changes">
+                    <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">adc-cal.md</span><span class="tab-item-state"><span class="tab-item-dot"></span></span>
+                  </button>
+                  <button class="tab-item-close" aria-label="Close adc-cal.md"><svg class="i"><use href="#i-close"/></svg></button>
+                </div>
+                <div class="tab-item-wrap">
+                  <button class="tab-item" aria-label="bench-log.md, unsaved changes, changed on disk">
+                    <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">bench-log.md</span><span class="tab-item-state"><svg class="i"><use href="#i-conflict"/></svg></span>
+                  </button>
+                  <button class="tab-item-close" aria-label="Close bench-log.md"><svg class="i"><use href="#i-close"/></svg></button>
+                </div>
+                <div class="tab-item-wrap">
+                  <button class="tab-item" aria-label="Datasheet notes.md">
+                    <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">Datasheet notes.md</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+                  </button>
+                  <button class="tab-item-close" aria-label="Close Datasheet notes.md"><svg class="i"><use href="#i-close"/></svg></button>
+                </div>
+              </div>
+              <p class="tabs-foot"><span class="tab-foot-pin" aria-hidden="true"><svg class="i"><use href="#i-pin"/></svg></span><span>Pinned tabs are shared by every session.</span></p>
+            </div>
+            <div class="editor">
+              <div class="page-body"><div class="ln w1"></div><div class="ln w2"></div><div class="ln w3"></div><div class="ln w4"></div></div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="cap"><b><code>#tab-bar[hidden]</code>.</b> The 34 px strip is gone and the
+          reader gains that height. The Tabs view is now the switcher; the outline pane's control
+          moves to the rail twin above Settings, shown only in this state.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <p class="cap" style="max-width:780px">
+    Reference only. The normative text is <b>tabs-view.md</b>; where this page and the doc differ,
+    the doc wins. The page theme switch is CSS-only, so the file still opens offline with no script.
+  </p>
+</div>
+</body>
+</html>

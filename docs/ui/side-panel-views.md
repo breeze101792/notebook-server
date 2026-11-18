@@ -34,7 +34,7 @@ All four views are one `.side-panel-view` host each, siblings inside `#side-pane
 | Mount | Explorer ships rendered. Bookmarks builds at load (`bookmarks.js:450-452`). Pinned and Recent mount on first activation (`activity.js:1331-1354`). | measured |
 | Keep-alive | Never unmounted. `[hidden]` swaps visibility only, so scroll, expansion, selection and filter text survive every switch. | `activity.js:64-71`, `:182-195` |
 | Width | The frame's `--side-panel-width`: 240 default, `--shell-pane-min` 140, `--side-panel-max` 480. The view is the panel minus its 1 px right border. | `shell-frame.md` §1.2, §4.3; `style.css:284-293` |
-| Order | Explorer, Sessions, Pinned, Bookmarks, Recent, Search, AI | `templates/index.html:226-272` |
+| Order | Explorer, Tabs, Sessions, Pinned, Bookmarks, Recent, Search, AI | `templates/index.html:226-272`; `activity.js:96-168` |
 | Failure | A throwing `mount()` is caught and logged; the frame owns the error line. | `activity.js:189-194`; `shell-frame.md` §4.7 |
 
 ### 1.2 Header
