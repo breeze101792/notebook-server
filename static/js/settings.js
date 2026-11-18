@@ -59,6 +59,7 @@
   const vimrcSaveEl = document.getElementById("settings-vimrc-save");
   const vimrcStatus = document.getElementById("settings-vimrc-status");
   const hideTopbarEl = document.getElementById("settings-hide-topbar");
+  const hideTabbarEl = document.getElementById("settings-hide-tabbar");
   const graphParticlesEl = document.getElementById("settings-graph-particles");
   const siteTitleEl  = document.getElementById("settings-site-title");
   const dataDirEl   = document.getElementById("settings-data-dir");
@@ -731,11 +732,13 @@
     }
   }
 
-  /* Sync the hide-top-bar checkbox + site-title field from the live cfg. */
+  /* Sync the hide-top-bar and hide-tab-bar checkboxes + site-title field from
+   * the live cfg. */
   function syncAppearanceText() {
     if (NB.app && NB.app.getCfg) {
       const cfg = NB.app.getCfg();
       if (hideTopbarEl) hideTopbarEl.checked = !!cfg.hideTopbar;
+      if (hideTabbarEl) hideTabbarEl.checked = !!cfg.hideTabBar;
       if (graphParticlesEl) graphParticlesEl.checked = !!(NB.graph && NB.graph.getParticleField && NB.graph.getParticleField());
       if (siteTitleEl) siteTitleEl.value = cfg.siteTitle || "Notebook";
     }
@@ -772,6 +775,14 @@
   if (hideTopbarEl) {
     hideTopbarEl.addEventListener("change", () => {
       if (NB.app && NB.app.setHideTopbar) NB.app.setHideTopbar(hideTopbarEl.checked);
+    });
+  }
+
+  /* Hide tab bar: live. The attribute goes on #tab-bar, and the rail's
+   * outline twin follows it in CSS. */
+  if (hideTabbarEl) {
+    hideTabbarEl.addEventListener("change", () => {
+      if (NB.app && NB.app.setHideTabBar) NB.app.setHideTabBar(hideTabbarEl.checked);
     });
   }
 

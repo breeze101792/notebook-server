@@ -225,11 +225,11 @@ async function main() {
       }));
       check("desktop 1280: the rail carries every view and no More button",
         desktopRail.views.join(",") ===
-          "explorer,sessions,pinned,bookmarks,recent,search,ai" &&
+          "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs" &&
         desktopRail.more === "none",
         desktopRail.views.join(",") + " more=" + desktopRail.more);
       check("desktop 1280: the rail is not sliced",
-        desktopRail.railViews === 7 && desktopRail.offRail === 0,
+        desktopRail.railViews === 8 && desktopRail.offRail === 0,
         "rail=" + desktopRail.railViews + " off=" + desktopRail.offRail);
       check("desktop 1280: the edit controls are available for a writable note",
         await page.evaluate(() =>
@@ -675,7 +675,7 @@ async function main() {
         sheet.expanded === "true", sheet.expanded);
       check(size.name + ": the sheet lists Views (the overflow) then App (Settings)",
         sheet.groups.join("|") === "Views|App" &&
-        sheet.rows.join("|") === "Demo|Settings",
+        sheet.rows.join("|") === "Tabs|Demo|Settings",
         sheet.groups.join(",") + " / " + sheet.rows.join(","));
       check(size.name + ": the sheet rows are 52 px",
         sheet.rowH >= 52, String(sheet.rowH));
@@ -690,7 +690,7 @@ async function main() {
       check(size.name + ": a More view row opens the drawer and hides the sheet",
         await page.evaluate(() =>
           document.getElementById("mobile-views-sheet").hidden &&
-          document.body.dataset.drawerView === "demo" &&
+          document.body.dataset.drawerView === "tabs" &&
           document.getElementById("activity-more-btn").getAttribute("aria-expanded") === "false"));
       await page.goBack();
       await page.waitForFunction(

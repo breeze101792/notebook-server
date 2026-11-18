@@ -61,9 +61,9 @@ list through `tabs:changed` (`tabs.js:808-817`).
 |---|---|---|
 | Header | `.panel-header`, 34 px, padding `0 12px`, gap 8 | `shell-frame.md` §4.2 |
 | Title | `Tabs`, `.72rem` 400, uppercase, tracking `.08em`, `--text-muted` | `side-panel-views.md` §1.2 |
-| Count | `.tabs-total`, the controls §2.6 count badge: `--text-2xs` 600, `--text-muted`, tabular, `min-width: 2ch`, wrapped in a `.panel-heading` with `.sr-only` unit text | `side-panel-views.md` §1.2 |
+| Count | the `.session-total` chip reused verbatim (`.72rem` 600, `--fg-muted`, tabular, `min-width: 20px`), with `.tabs-total` as the hook the floor rule and the tests address; the unit lives inside it as `.sr-only` (` open files`), so the chip reads `5 open files` and paints `5` | `sessions.js:150`; `style.css:9260-9275` |
 | Actions | collapse only, `makeCollapseBtn()` | `activity.js:428-439` |
-| Footer | `.tabs-foot`, the `.sessions-foot` geometry: `padding: 9px 12px 10px`, `border-top`, `--text-sm`, 8 px gap, a 11 px pin sprite + the pinned model | `style.css:9439-9457` |
+| Footer | `class="sessions-foot tabs-foot"` — the Sessions footer geometry, not a copy of it: `padding: 9px 12px 10px`, `border-top`, `--text-sm`, 8 px gap, a pin sprite at `1em` + the pinned model. `.tabs-foot` is a hook only | `style.css:9439-9457` |
 | Empty | `.tabs-empty`, a **sibling of the list**, not inside it | `side-panel-views.md` §1.5 |
 
 There is no add action: a file opens from Explorer, Search, Recent or a bookmark. There is no
@@ -138,8 +138,8 @@ the menu in §5, after unpinning or via its `Close` item.
 | Row radius | 4 | `--radius-xs` | `guidelines.md` §2.1 |
 | Wrapper gap | 2 | `--space-hair` | `style.css:9314` |
 | Mark column | 14 × 14 | `--icon-sm` | §4.1 |
-| Dirty column | 8 × 8 + 4 right gap | `--space-2`, `--space-1` | §4.1 |
-| Close column | 24 × 24, radius 5 | `--control-h-sm` | `style.css:9398-9408` |
+| State column | 14 × 14 box with the 8 × 8 dot centred in it (3 px either side, no gap) | `--icon-sm`, `--space-2` | §4.1 |
+| Close column | 24 × 24, radius 4 | `--control-h-sm`, `--radius-xs` | `style.css:9398-9408` |
 | List gap / padding | 2; `6px 6px 10px`, right inset 8 for the resize handle | `--space-hair`, `--space-2` | `sessions.md` §10.2 |
 | List scrolling | `scrollbar-gutter: stable` | — | `side-panel-views.md` §1.3 rule 2 |
 
@@ -179,6 +179,29 @@ Activating an already-current row is a no-op beyond re-revealing it.
 
 ---
 
+### 4.5 Reorder
+
+Order is the strip's `ordered` array, so a drag moves one fact (`tabs.js:33-36`). The contract is the
+Sessions one plus the tab model's two rules:
+
+| Rule | Behaviour |
+|---|---|
+| Pointer | A row's wrapper is `draggable`; the pointer's half of the target row picks before or after; the empty area below the list means last; `dragend`, or leaving the list, clears every mark |
+| Drop mark | a 2 px `--accent` line on the target row's top or bottom edge; the list takes a 1 px dashed `--accent` outline while the empty area is the target |
+| Segment clamp | a pinned row stays inside the pinned block, an unpinned row stays after it (`tabs.js:1386-1387`) |
+| No switch | a drop never activates a tab; the active file is unchanged |
+| Re-render | any `tabs:changed` mid-drag abandons the drag: the source node is detached, and a drop would resolve against rows the user never saw |
+| Close button | a press on the close button never starts a drag — refused on `mousedown` and again on `dragstart`, because the browser retargets `dragstart` at the draggable wrapper |
+| Viewer | no drag: the wrapper is not draggable and `dragstart` is refused (`NB.pageRole() === "admin"`, `sessions.js:1161`) |
+| Persistence | the order is the tab order: it is written with the rest of the tab state and reaches other browsers like any tab change (`tabs.js:808-817`) |
+| Phone | HTML5 drag is pointer-only; touch cannot reorder. Same as Sessions and the strip (§8) |
+
+The model entry point is `NB.tabs.moveTab(path, targetPath, before)` — the strip's own `dropOnto`,
+exported rather than reimplemented, so the two surfaces cannot clamp differently. A drop with no
+target (the empty area) passes `null` and lands last.
+
+---
+
 ## 5. The tab menu
 
 The menu is the strip's, unchanged (`tab-bar.md` §5.5): pin, move to session, export, rename, copy,
@@ -209,7 +232,7 @@ right-click, per `NB.menu` (`menu.js:184-196`).
 | Empty pinned set | Nothing: the list simply starts at the first unpinned row. There is no "Pinned" heading to leave empty |
 | Load failure | None. The view reads the model; it fetches nothing, so it has no error state |
 | Auth locked | The tab model clears on `auth:locked` (`tabs.js:2028-2050`), so the list empties with the shell |
-| Drag | Not offered in v1 (§13 P1) |
+| Drag | Admin only; see §4.5 |
 
 ---
 
@@ -253,6 +276,7 @@ The view is hosted in the drawer (`mobile-shell.md` §4). Nothing is built twice
 | Rows | 44 high, padding `0 8px 0 12px`, close 44 × 44, `--m-hit` |
 | Activate | a tap opens the note and closes the drawer — `NB.mobile.closeDrawer()` after the activation resolves, the `sessions.js:821` pattern; without it an empty file would leave the drawer up |
 | Menu | long-press is not a thing here; the row's menu is reached on desktop only, so pin and bulk close stay desktop-only, as they already are (`tab-bar.md` §8) |
+| Reorder | not reachable: HTML5 drag needs a pointer. The order stays shared, so a change made on desktop shows here on the next render (§4.5) |
 | Title | `#mobile-title` still names the active file; the view is the list, not the title |
 
 ---
@@ -262,15 +286,19 @@ The view is hosted in the drawer (`mobile-shell.md` §4). Nothing is built twice
 ### 9.1 Reuse
 
 No token is added. Every value resolves to a base, primitive or existing component token, and every
-glyph is an existing sprite symbol except one: `#nb-icon-tabs`, drawn as **two stacked rounded
-rectangles** in the same 16-box style as `#nb-icon-session` (`templates/index.html:103-108`). It must
-read differently from `#nb-icon-outline` (four ragged rules), because both are visible in the rail at
-once while the strip is hidden.
+glyph is an existing sprite symbol except one: `#nb-icon-tabs`, a **portrait sheet with three text
+rules** in the same 16-box style as `#nb-icon-session` (`templates/index.html:103-108`). Sessions keeps
+the two landscape bars ("a named set of tabs"), so the rail reads set-versus-notes. It is framed, not
+ragged, so it can never read as `#nb-icon-outline`, and it is not the Workspace's offset cards.
 
 ### 9.2 Target rules
 
 ```css
-/* ---- Tabs view ----------------------------------------------------- */
+/* The host is a size container so the header can shed the count at the 140 px
+ * floor, the Sessions pattern: the panel width is --side-panel-width, which no
+ * viewport query can see. */
+.side-panel-view[data-view="tabs"] { container-type: inline-size; }
+
 .tabs-list {
   flex: 1 1 auto;
   min-height: 0;
@@ -283,6 +311,9 @@ once while the strip is hidden.
   overflow-x: hidden;
   scrollbar-gutter: stable;
 }
+/* The empty state hides the scroller; its display:flex must not beat [hidden]. */
+.tabs-list[hidden] { display: none; }
+
 .tab-item-wrap {
   flex: 0 0 auto;              /* rows must not shrink before the list scrolls */
   display: flex;
@@ -290,6 +321,17 @@ once while the strip is hidden.
   gap: var(--space-hair);
   min-width: 0;
 }
+
+/* Drag-to-reorder marks (4.5), the Sessions view's shapes on this anatomy. */
+.tab-item-wrap.dragging { opacity: var(--opacity-drag); }
+.tab-item-wrap.drop-before .tab-item {
+  box-shadow: 0 calc(-1 * var(--stroke-2)) 0 0 var(--accent);
+}
+.tab-item-wrap.drop-after .tab-item {
+  box-shadow: 0 var(--stroke-2) 0 0 var(--accent);
+}
+.tabs-list.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
+
 .tab-item {
   position: relative;
   flex: 1 1 auto;
@@ -319,16 +361,14 @@ once while the strip is hidden.
   left: 0;
   top: 50%;
   width: var(--stroke-2);
-  height: 14px;
-  margin-top: -7px;
+  height: var(--icon-sm);
+  margin-top: calc(-1 * var(--icon-sm) / 2);
   border-radius: 0 1px 1px 0;
   background: var(--accent);
 }
 .tab-item:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
 
-/* Reserved columns (4.1): the mark, the dot and the close keep their boxes on
- * every row, so one label edge and one close edge hold across the list. An
- * idle mark hides but keeps its box -- never display:none, never omitted. */
+/* Reserved columns (4.1): an idle mark or state hides but keeps its box. */
 .tab-item-mark {
   flex: 0 0 var(--icon-sm);
   display: grid;
@@ -339,6 +379,9 @@ once while the strip is hidden.
 }
 .tab-item-mark svg { display: block; width: var(--icon-sm); height: var(--icon-sm); }
 .tab-item-mark.is-empty { visibility: hidden; }
+/* A special tab registered with a text glyph rather than an nb-icon symbol. */
+.tab-item-mark-text { font-size: var(--icon-sm); line-height: 1; }
+
 /* State trails the label: one column for dirty and for conflict, because a
  * conflict only exists on an unsaved file. */
 .tab-item-state {
@@ -360,6 +403,7 @@ once while the strip is hidden.
   height: var(--icon-sm);
   color: var(--warn);
 }
+
 /* A pinned row's close column: the same 24 px box, no button, nothing announced. */
 .tab-item-gap {
   flex: 0 0 var(--control-h-sm);
@@ -378,7 +422,7 @@ once while the strip is hidden.
   padding: 0;
   background: none;
   border: 0;
-  border-radius: 5px;
+  border-radius: var(--radius-xs);
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -393,11 +437,16 @@ once while the strip is hidden.
   font-style: italic;
 }
 
+/* The footer reuses .sessions-foot; .tabs-foot is a hook. The pin follows the
+ * span's font size, so no literal is introduced. */
+.tab-foot-pin svg { display: block; width: 1em; height: 1em; }
+
 /* 140 px floor: the count leaves the line, stays in the tree (sessions.md §10.2). */
 @container (max-width: 176px) {
   .side-panel-view[data-view="tabs"] > .panel-header { padding: 7px 8px; gap: 4px; }
   .side-panel-view[data-view="tabs"] .tabs-total {
     position: absolute;
+    min-width: 0;
     width: 1px;
     height: 1px;
     margin: -1px;
@@ -414,6 +463,9 @@ once while the strip is hidden.
 @media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
   .tab-item { min-height: var(--m-hit); padding: 0 var(--space-2) 0 var(--space-3); }
   .tab-item-close { flex: 0 0 var(--m-hit); width: var(--m-hit); height: var(--m-hit); border-radius: var(--radius-md); }
+  /* The pinned row's gap takes the close button's box, or its label would
+   * truncate 20 px earlier than an unpinned row's (4.1). */
+  .tab-item-gap { flex: 0 0 var(--m-hit); width: var(--m-hit); height: var(--m-hit); }
   .tabs-list { padding: var(--space-2) var(--space-2) var(--space-3); margin-right: 0; }
   .tabs-empty { padding: 16px 12px; }
 }
@@ -427,9 +479,9 @@ rules; this view names its own class (`.tabs-total`, `.tabs-foot`) and adds no h
 | File | Change |
 |---|---|
 | `templates/index.html` | `#tabs-view` host after `#ai-view` (last view); `#nb-icon-tabs` symbol in the sprite; `hidden` on `#tab-bar` when the saved config hides it (§10) |
-| `static/js/tabs-view.js` (new) | Header, list, rows, empty block, the three event subscriptions, menu anchor, focus restore, phone drawer close |
+| `static/js/tabs-view.js` (new) | Header, list, rows, empty block, the three event subscriptions, menu anchor, focus restore, drag-to-reorder (§4.5), phone drawer close |
 | `static/js/activity.js` | `register({ id: "tabs", icon: "nb-icon-tabs", label: "Tabs" })` as the last registration |
-| `static/js/tabs.js` | Export `getSpecial(id)`, `isConflicted(path)`, `openTabMenu(path, { x, y, anchor, host })` |
+| `static/js/tabs.js` | Export `getSpecial(id)`, `isConflicted(path)`, `openTabMenu(path, { x, y, anchor, host })`, and `moveTab(path, targetPath, before)` (the strip's own `dropOnto`, aliased) |
 | `static/js/mobile.js` | Nothing. `NB.mobile.closeDrawer()` is called from `tabs-view.js`, the `sessions.js:821` pattern |
 | `static/css/style.css` | §9.2 |
 
@@ -483,6 +535,10 @@ With both bars hidden the rail keeps every door: views, Settings, and the outlin
 | **AC12** | On a phone every control reaches 44 px | `style.css` | Row ≥44, close 44 × 44, drawer close 44 × 44 |
 | **AC13** | Hiding the strip leaves every door reachable and paints on the first frame | `app.py`, `index.html`, `app.js`, `style.css` | The attribute is server-rendered; `#tab-bar` is not displayed; the rail's outline twin appears and toggles the pane; `Mod+Shift+B` and the Settings row toggle it and persist |
 | **AC14** | The mockup is self-contained | `tabs-view-mockup.html` | Opens offline, dark and light, zero network requests |
+| **AC15** | An admin can drag a row before or after another, or to the end, and the order persists | `tabs-view.js`, `tabs.js` | A drop before/after another row reorders the model and the DOM; an empty-area drop appends; the order reaches the next state write; the active file is unchanged |
+| **AC16** | A drag never crosses the pinned boundary | `tabs-view.js`, `tabs.js` | An unpinned row dropped on a pinned row lands at index 1; a pinned row dropped past the block stays inside it |
+| **AC17** | A viewer cannot drag | `tabs-view.js` | Every `.tab-item-wrap` has `draggable === false`; a `dragstart` leaves the order and the marks untouched |
+| **AC18** | A re-render abandons a drag | `tabs-view.js` | `tabs:changed` mid-drag clears `.dragging`, `.drop-before`, `.drop-after`, `.drop-empty`; a following `drop` is a no-op |
 
 ### 11.1 Shipped tests this change must update
 
@@ -522,7 +578,7 @@ attribute on `#tab-bar`, not a `<body>` class.
 
 | # | Proposal | Why | Cost |
 |---|---|---|---|
-| P1 | Drag reorder in the list, mirroring Sessions | Order is currently editable only in the strip, so a user who hides the strip cannot reorder without showing it again | Needs `NB.tabs.moveTab(path, targetPath, before)` carrying the pinned clamp and the vanished-target abort (`tabs.js:1368-1385`), plus a `tabs:changed` cancel rule and a close-button `dragstart` refusal |
+| P1 | ~~Drag reorder in the list~~ — **applied** as §4.5 | Order was editable only in the strip, so hiding the strip removed reordering | shipped: `NB.tabs.moveTab`, the segment clamp, the re-render abort, the close-button refusal |
 | P2 | `Move up` / `Move down` in the row menu | The keyboard and phone path for P1 | Two menu items the strip does not have |
 | P3 | The active file's name in the topbar when the strip is hidden | §10's recorded cost | A new topbar mount |
 | P4 | A per-row second line with the folder | Two open `index.md` files are indistinguishable by base name | Row height, and `guidelines.md` §2.1 forbids a second line |

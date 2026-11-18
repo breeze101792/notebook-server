@@ -11,8 +11,9 @@
  * .side-panel-view host the server rendered visible as the boot view
  * (so a reload shows the saved view with no flash), falling back to
  * Explorer when none is visible. Further views (Pinned, Bookmarks,
- * Recent, Search, AI, future plugins) register the same way, so adding
- * a new side-panel function is a single NB.activity.register() call.
+ * Recent, Search, AI, Tabs, future plugins) register the same way, so
+ * adding a new side-panel function is a single NB.activity.register()
+ * call.
  */
 (function () {
   "use strict";
@@ -1572,6 +1573,11 @@
       if (NB.ai && typeof NB.ai.mount === "function") NB.ai.mount(host);
     },
   });
+  // Tabs: the open files of the active session as a list. The host
+  // (#tabs-view) ships empty; tabs-view.js fills it at load, so mount is not
+  // needed. Registered last so the phone rail keeps its six slots and Tabs
+  // stays a More row until the user promotes it.
+  register({ id: "tabs", icon: "nb-icon-tabs", label: "Tabs" });
 
   // Adopt the view the server rendered visible so the first frame is the
   // saved view; fall back to Explorer when the shell shows none.

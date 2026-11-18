@@ -238,6 +238,8 @@ const html = `<!DOCTYPE html><html><head>
       <nav id="activity-bar" class="activity-bar" aria-label="Activity bar"
            data-sidebar-order="" data-sidebar-hidden="">
         <div class="activity-bar-spacer"></div>
+        <button id="outline-rail-btn" class="activity-btn activity-action" type="button"
+                title="Show outline" aria-label="Toggle outline pane" aria-pressed="false">≣</button>
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view">🕸</button>
         <button id="logout-btn" class="activity-btn activity-action" hidden>⎋</button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
@@ -263,6 +265,7 @@ const html = `<!DOCTYPE html><html><head>
         <div id="recent-view" class="side-panel-view" data-view="recent" hidden></div>
         <div id="search-view" class="side-panel-view" data-view="search" hidden></div>
         <div id="ai-view" class="side-panel-view" data-view="ai" hidden></div>
+        <div id="tabs-view" class="side-panel-view" data-view="tabs" hidden></div>
       </aside>
       <section id="editor-pane">
         <div id="tab-bar" class="tab-bar">
@@ -557,6 +560,10 @@ const html = `<!DOCTYPE html><html><head>
             <div class="settings-row">
               <label class="settings-label" for="settings-hide-topbar">Hide top bar</label>
               <input type="checkbox" id="settings-hide-topbar">
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-hide-tabbar">Hide tab bar</label>
+              <input type="checkbox" id="settings-hide-tabbar">
             </div>
             <div class="settings-form-title">Activity bar</div>
             <p class="settings-help" id="settings-sidebar-order-help">
@@ -2538,6 +2545,7 @@ evalIn(read("static/js/ai.js"));
 evalIn(read("static/js/activity.js"));
 evalIn(read("static/js/bookmarks.js"));
 evalIn(read("static/js/sessions.js"));
+evalIn(read("static/js/tabs-view.js"));
 evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/mobile.js"));
 evalIn(read("static/js/workspaces.js"));
@@ -27738,13 +27746,14 @@ function check(label, cond, extra) {
   console.log("== shortcuts ==");
   // The non-vim app keymap (Settings -> Shortcuts). Defaults:
   // Mod+S save, / openSearch, Mod+Shift+E toggleEdit, Mod+E toggleHybrid,
-  // Alt+H/L tabPrev/Next, Mod+Shift+T toggleTopbar, Mod+comma openSettings.
+  // Alt+H/L tabPrev/Next, Mod+Shift+T toggleTopbar, Mod+Shift+B
+  // toggleTabbar, Mod+comma openSettings.
   // Active when VIM mode is off and no modal is up.
   const sc = window.NB.shortcuts;
   const shortcutsList = $("settings-shortcuts-list");
   check("shortcuts: NB.shortcuts module loaded", !!sc);
-  check("shortcuts: 9 default actions",
-    sc.getActionOrder().length === 9 &&
+  check("shortcuts: 10 default actions",
+    sc.getActionOrder().length === 10 &&
     sc.getDefaults().save === "Mod+S" &&
     sc.getDefaults().openSearch === "/" &&
     sc.getDefaults().tabPrev === "Alt+H" &&
@@ -27753,13 +27762,14 @@ function check(label, cond, extra) {
     sc.getDefaults().toggleHybrid === "Mod+E" &&
     sc.getDefaults().windowCycle === "Mod+W" &&
     sc.getDefaults().toggleTopbar === "Mod+Shift+T" &&
+    sc.getDefaults().toggleTabbar === "Mod+Shift+B" &&
     sc.getDefaults().openSettings === "Mod+comma");
   // The list helpers expose the same set the UI renders.
   const labels = sc.getActionLabels();
   check("shortcuts: labels exist for all actions",
     labels.save && labels.openSearch && labels.tabPrev && labels.tabNext &&
     labels.toggleEdit && labels.toggleHybrid && labels.windowCycle &&
-    labels.toggleTopbar && labels.openSettings);
+    labels.toggleTopbar && labels.toggleTabbar && labels.openSettings);
 
   // Open the Shortcuts tab and verify the rendered rows.
   window.NB.settings.open();
@@ -27768,7 +27778,7 @@ function check(label, cond, extra) {
   navBtns.find(b => b.dataset.tab === "shortcuts").click();
   await tick(20);
   let scRows = shortcutsList.querySelectorAll(".shortcut-row");
-  check("shortcuts: 9 rows rendered", scRows.length === 9, "got " + scRows.length);
+  check("shortcuts: 10 rows rendered", scRows.length === 10, "got " + scRows.length);
   const expFmt = {
     save: "Ctrl+S",
     openSearch: "/",
@@ -27778,6 +27788,7 @@ function check(label, cond, extra) {
     toggleHybrid: "Ctrl+E",
     windowCycle: "Ctrl+W",
     toggleTopbar: "Ctrl+Shift+T",
+    toggleTabbar: "Ctrl+Shift+B",
     openSettings: "Ctrl+Comma",
   };
   for (const r of scRows) {
@@ -28365,7 +28376,7 @@ function check(label, cond, extra) {
     window.document.querySelectorAll("#activity-bar .activity-btn[data-view]"))
     .map(btn => btn.dataset.view).join(",");
   check("sidebar order: Hide removes Explorer from the activity bar",
-    hiddenIconIds === "sessions,pinned,bookmarks,recent,search,ai",
+    hiddenIconIds === "sessions,pinned,bookmarks,recent,search,ai,tabs",
     hiddenIconIds);
   const hiddenExplorerRow = orderList.querySelector('.sidebar-order-row[data-view="explorer"]');
   check("sidebar order: a hidden view stays in the list with Unhide",
@@ -28393,7 +28404,7 @@ function check(label, cond, extra) {
   await tick(20);
   check("sidebar order: Unhide restores the icon and the row",
     window.NB.activity.barItems().map(item => item.id).join(",") ===
-      "explorer,sessions,pinned,bookmarks,recent,search,ai" &&
+      "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs" &&
       window.NB.app.getSidebarHidden().length === 0,
     window.NB.activity.barItems().map(item => item.id).join(","));
   check("sidebar order: unhiding is announced",
@@ -28419,13 +28430,13 @@ function check(label, cond, extra) {
     window.NB.app.getSidebarOrder().join(","));
   check("sidebar order: unnamed views follow the saved prefix",
     window.NB.activity.barItems().map(item => item.id).join(",") ===
-      "search,explorer,sessions,pinned,bookmarks,recent,ai",
+      "search,explorer,sessions,pinned,bookmarks,recent,ai,tabs",
     window.NB.activity.barItems().map(item => item.id).join(","));
   window.NB.app.setSidebarOrder([]);
   await tick(20);
   check("sidebar order: an empty order restores registration order",
     window.NB.activity.barItems().map(item => item.id).join(",") ===
-      "explorer,sessions,pinned,bookmarks,recent,search,ai");
+      "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs");
 
   console.log("== activity bar drag and drop ==");
   window.NB.settings.close();
@@ -28481,11 +28492,11 @@ function check(label, cond, extra) {
   await tick(20);
   const dragOrder = window.NB.activity.barItems().map(item => item.id).join(",");
   check("sidebar order: drag moves Explorer before Bookmarks",
-    dragOrder === "sessions,pinned,explorer,bookmarks,recent,search,ai",
+    dragOrder === "sessions,pinned,explorer,bookmarks,recent,search,ai,tabs",
     dragOrder);
   check("sidebar order: a drag is announced",
     $("settings-sidebar-order-status").textContent ===
-      "Explorer moved to position 3 of 7.",
+      "Explorer moved to position 3 of 8.",
     $("settings-sidebar-order-status").textContent);
   const draggedRow = dragList.querySelector('.sidebar-order-row[data-view="explorer"]');
   check("sidebar order: drag focuses the moved row's toggle",
@@ -37548,6 +37559,10 @@ function check(label, cond, extra) {
       /id="outline-pane"\{%.*outline_collapsed.*%\}\s*class="collapsed"/.test(tpl));
     check("boot: topbar-hidden is rendered server-side",
       /<body\{%.*topbar_hidden.*%\}\s*class="topbar-hidden"/.test(tpl));
+    // The tab strip is hidden by an attribute on #tab-bar, not by a body
+    // class, so the first frame needs no script (tabs-view.md §10).
+    check("boot: the hidden tab strip is rendered server-side",
+      /<div id="tab-bar" class="tab-bar"\{%.*tabbar_hidden.*%\}\s*hidden\{%.*%\}>/.test(tpl));
     check("boot: wallpaper classes are rendered on #viewer-content",
       /id="viewer-content" class="markdown-body \{\{\s*boot\.wallpaper_classes\s*\}\}"/.test(tpl));
     // The activity bar's saved order ships on the nav so the icons paint in
@@ -37659,8 +37674,9 @@ function check(label, cond, extra) {
 
     // 4. The registry and the server host set stay in sync.
     const ids = window.NB.activity.views();
-    check("adopt: views() lists the seven ids in registration order",
-      ids.join(",") === "explorer,sessions,pinned,bookmarks,recent,search,ai", ids.join(","));
+    check("adopt: views() lists the eight ids in registration order",
+      ids.join(",") ===
+        "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs", ids.join(","));
     const tplIds = Array.from(
       read("templates/index.html").matchAll(
         /class="side-panel-view"[^>]*data-view="([^"]+)"/g),
@@ -44101,9 +44117,9 @@ function check(label, cond, extra) {
 
     window.NB.activity.register({ id: "demo", icon: "nb-icon-file", label: "Demo" });
     await tick(20);
-    check("mobile more: a seventh view leaves the rail for the More sheet",
+    check("mobile more: the shipped eighth view and a later one leave the rail for the More sheet",
       railIds().join(",") === "explorer,sessions,pinned,bookmarks,recent,search" &&
-      window.NB.activity.offRailViews().map((v) => v.id).join(",") === "demo",
+      window.NB.activity.offRailViews().map((v) => v.id).join(",") === "tabs,demo",
       railIds().join(",") + " / " +
         window.NB.activity.offRailViews().map((v) => v.id).join(","));
 
@@ -44120,7 +44136,7 @@ function check(label, cond, extra) {
       !$("mobile-views-sheet").hidden &&
       window.document.body.classList.contains("views-open") &&
       moreGroups.join("|") === "Views|App" &&
-      moreRows.join("|") === "Demo|Settings" &&
+      moreRows.join("|") === "Tabs|Demo|Settings" &&
       !!window.history.state && window.history.state.nbLayer === "views" &&
       window.history.state !== stateBeforeMore,
       moreGroups.join(",") + " / " + moreRows.join(",") +
@@ -44139,7 +44155,7 @@ function check(label, cond, extra) {
     await tick(80);
     check("mobile more: a view row opens the drawer on that view",
       window.document.body.classList.contains("drawer-open") &&
-      window.document.body.dataset.drawerView === "demo" &&
+      window.document.body.dataset.drawerView === "tabs" &&
       $("mobile-views-sheet").hidden &&
       !window.document.body.classList.contains("views-open"),
       window.document.body.dataset.drawerView);
@@ -44162,7 +44178,7 @@ function check(label, cond, extra) {
     check("mobile more: the rail is the first six of a reordered bar",
       window.NB.activity.railViews().map((v) => v.id).join(",") ===
         "explorer,sessions,bookmarks,recent,search,demo" &&
-      window.NB.activity.offRailViews().map((v) => v.id).join(",") === "pinned" &&
+      window.NB.activity.offRailViews().map((v) => v.id).join(",") === "pinned,tabs" &&
       railIds().join(",") === "explorer,sessions,bookmarks,recent,search,demo",
       window.NB.activity.railViews().map((v) => v.id).join(",") + " / " +
         window.NB.activity.offRailViews().map((v) => v.id).join(","));
@@ -47028,6 +47044,644 @@ function check(label, cond, extra) {
     check("sync: the block leaves no fetch log entry behind",
       fetchLog.length === wsLogStart, String(fetchLog.length - wsLogStart));
   }
+
+  console.log("== tabs view (side panel) ==");
+  // docs/ui/tabs-view.md: #tabs-view is the last side-panel host and ships
+  // empty; tabs-view.js builds the header, list, empty line and footnote at
+  // load and re-renders on tabs:changed / viewer:dirty-changed /
+  // viewer:conflict. §3 header-count-footer-empty, §4 the four-box row and
+  // its states, §5 the tab menu, §7 ARIA and focus, §10 hiding the strip.
+  window.NB.tabs.clearAll();
+  await tick(20);
+  const tabsView = $("tabs-view");
+  const tabsList = () => tabsView.querySelector(".tabs-list");
+  const tabsEmpty = () => tabsView.querySelector(".tabs-empty");
+  const tabsTotal = () => tabsView.querySelector(".tabs-total");
+  // Only the digits are painted; the unit is an .sr-only sibling inside the
+  // chip (the Sessions chip's shape), so the number is read from .tabs-total-n.
+  const tabsTotalNum = () => tabsView.querySelector(".tabs-total-n");
+  const tabsFoot = () => tabsView.querySelector(".tabs-foot");
+  const tabWrap = (p) => tabsView.querySelector(
+    '.tab-item-wrap[data-path="' + p + '"]');
+  const tabRow = (p) => {
+    const wrap = tabWrap(p);
+    return wrap ? wrap.querySelector(".tab-item") : null;
+  };
+
+  /* jsdom keeps scrollTop as a plain number and never zeroes it when a
+   * scroller loses its content; a browser does. render() empties the list by
+   * assigning textContent, so this harness does the browser's part: the
+   * element gets its own offset, and that assignment resets it to 0 after
+   * the children are gone. Without it a rebuild that dropped the restore
+   * would still read as unchanged. */
+  function resetScrollOnClear(el) {
+    let top = 0;
+    Object.defineProperty(el, "scrollTop", {
+      configurable: true,
+      get: () => top,
+      set: (value) => { top = Number(value) || 0; },
+    });
+    let desc = null;
+    for (let proto = Object.getPrototypeOf(el); proto && !desc;
+      proto = Object.getPrototypeOf(proto)) {
+      desc = Object.getOwnPropertyDescriptor(proto, "textContent");
+    }
+    if (!desc || !desc.get || !desc.set) return;
+    Object.defineProperty(el, "textContent", {
+      configurable: true,
+      get: () => desc.get.call(el),
+      set: (value) => {
+        desc.set.call(el, value);
+        if (value === "") top = 0;
+      },
+    });
+  }
+
+  // The header copies the Sessions anatomy (sessions.js buildView): a
+  // .panel-heading holding the title and the count chip, then the bare
+  // collapse control as the header's own second child.
+  check("tabs view: the host builds a header with the title, the count and a collapse control",
+    !!tabsView.querySelector(".panel-header > .panel-heading > .panel-title") &&
+    tabsView.querySelector(".panel-header > .panel-heading > .panel-title")
+      .textContent === "Tabs" &&
+    !!tabsView.querySelector(".panel-header > .panel-heading > .tabs-total") &&
+    !!tabsView.querySelector(".panel-header > .collapse-btn") &&
+    !tabsView.querySelector(".panel-header > .panel-title"),
+    tabsView.querySelector(".panel-header").innerHTML.slice(0, 120));
+  check("tabs view: the count chip carries its unit in the accessibility tree",
+    !!tabsTotal().querySelector(".sr-only") &&
+    tabsTotal().querySelector(".sr-only").textContent === " open files" &&
+    tabsTotalNum().textContent === "0");
+  check("tabs view: the empty line and the footer are siblings of the list",
+    !!tabsList() && !!tabsEmpty() && !!tabsFoot() &&
+    tabsEmpty().previousElementSibling === tabsList() &&
+    tabsFoot().previousElementSibling === tabsEmpty() &&
+    !tabsList().contains(tabsEmpty()));
+  check("tabs view: an empty model shows the empty line, hides the list and keeps the footer",
+    tabsList().children.length === 0 && tabsList().hidden === true &&
+    tabsEmpty().hidden === false &&
+    tabsEmpty().textContent === "No files are open. Open one in Explorer." &&
+    tabsTotalNum().textContent === "0" && !!tabsFoot(),
+    "rows=" + tabsList().children.length + " hidden=" + tabsList().hidden +
+      " count=" + tabsTotalNum().textContent);
+
+  // One row of each kind: pinned, idle, dirty, conflicted, special. The
+  // draft/conflict seams are the viewer's public API, not a stub, so the
+  // rows carry the same state the strip's labels do.
+  FILES["zz-idle.md"] = "# Idle\n\nNo unsaved edits.\n";
+  MTIMES["zz-idle.md"] = 1;
+  await window.NB.tabs.open("notes/a.md");
+  await window.NB.tabs.open("zz-idle.md");
+  await window.NB.tabs.open("notes/b.md");
+  await window.NB.tabs.open("Welcome.md");
+  await window.NB.tabs.open("§graph", { activate: false });
+  await tick(20);
+  window.NB.tabs.togglePin("notes/a.md");
+  await tick(20);
+  window.NB.viewer.setDraft("notes/b.md",
+    { content: FILE_B + "\nunsaved\n", mode: "source" });
+  window.NB.viewer.setDraft("Welcome.md",
+    { content: "# Welcome\n\nedited\n", mode: "source" });
+  window.NB.evt.emit("viewer:conflict", { path: "Welcome.md", conflict: true });
+  await tick(20);
+
+  const tabsOpen = window.NB.tabs.getOpen();
+  check("tabs view: one row per open tab, in strip order with the pinned prefix first",
+    tabsList().children.length === tabsOpen.length && tabsOpen.length === 5 &&
+    Array.from(tabsList().children).map((w) => w.dataset.path).join(",") ===
+      tabsOpen.join(",") &&
+    tabsOpen[0] === "notes/a.md" && window.NB.tabs.isPinned(tabsOpen[0]) &&
+    tabsOpen.slice(1).every((p) => !window.NB.tabs.isPinned(p)) &&
+    tabsTotalNum().textContent === "5",
+    Array.from(tabsList().children).map((w) => w.dataset.path).join(",") +
+      " count=" + tabsTotalNum().textContent);
+
+  const rowKinds = [
+    ["notes/a.md", "pinned"],
+    ["zz-idle.md", "idle"],
+    ["notes/b.md", "dirty"],
+    ["Welcome.md", "conflicted"],
+    ["§graph", "special"],
+  ];
+  for (const [p, kind] of rowKinds) {
+    const row = tabRow(p);
+    const wrap = tabWrap(p);
+    const kids = row ? Array.from(row.children) : [];
+    const after = wrap ? wrap.lastElementChild : null;
+    // §4: the wrapper holds two sibling buttons, so the close/gap column is
+    // the wrapper's last child, right after the row that holds the other
+    // three. The order across the wrapper is mark, name, state, close.
+    check("tabs view: the " + kind + " row keeps the four columns in order",
+      kids.length === 3 &&
+      kids[0].classList.contains("tab-item-mark") &&
+      kids[1].classList.contains("tab-item-name") &&
+      kids[2].classList.contains("tab-item-state") &&
+      wrap.children.length === 2 && wrap.firstElementChild === row &&
+      !!after &&
+      (after.classList.contains("tab-item-close") ||
+        after.classList.contains("tab-item-gap")),
+      (kids.map((k) => k.className)).concat(after ? after.className : "none")
+        .join("|"));
+  }
+
+  // Pinned: no close, an inert gap, the pin in the mark column, ", pinned".
+  check("tabs view: a pinned row reserves the close column with an inert gap",
+    !!tabWrap("notes/a.md").querySelector(".tab-item-gap") &&
+    !tabWrap("notes/a.md").querySelector(".tab-item-close"));
+  check("tabs view: the pinned mark is the pin sprite, muted",
+    !!tabRow("notes/a.md").querySelector('.tab-item-mark use[href="#nb-icon-pin"]'));
+  check("tabs view: a pinned row's accessible name ends ', pinned'",
+    tabRow("notes/a.md").getAttribute("aria-label") === "a.md, pinned",
+    tabRow("notes/a.md").getAttribute("aria-label"));
+  check("tabs view: the row advertises the menu and no aria-expanded while closed",
+    tabRow("notes/a.md").getAttribute("aria-haspopup") === "menu" &&
+    tabRow("notes/a.md").getAttribute("aria-expanded") === null);
+
+  // Dirty: the dot in the state column, ", unsaved changes".
+  check("tabs view: a dirty row holds the dot in the state column",
+    !!tabRow("notes/b.md").querySelector(".tab-item-state > .tab-item-dot"),
+    tabRow("notes/b.md").querySelector(".tab-item-state").innerHTML);
+  check("tabs view: a dirty row's accessible name ends ', unsaved changes'",
+    tabRow("notes/b.md").getAttribute("aria-label") === "b.md, unsaved changes",
+    tabRow("notes/b.md").getAttribute("aria-label"));
+
+  // Conflicted: the glyph replaces the dot; both phrases, in the strip's order.
+  check("tabs view: a conflicted row holds the conflict glyph instead of the dot",
+    !!tabRow("Welcome.md").querySelector(
+      '.tab-item-state use[href="#nb-icon-conflict"]') &&
+    !tabRow("Welcome.md").querySelector(".tab-item-state > .tab-item-dot"));
+  check("tabs view: a conflicted row's name ends ', unsaved changes, changed on disk'",
+    tabRow("Welcome.md").getAttribute("aria-label") ===
+      "Welcome.md, unsaved changes, changed on disk",
+    tabRow("Welcome.md").getAttribute("aria-label"));
+
+  // Special: the label, never the pseudo-path; the close names the label alone.
+  check("tabs view: a special row is named by its label, never its pseudo-path",
+    tabRow("§graph").querySelector(".tab-item-name").textContent === "Graph" &&
+    tabRow("§graph").getAttribute("aria-label") === "Graph" &&
+    tabRow("§graph").title === "Graph",
+    tabRow("§graph").getAttribute("aria-label"));
+  check("tabs view: a special row's close is 'Close Graph' with no state phrases",
+    tabWrap("§graph").querySelector(".tab-item-close")
+      .getAttribute("aria-label") === "Close Graph",
+    tabWrap("§graph").querySelector(".tab-item-close")
+      .getAttribute("aria-label"));
+  check("tabs view: a special row carries its module sprite and the is-special face",
+    !!tabRow("§graph").querySelector('.tab-item-mark use[href="#nb-icon-graph"]') &&
+    tabWrap("§graph").classList.contains("is-special"));
+  check("tabs view: every glyph in a row is hidden from the accessible name",
+    Array.from(tabsView.querySelectorAll(".tab-item-wrap svg"))
+      .every((svg) => svg.getAttribute("aria-hidden") === "true"));
+
+  // Idle: both boxes stay, hidden, and the close button is there.
+  check("tabs view: an idle row keeps the empty mark and state boxes",
+    tabRow("zz-idle.md").querySelector(".tab-item-mark")
+      .classList.contains("is-empty") &&
+    tabRow("zz-idle.md").querySelector(".tab-item-state")
+      .classList.contains("is-empty") &&
+    !!tabWrap("zz-idle.md").querySelector(".tab-item-close"));
+  check("tabs view: an idle row's name carries no state phrase",
+    tabRow("zz-idle.md").getAttribute("aria-label") === "zz-idle.md",
+    tabRow("zz-idle.md").getAttribute("aria-label"));
+  check("tabs view: the current row is aria-current",
+    tabRow("Welcome.md").getAttribute("aria-current") === "true" &&
+    tabRow("zz-idle.md").getAttribute("aria-current") === null);
+
+  // The row geometry (one label edge, one trailing edge, the 14/24 px boxes)
+  // is measured in a real browser: tests/browser/test_tabs_view_browser.js.
+  // jsdom never links style.css, so no textual rule check can tell whether a
+  // declaration applies, and one that regexes the file breaks on reformatting.
+
+  // --- the render skip and the scroll restore (AC7) -------------------
+  // viewer:dirty-changed fires per keystroke, so a repeat of the bit a row
+  // already shows must not rebuild the list (the unchanged() fast path in
+  // tabs-view.js), and a rebuild that does run must put the scroller back:
+  // render() reads scrollTop, empties the list and writes the offset back.
+  // jsdom has no layout and never zeroes the offset when a scroller loses
+  // its content; resetScrollOnClear below does the browser's part, or the
+  // rebuild check would pass with the restore deleted.
+  const SCROLL_AT = 137;
+  const tabsScroller = tabsList();
+  resetScrollOnClear(tabsScroller);
+  tabsScroller.scrollTop = SCROLL_AT;
+  const steadyRow = tabWrap("zz-idle.md");
+  window.NB.evt.emit("viewer:dirty-changed", { path: "notes/b.md", dirty: true });
+  window.NB.evt.emit("viewer:dirty-changed", { path: "notes/b.md", dirty: true });
+  await tick(20);
+  check("tabs view: a repeated dirty-changed rebuilds no row and keeps the scroll",
+    tabWrap("zz-idle.md") === steadyRow && tabsScroller.scrollTop === SCROLL_AT &&
+    tabsList() === tabsScroller && tabsList().children.length === tabsOpen.length,
+    "sameRow=" + (tabWrap("zz-idle.md") === steadyRow) +
+      " scrollTop=" + tabsScroller.scrollTop);
+
+  // Pinning another path is a real change: it rewrites the signature, so
+  // every row is replaced -- and the offset survives the rebuild.
+  window.NB.tabs.togglePin("zz-idle.md");
+  await tick(20);
+  check("tabs view: a real change rebuilds every row and restores the scroll",
+    tabWrap("zz-idle.md") !== steadyRow && tabsScroller.scrollTop === SCROLL_AT &&
+    window.NB.tabs.isPinned("zz-idle.md"),
+    "sameRow=" + (tabWrap("zz-idle.md") === steadyRow) +
+      " scrollTop=" + tabsScroller.scrollTop);
+
+  // Unpin back to the state the gesture checks below expect: still a real
+  // change, so the order and the offset are asserted again.
+  window.NB.tabs.togglePin("zz-idle.md");
+  await tick(20);
+  check("tabs view: unpinning rebuilds again and restores the scroll and the order",
+    !window.NB.tabs.isPinned("zz-idle.md") &&
+    tabsScroller.scrollTop === SCROLL_AT &&
+    Array.from(tabsList().children).map((w) => w.dataset.path).join(",") ===
+      tabsOpen.join(","),
+    "scrollTop=" + tabsScroller.scrollTop + " order=" +
+      Array.from(tabsList().children).map((w) => w.dataset.path).join(","));
+
+  // --- the gestures (AC6) ---------------------------------------------
+  // Back to a clean model first: leaving a dirty tab prompts, and these
+  // checks are about the row's gestures, not that prompt.
+  window.NB.viewer.discardDraft();                       // the active row
+  window.NB.evt.emit("viewer:conflict", { path: "Welcome.md", conflict: false });
+  await window.NB.tabs.activate("notes/b.md");
+  await tick(20);
+  window.NB.viewer.discardDraft();                       // notes/b.md is active
+  await tick(20);
+  check("tabs view: the model is clean before the gesture checks",
+    !window.NB.viewer.isDirty("notes/b.md") &&
+    !window.NB.viewer.isDirty("Welcome.md") &&
+    !window.NB.tabs.isConflicted("Welcome.md") &&
+    !tabRow("notes/b.md").querySelector(".tab-item-state > .tab-item-dot"));
+
+  tabRow("zz-idle.md").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(20);
+  check("tabs view: clicking a row activates that path",
+    window.NB.tabs.getActive() === "zz-idle.md", window.NB.tabs.getActive());
+
+  const activeBeforeClose = window.NB.tabs.getActive();
+  tabWrap("notes/b.md").querySelector(".tab-item-close").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(20);
+  check("tabs view: the close button closes the tab without activating it",
+    !window.NB.tabs.isOpen("notes/b.md") && !tabWrap("notes/b.md") &&
+    window.NB.tabs.getActive() === activeBeforeClose,
+    window.NB.tabs.getActive());
+
+  const beforeAux = window.NB.tabs.getActive();
+  tabWrap("§graph").dispatchEvent(new window.MouseEvent("auxclick",
+    { button: 1, bubbles: true, cancelable: true }));
+  await tick(20);
+  check("tabs view: middle-click closes an unpinned row",
+    !window.NB.tabs.isOpen("§graph") && !tabWrap("§graph") &&
+    window.NB.tabs.getActive() === beforeAux);
+
+  tabWrap("zz-idle.md").dispatchEvent(new window.MouseEvent("contextmenu",
+    { bubbles: true, cancelable: true, clientX: 40, clientY: 60 }));
+  await tick(20);
+  check("tabs view: right-click opens the tab menu at the row",
+    $("nb-menu").hidden === false &&
+    tabRow("zz-idle.md").getAttribute("aria-expanded") === "true" &&
+    Array.from($("nb-menu").querySelectorAll("button"))
+      .some((b) => b.textContent.trim().indexOf("Close others") === 0),
+    "hidden=" + $("nb-menu").hidden + " expanded=" +
+      tabRow("zz-idle.md").getAttribute("aria-expanded"));
+  window.NB.menu.close();
+  await tick(10);
+  check("tabs view: closing the menu clears the row's aria-expanded",
+    tabRow("zz-idle.md").getAttribute("aria-expanded") === null);
+
+  tabWrap("notes/a.md").dispatchEvent(new window.MouseEvent("contextmenu",
+    { bubbles: true, cancelable: true, clientX: 40, clientY: 60 }));
+  await tick(20);
+  const pinnedBulk = ["Close others", "Close to the right", "Close to the left"]
+    .map((label) => Array.from($("nb-menu").querySelectorAll("button"))
+      .find((b) => b.textContent.trim().indexOf(label) === 0));
+  check("tabs view: on a pinned row the three bulk closes are disabled with the pinned title",
+    pinnedBulk.every((b) => !!b && b.disabled === true &&
+      b.title === "Pinned tabs are closed one at a time."),
+    JSON.stringify(pinnedBulk.map((b) => b ? [b.disabled, b.title] : null)));
+  check("tabs view: the pinned row's menu still offers its own close",
+    pinnedBulk.length === 3 &&
+    Array.from($("nb-menu").querySelectorAll("button"))
+      .some((b) => b.textContent.trim() === "Close" && !b.disabled));
+  window.NB.menu.close();
+  await tick(10);
+
+  // --- focus across a re-render (AC8) ---------------------------------
+  // The view skips a render whose visible state did not move (the sessions.js
+  // guard), so each check below makes a real change first: pinning or
+  // unpinning another path rewrites the signature and rebuilds every row.
+  const idleCloseBefore = tabWrap("zz-idle.md").querySelector(".tab-item-close");
+  idleCloseBefore.focus();
+  check("tabs view: a row's close button is focusable",
+    window.document.activeElement === idleCloseBefore);
+  window.NB.tabs.togglePin("Welcome.md");          // a visible change
+  await tick(20);
+  const idleCloseAfter = tabWrap("zz-idle.md").querySelector(".tab-item-close");
+  check("tabs view: a re-render returns focus to the same close button",
+    !!idleCloseAfter && idleCloseAfter !== idleCloseBefore &&
+    window.document.activeElement === idleCloseAfter,
+    "active=" + (window.document.activeElement &&
+      window.document.activeElement.className));
+
+  // Focus outside the view is the user's: a rebuild restores only a control
+  // this view owned, so the topbar toggle keeps focus. Unpinning the same
+  // path back is the second visible change, and the row identity proves the
+  // rebuild really ran (an unchanged signature would skip it).
+  $("edit-toggle").focus();
+  const focusBeforeRemote = window.document.activeElement;
+  const idleWrapBefore = tabWrap("zz-idle.md");
+  window.NB.tabs.togglePin("Welcome.md");          // the inverse change
+  await tick(20);
+  check("tabs view: a re-render never pulls focus into the view",
+    window.document.activeElement === focusBeforeRemote &&
+    !tabsView.contains(window.document.activeElement) &&
+    tabWrap("zz-idle.md") !== idleWrapBefore,
+    "active=" + (window.document.activeElement &&
+      window.document.activeElement.className));
+
+  // --- hiding the strip (AC13) ----------------------------------------
+  check("tab bar: hideTabBar defaults off and the strip ships shown",
+    window.NB.app.getHideTabBar() === false && $("tab-bar").hidden === false);
+  window.NB.app.setHideTabBar(true);
+  await tick(20);
+  check("tab bar: setHideTabBar(true) sets hidden on #tab-bar",
+    $("tab-bar").hidden === true && window.NB.app.getHideTabBar() === true);
+  // Start from a stated state, so the assertion is a literal rather than a
+  // restatement of cfg.outlineCollapsed, which the implementation reads:
+  // an inverted aria-pressed would satisfy the old check.
+  if ($("outline-pane").classList.contains("collapsed")) {
+    click("outline-rail-btn");
+    await tick(20);
+  }
+  check("tab bar: the rail's outline twin reads pressed while the pane shows",
+    !$("outline-pane").classList.contains("collapsed") &&
+    $("outline-rail-btn").getAttribute("aria-pressed") === "true",
+    "pressed=" + $("outline-rail-btn").getAttribute("aria-pressed"));
+  click("outline-rail-btn");
+  await tick(20);
+  check("tab bar: the rail's outline twin toggles the pane",
+    $("outline-pane").classList.contains("collapsed") &&
+    $("outline-rail-btn").getAttribute("aria-pressed") === "false",
+    "pressed=" + $("outline-rail-btn").getAttribute("aria-pressed"));
+  click("outline-toggle");
+  await tick(20);
+  check("tab bar: the strip's outline toggle lands on the same state",
+    !$("outline-pane").classList.contains("collapsed") &&
+    $("outline-toggle").getAttribute("aria-pressed") === "true",
+    "pressed=" + $("outline-toggle").getAttribute("aria-pressed"));
+
+  window.NB.settings.open();
+  await tick(20);
+  const hideTabbarCheck = $("settings-hide-tabbar");
+  check("tab bar: the Appearance row mirrors the saved state",
+    !!hideTabbarCheck && hideTabbarCheck.checked === true);
+  hideTabbarCheck.checked = false;
+  hideTabbarCheck.dispatchEvent(new window.Event("change", { bubbles: true }));
+  await tick(20);
+  check("tab bar: unchecking Hide tab bar shows the strip again",
+    $("tab-bar").hidden === false && window.NB.app.getHideTabBar() === false);
+  window.NB.settings.close();
+  await tick(10);
+  check("tab bar: setHideTabBar(false) removes the attribute",
+    $("tab-bar").hidden === false && window.NB.app.getHideTabBar() === false);
+
+  // --- drag to reorder (tabs-view.md §8) -------------------------------
+  // The list is the strip's twin: the wrapper is the drag item, the model
+  // call is NB.tabs.moveTab (tabs.js dropOnto, so the pinned clamp is the
+  // model's), and the tabs:changed it emits rebuilds the rows. jsdom has no
+  // layout, so a target's rect is stubbed and the drop edge is chosen by
+  // clientY against it.
+  console.log("== tabs view drag reorder ==");
+  const tabsOrder = () => Array.from(
+    tabsList().querySelectorAll(".tab-item-wrap")).map((w) => w.dataset.path);
+  const modelOrder = () => window.NB.tabs.getOpen().join(",");
+  const dragMarks = () => ({
+    dragging: tabsList().querySelectorAll(".dragging").length,
+    before: tabsList().querySelectorAll(".drop-before").length,
+    after: tabsList().querySelectorAll(".drop-after").length,
+    empty: tabsList().classList.contains("drop-empty"),
+  });
+  const noDragMarks = () => {
+    const m = dragMarks();
+    return m.dragging === 0 && m.before === 0 && m.after === 0 && m.empty === false;
+  };
+  // A 200 x 30 box: the top half is y < 15, the bottom half y >= 15.
+  const ROW_H = 30;
+  const stubRect = (wrap) => {
+    const real = wrap.getBoundingClientRect.bind(wrap);
+    wrap.getBoundingClientRect = () => ({
+      width: 200, height: ROW_H, left: 0, right: 200,
+      top: 0, bottom: ROW_H, x: 0, y: 0, toJSON() {},
+    });
+    return () => { wrap.getBoundingClientRect = real; };
+  };
+  const dragAt = (type, node, clientY) => {
+    const ev = new window.MouseEvent(type, {
+      bubbles: true, cancelable: true, clientY: clientY == null ? 0 : clientY,
+    });
+    node.dispatchEvent(ev);
+    return ev;
+  };
+
+  window.NB.tabs.clearAll();
+  await tick(20);
+  await window.NB.tabs.open("notes/a.md"); await tick(10);
+  await window.NB.tabs.open("Welcome.md"); await tick(10);
+  await window.NB.tabs.open("notes/b.md"); await tick(20);
+  tabRow("notes/a.md").dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await tick(20);
+  const dragActive = window.NB.tabs.getActive();
+  check("tabs view drag: three unpinned rows, row 1 active",
+    tabsOrder().join(",") === "notes/a.md,Welcome.md,notes/b.md" &&
+    dragActive === "notes/a.md",
+    tabsOrder().join(",") + " active=" + String(dragActive));
+
+  // 1. Row 3 onto row 1's top half: [3,1,2].
+  const reorderRow1 = tabWrap("notes/a.md");
+  const reorderRestore = stubRect(reorderRow1);
+  dragAt("dragstart", tabWrap("notes/b.md"));
+  dragAt("dragover", reorderRow1, 5);
+  dragAt("drop", reorderRow1, 5);
+  await tick(20);
+  reorderRestore();
+  check("tabs view drag: dragging row 3 onto row 1's top half reorders the model",
+    modelOrder() === "notes/b.md,notes/a.md,Welcome.md", modelOrder());
+  check("tabs view drag: the rows follow the model order",
+    tabsOrder().join(",") === "notes/b.md,notes/a.md,Welcome.md", tabsOrder().join(","));
+  check("tabs view drag: the drop leaves the active tab alone",
+    window.NB.tabs.getActive() === dragActive, String(window.NB.tabs.getActive()));
+
+  // 2. A drop off the rows but inside the list appends.
+  dragAt("dragstart", tabWrap("notes/b.md"));
+  dragAt("dragover", tabsList(), 400);
+  check("tabs view drag: hovering the empty list marks the append, not an edge",
+    dragMarks().empty === true && dragMarks().before === 0 &&
+    dragMarks().after === 0, JSON.stringify(dragMarks()));
+  dragAt("drop", tabsList(), 400);
+  await tick(20);
+  check("tabs view drag: a drop on the empty area appends the row last",
+    modelOrder() === "notes/a.md,Welcome.md,notes/b.md" &&
+    tabsOrder().join(",") === "notes/a.md,Welcome.md,notes/b.md",
+    modelOrder());
+  check("tabs view drag: the append mark leaves with the drop",
+    noDragMarks(), JSON.stringify(dragMarks()));
+
+  // 3. The pinned clamp is the model's (tabs.js dropOnto): a pinned row stays
+  // in the pinned prefix and an unpinned row can never land inside it.
+  window.NB.tabs.togglePin("Welcome.md");
+  await tick(20);
+  check("tabs view drag: pinning puts Welcome at the head of the list",
+    modelOrder() === "Welcome.md,notes/a.md,notes/b.md" &&
+    window.NB.tabs.isPinned("Welcome.md"), modelOrder());
+  const clampPinRow = tabWrap("Welcome.md");
+  const clampPinRestore = stubRect(clampPinRow);
+  dragAt("dragstart", tabWrap("notes/b.md"));
+  dragAt("dragover", clampPinRow, 5);
+  dragAt("drop", clampPinRow, 5);
+  await tick(20);
+  clampPinRestore();
+  check("tabs view drag: an unpinned row dropped on a pinned row lands after the block",
+    modelOrder() === "Welcome.md,notes/b.md,notes/a.md" &&
+    window.NB.tabs.isPinned(window.NB.tabs.getOpen()[0]),
+    modelOrder());
+  // A second pin makes the block two rows wide, so the next gesture can show
+  // the clamp actually holding the dragged pinned row inside it.
+  window.NB.tabs.togglePin("notes/a.md");
+  await tick(20);
+  check("tabs view drag: a second pin widens the pinned block to two rows",
+    modelOrder() === "Welcome.md,notes/a.md,notes/b.md" &&
+    window.NB.tabs.isPinned("Welcome.md") &&
+    window.NB.tabs.isPinned("notes/a.md"), modelOrder());
+  const clampUnpinnedRow = tabWrap("notes/b.md");
+  const clampUnpinnedRestore = stubRect(clampUnpinnedRow);
+  dragAt("dragstart", tabWrap("Welcome.md"));
+  dragAt("dragover", clampUnpinnedRow, 25);
+  dragAt("drop", clampUnpinnedRow, 25);
+  await tick(20);
+  clampUnpinnedRestore();
+  check("tabs view drag: a pinned row dropped past the block stays inside it",
+    modelOrder() === "notes/a.md,Welcome.md,notes/b.md" &&
+    window.NB.tabs.isPinned(window.NB.tabs.getOpen()[0]) &&
+    window.NB.tabs.isPinned(window.NB.tabs.getOpen()[1]) &&
+    !window.NB.tabs.isPinned(window.NB.tabs.getOpen()[2]) &&
+    tabsOrder()[1] === "Welcome.md",
+    modelOrder());
+  window.NB.tabs.togglePin("Welcome.md");
+  window.NB.tabs.togglePin("notes/a.md");      // back to three unpinned rows
+  await tick(20);
+
+  // 4. A press on the close button is a click, not a drag: the browser
+  // retargets dragstart at the wrapper, so the press flag is what refuses it.
+  const closeOrder = modelOrder();
+  const closeBtn = tabWrap("Welcome.md").querySelector(".tab-item-close");
+  closeBtn.dispatchEvent(new window.MouseEvent("mousedown",
+    { bubbles: true, cancelable: true, button: 0 }));
+  const closeStart = dragAt("dragstart", closeBtn);
+  const closeTarget = tabWrap("notes/b.md");
+  const closeTargetRestore = stubRect(closeTarget);
+  dragAt("dragover", closeTarget, 5);
+  dragAt("drop", closeTarget, 5);
+  await tick(20);
+  closeTargetRestore();
+  check("tabs view drag: a dragstart from a close button is refused",
+    closeStart.defaultPrevented === true);
+  check("tabs view drag: a close-button drag leaves no mark and reorders nothing",
+    noDragMarks() && modelOrder() === closeOrder,
+    JSON.stringify(dragMarks()) + " order=" + modelOrder());
+
+  // 5. A rebuild during the drag would detach the source row, so a
+  // tabs:changed abandons the drag: no state, no marks, and the drop is a
+  // no-op. Pinning a row is a real tabs:changed, and the order it leaves is
+  // the baseline the abandoned drop must not move.
+  dragAt("dragstart", tabWrap("notes/b.md"));
+  check("tabs view drag: the source row carries .dragging mid-drag",
+    tabWrap("notes/b.md").classList.contains("dragging") &&
+    dragMarks().dragging === 1, JSON.stringify(dragMarks()));
+  window.NB.tabs.togglePin("Welcome.md");
+  await tick(20);
+  const changedOrder = modelOrder();
+  check("tabs view drag: a tabs:changed during the drag drops it and every mark",
+    window.NB.tabs.isPinned("Welcome.md") && noDragMarks(),
+    "pinned=" + window.NB.tabs.isPinned("Welcome.md") + " marks=" +
+      JSON.stringify(dragMarks()));
+  const staleTarget = tabWrap("notes/a.md");
+  const staleRestore = stubRect(staleTarget);
+  dragAt("dragover", staleTarget, 5);
+  dragAt("drop", staleTarget, 5);
+  await tick(20);
+  staleRestore();
+  check("tabs view drag: the drop after an abandoned drag is a no-op",
+    modelOrder() === changedOrder && noDragMarks(), modelOrder());
+  window.NB.tabs.togglePin("Welcome.md");     // back to three unpinned rows
+  await tick(20);
+
+  // 7. The marks: source, the edge the target will land on, and nothing after.
+  const markSource = tabWrap("notes/a.md");
+  const markTarget = tabWrap("Welcome.md");
+  const markTargetRestore = stubRect(markTarget);
+  dragAt("dragstart", markSource);
+  check("tabs view drag: only the dragged wrapper carries .dragging",
+    markSource.classList.contains("dragging") && dragMarks().dragging === 1,
+    markSource.className);
+  dragAt("dragover", markTarget, 5);
+  check("tabs view drag: the hovered row's top half marks drop-before only",
+    markTarget.classList.contains("drop-before") &&
+    !markTarget.classList.contains("drop-after") &&
+    dragMarks().before === 1 && dragMarks().after === 0,
+    markTarget.className);
+  dragAt("dragover", markTarget, 25);
+  check("tabs view drag: the bottom half flips it to drop-after only",
+    markTarget.classList.contains("drop-after") &&
+    !markTarget.classList.contains("drop-before") &&
+    dragMarks().before === 0 && dragMarks().after === 1,
+    markTarget.className);
+  dragAt("dragend", markTarget);
+  markTargetRestore();
+  check("tabs view drag: dragend leaves no mark behind",
+    noDragMarks(), JSON.stringify(dragMarks()));
+
+  // 6. A viewer's list is read-only: the rows are not draggable and a
+  // dragstart from one changes nothing. A pin toggle is the visible change
+  // that forces the rebuild under the stub.
+  const roleOrig = window.NB.pageRole;
+  window.NB.pageRole = () => "viewer";
+  window.NB.tabs.togglePin("notes/a.md");
+  await tick(20);
+  const viewerWraps = Array.from(
+    tabsList().querySelectorAll(".tab-item-wrap"));
+  check("tabs view drag: a viewer's rebuilt rows are not draggable",
+    viewerWraps.length === 3 && viewerWraps.every((w) => w.draggable === false),
+    viewerWraps.map((w) => String(w.draggable)).join(","));
+  const viewerOrder = modelOrder();
+  const viewerStart = dragAt("dragstart", viewerWraps[0]);
+  const viewerTarget = viewerWraps[2];
+  const viewerRestore = stubRect(viewerTarget);
+  dragAt("dragover", viewerTarget, 5);
+  dragAt("drop", viewerTarget, 5);
+  await tick(20);
+  viewerRestore();
+  check("tabs view drag: a viewer's dragstart is refused and changes nothing",
+    viewerStart.defaultPrevented === true && noDragMarks() &&
+    modelOrder() === viewerOrder,
+    "prevented=" + viewerStart.defaultPrevented + " order=" + modelOrder());
+  window.NB.pageRole = roleOrig;
+  window.NB.tabs.togglePin("notes/a.md");
+  await tick(20);
+  check("tabs view drag: with the admin role restored the rebuilt rows drag again",
+    Array.from(tabsList().querySelectorAll(".tab-item-wrap"))
+      .every((w) => w.draggable === true),
+    Array.from(tabsList().querySelectorAll(".tab-item-wrap"))
+      .map((w) => String(w.draggable)).join(","));
+
+  // Leave the shell and the fixture as the next reader expects them.
+  window.NB.tabs.clearAll();
+  await tick(20);
+  delete FILES["zz-idle.md"];
+  delete MTIMES["zz-idle.md"];
+  check("tabs view: clearing the model returns the empty state",
+    tabsList().children.length === 0 && tabsList().hidden === true &&
+    tabsEmpty().hidden === false && tabsTotalNum().textContent === "0");
 
   console.log("\nRESULT: " + (fail === 0 ? "PASS" : "FAIL") + "  (" + pass + " ok, " + fail + " failed)");
   process.exit(fail === 0 ? 0 : 1);

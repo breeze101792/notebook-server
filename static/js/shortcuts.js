@@ -16,6 +16,7 @@
  *   toggleHybrid Mod+E        -- enter / leave WYSIWYG mode
  *   windowCycle  Mod+W        -- cycle sidebar / editor / outline
  *   toggleTopbar Mod+Shift+T  -- hide / show the top bar
+ *   toggleTabbar Mod+Shift+B  -- hide / show the file tab strip
  *   openSettings Mod+comma    -- open the Settings modal
  *
  * Bindings are stored in cfg.shortcuts as {action: chordString}, where
@@ -59,6 +60,8 @@
     toggleHybrid: "Mod+E",
     windowCycle:  "Mod+W",
     toggleTopbar: "Mod+Shift+T",
+    // Mod+B is bold inside the hybrid editor; the strip takes the Shift.
+    toggleTabbar: "Mod+Shift+B",
     openSettings: "Mod+comma",
   };
   // Bare keys the graph canvas host consumes itself. The global dispatcher
@@ -77,6 +80,7 @@
     toggleHybrid: "Toggle hybrid (WYSIWYG) mode",
     windowCycle:  "Cycle sidebar / editor / outline",
     toggleTopbar: "Toggle top bar",
+    toggleTabbar: "Toggle tab bar",
     openSettings: "Open Settings",
   };
 
@@ -283,7 +287,7 @@
     // event. "First match wins" is the collision policy.
     const cfg = (window.NB && NB.app && NB.app.getCfg) ? NB.app.getCfg() : null;
     const overrides = (cfg && cfg.shortcuts) || {};
-    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "toggleHybrid", "windowCycle", "toggleTopbar", "openSettings"];
+    const order = ["save", "openSearch", "tabPrev", "tabNext", "toggleEdit", "toggleHybrid", "windowCycle", "toggleTopbar", "toggleTabbar", "openSettings"];
     let matchAction = null;
     let matchChord = null;
     for (const action of order) {

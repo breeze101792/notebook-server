@@ -3,7 +3,7 @@
 A functional audit of the running app in real Chromium, run after the
 existing suites were green. Every check drives the real UI against a real
 Flask server on a temp notebook and reads the file back from disk. The audit
-started with five suites; the browser suite has since grown to twelve, and the
+started with five suites; the browser suite has since grown to fourteen, and the
 defect table below records what the checks found and fixed.
 
 Environment: Chromium 156.0.8078.73, Playwright 1.63.0, Linux (NixOS).
@@ -11,28 +11,32 @@ No hardware step is involved.
 
 ## Final result
 
-Last full run: `npm run test:browser:all`, Chromium 156.0.8078.73.
+Last full run: `npm run test:browser:all`, Chromium 156.0.8078.73, 2026-11-18.
 
 | Suite | File | Checks |
 | --- | --- | --- |
-| Backend | `tests/test_app.py` | 461 tests, OK |
-| Frontend DOM | `tests/dom/test_dom.js` | 4,777 checks, 0 failed |
-| Core UI | `tests/browser/test_core_ui_browser.js` | 186 |
+| Backend | `tests/test_app.py` | 556 tests, OK |
+| Frontend DOM | `tests/dom/test_dom.js` | 5,570 checks, 0 failed |
+| Core UI | `tests/browser/test_core_ui_browser.js` | 204 |
 | Auth / export / PWA | `tests/browser/test_auth_export_browser.js` | 99 |
-| AI / ACP / source editor | `tests/browser/test_ai_editor_browser.js` | 40 |
-| AI blocks | `tests/browser/test_ai_blocks_browser.js` | 44 |
-| Hybrid | `tests/browser/test_hybrid_browser.js` | 169, 0 failed |
-| Table editor | `tests/browser/test_table_editor_browser.js` | 54 |
+| AI / ACP / source editor | `tests/browser/test_ai_editor_browser.js` | 83 |
+| AI blocks | `tests/browser/test_ai_blocks_browser.js` | 46 |
+| Hybrid | `tests/browser/test_hybrid_browser.js` | 298, 0 failed |
+| Table editor | `tests/browser/test_table_editor_browser.js` | 78 |
 | Hybrid blocks | `tests/browser/test_hybrid_blocks_browser.js` | 28 |
-| Fence editor | `tests/browser/test_block_edit_browser.js` | 184 ok, 0 failed |
-| Figure sizing | `tests/browser/test_figure_sizing_browser.js` | 96 |
-| Mobile | `tests/browser/test_mobile_browser.js` | 102 |
-| Mermaid designer | `tests/browser/test_designer_browser.js` | 36 |
-| Dot / WaveDrom designer | `tests/browser/test_dw_designer_browser.js` | 67 |
+| Fence editor | `tests/browser/test_block_edit_browser.js` | 202, 0 failed |
+| Figure sizing | `tests/browser/test_figure_sizing_browser.js` | 104 |
+| Mobile | `tests/browser/test_mobile_browser.js` | 150 |
+| Tabs view | `tests/browser/test_tabs_view_browser.js` | 45 |
+| Mermaid designer | `tests/browser/test_designer_browser.js` | 55 |
+| Dot / WaveDrom designer | `tests/browser/test_dw_designer_browser.js` | 69 |
+| Typography | `tests/browser/test_typography_browser.js` | 66 |
 
-`node tests/browser/run_all.js` (or `npm run test:browser:all`) runs the twelve
-browser suites sequentially on distinct ports. The last run reported **12/12
-suites passed**.
+Every figure above comes from one run of the commands below on
+2026-11-18 (Chromium 156.0.8078.73, Playwright 1.63.0):
+`node tests/browser/run_all.js` reported **14/14 suites passed**,
+`node tests/dom/test_dom.js` reported 5,570 ok, 0 failed, and
+`.venv_nixlab/bin/python -m unittest tests.test_app` ran 556 tests, OK.
 
 ## What each new suite covers
 
@@ -122,6 +126,28 @@ real in Chromium: Mermaid natural max-width versus viewBox and label scale,
 WaveDrom labels, Graphviz pt-to-px and labels, KaTeX prose sizing and
 wide-equation scroll containment, html-live frame width / font isolation /
 content auto-fit, and the prose-sized error boxes for all five renderers.
+
+### Tabs view — `test_tabs_view_browser.js`
+
+The Tabs side-panel view's own contract: the Tabs rail icon as the eighth
+view and the host it opens, one row per open tab in strip order with the
+pinned prefix first, the count chip, and the row anatomy AC4a promises —
+one label edge and one truncation edge, measured as the left *and* right
+edges of every `.tab-item-name` plus the trailing close/gap box, across a
+pinned, a dirty, a conflicted, a special (`§graph`, named by its label and
+carrying the module sprite) and an idle row, so a `display:none` on a
+reserved box cannot pass. It also covers hiding the strip: the bar leaves,
+the setting is POSTed and read back from `/api/config`, the server render
+and the first frame after a reload already show the bar hidden and the
+rail's outline twin shown, and that twin toggles the pane both ways. It
+drives drag-to-reorder with a real pointer: row 3 dropped on row 1's top
+half reorders the rows, the model and the `POST /api/workspace-state` body,
+without touching the active tab; a gesture that starts on a close button
+reorders nothing; and an unpinned row dropped on a pinned row lands after
+the pinned prefix. The
+phone half opens the view from the More sheet's Views group, measures the
+44 px row and close floor, and taps a row to open the note and close the
+drawer.
 
 ## Defects found and fixed
 

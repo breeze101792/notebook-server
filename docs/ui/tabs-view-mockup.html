@@ -85,6 +85,10 @@ html:has(#t-dark:checked) label[for="t-dark"]{background:var(--accent-soft);colo
 .tab-item[aria-current="true"]{background:var(--accent-soft)}
 .tab-item[aria-current="true"]::before{content:"";position:absolute;left:0;top:50%;width:2px;height:14px;margin-top:-7px;border-radius:0 1px 1px 0;background:var(--accent)}
 .tab-item:focus-visible,.tab-item-wrap.is-focus .tab-item{outline:var(--focus-ring);outline-offset:var(--focus-offset-inset)}
+.tab-item-wrap.dragging{opacity:var(--opacity-drag)}
+.tab-item-wrap.drop-before .tab-item{box-shadow:0 calc(-1 * var(--stroke-2)) 0 0 var(--accent)}
+.tab-item-wrap.drop-after .tab-item{box-shadow:0 var(--stroke-2) 0 0 var(--accent)}
+.tabs-list.drop-empty{outline:1px dashed var(--accent);outline-offset:-3px}
 
 /* Four fixed boxes: mark 14 | label flex | state 14 | close 24. Hidden boxes
    keep their space, so both edges hold on every row. */
@@ -177,7 +181,7 @@ html:has(#t-dark:checked) label[for="t-dark"]{background:var(--accent-soft);colo
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-  <symbol id="i-tabs" viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="11" height="4.5" rx="1.2"/></symbol>
+  <symbol id="i-tabs" viewBox="0 0 16 16"><rect x="3.4" y="2.6" width="9.2" height="10.8" rx="1.4"/><path d="M5.7 6.1h4.6M5.7 8.3h4.6M5.7 10.5h2.9"/></symbol>
   <symbol id="i-session" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="4" rx="1"/><rect x="2.5" y="9" width="11" height="4" rx="1"/></symbol>
   <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
   <symbol id="i-conflict" viewBox="0 0 16 16"><path d="M13.5 8a5.5 5.5 0 1 1-1.7-4"/><path d="M13.5 2.5V5H11"/></symbol>
@@ -436,10 +440,38 @@ html:has(#t-dark:checked) label[for="t-dark"]{background:var(--accent-soft);colo
           </div></div>
         <div class="label"><b>Focus.</b> inset ring</div>
       </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap dragging">
+            <button class="tab-item" aria-label="dragging">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">dragging</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close dragging"><svg class="i"><use href="#i-close"/></svg></button>
+        </div></div>
+        <div class="label"><b>Dragging.</b> <code>--opacity-drag</code></div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap drop-before">
+            <button class="tab-item" aria-label="drop before">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">drop before</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close drop before"><svg class="i"><use href="#i-close"/></svg></button>
+        </div></div>
+        <div class="label"><b>Drop before.</b> 2 px line</div>
+      </div>
+      <div class="state-row">
+        <div class="plate"><div class="tab-item-wrap drop-after">
+            <button class="tab-item" aria-label="drop after">
+              <span class="tab-item-mark is-empty" aria-hidden="true"></span><span class="tab-item-name">drop after</span><span class="tab-item-state is-empty" aria-hidden="true"></span>
+            </button>
+            <button class="tab-item-close" aria-label="Close drop after"><svg class="i"><use href="#i-close"/></svg></button>
+        </div></div>
+        <div class="label"><b>Drop after.</b> 2 px line</div>
+      </div>
     </div>
     <p class="cap">Hover is neutral; only the current row is tinted. Weight is 400 everywhere. The
       state box is always present, so the name's truncation point does not move when a file becomes
-      dirty.</p>
+      dirty. The last three rows are the drag marks of §4.5: the dragged row dims, the target takes a
+      2 px accent edge on the half the pointer is in.</p>
   </section>
 
   <!-- 4 ─ empty + floor -->

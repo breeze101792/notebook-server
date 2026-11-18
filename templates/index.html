@@ -106,6 +106,17 @@
         <rect x="2.5" y="8.9" width="11" height="3.8" rx="1.4" fill="none"
               stroke="currentColor" stroke-width="1.3"/>
       </symbol>
+      <!-- Tabs glyph: a portrait sheet with three text rules -- the open
+           notes themselves. Deliberately unlike the session glyph's two
+           landscape bars: a session is a set of tabs, the Tabs view is the
+           notes that set holds. A framed sheet, not ragged rules, so it
+           never reads as the outline. currentColor follows --fg-muted. -->
+      <symbol id="nb-icon-tabs" viewBox="0 0 16 16">
+        <rect x="3.4" y="2.6" width="9.2" height="10.8" rx="1.4" fill="none"
+              stroke="currentColor" stroke-width="1.3"/>
+        <path d="M5.7 6.1h4.6M5.7 8.3h4.6M5.7 10.5h2.9" fill="none"
+              stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+      </symbol>
       <symbol id="nb-icon-explorer" viewBox="0 0 16 16">
         <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.6 1.7h4.4A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
       </symbol>
@@ -372,6 +383,12 @@
              view: clicking it just opens the Settings modal, no panel
              swap. -->
         <div class="activity-bar-spacer"></div>
+        <!-- The outline pane's second mount. Its first mount is
+             #outline-toggle inside #tab-bar, which disappears with the
+             strip, so this twin is shown by body:has(#tab-bar[hidden]).
+             Hidden on the phone, where the outline pane does not exist. -->
+        <button id="outline-rail-btn" class="activity-btn activity-action" type="button"
+                title="{% if boot.outline_collapsed %}Show outline{% else %}Hide outline{% endif %}" aria-label="Toggle outline pane" aria-pressed="{% if boot.outline_collapsed %}false{% else %}true{% endif %}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-outline"/></svg></button>
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></button>
         <button id="logout-btn" class="activity-btn activity-action" title="Log out" aria-label="Log out" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-logout"/></svg></button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></button>
@@ -441,13 +458,20 @@
              into cards that apply via the standard /api/edit endpoint. -->
         <div id="ai-view" class="side-panel-view" data-view="ai"{% if boot.active_view != 'ai' %} hidden{% endif %}></div>
 
+        <!-- Tabs view: the open files of the active session, pinned first.
+             tabs-view.js builds the header + list at load (the sessions.js
+             pattern); the host stays in the DOM so scroll and row state
+             survive view switches. It ships last so the template's data-view
+             order matches the registration order. -->
+        <div id="tabs-view" class="side-panel-view" data-view="tabs"{% if boot.active_view != 'tabs' %} hidden{% endif %}></div>
+
         <!-- Collapsed-strip affordance removed: the activity bar's icons
              are the re-expand trigger, so the panel hides completely
              (width 0) when collapsed. -->
       </aside>
 
       <section id="editor-pane">
-        <div id="tab-bar" class="tab-bar">
+        <div id="tab-bar" class="tab-bar"{% if boot.tabbar_hidden %} hidden{% endif %}>
           <!-- Pinned tabs render into this fixed region (tabs.js). It is a
                sibling of the scroller, capped at half the bar, so pinned tabs
                stay visible however far the unpinned strip scrolls; tabs.js
@@ -460,7 +484,7 @@
           <!-- Outline toggle icon: shows/hides the right-side pane. A
                sibling of the scroller, pinned to the right edge of the row,
                independent of the open file tabs. -->
-          <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-outline"/></svg></button>
+          <button id="outline-toggle" class="icon-btn outline-toggle" title="{% if boot.outline_collapsed %}Show outline{% else %}Hide outline{% endif %}" aria-label="Toggle outline pane" aria-pressed="{% if boot.outline_collapsed %}false{% else %}true{% endif %}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-outline"/></svg></button>
         </div>
         <div id="edit-bar" class="edit-bar" hidden>
           <button class="eb" data-act="undo"   title="Undo (Ctrl+Z)">↶</button>
@@ -1023,6 +1047,10 @@
             <div class="settings-row">
               <label class="settings-label" for="settings-hide-topbar">Hide top bar</label>
               <input type="checkbox" id="settings-hide-topbar">
+            </div>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-hide-tabbar">Hide tab bar</label>
+              <input type="checkbox" id="settings-hide-tabbar">
             </div>
             <div class="settings-row">
               <label class="settings-label" for="settings-graph-particles">Graph background particles</label>
@@ -2063,6 +2091,7 @@
   <script src="/static/js/activity.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/bookmarks.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/sessions.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/tabs-view.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/shortcuts.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/mobile.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/workspaces.js?v={{ asset_v }}" defer></script>

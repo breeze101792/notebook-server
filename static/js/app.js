@@ -110,6 +110,12 @@
     // body gets .topbar-hidden and --topbar-h collapses to 0 so the
     // layout heights stay correct.
     hideTopbar: false,
+    // Hide the file tab strip. The state is the `hidden` attribute on
+    // #tab-bar (the server paints it on the first frame) plus
+    // .tab-bar[hidden]; the reader gains the bar's 34 px and the rail's
+    // outline twin appears in its place. Toggled from Appearance or
+    // Mod+Shift+B.
+    hideTabBar: false,
     // The site title shown in the browser tab and the top-bar brand.
     // Defaults to "Notebook"; the user can rename it in General settings.
     siteTitle: "Notebook",
@@ -455,6 +461,16 @@
     cfg.hideTopbar = !!hide;
     document.body.classList.toggle("topbar-hidden", cfg.hideTopbar);
   }
+  // The tab strip is hidden with an attribute, never a body class: its
+  // display:flex outranks the UA [hidden] rule, so style.css adds
+  // .tab-bar[hidden], and body:has(#tab-bar[hidden]) shows the rail's outline
+  // twin. Nothing measures the bar, so the reader simply gains 34 px.
+  function applyTabBar(hide) {
+    cfg.hideTabBar = !!hide;
+    const bar = document.getElementById("tab-bar");
+    if (!bar) return;
+    bar.hidden = cfg.hideTabBar;
+  }
   // The site title shows in the browser tab (<title>) and the top-bar
   // brand. Empty input falls back to the default so the tab never
   // shows a blank title.
@@ -512,6 +528,7 @@
     applyWallpaperIntensity(cfg.wallpaperIntensity || "subtle");
     applyWallpaperScroll(cfg.wallpaperScroll || "scroll");
     applyTopbar(!!cfg.hideTopbar);
+    applyTabBar(!!cfg.hideTabBar);
     applySiteTitle(cfg.siteTitle || "Notebook");
     // Hand-edited config values are normalised here so every reader sees a
     // known shape; the normalised value is what the next write persists.
@@ -576,6 +593,7 @@
     }
   }
   function applyOutlineState() {
+    syncOutlineButtons();
     if (isPhoneMode()) return;
     if (cfg.outlineCollapsed) {
       document.documentElement.style.setProperty("--outline-width", OUTLINE_COLLAPSED_W + "px");
@@ -584,6 +602,29 @@
       document.documentElement.style.setProperty("--outline-width", (cfg.outlineWidth || 220) + "px");
       outlineEl.classList.remove("collapsed");
     }
+  }
+
+  // The pane has two mounts: the strip's #outline-toggle and the rail's
+  // #outline-rail-btn, which appears only while the strip is hidden. Pressed
+  // means the pane is showing; the title names the action each press takes.
+  function syncOutlineButtons() {
+    const pressed = cfg.outlineCollapsed ? "false" : "true";
+    const title = cfg.outlineCollapsed ? "Show outline" : "Hide outline";
+    ["outline-toggle", "outline-rail-btn"].forEach((id) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.setAttribute("aria-pressed", pressed);
+      btn.title = title;
+    });
+  }
+
+  // The pane toggle both mounts share. Collapse hides the pane completely
+  // (0 width); there is no thin strip to re-expand it.
+  function toggleOutline() {
+    if (isPhoneMode()) return;
+    cfg.outlineCollapsed = !cfg.outlineCollapsed;
+    applyOutlineState();
+    persistConfig();
   }
 
   /* Persist config. `keys` names the only keys a caller may change.
@@ -1152,12 +1193,12 @@
     // hide the pane completely to 0 width; there's no thin strip to
     // re-expand it). Mirrors how the activity-bar icon toggles the left
     // side panel, giving both panes one persistent visibility control.
-    document.getElementById("outline-toggle").addEventListener("click", () => {
-      if (isPhoneMode()) return;
-      cfg.outlineCollapsed = !cfg.outlineCollapsed;
-      applyOutlineState();
-      persistConfig();
-    });
+    // The rail's twin (#outline-rail-btn) is the same handler: the strip's
+    // button disappears with the strip.
+    document.getElementById("outline-toggle").addEventListener("click",
+      toggleOutline);
+    const outlineRailBtn = document.getElementById("outline-rail-btn");
+    if (outlineRailBtn) outlineRailBtn.addEventListener("click", toggleOutline);
 
     // App-level keyboard shortcuts (active when VIM mode is off; see
     // static/js/shortcuts.js). The module owns the keydown listener
@@ -1182,6 +1223,7 @@
         toggleHybrid: () => { NB.evt.emit("shortcut:toggleHybrid"); },
         windowCycle: () => NB.vimnav && NB.vimnav.cycleWindow && NB.vimnav.cycleWindow(),
         toggleTopbar: () => NB.app.setHideTopbar(!NB.app.getHideTopbar()),
+        toggleTabbar: () => NB.app.setHideTabBar(!NB.app.getHideTabBar()),
         openSettings: () => { if (NB.settings && NB.settings.open) NB.settings.open(); },
       });
     }
@@ -1736,6 +1778,8 @@
     setWallpaperScroll: (mode) => { applyWallpaperScroll(mode); persistConfig(); },
     setHideTopbar: (on) => { applyTopbar(!!on); persistConfig(); },
     getHideTopbar: () => !!cfg.hideTopbar,
+    setHideTabBar: (on) => { applyTabBar(!!on); persistConfig(); },
+    getHideTabBar: () => !!cfg.hideTabBar,
     // File watching is on by default; the Settings toggle persists the
     // user's off choice, and boot honours it.
     getWatchEnabled: () => cfg.watchEnabled !== false,

@@ -712,6 +712,12 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   overflow: hidden;
 }
 
+/* hideTabBar: the bar's display:flex outranks the UA [hidden] rule, so the
+ * attribute needs its own rule. The server renders the attribute on the
+ * first frame and app.js toggles it; body:has(#tab-bar[hidden]) shows the
+ * rail's outline twin. */
+.tab-bar[hidden] { display: none; }
+
 /* The scrolling part of the tab row: holds the tabs only. #outline-toggle
  * sits outside it, at the fixed right edge. */
 .tab-list {
@@ -8881,6 +8887,16 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 #workspace-rail-btn[aria-expanded="true"] .workspace-glyph { color: var(--fg); }
 #workspace-rail-btn.is-missing .workspace-glyph { color: var(--ws-warn); }
 
+/* The outline pane's rail mount: the strip's #outline-toggle is its first
+ * mount, so this twin appears only while the strip is hidden. CSS-only, so a
+ * saved hideTabBar paints it on the first frame with no script. */
+#outline-rail-btn { display: none; }
+body:has(#tab-bar[hidden]) #outline-rail-btn { display: flex; }
+/* No .activity-btn:focus-visible rule exists, so the rail mount would fall
+ * back to the UA ring on a dark panel. Give it the same ring the workspace
+ * twin gets. */
+#outline-rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 /* The glyph, name and caret are shared by the chip; the caret only exists
  * on the chip, the rail mount is icon-only. */
 .workspace-glyph { width: 16px; height: 16px; flex: 0 0 16px; color: var(--fg-muted); }
@@ -9207,6 +9223,10 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
   }
   #topbar .workspace-switch .workspace-caret { display: none; }
   #activity-bar #workspace-rail-btn { display: none; }
+  /* The outline pane does not exist on the phone, so neither does its rail
+   * twin. :has() lifts the desktop rule's specificity, so repeat the prefix
+   * to outrank it (the strip's own toggle is hidden above). */
+  body:has(#tab-bar[hidden]) #activity-bar #outline-rail-btn { display: none; }
   .workspace-menu { --ws-pop-width: min(320px, calc(100vw - 16px)); }
   .ws-item { min-height: var(--m-hit); font-size: .95rem; }
   .ws-foot { font-size: .8rem; }
@@ -9533,6 +9553,197 @@ body > #nb-menu button.danger:hover {
     padding: 8px 8px 12px;
     margin-right: 0;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabs view (docs/ui/tabs-view.md)                                   */
+/* The open files of the active session, pinned first. Every row is   */
+/* one skeleton: mark 14 | name flex | state 14 | close 24. The mark,  */
+/* the state and the close keep their boxes on every row, so every    */
+/* label shares one left edge and one truncation point.                */
+/* ------------------------------------------------------------------ */
+
+/* The host is a size container so the header can shed the count at the
+ * 140 px floor, the Sessions pattern: the panel width is
+ * --side-panel-width, which no viewport query can see. The header is
+ * .panel-heading (panel-title + count chip) then the bare collapse control,
+ * so justify-content:space-between puts the control on the right edge. The
+ * count chip is the .session-total box; .tabs-total is only the hook the
+ * container query below (and the tests) address it by. */
+.side-panel-view[data-view="tabs"] { container-type: inline-size; }
+
+/* ---- Tabs view ----------------------------------------------------- */
+.tabs-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-hair);
+  margin-right: var(--space-2);
+  padding: 6px 6px 10px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+/* The empty state hides the scroller; its display:flex must not beat [hidden]. */
+.tabs-list[hidden] { display: none; }
+.tab-item-wrap {
+  flex: 0 0 auto;              /* rows must not shrink before the list scrolls */
+  display: flex;
+  align-items: center;
+  gap: var(--space-hair);
+  min-width: 0;
+}
+/* Drag-to-reorder marks, the Sessions view's shapes on this row anatomy:
+ * drop-before/drop-after are the edge the tab lands on, and .drop-empty means
+ * the empty area, where the tab lands last. */
+.tab-item-wrap.dragging { opacity: var(--opacity-drag); }
+.tab-item-wrap.drop-before .tab-item {
+  box-shadow: 0 calc(-1 * var(--stroke-2)) 0 0 var(--accent);
+}
+.tab-item-wrap.drop-after .tab-item {
+  box-shadow: 0 var(--stroke-2) 0 0 var(--accent);
+}
+.tabs-list.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
+.tab-item {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  min-height: var(--control-h-md);
+  padding: 3px 6px 3px 10px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.side-panel-view[data-view="tabs"] .tab-item-wrap:hover .tab-item:not([aria-current="true"]) {
+  background: var(--surface-raised);
+}
+.tab-item[aria-current="true"] { background: var(--accent-soft); }
+.tab-item[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--stroke-2);
+  height: var(--icon-sm);
+  margin-top: calc(-1 * var(--icon-sm) / 2);
+  border-radius: 0 1px 1px 0;
+  background: var(--accent);
+}
+.tab-item:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+/* Reserved columns (4.1): the mark, the dot and the close keep their boxes on
+ * every row, so one label edge and one close edge hold across the list. An
+ * idle mark hides but keeps its box -- never display:none, never omitted. */
+.tab-item-mark {
+  flex: 0 0 var(--icon-sm);
+  display: grid;
+  place-items: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--text-muted);
+}
+.tab-item-mark svg { display: block; width: var(--icon-sm); height: var(--icon-sm); }
+.tab-item-mark.is-empty { visibility: hidden; }
+/* A special tab registered with a text glyph rather than an nb-icon symbol. */
+.tab-item-mark-text { font-size: var(--icon-sm); line-height: 1; }
+/* State trails the label: one column for dirty and for conflict, because a
+ * conflict only exists on an unsaved file. */
+.tab-item-state {
+  flex: 0 0 var(--icon-sm);
+  display: grid;
+  place-items: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.tab-item-state.is-empty { visibility: hidden; }
+.tab-item-dot {
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+}
+.tab-item-state svg {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--warn);
+}
+/* A pinned row's close column: the same 24 px box, no button, nothing announced. */
+.tab-item-gap {
+  flex: 0 0 var(--control-h-sm);
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+}
+.tab-item-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tab-item-wrap.is-special .tab-item-name { color: var(--text-muted); font-style: italic; }
+.tab-item-close {
+  flex: 0 0 var(--control-h-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.side-panel-view[data-view="tabs"] .tab-item-wrap:hover .tab-item-close { color: var(--text-primary); }
+.tab-item-close:hover { color: var(--danger); background: var(--accent-soft); }
+.tab-item-close:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+.tabs-empty {
+  padding: 10px 12px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+/* The pinned model in one line, outside the scroller: it explains why two
+ * rows appear in every session, and must not scroll out of sight. It reuses
+ * the .sessions-foot geometry, so the two lists in one panel do not drift;
+ * .tabs-foot stays a hook. */
+.tab-foot-pin svg { display: block; width: 1em; height: 1em; }
+
+/* 140 px floor: the count leaves the line, stays in the tree (sessions.md §10.2). */
+@container (max-width: 176px) {
+  .side-panel-view[data-view="tabs"] > .panel-header { padding: 7px 8px; gap: 4px; }
+  .side-panel-view[data-view="tabs"] .tabs-total {
+    position: absolute;
+    min-width: 0;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* phone: the drawer is the host; every target reaches the 44 px floor */
+@media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
+  .tab-item { min-height: var(--m-hit); padding: 0 var(--space-2) 0 var(--space-3); }
+  .tab-item-close { flex: 0 0 var(--m-hit); width: var(--m-hit); height: var(--m-hit); border-radius: var(--radius-md); }
+  /* The pinned row's gap takes the close button's box, or its label would
+   * truncate 20 px earlier than an unpinned row's (§4.1: one truncation
+   * point across the list). */
+  .tab-item-gap { flex: 0 0 var(--m-hit); width: var(--m-hit); height: var(--m-hit); }
+  .tabs-list { padding: var(--space-2) var(--space-2) var(--space-3); margin-right: 0; }
+  .tabs-empty { padding: 16px 12px; }
 }
 
 /* ------------------------------------------------------------------ */

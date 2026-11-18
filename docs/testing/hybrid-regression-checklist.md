@@ -53,7 +53,7 @@ re-run with `npm run test:browser:all` plus the two host suites.
 | Mermaid designer | `npm run test:browser:designer` | **36 ok, 0 failed** |
 | Dot / WaveDrom designer | `npm run test:browser:dw` | **67 ok, 0 failed** |
 
-`npm run test:browser:all` therefore reports **12/12 suites passed**.
+`npm run test:browser:all` therefore reports **14/14 suites passed**.
 
 The previous failure was a real deep-link defect, now fixed: the suite opens
 more than 40 notes in one session, and a `?file=` deep link past the session's
@@ -83,7 +83,7 @@ CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium \
 CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium \
   node tests/browser/test_block_edit_browser.js
 
-# 5. Full browser gate. Must be 12/12 before commit.
+# 5. Full browser gate. Must be 14/14 before commit.
 CHROMIUM_PATH=/etc/profiles/per-user/shaowu/bin/chromium \
   node tests/browser/run_all.js
 ```
@@ -92,8 +92,8 @@ If the change touches `app.py` too, add the backend suite. If it touches a
 renderer fence name/version/limit, also run backend (the `/agent.md` marker
 check) and update both `static/js/ai.js` and `agent.md` in the same change.
 
-**Do not commit on a red run.** The automated gate is green (12/12 browser
-suites, 461 backend tests, 4,777 DOM checks); keep it that way.
+**Do not commit on a red run.** The automated gate is green (14/14 browser
+suites, 556 backend tests, 5,544 DOM checks); keep it that way.
 
 ## 4. Checklist
 

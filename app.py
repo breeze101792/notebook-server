@@ -1378,7 +1378,7 @@ _WALLPAPER_INTENSITIES = ("subtle", "medium", "bold")
 # ships; tests/test_app.py enforces that. "graph" is an overlay, not a
 # view, so it is deliberately absent.
 _ACTIVE_VIEWS = ("explorer", "sessions", "pinned", "bookmarks", "recent",
-                 "search", "ai")
+                 "search", "ai", "tabs")
 
 
 def _read_public_config():
@@ -1545,6 +1545,7 @@ def boot_state(cfg=None):
         "sidebar_collapsed": sidebar_collapsed,
         "outline_collapsed": outline_collapsed,
         "topbar_hidden": bool(cfg.get("hideTopbar")),
+        "tabbar_hidden": bool(cfg.get("hideTabBar")),
         "wallpaper_classes": " ".join(wallpaper_classes),
         "active_view": active_view,
         "sidebar_order": sidebar_order,

@@ -1522,6 +1522,20 @@
   }
 
   /* --- tab context menu --------------------------------------------- */
+  /* The three bulk closes are region-scoped in the strip: each filters out
+   * pinned tabs. On the Tabs view's merged list a right-click on a pinned row
+   * would offer a close that visibly spares the rows to its right, so there
+   * they are disabled with the reason instead. The descriptors carry `bulk`,
+   * so a copy edit to a label cannot silently re-enable them. */
+  const PINNED_BULK_TITLE = "Pinned tabs are closed one at a time.";
+
+  function disableBulkClose(items) {
+    return items.map((item) => {
+      if (!item || item.bulk !== true) return item;
+      return Object.assign({}, item, { disabled: true, title: PINNED_BULK_TITLE });
+    });
+  }
+
   /* The "Move to session" submenu: every other session by name in creation
    * order, then New session… after a separator. A pinned tab is already in
    * every session, so it gets no item; a viewer may switch, not move. Built
@@ -1569,11 +1583,11 @@
         handler: () => { if (NB.sidebar && NB.sidebar.revealFile) NB.sidebar.revealFile(path); } },
       { separator: true },
       { label: "Close", danger: true, handler: () => close(path) },
-      { label: "Close others", disabled: !others.length,
+      { label: "Close others", bulk: true, disabled: !others.length,
         title: "No other closable tabs", handler: () => closeOthers(path) },
-      { label: "Close to the right", disabled: !right.length,
+      { label: "Close to the right", bulk: true, disabled: !right.length,
         title: "No closable tabs to the right", handler: () => closeRight(path) },
-      { label: "Close to the left", disabled: !left.length,
+      { label: "Close to the left", bulk: true, disabled: !left.length,
         title: "No closable tabs to the left", handler: () => closeLeft(path) },
       { label: "Delete", danger: true, handler: () => sidebarOp("deleteFile", path) },
     ];
@@ -1921,6 +1935,25 @@
     return ordered[ni];
   }
 
+  /* The control a closed menu hands back to. A tabs:changed re-render may
+   * have replaced the row the menu hung from, so the path is resolved in the
+   * host first, then the captured anchor if it is still in the document,
+   * then the host's first row and its collapse control. When the host is
+   * hidden (the panel switched views while the menu was up) none of these
+   * has a box, so the caller focuses only a target that paints; otherwise
+   * focus is left where the closing menu left it. */
+  function menuAnchor(host, path, fallback) {
+    if (host && typeof host.querySelector === "function") {
+      const row = host.querySelector(
+        '.tab-item-wrap[data-path="' + cssEscape(path) + '"] .tab-item');
+      if (row) return row;
+    }
+    if (fallback && fallback.isConnected) return fallback;
+    if (!host || typeof host.querySelector !== "function") return null;
+    return host.querySelector(".tab-item") ||
+      host.querySelector(".collapse-btn") || null;
+  }
+
   NB.tabs = {
     /* Model limits, exported so the Sessions view's cap and name validation
      * cannot drift from the model's. */
@@ -1955,6 +1988,9 @@
     createSessionFromTab,
     moveSession,
     reorderSession,
+    /* Reorder one tab in the ordered list: before/after targetPath, or last
+     * when targetPath is null. Same clamp as the strip's own drag. */
+    moveTab: dropOnto,
     renameSession,
     deleteSession,
     moveToSession,
@@ -1984,6 +2020,55 @@
       await activate(id);
     },
     isSpecial,
+    /* The Tabs view reads the same private tables the strip draws from:
+     * a special tab's { icon, label } and the conflict flag. */
+    getSpecial(id) {
+      const spec = specialTabs.get(id);
+      return spec ? { icon: spec.icon || "", label: spec.label || id } : null;
+    },
+    isConflicted(path) { return conflictSet.has(path); },
+    /* Open the strip's menu for `path` from another host. `opts` =
+     * { x, y, anchor, host, onClose }: without x/y the menu hangs from the
+     * anchor's bottom-left; `host` is the element a right-click must land
+     * inside to leave this menu open. Returns false when it opened nothing. */
+    openTabMenu(path, opts) {
+      if (!NB.menu || ordered.indexOf(path) < 0) return false;
+      const o = opts || {};
+      const host = o.host || barEl;
+      let x = o.x;
+      let y = o.y;
+      if (typeof x !== "number" || typeof y !== "number") {
+        if (!o.anchor || typeof o.anchor.getBoundingClientRect !== "function") return false;
+        const rect = o.anchor.getBoundingClientRect();
+        x = rect.left;
+        y = rect.bottom;
+      }
+      const items = pinned.has(path)
+        ? disableBulkClose(tabMenuItems(path))
+        : tabMenuItems(path);
+      NB.menu.open({
+        owner: "tabs", x: x, y: y, scope: host,
+        items: items, focusFirst: true,
+        onClose: (reason) => {
+          const anchor = menuAnchor(host, path, o.anchor);
+          if (anchor) {
+            anchor.removeAttribute("aria-expanded");
+            // An anchor in a hidden host paints no box, so focus() there is
+            // a no-op: skip it and leave focus where the closing menu left
+            // it.
+            if (reason === "esc" && anchor.getClientRects().length) {
+              anchor.focus({ preventScroll: true });
+            }
+          }
+          if (typeof o.onClose === "function") o.onClose(reason);
+        },
+      });
+      // After open(): open() closes any previous menu first, and that close
+      // fires the previous anchor's onClose, not this one.
+      const anchor = menuAnchor(host, path, o.anchor);
+      if (anchor) anchor.setAttribute("aria-expanded", "true");
+      return true;
+    },
   };
 
   /* --- keep the bar in sync with viewer-driven changes --------------- */

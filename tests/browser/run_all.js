@@ -23,6 +23,7 @@ const SUITES = [
   { name: "fence editor", file: "test_block_edit_browser.js", port: 5091 },
   { name: "figure sizing", file: "test_figure_sizing_browser.js", port: 5083 },
   { name: "mobile", file: "test_mobile_browser.js", port: 5095 },
+  { name: "tabs view", file: "test_tabs_view_browser.js", port: 5079 },
   { name: "mermaid designer", file: "test_designer_browser.js", port: 5098 },
   { name: "dot/wavedrom designer", file: "test_dw_designer_browser.js", port: 5096 },
   { name: "typography", file: "test_typography_browser.js", port: 5097 },

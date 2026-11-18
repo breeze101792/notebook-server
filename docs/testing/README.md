@@ -6,7 +6,7 @@ there is no lint or type-check step.
 
 ## Strategy
 
-The server has two host suites plus thirteen real-browser suites, one per
+The server has two host suites plus fourteen real-browser suites, one per
 surface:
 
 | Suite | File | Runs against | Framework |
@@ -18,6 +18,7 @@ surface:
 | Frontend browser (figure sizing) | `tests/browser/test_figure_sizing_browser.js` | Rendered SVG sizing: font scale, layout matrix, engine units, page-growth behaviour (no nested scroller), no inner math/code/error scrollbars, lightbox, phone tokens, export, hybrid round-trip | Hand-rolled `check()` harness |
 | Frontend browser (design/windows) | `tests/browser/test_designer_browser.js`, `test_dw_designer_browser.js`, `test_mobile_browser.js` | Visimer canvas, Graphviz/WaveDrom windows, phone shell | Hand-rolled `check()` harness |
 | Frontend browser (typography) | `tests/browser/test_typography_browser.js` | Computed type at S/M/L/XL across the side panels, Settings and dialogs | Hand-rolled `check()` harness |
+| Frontend browser (tabs view) | `tests/browser/test_tabs_view_browser.js` | The Tabs side-panel view: the eighth rail icon, one label edge and one trailing edge across every row state, drag-to-reorder and its pinned clamp, hiding the strip, the phone drawer | Hand-rolled `check()` harness |
 
 The backend suite exercises routing, path safety, the atomic write paths, the
 auth layer, and the AI proxy end to end, with real loopback `HTTPServer`
@@ -55,9 +56,10 @@ npm run test:browser:core           # one suite by name; package.json has one
 node tests/browser/test_designer_browser.js   # mermaid designer canvas
 node tests/browser/run_all.js                  # every browser suite
 node tests/browser/test_typography_browser.js  # computed type, port 5097
+node tests/browser/test_tabs_view_browser.js   # Tabs view, port 5079
 ```
 
-The backend (461 tests), the DOM suite (5,390 checks), and all thirteen browser
+The backend (556 tests), the DOM suite (5,544 checks), and all fourteen browser
 suites pass. The numbers are in
 [`browser-audit.md`](browser-audit.md) and the gate baseline in
 [`hybrid-regression-checklist.md`](hybrid-regression-checklist.md) §2. See
@@ -126,8 +128,8 @@ forever.
 
 ## Related documentation
 
-- [`backend.md`](backend.md) — the backend suite: isolation, the 51
-  test-bearing classes across 461 tests, and the loopback AI stubs.
+- [`backend.md`](backend.md) — the backend suite: isolation, the 53
+  test-bearing classes across 556 tests, and the loopback AI stubs.
 - [`frontend.md`](frontend.md) — the jsdom harness, the canned SSE
   mechanism, the registry-completeness guard, and the browser suite.
 - [`hybrid-regression-checklist.md`](hybrid-regression-checklist.md) — the
