@@ -417,11 +417,15 @@ the deadline is checked before each file and every `SCAN_CHECK_LINES` lines.
 | GET | `/api/graph` (`app.py`) | read | `{nodes: [{id, name, links}], edges: [{source, target}]}`. |
 
 `build_graph()` (`app.py`) scans every `.md` file for `[[wikilinks]]` and
-Markdown links ending in `.md`. Wikilinks resolve by stem, so `[[README]]` and
-`[[README.md]]` both find `README.md`. Relative markdown links resolve against
-the linking file's folder. `#anchor` fragments are stripped, links to missing
-files are dropped, and self-links are skipped. Edges are unique and undirected;
-`links` is the node's degree. Orphan files appear as nodes.
+Markdown links ending in `.md`. Both follow one path rule: a leading `/` is
+the workspace root, anything else is relative to the linking file's folder,
+and the `.md` extension is optional. So `[[b]]` and `[[./b]]` in `notes/a.md`
+name `notes/b.md`, and `[[/notes/b]]` names it from anywhere. `[[Target|label]]`
+links to `Target`. A target that climbs above the root or names no note never
+resolves; a bare name never searches the notebook. `#anchor` fragments are
+stripped, links to missing files are dropped, and self-links are skipped.
+Edges are unique and undirected; `links` is the node's degree. Orphan files
+appear as nodes.
 
 The scan runs under the same 5-second deadline as search. On expiry the route
 returns **504** `{"error": "The notebook took too long to scan",

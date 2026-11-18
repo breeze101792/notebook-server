@@ -233,10 +233,10 @@
    * in a note renders as an in-app link to another note. The target is
    * resolved the same way the backend's graph view does (see
    * _normalise_link in app.py):
-   *   - a bare stem (no path separator) matches a note by basename
-   *     without extension, so [[README]] and [[README.md]] both link to
-   *     README.md even from a subfolder;
-   *   - a path is treated as relative to the current note's folder;
+   *   - the target is a path to a note: a leading "/" means the notebook
+   *     root, anything else is relative to the current note's folder, so
+   *     `[[./b]]` and `[[/notes/b]]` both name a note;
+   *   - the .md extension is optional in every form;
    *   - a trailing #anchor is kept as a heading deep-link.
    * Unresolvable targets render as plain text (no dead link), matching
    * the graph view's "no ghost nodes" rule.
@@ -301,17 +301,71 @@
     });
   }
 
-  /* resolveWikilink(target) -> { path, heading } | null. Resolves a
-   * [[target]] against the current note + the file tree, mirroring the
-   * backend's _normalise_link. Returns null when the target can't be
-   * resolved to a known note. */
-  function resolveWikilink(target) {
-    const tree = (NB.sidebar && NB.sidebar.getTree) ? NB.sidebar.getTree() : [];
-    const currentPath = (active || "").replace(/^\/+/, "");
-    const currentDir = currentPath.includes("/")
-      ? currentPath.slice(0, currentPath.lastIndexOf("/"))
-      : "";
+  /* normaliseRelPath(baseDir, target) -> string | null. Join a link
+   * target onto a folder and resolve "." / ".." segments. Returns null
+   * when the path leaves the notebook (a leading ".."). */
+  function normaliseRelPath(baseDir, target) {
+    const parts = [];
+    for (const seg of ((baseDir ? baseDir + "/" : "") + target).split("/")) {
+      if (seg === "" || seg === ".") continue;
+      if (seg === "..") {
+        if (!parts.length) return null;
+        parts.pop();
+        continue;
+      }
+      parts.push(seg);
+    }
+    return parts.length ? parts.join("/") : null;
+  }
 
+  /* notePathFor(baseDir, target) -> string | null. A link target turned
+   * into a note path; the .md extension is optional, so `b`, `./b`,
+   * `b.md` and `../sub/b.md` all name a note. */
+  function notePathFor(baseDir, target) {
+    const path = normaliseRelPath(baseDir, target);
+    if (!path) return null;
+    return path.toLowerCase().endsWith(".md") ? path : path + ".md";
+  }
+
+  function currentDirOf(path) {
+    const p = (path || "").replace(/^\/+/, "");
+    return p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
+  }
+
+  /* treeHasFile(tree, path) -> true when `path` is a file node. A link
+   * target is always a note: a folder node carries a `path` too, and
+   * would otherwise match (e.g. "./#anchor" resolving to the note's own
+   * folder). */
+  function treeHasFile(tree, path) {
+    for (const n of tree) {
+      if (n.type === "file" && n.path === path) return true;
+      if (n.children && treeHasFile(n.children, path)) return true;
+    }
+    return false;
+  }
+
+  /* resolveNoteTarget(target, currentPath) -> path | null. The path rule
+   * shared by [[wikilinks]] and relative Markdown links, mirroring the
+   * backend's _normalise_link. The target is a path to a note: a leading
+   * "/" means the notebook root ("/notes/b"), anything else is relative
+   * to the current note's folder ("b", "./b", "../sub/b"). The .md
+   * extension is optional. A target that climbs above the root never
+   * resolves, and so does one that names no note. */
+  function resolveNoteTarget(target, currentPath) {
+    if (!target) return null;
+    const tree = (NB.sidebar && NB.sidebar.getTree) ? NB.sidebar.getTree() : [];
+    const path = target.startsWith("/")
+      ? notePathFor("", target.replace(/^\/+/, ""))
+      : notePathFor(currentDirOf(currentPath), target);
+    if (path && treeHasFile(tree, path)) return path;
+    return null;
+  }
+
+  /* resolveWikilink(target) -> { path, heading } | null. Resolves a
+   * [[target]] against the current note + the file tree. See
+   * resolveNoteTarget for the path rule; the .md extension is optional.
+   * Returns null when the target can't be resolved to a known note. */
+  function resolveWikilink(target) {
     // Split off a #heading anchor.
     let heading = null;
     let t = target;
@@ -320,56 +374,9 @@
       heading = t.slice(i + 1);
       t = t.slice(0, i);
     }
-    t = t.trim();
-    if (!t) return null;
-
-    // Build a stem index (basename without extension -> path) so a bare
-    // stem resolves even when the file lives in a subfolder.
-    const stemIndex = {};
-    (function index(nodes) {
-      for (const n of nodes) {
-        if (n.type === "file") {
-          const base = n.path.split("/").pop();
-          const stem = base.toLowerCase().endsWith(".md") ? base.slice(0, -3) : base;
-          if (!(stem in stemIndex)) stemIndex[stem] = n.path;
-        }
-        if (n.children) index(n.children);
-      }
-    })(tree);
-
-    // A bare stem (no path separator): try the stem index first.
-    let resolved = null;
-    if (!t.includes("/")) {
-      let stem = t;
-      if (stem.toLowerCase().endsWith(".md")) stem = stem.slice(0, -3);
-      if (stem in stemIndex) resolved = stemIndex[stem];
-    }
-    // Otherwise (or if the stem didn't match) treat it as a relative
-    // path from the current note's folder.
-    if (!resolved) {
-      const candidate = (currentDir ? currentDir + "/" : "") + t;
-      const norm = candidate.split("/").filter(Boolean).join("/");
-      // Normalise "." and ".." segments.
-      const parts = [];
-      for (const seg of norm.split("/")) {
-        if (seg === "." || seg === "") continue;
-        if (seg === "..") parts.pop();
-        else parts.push(seg);
-      }
-      const clean = parts.join("/");
-      if (treeHasPath(tree, clean)) resolved = clean;
-    }
-
-    if (!resolved) return null;
-    return { path: resolved, heading };
-  }
-
-  function treeHasPath(tree, path) {
-    for (const n of tree) {
-      if (n.path === path) return true;
-      if (n.children && treeHasPath(n.children, path)) return true;
-    }
-    return false;
+    const path = resolveNoteTarget(t.trim(), active);
+    if (!path) return null;
+    return { path, heading };
   }
 
   /* --- copy button on code blocks ----------------------------------- */
@@ -1397,7 +1404,22 @@
     // actually shown in the viewer), not window.location.pathname
     // (which is always `/` after the first replaceState).
     const currentPath = (NB.viewer.getPath() || "").replace(/^\/+/, "");
-    const linkPath = url.pathname.replace(/^\/+/, "");
+    let linkPath = url.pathname.replace(/^\/+/, "");
+    // A relative Markdown link is written relative to the note that
+    // holds it: [b](b.md) in notes/a.md means notes/b.md, matching the
+    // graph rule (_normalise_link in app.py). The page URL is always
+    // "/", so the URL constructor cannot do this for us. Only rewrite
+    // when the target is a known note; anything else (an attachment, a
+    // path outside the notebook) keeps the browser-resolved path.
+    const rawHref = a.getAttribute("href") || "";
+    const isRelative = rawHref !== "" && !rawHref.startsWith("/")
+      && !rawHref.startsWith("#") && !/^[a-z][a-z0-9+.-]*:/i.test(rawHref);
+    if (isRelative && currentPath) {
+      let target = rawHref.split("#")[0];
+      try { target = decodeURIComponent(target); } catch (_) { /* keep raw */ }
+      const fromNote = resolveNoteTarget(target, currentPath);
+      if (fromNote) linkPath = fromNote;
+    }
     // In-page anchor: a same-file link with a #fragment. The href
     // may be a bare "#slug" (resolves to pathname = "/" via the URL
     // constructor) or "./#slug" (also resolves to the current
@@ -1416,13 +1438,19 @@
       NB.viewer.scrollToHeading(slug);
       return;
     }
-    if (linkPath === currentPath) return;   // bare same-file href: pass through
+    if (linkPath === currentPath) {
+      // A link to the note that is already open: an explicit notebook
+      // path (`[self](notes/a.md)`, `[self](/notes/a.md)`) or a relative
+      // href the rewrite above resolved to the current note. A reload
+      // would only drop unsaved edits, so swallow the click.
+      e.preventDefault();
+      return;
+    }
     // Cross-note deep link: prevent the full navigation, push a
     // navStack entry capturing where we are (so back can return),
-    // then route through openDeepLink. The link's href may have been
-    // a relative path from the current note (e.g. "b.md" while
-    // viewing "notes/a.md"); the resolved URL has already done the
-    // right thing, so url.pathname is the absolute notebook path.
+    // then route through openDeepLink. `linkPath` is the notebook path
+    // the relative-href rewrite above settled on (the raw href resolved
+    // against "/" would lose the current note's folder).
     e.preventDefault();
     const heading = url.hash ? decodeURIComponent(url.hash.replace(/^#/, "")) : null;
     const fromFile = currentPath || null;

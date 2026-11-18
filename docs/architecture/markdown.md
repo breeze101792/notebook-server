@@ -398,16 +398,21 @@ guide (its `html-live` section);
 
 Obsidian-style `[[Target]]` links are tokenized by a marked inline
 extension registered once at module load (`registerWikilinkExtension` in
-`static/js/viewer.js`). Resolution rules — the resolver is
-`resolveWikilink` in `viewer.js`, with the rules documented in its
-docstring:
+`static/js/viewer.js`). The resolver is `resolveNoteTarget` in
+`viewer.js`, mirrored by `_normalise_link` in `app.py`:
 
-- A bare stem resolves by basename. `[[README]]` and `[[README.md]]` both
-  link to `README.md`, even from a subfolder.
-- A path is relative to the current note's folder. `.` and `..` segments
-  are normalized.
+- The target is a path to a note. A leading `/` means the notebook root
+  (`[[/notes/b]]`); anything else is relative to the current note's
+  folder (`[[b]]`, `[[./b]]`, `[[../sub/b]]`).
+- The `.md` extension is optional, and `.` / `..` segments are
+  normalized. A target that climbs above the notebook root never
+  resolves.
+- A bare name never searches the notebook: `[[b]]` in `notes/a.md` is
+  `notes/b.md` only, even when `other/b.md` exists. Name the other note
+  with a path (`[[/other/b]]`).
 - `[[Target#anchor]]` deep-links to the heading with that slug.
-- `[[Target|label]]` sets the link text.
+- `[[Target|label]]` sets the link text, and the graph edge points at
+  `Target`.
 
 An unresolvable target renders as plain text, never a dead link (the
 gate in the wikilink extension's tokenizer, in `viewer.js`). Clicking a

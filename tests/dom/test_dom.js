@@ -31195,11 +31195,18 @@ function check(label, cond, extra) {
   // plain text (no dead link).
   {
     // Seed a source file with wikilinks: a bare stem, a stem with a
-    // label, a path with a heading anchor, and an unresolvable target.
+    // label, a path with a heading anchor, an explicit relative path, a
+    // root-relative path, a Markdown link to a sibling, and an
+    // unresolvable target.
     FILES["notes/a.md"] = "# File A\n\n" +
       "TODO fix this bug.\n\n" +
       "## Sub A\n\nbody\n\n" +
-      "See [[b]] and [[b|File B]] and [[b#file-b]] and [[ghost]].\n";
+      "See [[b]] and [[b|File B]] and [[b#file-b]] and [[ghost]].\n\n" +
+      "Same level: [[./b]] and [[/notes/b]].\n\n" +
+      "Folder path: [[notes/b]].\n\n" +
+      "Root miss: [[/nope.md]].\n\n" +
+      "Markdown: [B](b.md).\n\n" +
+      "Jump: [Sub A](./#sub-a).\n";
     window.NB.viewer.close("notes/a.md");
     await window.NB.tabs.open("notes/a.md");
     await tick(20);
@@ -31208,7 +31215,7 @@ function check(label, cond, extra) {
     // The marked extension renders [[b]] -> <a data-wikilink href="b">.
     const wlAnchors = () => window.document.querySelectorAll("#viewer-content a[data-wikilink]");
     check("wikilink: [[b]] renders as <a data-wikilink>",
-      wlAnchors().length === 3, "got " + wlAnchors().length + " wikilink anchors");
+      wlAnchors().length === 5, "got " + wlAnchors().length + " wikilink anchors");
     const bLink = window.document.querySelector('#viewer-content a[data-wikilink][href="b"]');
     check("wikilink: bare stem [[b]] href is 'b'",
       !!bLink && bLink.textContent === "b",
@@ -31227,8 +31234,44 @@ function check(label, cond, extra) {
     check("wikilink: unresolvable [[ghost]] is NOT a link",
       !window.document.querySelector('#viewer-content a[data-wikilink][href="ghost"]'),
       "ghost anchor present");
+    // A relative path to a same-level note resolves in both forms: the
+    // explicit "./" form and the notebook-root form.
+    check("wikilink: [[./b]] is a link to a same-level note",
+      !!window.document.querySelector('#viewer-content a[data-wikilink][href="./b"]'),
+      "[[./b]] left unresolved");
+    // A leading "/" means the notebook root, so a note in a subfolder
+    // reaches a root-level path without counting "../" segments.
+    check("wikilink: [[/notes/b]] resolves from the notebook root",
+      !!window.document.querySelector('#viewer-content a[data-wikilink][href="/notes/b"]'),
+      "[[/notes/b]] left unresolved");
+    // A target with a slash is a path relative to this note's folder, not
+    // a search: notes/ + notes/b does not exist.
+    check("wikilink: [[notes/b]] does not resolve as a search path",
+      !window.document.querySelector('#viewer-content a[data-wikilink][href="notes/b"]'),
+      "[[notes/b]] resolved outside the note's folder");
+    // A root path to a note that does not exist is plain text.
+    check("wikilink: [[/nope.md]] is NOT a link",
+      !window.document.querySelector('#viewer-content a[data-wikilink][href="/nope.md"]'),
+      "missing root anchor present");
+    // A bare name resolves in this note's folder only; the same-stem note
+    // in another folder is never chosen.
+    const realGetTree = window.NB.sidebar.getTree;
+    window.NB.sidebar.getTree = () => [
+      { name: "other", type: "dir", path: "other", children: [
+        { name: "b.md", type: "file", path: "other/b.md" },
+      ] },
+      { name: "notes", type: "dir", path: "notes", children: [
+        { name: "a.md", type: "file", path: "notes/a.md" },
+        { name: "b.md", type: "file", path: "notes/b.md" },
+      ] },
+    ];
+    const siblingHit = window.NB.viewer.resolveWikilink("b");
+    check("wikilink: bare name stays in its own folder",
+      !!siblingHit && siblingHit.path === "notes/b.md",
+      siblingHit ? siblingHit.path : "(none)");
+    window.NB.sidebar.getTree = realGetTree;
 
-    // Clicking [[b]] should resolve to notes/b.md (stem index) and open
+    // Clicking [[b]] should resolve to notes/b.md (same folder) and open
     // it via openDeepLink, pushing a navStack entry (back button).
     const backBtn = window.document.getElementById("back-btn");
     if (backBtn && !backBtn.disabled) {
@@ -31270,6 +31313,48 @@ function check(label, cond, extra) {
       "active=" + window.NB.tabs.getActive());
     check("wikilink: click [[b#file-b]] scrolls to file-b heading",
       scrollCalls.filter(id => id === "file-b").length === 1,
+      "calls=" + JSON.stringify(scrollCalls));
+
+    // A relative path to a sibling note opens the sibling, and so does a
+    // relative Markdown link written the same way.
+    const reopen = async () => {
+      await window.NB.tabs.open("notes/a.md");
+      await tick(20);
+      while (backBtn && !backBtn.disabled) {
+        backBtn.click();
+        await new Promise(r => window.setTimeout(r, 5));
+      }
+    };
+    await reopen();
+    const wlSibling = window.document.querySelector('#viewer-content a[data-wikilink][href="./b"]');
+    check("wikilink: [[./b]] anchor present after re-open", !!wlSibling);
+    wlSibling.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("wikilink: click [[./b]] opens notes/b.md",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive());
+    await reopen();
+    const mdSibling = window.document.querySelector('#viewer-content a[href="b.md"]:not([data-wikilink])');
+    check("markdown link: relative [B](b.md) anchor present", !!mdSibling);
+    mdSibling.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("markdown link: relative [B](b.md) opens notes/b.md",
+      window.NB.tabs.getActive() === "notes/b.md",
+      "active=" + window.NB.tabs.getActive());
+
+    // A link to the current note's own heading must stay in-page: the
+    // relative href rewrite must not resolve "./" to the note's folder.
+    await reopen();
+    scrollCalls.length = 0;
+    const jumpLink = window.document.querySelector('#viewer-content a[href="./#sub-a"]');
+    check("in-page link: [Sub A](./#sub-a) anchor present", !!jumpLink);
+    jumpLink.dispatchEvent(new window.MouseEvent("click", { bubbles: true, button: 0, cancelable: true }));
+    await tick(20);
+    check("in-page link: [Sub A](./#sub-a) stays on notes/a.md",
+      window.NB.tabs.getActive() === "notes/a.md",
+      "active=" + window.NB.tabs.getActive());
+    check("in-page link: [Sub A](./#sub-a) scrolls to the heading",
+      scrollCalls.filter(id => id === "sub-a").length === 1,
       "calls=" + JSON.stringify(scrollCalls));
 
     // Restore stubs + fixture.

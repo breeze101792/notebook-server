@@ -508,20 +508,20 @@ preview source**.
 ## Wikilinks (internal note links)
 
 Obsidian-style `[[Target]]` links jump to another note in the notebook,
-in place (no page reload). A bare stem resolves to a note by basename,
-so `[[README]]` and `[[README.md]]` both link to `README.md` even from
-a subfolder. A path is relative to the current note's folder, and a
-trailing `#anchor` deep-links to a heading. `[[Target|label]]` sets the
-link text.
+in place (no page reload). The target is a path: a leading `/` means the
+notebook root (`[[/folder/note]]`), anything else is relative to the
+current note's folder (`[[note]]`, `[[./note]]`, `[[../other/note]]`), and
+the `.md` extension is optional. A trailing `#anchor` deep-links to a
+heading. `[[Target|label]]` sets the link text.
 
 ```markdown
 See [[README]] for the overview, or jump straight to [[README#core-rules]].
-The [[notes/b.md|B note]] covers the rest.
+From a note in a subfolder, [[/README]] reaches the same file from the root.
 ```
 
-A target that doesn't match any note renders as plain text (no dead
-link). Clicking a wikilink opens the target in the current tab; the
-**Back** button returns you to where you were.
+A target that names no note renders as plain text (no dead link).
+Clicking a wikilink opens the target in the current tab; the **Back**
+button returns you to where you were.
 
 ---
 

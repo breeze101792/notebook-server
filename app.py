@@ -4594,14 +4594,13 @@ def search():
 # extracts the links between notes so the frontend can draw a force-directed
 # graph (Obsidian-style "graph view"). Two link syntaxes are recognised:
 #
-#   [[Target]]            -- a wikilink. The target is resolved to a .md
-#                           file by stem (basename without extension)
-#                           so [[README]] and [[README.md]] both link
-#                           to README.md.
+#   [[Target]]            -- a wikilink. The target is a path to a note: a
+#                           leading "/" means the workspace root, anything
+#                           else is relative to the linking file's folder,
+#                           and the .md extension is optional.
 #   [text](path.md)       -- a standard Markdown link whose URL ends in
-#                           .md. Relative paths are normalised against
-#                           the linking file's folder so a link from
-#                           notes/a.md to b.md points at notes/b.md.
+#                           .md. The same path rule applies, so a link
+#                           from notes/a.md to b.md points at notes/b.md.
 #
 # Anchor fragments (#heading) are stripped before resolution. Links to
 # files that don't exist in the notebook are dropped (no "ghost" nodes);
@@ -4612,6 +4611,7 @@ def search():
 # discloses notebook structure + filenames, exactly like /api/tree.
 _WIKILINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
 _MD_LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)]+\.md(?:#[^\s)]*)?)\)", re.IGNORECASE)
+_NOTE_EXT = ".md"
 
 
 def _strip_fragment(target):
@@ -4621,13 +4621,49 @@ def _strip_fragment(target):
     return target
 
 
-def _normalise_link(raw, src_rel, stem_index, root=None):
+def _strip_label(target):
+    """Drop a trailing |label from a wikilink target.
+
+    `|label` is wikilink syntax for the link text, not part of the path,
+    so only the wikilink scanner uses this. A Markdown link target may
+    contain a literal "|".
+    """
+    if "|" in target:
+        return target.split("|", 1)[0]
+    return target
+
+
+def _note_path(base_dir, target):
+    """Join a link target onto a folder and give it the note extension.
+
+    "." and ".." segments are normalised, and the extension is optional,
+    so `b`, `./b`, `b.md` and `../sub/b.md` all name a note. Returns the
+    normalised relative path with forward slashes, or None when the
+    target escapes the folder chain (a leading ".."), or names a folder
+    itself ("." / "..").
+    """
+    rel = os.path.normpath(os.path.join(base_dir, target))
+    if rel in (os.curdir, os.pardir) or rel.startswith(os.pardir + os.sep):
+        return None
+    if not rel.lower().endswith(_NOTE_EXT):
+        rel += _NOTE_EXT
+    return rel.replace(os.sep, "/")
+
+
+def _normalise_link(raw, src_rel, known, root=None):
     """Resolve a link target against its source file.
 
-    Returns the canonical relative path of the linked .md file, or None
-    when the target can't be resolved to a known note. `stem_index` maps
-    a file's basename-without-extension to its relative path (built once
-    per graph build) so [[wikilinks]] by stem can be looked up cheaply.
+    One path rule, mirrored by resolveNoteTarget in viewer.js: the
+    target is a path to a note. A leading "/" means the workspace root;
+    anything else is relative to the linking file's folder. The .md
+    extension is optional, so `b`, `./b`, `b.md` and `../sub/b.md` all
+    name a note. A target that climbs above the root ("../../x.md")
+    never resolves.
+
+    Returns the canonical relative path of the linked note, or None when
+    the target names no note in `known` (the set of note paths in the
+    notebook, built once per graph build). Membership in that set -- not
+    the "/" prefix -- is what confines a root target to the notebook.
     `root` is the active workspace root (default DATA_DIR).
     """
     if root is None:
@@ -4635,28 +4671,17 @@ def _normalise_link(raw, src_rel, stem_index, root=None):
     target = _strip_fragment(raw.strip())
     if not target:
         return None
-    # Absolute paths never resolve inside the workspace root (safe_path
-    # would block them anyway); drop them.
     if os.path.isabs(target):
+        rel = _note_path("", target.lstrip("/"))
+    else:
+        rel = _note_path(os.path.dirname(src_rel), target)
+    if rel is None or rel not in known:
         return None
-    # A wikilink with no path separator may be a bare stem. Try the stem
-    # index first so [[README]] resolves even when the file lives in a
-    # subfolder.
-    if "/" not in target:
-        stem = target
-        if stem.lower().endswith(".md"):
-            stem = stem[:-3]
-        if stem in stem_index:
-            return stem_index[stem]
-    # Fall back to treating it as a relative path from the source's
-    # folder, normalised so "../sub/x.md" can't escape the root.
-    src_dir = os.path.dirname(src_rel)
-    candidate = os.path.normpath(os.path.join(src_dir, target))
     norm_root = os.path.normpath(root)
-    abs_candidate = os.path.normpath(os.path.join(root, candidate))
-    if (abs_candidate == norm_root
-            or abs_candidate.startswith(norm_root + os.sep)):
-        return candidate.replace(os.sep, "/")
+    abs_rel = os.path.normpath(os.path.join(norm_root, rel))
+    if (abs_rel == norm_root
+            or abs_rel.startswith(norm_root + os.sep)):
+        return rel
     return None
 
 
@@ -4694,17 +4719,6 @@ def build_graph(root=None, budget=None):
             rel = rel_from(full, root)
             files.append(rel)
 
-    # Stem index: basename-without-extension -> relative path. If two
-    # files share a stem the first one wins (deterministic via os.walk
-    # order); wikilinks to that stem resolve to it. Ambiguous stems are
-    # rare in a single-user notebook and this keeps resolution cheap.
-    stem_index = {}
-    for rel in files:
-        base = os.path.basename(rel)
-        if base.lower().endswith(".md"):
-            base = base[:-3]
-        stem_index.setdefault(base, rel)
-
     contents = {}
     for rel in files:
         if _scan_expired(budget):
@@ -4717,6 +4731,7 @@ def build_graph(root=None, budget=None):
             contents[rel] = ""
 
     edge_set = set()   # frozenset({src, dst}) for undirected dedup
+    known = set(files)
     degree = {rel: 0 for rel in files}
     for src_rel in files:
         if _scan_expired(budget):
@@ -4724,11 +4739,13 @@ def build_graph(root=None, budget=None):
         text = contents.get(src_rel, "")
         targets = set()
         for m in _WIKILINK_RE.finditer(text):
-            resolved = _normalise_link(m.group(1), src_rel, stem_index, root)
+            # [[Target|label]] names Target; the label is link text.
+            target = _strip_label(m.group(1))
+            resolved = _normalise_link(target, src_rel, known, root)
             if resolved and resolved in degree:
                 targets.add(resolved)
         for m in _MD_LINK_RE.finditer(text):
-            resolved = _normalise_link(m.group(2), src_rel, stem_index, root)
+            resolved = _normalise_link(m.group(2), src_rel, known, root)
             if resolved and resolved in degree:
                 targets.add(resolved)
         for dst in targets:

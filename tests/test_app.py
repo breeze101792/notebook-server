@@ -1955,9 +1955,10 @@ class TestGraph(BaseTest):
         b = next(n for n in data["nodes"] if n["id"] == "notes/b.md")
         self.assertEqual(b["links"], 0)
 
-    def test_wikilink_by_stem_creates_edge(self):
+    def test_wikilink_in_same_folder_creates_edge(self):
         data = self._graph()
         pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        # index.md links to [[Welcome]] in its own folder.
         # Edges are stored sorted by id; "Welcome.md" < "index.md"
         self.assertIn(("Welcome.md", "index.md"), pairs)
 
@@ -1968,10 +1969,87 @@ class TestGraph(BaseTest):
         self.assertIn(("index.md", "notes/a.md"), pairs)
 
     def test_wikilink_without_extension_resolves(self):
+        # notes/a.md links to [[../index]]: one folder up, extension
+        # optional, so a sibling-folder path resolves.
+        self.post("/api/file", {"path": "notes/a.md", "content": (
+            "# A\n\nBack to [[../index]].\n")})
         data = self._graph()
         pairs = {(e["source"], e["target"]) for e in data["edges"]}
-        # notes/a.md links to [[index]] -> resolves to index.md
         self.assertIn(("index.md", "notes/a.md"), pairs)
+
+    def test_root_target_resolves_from_any_folder(self):
+        # A leading "/" means the notebook root, so a note in a subfolder
+        # reaches a root note without counting "../" segments.
+        self.post("/api/file", {"path": "notes/a.md", "content": (
+            "# A\n\nSee [[/index]] and [[/notes/b]].\n")})
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        self.assertIn(("index.md", "notes/a.md"), pairs)
+        self.assertIn(("notes/a.md", "notes/b.md"), pairs)
+
+    def test_relative_path_to_sibling_resolves(self):
+        # "the file next to this one" must resolve in every form. Each
+        # form lives in its own note so one broken form can't be masked
+        # by another form resolving to the same edge.
+        self.post("/api/file", {"path": "notes/sib.md", "content": "# Sib\n"})
+        forms = {
+            "notes/dot.md": "[[./sib]]",
+            "notes/bare.md": "[[sib]]",
+            "notes/slash.md": "[[/notes/sib]]",
+            "notes/stem.md": "[[sib.md]]",
+            "notes/md.md": "[sib](sib.md)",
+        }
+        for rel, link in forms.items():
+            self.post("/api/file", {"path": rel, "content": "# X\n\n" + link + "\n"})
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        for rel in forms:
+            self.assertIn(frozenset((rel, "notes/sib.md")),
+                          {frozenset(p) for p in pairs}, rel)
+
+    def test_bare_name_never_resolves_outside_its_folder(self):
+        # A bare name is a path relative to the linking file's folder; it
+        # never searches the notebook, even when one other note has the
+        # same stem.
+        known = {"notes/a.md", "notes/b.md", "other/b.md"}
+        self.assertEqual(nb._normalise_link("b", "notes/a.md", known),
+                         "notes/b.md")
+        self.assertIsNone(nb._normalise_link("b", "third/c.md", known))
+        # An explicit root path is how a note in another folder is named.
+        self.assertEqual(nb._normalise_link("/other/b", "notes/a.md", known),
+                         "other/b.md")
+
+    def test_root_and_escaping_targets(self):
+        known = {"notes/a.md", "b.md"}
+        # A leading "/" is the notebook root.
+        self.assertEqual(nb._normalise_link("/b.md", "notes/a.md", known),
+                         "b.md")
+        self.assertEqual(nb._normalise_link("/notes/a", "notes/a.md", known),
+                         "notes/a.md")
+        # ".." that stays inside the notebook resolves.
+        self.assertEqual(nb._normalise_link("../b", "notes/a.md", known),
+                         "b.md")
+        # Climbing above the root, or naming no note, resolves to nothing.
+        for target in ("/nowhere.md", "../../x.md", "../../x"):
+            self.assertIsNone(
+                nb._normalise_link(target, "notes/a.md", known), target)
+
+    def test_wikilink_label_creates_edge(self):
+        # [[Target|label]] names Target; the graph needs the edge too.
+        self.post("/api/file", {"path": "labeled.md", "content": (
+            "# Labeled\n\nSee [[Welcome|the welcome note]].\n")})
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        self.assertIn(("Welcome.md", "labeled.md"), pairs)
+
+    def test_relative_markdown_link_from_subfolder(self):
+        # [b](b.md) inside notes/a.md points at notes/b.md, matching the
+        # wikilink rule for the same path.
+        self.post("/api/file", {"path": "notes/a.md", "content": (
+            "# A\n\nSee [b](b.md).\n")})
+        data = self._graph()
+        pairs = {(e["source"], e["target"]) for e in data["edges"]}
+        self.assertIn(("notes/a.md", "notes/b.md"), pairs)
 
     def test_self_link_dropped(self):
         # Write a file that links to itself; the edge should not appear.
