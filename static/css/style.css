@@ -10248,3 +10248,277 @@ details.ai-tool-trace .ai-tool-out { display: block; margin-top: 4px; }
   #edit-split.hybrid-debug { flex-direction: column; }
   #edit-split.hybrid-debug #viewer { flex: 1 1 auto; min-width: 0; }
 }
+
+/* ==================================================================
+ * Sessions page (docs/ui/sessions-page.md) -- the §sessions content page:
+ * a card per session, its tabs listed, the drag that moves a tab or a
+ * selection between sessions. Appended: a new surface with no existing
+ * selector to override.
+ * ================================================================ */
+.sessions-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-page);
+}
+.sessions-page[hidden] { display: none; }
+
+.sessions-page-header {
+  position: relative;
+  z-index: var(--z-inline);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-height: 47px;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.sessions-page-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--fw-heading);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+.sessions-page-title:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+.sessions-page-summary {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.sessions-page-selection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.sessions-page-selection[hidden] { display: none; }
+.sessions-page-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  cursor: pointer;
+}
+.sessions-page-clear:hover { background: var(--accent-soft); }
+.sessions-page-clear:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+.sessions-page-clear .icon { width: var(--icon-sm); height: var(--icon-sm); }
+
+.sessions-page-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.sessions-page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.session-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface-panel);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+}
+.session-card.is-current { border-color: var(--accent); }
+.session-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.session-card.is-current .session-card-header { background: var(--accent-soft); }
+.session-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.session-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-ui);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.session-card-count {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.session-card-dot {
+  display: block;
+  flex: 0 0 auto;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+}
+
+.session-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-hair);
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+}
+.session-card-tab-wrap { display: flex; min-width: 0; }
+.session-card-tab {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-h-md);
+  padding: 3px 6px 3px 8px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.session-card-tab:hover { background: var(--accent-soft); }
+.session-card-tab[aria-current="true"] { background: var(--accent-soft); }
+.session-card-tab[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--stroke-2);
+  height: var(--icon-sm);
+  margin-top: calc(-1 * var(--icon-sm) / 2);
+  border-radius: 0 1px 1px 0;
+  background: var(--accent);
+}
+.session-card-tab.is-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 var(--stroke-1) var(--accent);
+}
+.session-card-tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+.session-card-mark,
+.session-card-state {
+  flex: 0 0 var(--icon-sm);
+  display: grid;
+  place-items: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.session-card-mark { color: var(--text-muted); }
+.session-card-mark svg,
+.session-card-state svg { display: block; width: var(--icon-sm); height: var(--icon-sm); }
+.session-card-state svg { color: var(--warn); }
+.session-card-mark.is-empty,
+.session-card-state.is-empty { visibility: hidden; }
+.session-card-tab-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-card-tab-wrap.is-special .session-card-tab-name {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.session-card-tab-wrap.is-dragging { opacity: var(--opacity-drag); }
+
+.session-card.is-drop-target {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 var(--stroke-1) var(--accent);
+}
+.session-card.is-drop-target .session-card-count {
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+.session-card-empty {
+  margin: 0;
+  padding: 6px var(--space-3) 10px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+.sessions-page-foot {
+  flex: 0 0 auto;
+  padding: 9px var(--space-4) 10px;
+  border-top: var(--stroke-1) solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+}
+
+/* The Sessions view header: the page button is the .session-add box. */
+.session-page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.session-page-btn:hover { color: var(--text-primary); background: var(--accent-soft); }
+.session-page-btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+.session-page-btn .icon { width: var(--icon-md); height: var(--icon-md); }
+
+/* Phone: no page. The entry follows the graph button's rule; the page stays
+ * renderable so a stale tab cannot blank the pane. */
+@media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
+  #sessions-page-btn { display: none; }
+}
+/* Coarse pointer, tablet and up: a tap jumps, so the target grows; no drag
+ * exists. 44 is a number because --m-hit is declared inside the phone query
+ * only, the same rule the shipped tablet block follows. */
+@media (pointer: coarse) and (min-width: 1024px) {
+  .session-card-tab { min-height: 44px; padding: 0 var(--space-2) 0 var(--space-3); }
+  .sessions-page-clear { width: 44px; height: 44px; }
+}

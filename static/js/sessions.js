@@ -55,6 +55,10 @@
   const MODE_RENAME = "rename";
 
   const LABEL_ADD = "New session";
+  const LABEL_PAGE = "Open the sessions page";
+  // The special tab the page button opens (docs/ui/sessions-page.md §2).
+  const PAGE_TAB_ID = "§sessions";
+  const PAGE_ICON = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-page-grid"/></svg>';
   const TITLE_NEW = "New session";
   const TITLE_RENAME = "Rename session";
   const TITLE_ONLY_SESSION = "The only session can’t be deleted.";
@@ -167,6 +171,23 @@
     addBtn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-plus"/></svg>';
     addBtn.addEventListener("click", () => openCreate());
     actions.appendChild(addBtn);
+
+    // The page button sits between + and the collapse control: the frame
+    // allows two actions before the collapse (shell-frame.md §4.2), and the
+    // collapse must stay the header's last child (the phone test selects it
+    // as `.panel-header .collapse-btn:last-child`).
+    const pageBtn = document.createElement("button");
+    pageBtn.type = "button";
+    pageBtn.id = "sessions-page-btn";
+    pageBtn.className = "session-page-btn";
+    pageBtn.title = LABEL_PAGE;
+    pageBtn.setAttribute("aria-label", LABEL_PAGE);
+    pageBtn.innerHTML = PAGE_ICON;
+    pageBtn.addEventListener("click", () => {
+      if (NB.tabs && NB.tabs.openSpecial) NB.tabs.openSpecial(PAGE_TAB_ID);
+    });
+    actions.appendChild(pageBtn);
+
     if (NB.activity && NB.activity.makeCollapseBtn) {
       actions.appendChild(NB.activity.makeCollapseBtn());
     }

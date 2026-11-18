@@ -153,8 +153,10 @@ implemented today.
 | `graph-2d.js` | 1138 | `NB.graph2d` | Original 2D neural renderer: force layout, pan/zoom, hover/selection, particles, edge pulses, glow. |
 | `graph-3d.js` | 2523 | `NB.graph3d` | 3D renderer: perspective orbit camera, canvas-2D projection, force physics, depth spread, hover/selection/filter states, loading/empty/error layers, optional particles. |
 | `graph.js` | 276 | `NB.graph` | `§graph` facade: tab/activity wiring, shared header chrome, 2D/3D mode switch, persisted `graphMode`, and the compatibility surface that delegates to the active renderer. |
-| `tabs.js` | 1663 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry, and the **session model** (named tab groups sharing the workspace's pins). A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](../archive/architecture-design/tab-equalization.md), [design/tab-close-animation.md](../archive/architecture-design/tab-close-animation.md), and [sessions.md](sessions.md)). |
-| `sessions.js` | 705 | `NB.sessions` | Sessions side-panel view: header, row list, row menu, New/Rename dialog, and the `Move to session` submenu's handlers. No tab data: reads `NB.tabs.getSessionList()` and writes only through `NB.tabs.*` (see [sessions.md](sessions.md) §12 and [ui/sessions.md](../archive/ui/sessions.md)). |
+| `tabs.js` | 2283 | `NB.tabs` | Top-bar file tabs, drag-reorder, pinning, bulk close, special-tab registry, and the **session model** (named tab groups sharing the workspace's pins). A dirty switch stashes the buffer instead of prompting. Owns the two-region split (`#tab-pinned` + `#tab-list`) and the width-freeze / release / ghost-close machinery (see [design/tab-equalization.md](../archive/architecture-design/tab-equalization.md), [design/tab-close-animation.md](../archive/architecture-design/tab-close-animation.md), and [sessions.md](sessions.md)). |
+| `sessions.js` | 1258 | `NB.sessions` | Sessions side-panel view: header, row list, row menu, New/Rename dialog, the `Move to session` submenu's handlers, and the `#sessions-page-btn` that opens the `§sessions` page. No tab data: reads `NB.tabs.getSessionList()` and writes only through `NB.tabs.*` (see [sessions.md](sessions.md) §12 and [ui/sessions.md](../archive/ui/sessions.md)). |
+| `sessions-page.js` | 940 | `§sessions` | The `§sessions` content page: one card per session with its tabs, the multi-select, the drag and the row menu that move tabs between sessions (`NB.tabs.moveSessionTabs`), and the jump that switches session and opens a tab. Builds `#sessions-page` at load; see [ui/sessions-page.md](../ui/sessions-page.md). |
+| `tabs-view.js` | 654 | `NB` (no global) | The Tabs side-panel view: the active session's open files as rows, row state, drag-reorder into the strip's order, and the phone drawer's close-on-activate. Reads `NB.tabs.getOpen()`; see [ui/tabs-view.md](../ui/tabs-view.md). |
 | `windows.js` | 284 | `NB.windows` | Makes each settings modal a draggable/resizable floating window with a shared maximize/restore control (double-click the header, or the injected `.win-max` button; see [window-maximize.md](window-maximize.md)). Geometry in `localStorage` under `nb:windowGeometry`; the maximized state is a transient class, never persisted. |
 | `settings.js` | 1760 | `NB.settings` | Settings modal with seven tabs: General, Workspaces (rendered only when `boot.workspace_id` is set), Appearance, Shortcuts, Security, AI, About. Draft-then-commit for live fields. |
 | `export.js` | 1086 | `NB.export` | Export modal. PDF via vendored Paged.js in a hidden same-origin iframe plus `window.print()`; HTML via `Blob`. Options: format, width (fit/80%/full), colors (light/dark), table of contents, scope (current file / section). Reachable from the file-tree, bookmark, and tab right-click menus. There is no top-bar Export button. |
@@ -468,9 +470,11 @@ the same call.
 
 Tabs whose id starts with `§` open a non-file view instead of a note
 (`tabs.js` `isSpecial()`). Each registers through `NB.tabs.registerSpecial`
-(`tabs.js`). One exists:
+(`tabs.js`). Two exist:
 
 - `§graph` (`graph.js`) — the 2D/3D wikilink graph.
+- `§sessions` (`sessions-page.js`) — every session as a card, with the drag
+  and row menu that move tabs between sessions.
 
 ### Graph view
 

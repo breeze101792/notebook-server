@@ -17,6 +17,7 @@
     "test:browser:hybrid-blocks": "node tests/browser/test_hybrid_blocks_browser.js",
     "test:browser:mobile": "node tests/browser/test_mobile_browser.js",
     "test:browser:tabs": "node tests/browser/test_tabs_view_browser.js",
+    "test:browser:sessions-page": "node tests/browser/test_sessions_page_browser.js",
     "test:browser:designer": "node tests/browser/test_designer_browser.js",
     "test:browser:table-editor": "node tests/browser/test_table_editor_browser.js",
     "test:browser:dw": "node tests/browser/test_dw_designer_browser.js",

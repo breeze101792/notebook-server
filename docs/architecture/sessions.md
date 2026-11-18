@@ -153,7 +153,7 @@ sessions (each session's own list was deduped in rule 4).
 
 `restore` keeps its four positional arguments and gains a trailing optional
 fifth, so the four existing DOM-test calls keep working
-(`tests/dom/test_dom.js, 22144, 22153, 22165`):
+(`tests/dom/test_dom.js:24554`, `:25481`, `:25490`, `:25502`):
 
 ```js
 await NB.tabs.restore(openFiles, activeFile, fallback, pinnedFiles, sessionState)
@@ -292,7 +292,17 @@ dirty for `app.js` (`persistConfig`, `scheduleWorkspaceState`).
 | `deleteSession(id)` | Refuse when `sessionOrder.length === 1`. The UI confirms first, covering the target session's `viewer.isDirty` files (and `NB.hybrid.isDirty()` when the target is active). **Active id:** bump the tokens, `await commitForTabSwitch()` (abort on `false`), `dropTab` every **unpinned** live path without prompting, delete the record/name/order entry, pick the previous session in order else the next, `installSession` it (no outgoing record to save), render, emit, activate or show the empty state. Pinned tabs stay. **Stored id:** remove the record/name/order entry **first**, then `closeStoredPath` each of its paths — which closes the viewer cache and the special tab only when no other session or pin still holds that path. Render, emit; the active session is untouched. |
 | `reorderSession(id, targetId, before)` | Move `id` before or after `targetId`; `targetId === null` appends. The destination index is computed after removing `id`, so both directions are correct. The active session, its tab and every stored record are untouched; only `sessionOrder` changes. `render()` + `emitChanged()`, so the order persists and syncs like any other shared change. Returns `false` when nothing moved. |
 | `moveToSession(path, id)` | `path` must be unpinned and live; `id` must be another session. **Do not call `viewer.close`** — the cache entry and any draft travel with the file. Remove from `ordered`/`openSet`; append to the target record **unless it already lists the path** (then the source copy is simply removed); fix the source's `activePath` (activate the neighbour, or show the empty state if the strip empties); render, emit. |
+| `moveSessionTabs(targetId, items)` | **New.** The one move that works from any session into any other, for the `§sessions` page (`ui/sessions-page.md` §8). `items` = `[{ sourceId, path }]`, the selection or one row. Validate before mutating: `targetId` exists, every source exists, every `path` is unpinned and listed in its source. **Collapse the batch by `path`**, because a session's list is unique and the same note may be carried from two cards; items whose source is already the target drop out, and what remains is one entry per path with every other occurrence marked for removal from its source. An empty batch returns `false`. Capacity: the target must have room for every new path it does not already list, else the shipped `SESSION_FULL_MESSAGE` and `false`, with **nothing** moved. **Only when the live session's `activePath` is among the carried paths** — the same gate `moveToSession` uses (`tabs.js:1280`) — bump `activateToken`, `cancelActivation()`, `await commitForTabSwitch()` (abort on `false`) and re-validate; a background tab leaving the live session commits nothing. Then remove each item from its source — live: `ordered`/`openSet`/`frozenWidths`; stored: `openFiles` with `activeFile` repaired to its first remaining file else `null` — and append each new path to the target: stored gets `openFiles`/`activeFile` (set when the record was empty); live gets `ordered` after the pins and `openSet`. When the live source's active tab moved, choose its successor **before** any splice from the pre-mutation `ordered`: the first path at or after the active path's old index that survives the batch, else the last survivor, else `null` — a captured index would skip a survivor once two earlier tabs leave. **Never calls `viewer.close`.** One `render()` + one `emitChanged()` for the moves, then `activate(next)` or `showSessionEmpty()` for the live source, which emits its own ordinary change. Returns `Promise<boolean>`. |
+| `moveSessionTab(sourceId, path, targetId)` | Thin wrapper: `moveSessionTabs(targetId, [{ sourceId, path }])`. Kept so a one-tab mover need not build a list. |
 | `hasStoredPath(path, exceptId)` | Internal: does an inactive session still list the path? Used by `dropTab`, `closeStoredPath` and `deleteSession` to keep a shared buffer alive. |
+
+`moveSessionTabs` adds no state of its own: it changes only `sessionOrder`-indexed records and the
+live sets, so `snapshot()`, the config shape and the live-view invariant are untouched. It is
+deliberately not a loop over `moveToSession`: a loop would render and emit once per tab, let a cap
+refusal land after half the batch had moved, and append the same path twice when two cards carried
+it. One validate, one collapse by path, one mutate, one emit is the contract. `moveToSession` keeps
+its signature and its single-path behaviour for the tab menu; both obey the same dedupe and cap
+rules.
 
 Deleting a stored session is the only path that closes cached files the user
 cannot see. Its cleanup runs after the record is gone, and `closeStoredPath`

@@ -19,7 +19,7 @@ without re-reading every surface doc.
 | Edit windows | `edit-window.md`, `table-editor.md`, `diagram-designers.md` |
 | Overlays | `settings-modal.md`, `dialogs.md`, `lightboxes.md` |
 | Editing | `source-editor.md`, `hybrid-mode.md` |
-| Special | `graph-view.md`, `mobile-shell.md`, `welcome.md` |
+| Special | `graph-view.md`, `sessions-page.md`, `mobile-shell.md`, `welcome.md` |
 
 Every doc has a sibling `*-mockup.html`. The set is frozen; the code is the next step.
 
@@ -44,7 +44,7 @@ Each phase is shippable and testable alone. Do not start a phase before its prer
 | 10 | Edit windows | shared chrome, table editor, designers | `test_dom`, `:table-editor`, `:designer`, `:dw` |
 | 11 | Overlays | Settings, dialogs, lightboxes | `test_dom`, `:auth`, `:core` |
 | 12 | Editing surfaces | source bar/CM, hybrid chrome | `test_dom`, `:hybrid*` |
-| 13 | Special | graph chrome, phone shell, welcome | `test_dom`, `:core`, `:mobile` |
+| 13 | Special | graph chrome, the sessions page, phone shell, welcome | `test_dom`, `:core`, `:mobile`, `:sessions-page` |
 
 The per-surface acceptance criteria are the gate for that phase.
 

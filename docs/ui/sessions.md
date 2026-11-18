@@ -40,9 +40,12 @@ in the tab bar; pinned tabs are shared by every session and are not counted here
 | Title | `Sessions`, `.72rem`, 400, line-height 1.2, tracking `.08em`, uppercase, `--text-muted` | `sessions.js:134-136` |
 | Total | `.panel-heading` with a count chip: 20 × 18, radius 5, 1 px `--border`, `.72rem` 600, tabular | `:137-146`; `style.css:8254-8269` |
 | Add | `+`, 24 × 24, radius 5, `--text-muted`; hover wash + `--text-primary`; focus ring | `:155-160`; `style.css:8271-8292` |
-| Collapse | 24 × 24, the frame's `makeCollapseBtn()` | `sessions.js:161-164` |
+| Page | `#sessions-page-btn`, the `+`'s 24 × 24 box with radius 5, `--text-muted`, glyph `#nb-icon-page-grid`; `aria-label` and `title` `Open the sessions page`; opens the `§sessions` content page | `sessions.js:162-172`; [`sessions-page.md`](sessions-page.md) §2 |
+| Collapse | 24 × 24, the frame's `makeCollapseBtn()` | `sessions.js:170-172` |
 
-The header has at most two actions before the collapse control, matching the frame rule.
+The header has at most two actions before the collapse control, matching the frame rule. They are
+`+` and the page button; the page button is hidden on the phone, where touch cannot drag and the
+page's only other gesture is a click the drawer already offers (`sessions-page.md` §2, E4).
 
 **Add states.** At the 20-session cap the `+` keeps its tab stop, gets
 `aria-disabled="true"`, `aria-describedby` the hidden cap note, and the title
@@ -175,7 +178,7 @@ presentational; the row's accessible name carries the state.
 | Name dialog | dialog role, focus into the field, `Esc` cancels, focus returns to the opener |
 | Delete | native confirm; focus returns to the row or the `+` |
 
-Tab order: `+` → collapse → rows in DOM order (row, more) → footer is static. The `⋯` is
+Tab order: `+` → page → collapse → rows in DOM order (row, more) → footer is static. The `⋯` is
 always visible, so a keyboard user never needs hover.
 
 ---
@@ -257,7 +260,7 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 | # | Criterion | File | Observable |
 |---|---|---|---|
 | AC1 | The view has a rail icon on both shells, in the saved bar order | `activity.js`, `style.css` | Second icon at 1280 and at 390 in the default order; the phone opens it in the drawer |
-| AC2 | Header: title, total, `+`, collapse | `sessions.js` | `Sessions`, `N sessions`, `+`, chevron; at most two actions before collapse |
+| AC2 | Header: title, total, `+`, page, collapse | `sessions.js` | `Sessions`, `N sessions`, `+`, `#sessions-page-btn`, chevron; at most two actions before collapse |
 | AC3 | Rows show name, count, dot and `⋯` | `sessions.js` | Unpinned count; dirty dot; `⋯` always visible |
 | AC4 | Active row is tinted and marked | `sessions.js`, `style.css` | `aria-current="true"`; 2 px marker; `--accent-soft`; weight 400 like every row |
 | AC5 | The `+` is capped at 20 and stays reachable | `sessions.js` | `aria-disabled` + `aria-describedby`; title names the cap |
@@ -292,7 +295,10 @@ Header 36; actions 24; total 20 × 18; row 30; marker 2 × 14; dot 8; count `.76
 
 ## 13. What not to build
 
-- A second Sessions list or a modal. The phone hosts this view in the drawer.
+- A second Sessions list **for switching, renaming, deleting or reordering**. The phone hosts this
+  view in the drawer. The `§sessions` content page ([`sessions-page.md`](sessions-page.md)) lists the
+  sessions because it moves tabs between them; it owns none of those operations and adds no door to
+  them.
 - A new count rule that includes pinned tabs.
 - A drag-reorder that does not persist and sync with the rest of the session order.
 - A different row shape from the shared list rules.

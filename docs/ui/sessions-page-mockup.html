@@ -1,0 +1,1660 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sessions page — mockup</title>
+<style>
+/* ==================================================================
+   Tokens — static/css/style.css `:root` and `body[data-theme="light"]`,
+   plus the semantic aliases. Copied, not invented.
+   ================================================================== */
+:root,.theme-dark{
+  --bg:#1a1b1f;--bg-panel:#22232a;--bg-elev:#2a2b34;--fg:#e6e6ea;--fg-muted:#9799a4;
+  --accent:#7c9cff;--accent-soft:rgba(124,156,255,.18);--accent-fg:#14151a;
+  --border:#383a45;--border-strong:#7b8194;--surface-well:#14151a;--code-bg:#14151a;
+  --warn:#f3b454;--danger:#ff6b6b;
+  --surface-page:var(--bg);--surface-panel:var(--bg-panel);--surface-raised:var(--bg-elev);
+  --text-primary:var(--fg);--text-muted:var(--fg-muted);--text-on-accent:var(--accent-fg);
+  --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --font-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --text-2xs:9px;--text-xs:.72rem;--text-sm:.8rem;--text-ui:.86rem;--text-ui-lg:.93rem;
+  --text-body:1rem;--text-lg:1.15rem;
+  --fw-regular:400;--fw-medium:500;--fw-semibold:600;--fw-heading:650;
+  --lh-tight:1.2;--lh-snug:1.35;--lh-normal:1.5;--tracking-label:.08em;
+  --space-hair:2px;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;
+  --space-5:20px;--space-6:24px;
+  --radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:16px;
+  --radius-pill:999px;--radius-circle:50%;
+  --stroke-1:1px;--stroke-2:2px;--stroke-3:3px;
+  --control-h-sm:24px;--control-h-md:30px;--control-h-body:32px;--control-h-lg:36px;
+  --icon-sm:14px;--icon-md:16px;--icon-lg:17px;
+  --focus-ring:2px solid var(--accent);--focus-offset:2px;--focus-offset-inset:-2px;
+  --opacity-disabled:.45;--opacity-drag:.4;
+  --m-hit:44px;
+  --shadow-pop:0 6px 24px rgba(0,0,0,.35);
+  --page-bg:#0b0c10;--page-card:#121319;--page-fg:#e6e6ea;--page-muted:#9aa0ad;--page-line:#2f313b;
+}
+.theme-light{
+  --bg:#ffffff;--bg-panel:#f6f7f9;--bg-elev:#eceef2;--fg:#1f2330;--fg-muted:#5d6470;
+  --accent:#2f5fd0;--accent-soft:rgba(47,95,208,.12);--accent-fg:#ffffff;
+  --border:#d8dde4;--border-strong:#78828f;--surface-well:#f0f2f5;--code-bg:#f0f2f5;
+  --warn:#8a5a0b;--danger:#c0392b;
+  --surface-page:var(--bg);--surface-panel:var(--bg-panel);--surface-raised:var(--bg-elev);
+  --text-primary:var(--fg);--text-muted:var(--fg-muted);--text-on-accent:var(--accent-fg);
+  --shadow-pop:0 6px 24px rgba(0,0,0,.16);
+}
+
+*{box-sizing:border-box}
+html{font-size:14px}
+body{margin:0;padding:28px;background:var(--page-bg);color:var(--page-fg);
+  font:400 .86rem/1.5 var(--font-ui)}
+.page{max-width:1440px;margin:0 auto}
+h1{font-size:24px;margin:0 0 6px}
+.lede{color:var(--page-muted);margin:0 0 26px;max-width:100ch}
+.sec{margin:0 0 40px}
+.sec>h2{font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--page-muted);
+  margin:0 0 4px;font-weight:600}
+.sub{color:var(--page-muted);font-size:12px;margin:0 0 14px;max-width:112ch;line-height:1.55}
+.cap{color:var(--page-muted);font-size:12px;margin:8px 0 0;max-width:112ch;line-height:1.55}
+.cap b{color:var(--page-fg);font-weight:600}
+code{font-family:var(--font-mono);font-size:11px;color:var(--page-fg);
+  background:var(--page-line);padding:1px 4px;border-radius:3px}
+.geo{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0}
+.geo span{font:11px/1.4 var(--font-mono);color:var(--page-muted);
+  border:1px dashed var(--page-line);border-radius:4px;padding:2px 6px}
+.pair{display:flex;flex-direction:column;gap:16px}
+.ftitle{margin:0 0 6px;font:600 12px/1.4 var(--font-ui);color:var(--page-fg);
+  display:flex;gap:8px;align-items:baseline}
+.ftitle span{font-weight:400;color:var(--page-muted);font-family:var(--font-mono);font-size:11px}
+
+/* board frames — mockup chrome, not app CSS. The width is the editor
+   width the page is drawn in, which is what decides the column count. */
+.frame{border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  background:var(--surface-page);color:var(--text-primary);font-family:var(--font-ui)}
+.f740{width:740px}
+.f960{width:960px}
+
+/* vertical geometry brackets, drawn in a gutter left of the board */
+.dimwrap{display:flex;align-items:flex-start;gap:10px}
+.dims{position:relative;flex:0 0 118px;height:300px}
+.dim{position:absolute;right:0;display:flex;align-items:center;justify-content:flex-end;
+  gap:8px;font:11px/1.2 var(--font-mono);color:var(--page-muted);white-space:nowrap}
+.dim::after{content:"";width:24px;align-self:stretch;
+  border:1px dashed var(--page-line);border-left:0}
+
+/* the drag callout and the read-only label — mockup chrome */
+.annot{display:flex;flex-wrap:wrap;gap:6px 18px;align-items:baseline;max-width:900px;
+  margin:0 0 12px;padding:8px 12px;border:1px dashed var(--accent);border-left:2px solid var(--accent);
+  border-radius:6px;background:var(--accent-soft);color:var(--page-muted);font-size:12px}
+.annot b{color:var(--page-fg);font-weight:600}
+.annot .annot-k{font:600 11px/1 var(--font-mono);letter-spacing:.08em;
+  text-transform:uppercase;color:var(--page-fg)}
+.note{max-width:900px;margin:0 0 12px;padding:8px 12px;border:1px dashed var(--page-line);
+  border-radius:6px;color:var(--page-muted);font-size:12px;line-height:1.5}
+.note b{color:var(--page-fg);font-weight:600}
+
+/* ==================================================================
+   §sessions page — docs/ui/sessions-page.md §12.2, copied verbatim.
+   ================================================================== */
+.sessions-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-page);
+}
+.sessions-page[hidden] { display: none; }
+
+.sessions-page-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-height: 47px;
+  padding: var(--space-2) var(--space-4);
+  background: var(--surface-panel);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.sessions-page-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--fw-heading);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+.sessions-page-summary {
+  margin-left: auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.sessions-page-selection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--accent);
+  font-size: var(--text-sm);
+}
+.sessions-page-selection[hidden] { display: none; }
+.sessions-page-clear {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  /* the app's global button reset, restated so the mockup matches it */
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sessions-page-clear:hover { background: var(--accent-soft); }
+.sessions-page-clear:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+
+.sessions-page-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: var(--space-4);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+.sessions-page-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.session-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface-panel);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+}
+.session-card.is-current { border-color: var(--accent); }
+.session-card-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-2) 0 var(--space-3);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.session-card.is-current .session-card-header { background: var(--accent-soft); }
+.session-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.session-card-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-ui);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+.session-card-count {
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.session-card-dot {
+  display: block;
+  width: var(--space-2);
+  height: var(--space-2);
+  border-radius: var(--radius-circle);
+  background: var(--accent);
+}
+
+.session-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-hair);
+  margin: 0;
+  padding: var(--space-1);
+  list-style: none;
+}
+.session-card-tab-wrap { display: flex; min-width: 0; }
+.session-card-tab {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-h-md);
+  padding: 3px 6px 3px 8px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.session-card-tab:hover { background: var(--accent-soft); }
+.session-card-tab[aria-current="true"] { background: var(--accent-soft); }
+.session-card-tab[aria-current="true"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: var(--stroke-2);
+  height: var(--icon-sm);
+  margin-top: calc(-1 * var(--icon-sm) / 2);
+  border-radius: 0 1px 1px 0;
+  background: var(--accent);
+}
+.session-card-tab.is-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 var(--stroke-1) var(--accent);
+}
+.session-card-tab:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+.session-card-mark,
+.session-card-state {
+  flex: 0 0 var(--icon-sm);
+  display: grid;
+  place-items: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.session-card-mark { color: var(--text-muted); }
+.session-card-mark svg,
+.session-card-state svg { display: block; width: var(--icon-sm); height: var(--icon-sm); }
+.session-card-state svg { color: var(--warn); }
+.session-card-mark.is-empty,
+.session-card-state.is-empty { visibility: hidden; }
+.session-card-tab-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.session-card-tab-wrap.is-special .session-card-tab-name { color: var(--text-muted); font-style: italic; }
+.session-card-tab-wrap.is-dragging { opacity: var(--opacity-drag); }
+
+.session-card.is-drop-target {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 var(--stroke-1) var(--accent);
+}
+.session-card.is-drop-target .session-card-count {
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+.session-card-empty {
+  margin: 0;
+  padding: 6px var(--space-3) 10px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-style: italic;
+}
+
+.sessions-page-foot {
+  flex: 0 0 auto;
+  padding: 9px var(--space-4) 10px;
+  border-top: var(--stroke-1) solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+}
+
+/* The Sessions view header: the page button is the .session-add box. */
+.session-page-btn {
+  width: var(--control-h-sm);
+  height: var(--control-h-sm);
+  border-radius: 5px;
+  color: var(--text-muted);
+}
+.session-page-btn:hover { color: var(--text-primary); background: var(--accent-soft); }
+.session-page-btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+
+/* ==================================================================
+   Mockup-only helpers and the shell context.
+   ================================================================== */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+.i{width:14px;height:14px;display:block;fill:none;stroke:currentColor;stroke-width:1.4;
+  stroke-linecap:round;stroke-linejoin:round}
+.i-grid{stroke-width:1.3}
+.i-conflict{stroke-width:1.5}
+
+.scale{width:1178px;height:515px;overflow:hidden}
+.scale>.shellboard{width:1280px;height:560px;transform:scale(.92);transform-origin:top left}
+
+.shellboard{border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  background:var(--surface-page);color:var(--text-primary);font-family:var(--font-ui)}
+.shell{height:100%;display:flex;flex-direction:column;min-height:0}
+.shell .top{height:46px;flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:0 12px;
+  background:var(--surface-panel);border-bottom:1px solid var(--border);font-size:13px}
+.shell .brand{font-weight:700;letter-spacing:.3px}
+.shell .chip{height:24px;display:inline-flex;align-items:center;padding:0 8px;
+  border:1px solid var(--border);border-radius:var(--radius-pill);color:var(--text-muted);font-size:11px}
+.shell .spacer{flex:1}
+.shell .grid{flex:1;min-height:0;display:grid;grid-template-columns:48px 240px minmax(0,1fr) 220px}
+.shell .rail{background:var(--surface-panel);border-right:1px solid var(--border);display:flex;
+  flex-direction:column;align-items:center;gap:2px;padding:8px 0}
+.shell .rb{width:40px;height:36px;display:grid;place-items:center;border:0;border-radius:6px;
+  background:none;color:var(--text-muted);position:relative;padding:0}
+.shell .rb .i{width:16px;height:16px}
+.shell .rb.on{color:var(--accent);background:var(--accent-soft)}
+.shell .rb.on::before{content:"";position:absolute;left:-4px;top:50%;width:2px;height:20px;
+  margin-top:-10px;background:var(--accent)}
+.shell .rspacer{flex:1}
+.shell .panel{display:flex;flex-direction:column;min-height:0;background:var(--surface-panel);
+  border-right:1px solid var(--border)}
+.shell .phead{height:34px;flex:0 0 auto;display:flex;align-items:center;gap:8px;
+  padding:0 12px;border-bottom:1px solid var(--border)}
+.shell .ptitle{font-size:var(--text-xs);line-height:var(--lh-tight);
+  letter-spacing:var(--tracking-label);text-transform:uppercase;color:var(--text-muted);
+  font-weight:var(--fw-regular)}
+.shell .total{min-width:20px;height:18px;padding:0 5px;display:inline-flex;align-items:center;
+  justify-content:center;border:1px solid var(--border);border-radius:5px;color:var(--text-muted);
+  font-size:var(--text-2xs);font-weight:600;font-variant-numeric:tabular-nums}
+.shell .pactions{margin-left:auto;display:flex;gap:2px}
+.shell .pbtn{width:24px;height:24px;display:grid;place-items:center;padding:0;border:0;
+  border-radius:5px;background:transparent;color:var(--text-muted);font:inherit;cursor:default}
+.shell .pbtn.plus{font-size:16px;line-height:1}
+.shell .pbtn .i{width:14px;height:14px}
+.shell .plist{flex:1;min-height:0;display:flex;flex-direction:column;gap:2px;
+  padding:6px 6px 10px;overflow:hidden}
+.shell .prow{display:flex;align-items:center;gap:8px;min-height:30px;padding:0 8px 0 10px;
+  border-radius:4px;font-size:var(--text-body);line-height:var(--lh-normal);position:relative}
+.shell .prow.on{background:var(--accent-soft);color:var(--accent)}
+.shell .prow.on::before{content:"";position:absolute;left:0;top:50%;width:2px;height:14px;
+  margin-top:-7px;border-radius:0 1px 1px 0;background:var(--accent)}
+.shell .pname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.shell .pcount{font-size:var(--text-sm);color:var(--text-muted);font-variant-numeric:tabular-nums}
+.shell .editor{display:flex;flex-direction:column;min-width:0;min-height:0;
+  background:var(--surface-page)}
+.shell .strip{height:34px;flex:0 0 auto;display:flex;align-items:flex-end;gap:2px;padding:0 6px;
+  background:var(--surface-panel);border-bottom:1px solid var(--border)}
+.shell .t{height:28px;display:flex;align-items:center;gap:5px;padding:0 10px;
+  border:1px solid var(--border);border-bottom:0;border-radius:6px 6px 0 0;
+  background:var(--surface-raised);color:var(--text-muted);font-size:var(--text-ui-lg);
+  white-space:nowrap;max-width:200px;overflow:hidden}
+.shell .t .i{width:14px;height:14px;flex:0 0 14px}
+.shell .t .tname{overflow:hidden;text-overflow:ellipsis}
+.shell .t.a{background:var(--surface-page);border-color:var(--accent);color:var(--text-primary)}
+.shell .t.special .tname{font-style:italic;color:var(--text-muted)}
+.shell .grow{flex:1}
+.shell .outline{display:flex;flex-direction:column;min-height:0;background:var(--surface-panel);
+  border-left:1px solid var(--border)}
+.shell .olines{display:flex;flex-direction:column;gap:9px;padding:12px 14px}
+.shell .ol{height:7px;border-radius:3px;background:var(--border)}
+.shell .ol.in2{margin-left:14px}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <!-- #nb-icon-session: two rounded landscape bars in the 16 box -->
+  <symbol id="nb-icon-session" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="4" rx="1"/><rect x="2.5" y="9" width="11" height="4" rx="1"/></symbol>
+  <!-- #nb-icon-page-grid: four rounded rects in a 2 x 2 box, stroke 1.3 -->
+  <symbol id="nb-icon-page-grid" viewBox="0 0 16 16"><rect x="2.4" y="2.4" width="4.6" height="4.6" rx="1.1"/><rect x="9" y="2.4" width="4.6" height="4.6" rx="1.1"/><rect x="2.4" y="9" width="4.6" height="4.6" rx="1.1"/><rect x="9" y="9" width="4.6" height="4.6" rx="1.1"/></symbol>
+  <symbol id="nb-icon-graph" viewBox="0 0 16 16"><circle cx="4" cy="11" r="1.6"/><circle cx="8" cy="4.5" r="1.6"/><circle cx="12" cy="10" r="1.6"/><path d="M5.2 9.8l1.9-3.6M9.2 5.7l1.9 3"/></symbol>
+  <!-- #nb-icon-conflict: the sprite symbol, templates/index.html:199 -->
+  <symbol id="nb-icon-conflict" viewBox="0 0 16 16"><path d="M12.8 6.1A5 5 0 1 0 13 9.6M13 3.2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="nb-icon-chevron-left" viewBox="0 0 16 16"><path d="M9.5 3.5L5 8l4.5 4.5"/></symbol>
+  <symbol id="nb-icon-tabs" viewBox="0 0 16 16"><rect x="3.4" y="2.6" width="9.2" height="10.8" rx="1.4"/><path d="M5.7 6.1h4.6M5.7 8.3h4.6M5.7 10.5h2.9"/></symbol>
+  <symbol id="nb-icon-explorer" viewBox="0 0 16 16"><path d="M2.5 4.5h4l1 1.5h6v6h-11z"/></symbol>
+  <symbol id="nb-icon-bookmark" viewBox="0 0 16 16"><path d="M4.5 2.5h7v11l-3.5-2.6-3.5 2.6z"/></symbol>
+  <symbol id="nb-icon-settings" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M4 4l1.1 1.1M10.9 10.9L12 12M12 4l-1.1 1.1M5.1 10.9L4 12"/></symbol>
+</svg>
+<div class="page">
+  <h1>Sessions page — §sessions</h1>
+  <p class="lede">Static reference for <b>sessions-page.md</b>. Every board is drawn in both themes (dark first, light under it), so the file needs no script and no toggle. The page rules are the doc’s §12.2 verbatim; only the frames, captions, notes and geometry labels are mockup chrome. Every page-alone board is drawn at the <b>width 1280 leaves the page</b>, not at the viewport: <b>740</b> is 1280 with both panels open, <b>960</b> is 1280 with the outline collapsed. The data is four sessions holding seven tab entries — <code>Work</code> (4: the current session, with a dirty tab and two special tabs), <code>Reading</code> (2, one of them changed on disk), <code>Bench tests</code> (1) and <code>Archive</code> (0, the empty card that exists to be a drop target). Board 1 shows the page in the shell, where the same four cards now wrap to two columns.</p>
+<section class="sec">
+  <h2>1 · In the shell — 1280 viewport, both panels open, drawn at 92%</h2>
+  <p class="sub">Context only: where the page lives. The rail is 48, the Sessions panel 240 and the outline 220, so the editor track is 772 and the grid inside it is 740 wide — two columns, the same two the next board draws at 1:1. Reduced scale; nothing here is a measurement source.</p>
+  <div class="pair">
+    <div>
+      <p class="ftitle">The shell · <span>dark</span></p>
+      <div class="scale">
+        <div class="shellboard">
+          <div class="shell">
+            <div class="top">
+              <span class="brand">Field Notes</span>
+              <span class="chip">Lab notebook</span>
+              <span class="spacer"></span>
+              <span class="chip">Edit</span>
+            </div>
+            <div class="grid">
+              <nav class="rail" aria-label="Views">
+                <button class="rb" aria-label="Explorer"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+                <button class="rb" aria-label="Tabs"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-tabs"/></svg></button>
+                <button class="rb on" aria-label="Sessions" aria-pressed="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+                <button class="rb" aria-label="Bookmarks"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+                <div class="rspacer"></div>
+                <button class="rb" aria-label="Settings"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></button>
+              </nav>
+              <div class="panel">
+                <div class="phead">
+                  <span class="ptitle">Sessions</span><span class="total">4</span>
+                  <div class="pactions">
+                    <button class="pbtn plus" aria-label="New session" title="New session">+</button>
+                    <button class="pbtn session-page-btn" aria-label="Open the sessions page" title="Open the sessions page"><svg class="i i-grid" aria-hidden="true" focusable="false"><use href="#nb-icon-page-grid"/></svg></button>
+                    <button class="pbtn" aria-label="Collapse panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-left"/></svg></button>
+                  </div>
+                </div>
+                <div class="plist">
+                  <div class="prow on"><span class="pname">Work</span><span class="pcount">2</span></div>
+                  <div class="prow"><span class="pname">Reading</span><span class="pcount">2</span></div>
+                  <div class="prow"><span class="pname">Bench tests</span><span class="pcount">1</span></div>
+                  <div class="prow"><span class="pname">Archive</span><span class="pcount">0</span></div>
+                </div>
+              </div>
+              <div class="editor">
+                <div class="strip">
+                  <div class="t a special"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg><span class="tname">Sessions</span></div>
+                  <div class="t"><span class="tname">driver-bringup.md</span></div>
+                  <div class="grow"></div>
+                </div>
+                <div class="sessions-page special-tab-view">
+                  <header class="sessions-page-header">
+                    <h1 class="sessions-page-title">Sessions</h1>
+                    <span class="sessions-page-summary">4 sessions · 5 tabs</span>
+                  </header>
+                  <div class="sessions-page-body">
+                    <div class="sessions-page-grid">
+                      <section class="session-card is-current" aria-labelledby="sp-shd-work">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shd-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">2 tabs</span><span class="sr-only">, current session</span></h2>
+                        </div>
+                        <ul class="session-card-list">
+                          <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                            <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                              <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                              <span class="session-card-tab-name">Sessions</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                          <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                            <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">driver-bringup.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                        </ul>
+                      </section>
+                      <section class="session-card" aria-labelledby="sp-shd-reading">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shd-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                        </div>
+                        <ul class="session-card-list">
+                          <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                            <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">Inbox.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                          <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                            <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">Datasheet notes.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                        </ul>
+                      </section>
+                      <section class="session-card" aria-labelledby="sp-shd-bench">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shd-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                        </div>
+                        <ul class="session-card-list">
+                          <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                            <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">bench-log.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                        </ul>
+                      </section>
+                      <section class="session-card" aria-labelledby="sp-shd-archive">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shd-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                        </div>
+                        <p class="session-card-empty">No tabs</p>
+                      </section>
+                    </div>
+                  </div>
+                  <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+                </div>
+              </div>
+              <div class="outline">
+                <div class="phead"><span class="ptitle">Outline</span></div>
+                <div class="olines"><div class="ol" style="width:78%"></div><div class="ol in2" style="width:64%"></div><div class="ol in2" style="width:71%"></div><div class="ol" style="width:52%"></div><div class="ol in2" style="width:60%"></div><div class="ol" style="width:66%"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <p class="ftitle">The shell · <span>light</span></p>
+      <div class="scale">
+        <div class="shellboard">
+          <div class="shell">
+            <div class="top">
+              <span class="brand">Field Notes</span>
+              <span class="chip">Lab notebook</span>
+              <span class="spacer"></span>
+              <span class="chip">Edit</span>
+            </div>
+            <div class="grid">
+              <nav class="rail" aria-label="Views">
+                <button class="rb" aria-label="Explorer"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-explorer"/></svg></button>
+                <button class="rb" aria-label="Tabs"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-tabs"/></svg></button>
+                <button class="rb on" aria-label="Sessions" aria-pressed="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></button>
+                <button class="rb" aria-label="Bookmarks"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-bookmark"/></svg></button>
+                <div class="rspacer"></div>
+                <button class="rb" aria-label="Settings"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></button>
+              </nav>
+              <div class="panel">
+                <div class="phead">
+                  <span class="ptitle">Sessions</span><span class="total">4</span>
+                  <div class="pactions">
+                    <button class="pbtn plus" aria-label="New session" title="New session">+</button>
+                    <button class="pbtn session-page-btn" aria-label="Open the sessions page" title="Open the sessions page"><svg class="i i-grid" aria-hidden="true" focusable="false"><use href="#nb-icon-page-grid"/></svg></button>
+                    <button class="pbtn" aria-label="Collapse panel"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-left"/></svg></button>
+                  </div>
+                </div>
+                <div class="plist">
+                  <div class="prow on"><span class="pname">Work</span><span class="pcount">2</span></div>
+                  <div class="prow"><span class="pname">Reading</span><span class="pcount">2</span></div>
+                  <div class="prow"><span class="pname">Bench tests</span><span class="pcount">1</span></div>
+                  <div class="prow"><span class="pname">Archive</span><span class="pcount">0</span></div>
+                </div>
+              </div>
+              <div class="editor">
+                <div class="strip">
+                  <div class="t a special"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg><span class="tname">Sessions</span></div>
+                  <div class="t"><span class="tname">driver-bringup.md</span></div>
+                  <div class="grow"></div>
+                </div>
+                <div class="sessions-page special-tab-view">
+                  <header class="sessions-page-header">
+                    <h1 class="sessions-page-title">Sessions</h1>
+                    <span class="sessions-page-summary">4 sessions · 5 tabs</span>
+                  </header>
+                  <div class="sessions-page-body">
+                    <div class="sessions-page-grid">
+                      <section class="session-card is-current" aria-labelledby="sp-shl-work">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shl-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">2 tabs</span><span class="sr-only">, current session</span></h2>
+                        </div>
+                        <ul class="session-card-list">
+                          <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                            <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                              <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                              <span class="session-card-tab-name">Sessions</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                          <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                            <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">driver-bringup.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                        </ul>
+                      </section>
+                      <section class="session-card" aria-labelledby="sp-shl-reading">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shl-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                        </div>
+                        <ul class="session-card-list">
+                          <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                            <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">Inbox.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                          <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                            <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">Datasheet notes.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                        </ul>
+                      </section>
+                      <section class="session-card" aria-labelledby="sp-shl-bench">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shl-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                        </div>
+                        <ul class="session-card-list">
+                          <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                            <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                              <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                              <span class="session-card-tab-name">bench-log.md</span>
+                              <span class="session-card-state is-empty" aria-hidden="true"></span>
+                            </button>
+                          </li>
+                        </ul>
+                      </section>
+                      <section class="session-card" aria-labelledby="sp-shl-archive">
+                        <div class="session-card-header">
+                          <h2 class="session-card-title" id="sp-shl-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                        </div>
+                        <p class="session-card-empty">No tabs</p>
+                      </section>
+                    </div>
+                  </div>
+                  <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+                </div>
+              </div>
+              <div class="outline">
+                <div class="phead"><span class="ptitle">Outline</span></div>
+                <div class="olines"><div class="ol" style="width:78%"></div><div class="ol in2" style="width:64%"></div><div class="ol in2" style="width:71%"></div><div class="ol" style="width:52%"></div><div class="ol in2" style="width:60%"></div><div class="ol" style="width:66%"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="cap"><b>Context only.</b> The page occupies the content area of the 1280 shell: tab bar above it with the special tab <code>Sessions</code> (italic, muted, <code>#nb-icon-session</code>) and one file tab; the Sessions side panel at 240 whose header reads <code>Sessions</code>, count chip, <code>+</code>, the page button with the 2 × 2 grid glyph and the collapse chevron; the outline pane at 220. The shell is drawn at 1280 and scaled to 92% to fit the page — the boards below are 1:1. This session holds two tabs, so its strip and the <code>Work</code> card agree, and the page leaves room for two cards, not four.</p>
+</section>
+<section class="sec">
+  <h2>2 · Ready — 1280, both panels open: page 740 wide, 2 columns</h2>
+  <p class="sub">The grid is <code>auto-fill</code> at a 280 minimum, so the column count is a function of the editor width, not the viewport: 1280 − 48 rail − 240 panel − 220 outline leaves 772 for the page, and §4 gives that page 740 usable for the grid. This board is 740 wide as briefed — 16 padding each side leaves 708 — and 708 fills with two columns; a third would need 280 × 3 + 16 × 2 = 872. Both themes stacked; the dark board carries the geometry brackets.</p>
+  <div class="pair">
+    <div><p class="ftitle">Ready at 740 · <span>dark</span></p>
+      <div class="dimwrap">
+        <div class="dims" aria-hidden="true">
+          <span class="dim" style="top:0;height:47px">47 header</span>
+          <span class="dim" style="top:64px;height:30px">30 card header</span>
+          <span class="dim" style="top:98px;height:30px">30 row</span>
+        </div>
+        <div class="theme-dark frame f740">
+          <div class="sessions-page special-tab-view">
+            <header class="sessions-page-header">
+              <h1 class="sessions-page-title">Sessions</h1>
+              <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+            </header>
+            <div class="sessions-page-body">
+              <div class="sessions-page-grid">
+                <section class="session-card is-current" aria-labelledby="sp-r2d-work">
+                  <div class="session-card-header">
+                    <h2 class="session-card-title" id="sp-r2d-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                    <span class="session-card-dot" aria-hidden="true"></span>
+                  </div>
+                  <ul class="session-card-list">
+                    <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                      <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                        <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                        <span class="session-card-tab-name">Sessions</span>
+                        <span class="session-card-state is-empty" aria-hidden="true"></span>
+                      </button>
+                    </li>
+                    <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                      <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                        <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                        <span class="session-card-tab-name">driver-bringup.md</span>
+                        <span class="session-card-state is-empty" aria-hidden="true"></span>
+                      </button>
+                    </li>
+                    <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                      <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                        <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                        <span class="session-card-tab-name">adc-cal.md</span>
+                        <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                      </button>
+                    </li>
+                    <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                      <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                        <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                        <span class="session-card-tab-name">Graph</span>
+                        <span class="session-card-state is-empty" aria-hidden="true"></span>
+                      </button>
+                    </li>
+                  </ul>
+                </section>
+                <section class="session-card" aria-labelledby="sp-r2d-reading">
+                  <div class="session-card-header">
+                    <h2 class="session-card-title" id="sp-r2d-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                  </div>
+                  <ul class="session-card-list">
+                    <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                      <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                        <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                        <span class="session-card-tab-name">Inbox.md</span>
+                        <span class="session-card-state is-empty" aria-hidden="true"></span>
+                      </button>
+                    </li>
+                    <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                      <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                        <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                        <span class="session-card-tab-name">Datasheet notes.md</span>
+                        <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                      </button>
+                    </li>
+                  </ul>
+                </section>
+                <section class="session-card" aria-labelledby="sp-r2d-bench">
+                  <div class="session-card-header">
+                    <h2 class="session-card-title" id="sp-r2d-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                  </div>
+                  <ul class="session-card-list">
+                    <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                      <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                        <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                        <span class="session-card-tab-name">bench-log.md</span>
+                        <span class="session-card-state is-empty" aria-hidden="true"></span>
+                      </button>
+                    </li>
+                  </ul>
+                </section>
+                <section class="session-card" aria-labelledby="sp-r2d-archive">
+                  <div class="session-card-header">
+                    <h2 class="session-card-title" id="sp-r2d-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                  </div>
+                  <p class="session-card-empty">No tabs</p>
+                </section>
+              </div>
+            </div>
+            <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div><p class="ftitle">Ready at 740 · <span>light</span></p>
+      <div class="theme-light frame f740">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-r2l-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r2l-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r2l-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r2l-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r2l-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r2l-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r2l-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r2l-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="geo"><span>47 header</span><span>16 page padding</span><span>16 grid gap</span><span>280 card minimum</span><span>30 card header</span><span>30 card row</span><span>14 mark</span><span>14 state</span><span>8 dot</span><span>8 card radius</span></p>
+  <p class="cap"><b>Ready, page 740 wide, two columns.</b> <code>Work</code> is current: the 1 px accent border and the tinted (<code>--accent-soft</code>) header only — there is <b>no bar on the card</b>, because a header-height bar would read as a row marker and compete with the row’s own 2 × 14. Its four rows are the page’s own <code>Sessions</code> tab (special: two-landscape-bar glyph in the 14 mark column, italic muted name, <code>aria-current</code> → wash plus the 2 × 14 bar), a file, the dirty file (8 px dot in the state column) and <code>Graph</code> (special: graph glyph). The card header dot trails the name because one tab is unsaved. <code>Reading</code> carries the conflict row: its state column shows the circular-arrow glyph in <code>--warn</code> instead of a dot, and the name is unchanged — only the accessible name gains <code>, changed on disk</code>. <code>Archive</code> reads <code>No tabs</code> and is still a drop target. The summary counts tab entries, not files.</p>
+</section>
+<section class="sec">
+  <h2>3 · Ready — 1280, outline collapsed: page 960 wide, 3 columns</h2>
+  <p class="sub">The same four cards at the other real width: with the outline collapsed the editor is 772 + 220 = 992 for the page, which §4 gives 960 usable for the grid. This board is 960 wide as briefed — 928 for the grid — and 928 fills with three columns; a fourth would need 280 × 4 + 16 × 3 = 1,168. Nothing about the card changes — only how many share a row.</p>
+  <div class="pair">
+    <div><p class="ftitle">Ready at 960 · <span>dark</span></p>
+      <div class="theme-dark frame f960">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-r3d-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3d-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r3d-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3d-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r3d-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3d-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r3d-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3d-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+    <div><p class="ftitle">Ready at 960 · <span>light</span></p>
+      <div class="theme-light frame f960">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-r3l-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3l-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r3l-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3l-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r3l-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3l-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-r3l-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-r3l-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="geo"><span>1280 both open → 2 columns</span><span>1280 outline closed → 3 columns</span><span>1280 both closed → 4 columns</span><span>280 card minimum</span><span>16 grid gap</span></p>
+  <p class="cap"><b>Ready, page 960 wide, three columns.</b> Same four cards, same tokens, same states as the 740 board — <code>Work</code> current with the border and the tinted header, the dirty <code>adc-cal.md</code>, the conflict glyph on <code>Datasheet notes.md</code>, and <code>Archive</code> empty. The column count is the only difference, and the page never fixes it: the grid re-fills whenever the editor width changes.</p>
+</section>
+<section class="sec">
+  <h2>4 · Selection — page 740 wide, 2 columns</h2>
+  <p class="sub">Selection is a face and a phrase, the same way pin and dirty already are. No checkbox is drawn, in these boards or in the build.</p>
+  <div class="pair">
+    <div><p class="ftitle">Selection · <span>dark</span></p>
+      <div class="theme-dark frame f740">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+            <span class="sessions-page-selection">2 tabs selected <button type="button" class="sessions-page-clear" aria-label="Clear selection">×</button></span>
+            <span class="sessions-page-live sr-only" role="status">2 tabs selected</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-sd-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sd-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab is-selected" title="Sessions" aria-label="Sessions, selected" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-sd-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sd-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab is-selected" title="Inbox.md" aria-label="Inbox.md, selected">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-sd-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sd-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-sd-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sd-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+    <div><p class="ftitle">Selection · <span>light</span></p>
+      <div class="theme-light frame f740">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+            <span class="sessions-page-selection">2 tabs selected <button type="button" class="sessions-page-clear" aria-label="Clear selection">×</button></span>
+            <span class="sessions-page-live sr-only" role="status">2 tabs selected</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-sl-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sl-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab is-selected" title="Sessions" aria-label="Sessions, selected" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-sl-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sl-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab is-selected" title="Inbox.md" aria-label="Inbox.md, selected">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-sl-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sl-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-sl-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-sl-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="geo"><span>chip 24 clear</span><span>ring 1 selected</span><span>bar 2 × 14 current</span><span>30 row</span><span>47 header</span></p>
+  <p class="cap"><b>Selection, page 740 wide.</b> Two rows hold <code>.is-selected</code> — an <code>--accent-soft</code> face and a 1 px inset accent ring — and they sit in two different cards, because the key is <code>{sessionId, path}</code>, not the path. The first is also <code>aria-current="true"</code>: the ring and the 2 × 14 left bar coexist there because they are different marks, one for the selection and one for the live tab. The header carries <code>2 tabs selected</code> in <code>--accent</code> plus its 24 × 24 clear <code>×</code>, <code>aria-label="Clear selection"</code>; the chip is hidden while nothing is selected, and the <code>role="status"</code> live region repeats the same words to a screen reader. The footer is unchanged. <b>No checkbox appears anywhere</b> — the face, the ring and the accessible name are the whole affordance.</p>
+</section>
+<section class="sec">
+  <h2>5 · Drag in flight, two tabs carried — page 740 wide, 2 columns</h2>
+  <p class="sub">One gesture, one model call. No cursor is drawn: the callout names the gesture.</p>
+  <p class="annot"><span class="annot-k">Drag in flight</span><span>Sources: <b>driver-bringup.md</b> in <b>Work</b> and <b>bench-log.md</b> in <b>Bench tests</b> — both rows dim to <code>--opacity-drag</code>.</span><span>Target <b>Reading</b>: accent border, 1 px inset accent ring, and its count text swapped for <b>Move here</b> — no count arithmetic, the label is fixed.</span><span>No dashed line, no inserted node: the mark is the border, the ring and the swapped count, so the card cannot change height under the pointer.</span></p>
+  <div class="pair">
+    <div><p class="ftitle">Drag, two carried · <span>dark</span></p>
+      <div class="theme-dark frame f740">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-dd-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dd-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-dragging" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card is-drop-target" aria-labelledby="sp-dd-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dd-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count" data-count-text="2 tabs">Move here</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-dd-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dd-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-dragging" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-dd-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dd-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+    <div><p class="ftitle">Drag, two carried · <span>light</span></p>
+      <div class="theme-light frame f740">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-dl-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dl-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-dragging" draggable="true" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="true" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card is-drop-target" aria-labelledby="sp-dl-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dl-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count" data-count-text="2 tabs">Move here</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="true" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-dl-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dl-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-dragging" draggable="true" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-dl-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-dl-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Drag a tab onto another session to move it. Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="geo"><span>--opacity-drag .4 source</span><span>ring 1 target</span><span>border 1 accent</span><span>count swapped</span><span>no inserted node</span></p>
+  <p class="cap"><b>Drag in flight, two tabs carried, page 740 wide.</b> Both carried rows dim to <code>--opacity-drag</code>, one in <code>Work</code> and one in <code>Bench tests</code>, because the carried set is the selection and the selection spans cards. <code>Reading</code> is the target: 1 px accent border, 1 px inset accent ring, and its count text replaced by <code>Move here</code> in <code>--accent</code> at 600 — the count element keeps <code>data-count-text="2 tabs"</code> so <code>dragend</code> can restore it. Nothing is inserted, so no card changes height under the pointer and there is no dashed placeholder line anywhere. <code>Work</code> never marks itself, and the page does not switch sessions on drop. The gesture is pointer-only by design; the row menu is the keyboard and touch path (§8 of the doc).</p>
+</section>
+<section class="sec">
+  <h2>6 · Read-only — viewer, page 740 wide, 2 columns</h2>
+  <p class="sub">Same cards, no drag, one sentence in the footer. The row menu is not drawn here; the label below states the one difference it carries.</p>
+  <p class="note"><b>Row menu · Move to session</b> — not drawn, because the menu is closed. In a viewer’s page its single item is <b>disabled</b> with <code>Read-only: sessions can’t be changed.</code> as its <code>title</code>; a viewer cannot select either, so no chip and no selected face appear anywhere on this page (doc §7, AC13).</p>
+  <div class="pair">
+    <div><p class="ftitle">Read-only (viewer) · <span>dark</span></p>
+      <div class="theme-dark frame f740">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-vd-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vd-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="false" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="false" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="false" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="false" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-vd-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vd-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="false" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="false" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-vd-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vd-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="false" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-vd-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vd-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+    <div><p class="ftitle">Read-only (viewer) · <span>light</span></p>
+      <div class="theme-light frame f740">
+        <div class="sessions-page special-tab-view">
+          <header class="sessions-page-header">
+            <h1 class="sessions-page-title">Sessions</h1>
+            <span class="sessions-page-summary">4 sessions · 7 tabs</span>
+          </header>
+          <div class="sessions-page-body">
+            <div class="sessions-page-grid">
+              <section class="session-card is-current" aria-labelledby="sp-vl-work">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vl-work"><span class="session-card-name" title="Work">Work</span><span class="session-card-count">4 tabs</span><span class="sr-only">, unsaved changes, current session</span></h2>
+                  <span class="session-card-dot" aria-hidden="true"></span>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap is-special" draggable="false" data-path="§sessions" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Sessions" aria-label="Sessions" aria-current="true">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-session"/></svg></span>
+                      <span class="session-card-tab-name">Sessions</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="false" data-path="driver-bringup.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="driver-bringup.md" aria-label="driver-bringup.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">driver-bringup.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="false" data-path="adc-cal.md" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="adc-cal.md" aria-label="adc-cal.md, unsaved changes">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">adc-cal.md</span>
+                      <span class="session-card-state" aria-hidden="true"><span class="session-card-dot"></span></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap is-special" draggable="false" data-path="§graph" data-session-id="work">
+                    <button type="button" class="session-card-tab" title="Graph" aria-label="Graph">
+                      <span class="session-card-mark" aria-hidden="true"><svg class="i" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></span>
+                      <span class="session-card-tab-name">Graph</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-vl-reading">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vl-reading"><span class="session-card-name" title="Reading">Reading</span><span class="session-card-count">2 tabs</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="false" data-path="Inbox.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Inbox.md" aria-label="Inbox.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Inbox.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                  <li class="session-card-tab-wrap" draggable="false" data-path="Datasheet notes.md" data-session-id="reading">
+                    <button type="button" class="session-card-tab" title="Datasheet notes.md" aria-label="Datasheet notes.md, changed on disk">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">Datasheet notes.md</span>
+                      <span class="session-card-state" aria-hidden="true"><svg class="i i-conflict" aria-hidden="true" focusable="false"><use href="#nb-icon-conflict"/></svg></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-vl-bench">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vl-bench"><span class="session-card-name" title="Bench tests">Bench tests</span><span class="session-card-count">1 tab</span></h2>
+                </div>
+                <ul class="session-card-list">
+                  <li class="session-card-tab-wrap" draggable="false" data-path="bench-log.md" data-session-id="bench">
+                    <button type="button" class="session-card-tab" title="bench-log.md" aria-label="bench-log.md">
+                      <span class="session-card-mark is-empty" aria-hidden="true"></span>
+                      <span class="session-card-tab-name">bench-log.md</span>
+                      <span class="session-card-state is-empty" aria-hidden="true"></span>
+                    </button>
+                  </li>
+                </ul>
+              </section>
+              <section class="session-card" aria-labelledby="sp-vl-archive">
+                <div class="session-card-header">
+                  <h2 class="session-card-title" id="sp-vl-archive"><span class="session-card-name" title="Archive">Archive</span><span class="session-card-count">0 tabs</span></h2>
+                </div>
+                <p class="session-card-empty">No tabs</p>
+              </section>
+            </div>
+          </div>
+          <p class="sessions-page-foot">Pinned tabs are shared and are not listed here.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="geo"><span>47 header</span><span>30 card header</span><span>30 card row</span><span>14 mark</span><span>14 state</span><span>8 card radius</span></p>
+  <p class="cap"><b>Read-only.</b> Every card renders exactly as an admin sees it — current border and tinted header, dirty dot, conflict glyph, empty card. The differences are behavioural and textual only: every wrapper is <code>draggable="false"</code> and no row carries <code>.is-dragging</code> or <code>.is-drop-target</code>, <code>dragover</code> is never prevented, the row menu’s <code>Move to session</code> is disabled with <code>Read-only: sessions can’t be changed.</code>, and the footer drops its drag sentence, leaving <em>Pinned tabs are shared and are not listed here.</em></p>
+</section>
+  <p class="cap" style="max-width:820px">Reference only. The normative text is <b>sessions-page.md</b>; where this page and the doc differ, the doc wins. No network request, no web font, no script: both themes are drawn, so the file opens offline and renders identically. The host carries the id <code>#sessions-page</code> once per board in the app; here each board carries the classes only, because one document cannot hold twelve ids. The boards are 1:1 at the width the editor leaves the page, not at a viewport — the shell board alone is scaled.</p>
+</div>
+</body>
+</html>

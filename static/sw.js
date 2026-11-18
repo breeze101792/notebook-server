@@ -54,7 +54,12 @@
 /* Bumped v29 -> v30: the phone rail is six views plus More, the More sheet is
  * new, and Sessions is reachable on a phone, so the shell, style.css,
  * activity.js, mobile.js, sessions.js and dialog.js must refresh together. */
-const CACHE = "notebook-v30";
+/* Bumped v30 -> v31: the §sessions page joins the shell, so the shell,
+ * style.css, tabs.js, sessions.js and the new sessions-page.js must refresh
+ * together. sessions-page.js is precached: it registers the special tab
+ * before app.js restores a saved §sessions, and a missing registration would
+ * drop that tab from the state. */
+const CACHE = "notebook-v31";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -113,6 +118,7 @@ const PRECACHE = [
   "/static/js/activity.js",
   "/static/js/bookmarks.js",
   "/static/js/sessions.js",
+  "/static/js/sessions-page.js",
   "/static/js/mobile.js",
   "/static/js/workspaces.js",
   "/static/js/graph-2d.js",

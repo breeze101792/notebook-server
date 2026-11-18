@@ -1322,6 +1322,140 @@
     return true;
   }
 
+  /* The unpinned list a session shows: the live strip, or a stored record. */
+  function sessionPaths(id) {
+    if (id === activeSessionId) return ordered.filter(p => !pinned.has(p));
+    const rec = storedSessions.get(id);
+    return rec ? (rec.openFiles || []) : [];
+  }
+
+  /* Validate a cross-session batch against the model as it is right now.
+   * Returns one entry per path (`from` = the sessions it leaves), or null
+   * when any item no longer holds. A path a session's list already has is a
+   * removal from its other sources, never a second entry: a session's own
+   * list is unique (docs/architecture/sessions.md §2). */
+  function planBatch(targetId, items) {
+    if (sessionOrder.indexOf(targetId) < 0) return null;
+    const byPath = new Map();
+    for (const it of (Array.isArray(items) ? items : [])) {
+      if (!it || typeof it.path !== "string" || typeof it.sourceId !== "string") return null;
+      if (sessionOrder.indexOf(it.sourceId) < 0) return null;
+      if (sessionPaths(it.sourceId).indexOf(it.path) < 0) return null;
+      let entry = byPath.get(it.path);
+      if (!entry) { entry = { path: it.path, from: [] }; byPath.set(it.path, entry); }
+      if (entry.from.indexOf(it.sourceId) < 0) entry.from.push(it.sourceId);
+    }
+    const plan = [];
+    for (const entry of byPath.values()) {
+      entry.from = entry.from.filter(id => id !== targetId);
+      if (entry.from.length) plan.push(entry);
+    }
+    return plan.length ? plan : null;
+  }
+
+  /* Move one or more unpinned tabs out of any session into any other. The
+   * `§sessions` page is the caller (ui/sessions-page.md §8). One validate,
+   * one collapse by path, one mutate, one emit: a loop over moveToSession
+   * would render and emit per tab, and could move half a batch before a cap
+   * refusal. The hybrid commit runs only when the live active tab is in the
+   * batch, the gate moveToSession uses. */
+  async function moveSessionTabs(targetId, items) {
+    const list = Array.isArray(items) ? items : [];
+    const first = planBatch(targetId, list);
+    if (!first) return false;
+    const touchesLive = first.some(e => e.path === activePath &&
+                                         e.from.indexOf(activeSessionId) >= 0);
+    if (touchesLive) {
+      activateToken++;
+      if (NB.viewer && NB.viewer.cancelActivation) NB.viewer.cancelActivation();
+      const ok = (NB.viewer && NB.viewer.commitForTabSwitch)
+        ? await NB.viewer.commitForTabSwitch() : true;
+      // A failed save leaves hybrid active; moving anyway would serialize the
+      // next keystroke to a path that left this session.
+      if (!ok) return false;
+    }
+    // Re-plan after the await: a close or a switch won while the buffer was
+    // being stashed, and this pass is the one that must be trusted.
+    const plan = touchesLive ? planBatch(targetId, list) : first;
+    if (!plan) return false;
+
+    const targetList = sessionPaths(targetId);
+    const inTarget = new Set(targetList);
+    const newPaths = plan.filter(e => !inTarget.has(e.path)).map(e => e.path);
+    if (targetList.length + newPaths.length > SESSION_FILES_MAX) {
+      notify(SESSION_FULL_MESSAGE);
+      return false;
+    }
+
+    const livePaths = new Set(plan.filter(e => e.from.indexOf(activeSessionId) >= 0)
+      .map(e => e.path));
+    // The successor is chosen from the pre-mutation order: an index captured
+    // before several splices can land past a survivor.
+    let successor = null;
+    let liveActiveMoved = false;
+    if (activePath && livePaths.has(activePath)) {
+      liveActiveMoved = true;
+      const at = ordered.indexOf(activePath);
+      successor = ordered.slice(at + 1).find(p => !livePaths.has(p)) ||
+        ordered.slice(0, at).reverse().find(p => !livePaths.has(p)) || null;
+    }
+
+    for (const entry of plan) {
+      for (const id of entry.from) {
+        if (id === activeSessionId) {
+          const at = ordered.indexOf(entry.path);
+          if (at >= 0) ordered.splice(at, 1);
+          openSet.delete(entry.path);
+          if (frozenWidths) frozenWidths.delete(entry.path);
+          continue;
+        }
+        const rec = storedSessions.get(id);
+        if (!rec) continue;
+        const files = rec.openFiles || (rec.openFiles = []);
+        const at = files.indexOf(entry.path);
+        if (at >= 0) files.splice(at, 1);
+        if (rec.activeFile === entry.path) rec.activeFile = files[0] || null;
+        storedSessions.set(id, rec);
+      }
+    }
+
+    let liveActivate = null;
+    for (const entry of plan) {
+      if (inTarget.has(entry.path)) continue;   // already there: removal only
+      if (targetId === activeSessionId) {
+        ordered.push(entry.path);
+        openSet.add(entry.path);
+        if (!activePath && !liveActivate) liveActivate = entry.path;
+        continue;
+      }
+      const rec = storedSessions.get(targetId) || { openFiles: [], activeFile: null };
+      const files = rec.openFiles || (rec.openFiles = []);
+      const wasEmpty = files.length === 0;
+      files.push(entry.path);
+      if (wasEmpty) rec.activeFile = entry.path;
+      storedSessions.set(targetId, rec);
+    }
+
+    if (liveActiveMoved) activePath = successor;
+    if (liveActivate) activePath = liveActivate;
+    render();
+    emitChanged();
+    // Not a close: the cache entry, any stashed draft and the watcher
+    // baseline travel with the file, so viewer.close is never called here.
+    if (liveActiveMoved) {
+      if (successor) await activate(successor);
+      else if (NB.viewer && NB.viewer.showSessionEmpty) NB.viewer.showSessionEmpty();
+    } else if (liveActivate) {
+      await activate(liveActivate);
+    }
+    return true;
+  }
+
+  /* One tab: the shape a single-tab caller wants. */
+  function moveSessionTab(sourceId, path, targetId) {
+    return moveSessionTabs(targetId, [{ sourceId, path }]);
+  }
+
   /* --- drag-and-drop reorder ----------------------------------------- */
   function onDragStart(e) {
     if (e.target.closest && e.target.closest(".tab-close")) { e.preventDefault(); return; }
@@ -1962,6 +2096,11 @@
       nameMax: SESSION_NAME_MAX,
       filesMax: SESSION_FILES_MAX,
     },
+    /* The model's own user-facing copy, exported so a second surface (the
+     * §sessions page) cannot drift from the message the model shows. */
+    messages: {
+      sessionFull: SESSION_FULL_MESSAGE,
+    },
     open, close, activate, rename, restore, getActive, getOpen, isOpen, render,
     togglePin, isPinned, closeOthers, closeRight, closeLeft, prev, next, clearAll,
     /* True while the pointer is inside the tab bar and tab widths are pinned.
@@ -1994,6 +2133,10 @@
     renameSession,
     deleteSession,
     moveToSession,
+    /* A batch from any session into any other: the `§sessions` page's move.
+     * items = [{ sourceId, path }]; all-or-nothing at the target's cap. */
+    moveSessionTabs,
+    moveSessionTab,
     /* Register a special tab type. `def` = { id, icon, label, onActivate, onClose }.
      * id must start with "§". onActivate(id) is called when the tab becomes
      * active; onClose(id) when it's closed. Re-registering the same id
@@ -2002,9 +2145,9 @@
       if (!def || !def.id || !def.id.startsWith("§")) return;
       specialTabs.set(def.id, def);
     },
-    /* Open a special tab (by id) and activate it. If it's already open in
-     * another session, switch there first, so a special tab follows the same
-     * one-owner rule as a file tab. */
+    /* Open a special tab (by id) and activate it, in the active session. A
+     * special tab may exist in several sessions; this never switches to a
+     * session that already holds it, the file rule. */
     async openSpecial(id) {
       if (!specialTabs.has(id)) return;
       // Like a file: open in the active session, never switch to a session

@@ -58,6 +58,8 @@ line. *Mockup* — the visual reference; the doc beside it is normative.
 | [`hybrid-markdown-debug-pane-mockup.html`](hybrid-markdown-debug-pane-mockup.html) | Mockup — **open this** | Six boards: closed, open dark and light, 900 px, the phone strip, and the empty/failed/focused pane states. |
 | [`graph-view.md`](graph-view.md) | Current spec — pre-implementation | The `§graph` tab: header, controls, canvases, gestures, states, keyboard and phone. AC1–AC11. |
 | [`graph-view-mockup.html`](graph-view-mockup.html) | Mockup — **open this** | 3D loading and ready, 2D, empty, error, large graph, 720, dark and light. |
+| [`sessions-page.md`](sessions-page.md) | Current spec — pre-implementation | The `§sessions` content page: entry from the Sessions header, header and selection chip, card grid, card and tab-row anatomy, multi-select, the drag and row menu that move tabs between sessions, states, keyboard and ARIA, and the `moveSessionTabs` handoff. AC1–AC19. |
+| [`sessions-page-mockup.html`](sessions-page-mockup.html) | Mockup — **open this** | The shell at 1280, the page at its two tracks (740 → two columns, 960 → three), the selection with its chip, a two-tab drag onto a marked card, read-only, dark and light. |
 | [`mobile-shell.md`](mobile-shell.md) | Current spec — pre-implementation | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history, states. AC1–AC14. |
 | [`mobile-shell-mockup.html`](mobile-shell-mockup.html) | Mockup — **open this** | Ten 390 × 844 boards: reader, drawer, Home, capture states, settings, auth-locked and offline, plus the rail with More and the More sheet. |
 | [`mobile-more-sheet.md`](mobile-more-sheet.md) | Current spec — pre-implementation | The phone rail's view set (`PHONE_RAIL_SLOTS` / `PHONE_OFF_VIEWS`) and the More sheet that carries every remaining sidebar item: model, anatomy, states, behaviour, ARIA, tokens, AC1–AC14. |
@@ -78,6 +80,7 @@ session picker, the workspace picker, and their mockups) are frozen under
 | Choose a text size, or replace a `font-size` literal | [`typography.md`](typography.md): the role table, choosing a role, the retired literals and their deltas. |
 | Build the app shell | [`shell-frame.md`](shell-frame.md): grid, topbar, rail, panel frame, outline, phone. Then [`tab-bar.md`](tab-bar.md) for the strip. |
 | Build or change a side-panel view | [`side-panel-views.md`](side-panel-views.md) for Explorer, Pinned, Bookmarks and Recent; [`tabs-view.md`](tabs-view.md) for Tabs; [`sessions.md`](sessions.md) for Sessions; [`search-view.md`](search-view.md) for Search; [`ai-panel.md`](ai-panel.md) for AI. |
+| Build or change a content-area page | [`graph-view.md`](graph-view.md) for the `§graph` pattern; [`sessions-page.md`](sessions-page.md) for the `§sessions` card grid and its drag. |
 | Build or extend an edit window | [`edit-window.md`](edit-window.md) for the shared chrome, then [`table-editor.md`](table-editor.md) or [`diagram-designers.md`](diagram-designers.md) for the body. |
 | Match a shipped surface that has no new spec | Use the frozen record under [`../archive/`](../archive/README.md) as source material, then write the new spec. |
 | Change a shipped surface | Write the new spec first, then implement. Do not revive an archived doc as current. |

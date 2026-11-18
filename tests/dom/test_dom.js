@@ -456,6 +456,11 @@ const html = `<!DOCTYPE html><html><head>
             <div class="sr-only" id="graph-view-sr-live" role="status" aria-live="polite"></div>
             <ul class="sr-only" id="graph-view-sr-list" aria-label="Notes in the graph"></ul>
           </div>
+          <!-- Sessions page: every session as a card, its tabs listed, opened
+               as the special tab (§sessions) from the Sessions view header.
+               sessions-page.js builds the header, grid and footer at load.
+               Same markup and position as templates/index.html. -->
+          <div id="sessions-page" class="sessions-page special-tab-view" hidden></div>
         </div>
       </section>
       <aside id="outline-pane">
@@ -2546,6 +2551,7 @@ evalIn(read("static/js/activity.js"));
 evalIn(read("static/js/bookmarks.js"));
 evalIn(read("static/js/sessions.js"));
 evalIn(read("static/js/tabs-view.js"));
+evalIn(read("static/js/sessions-page.js"));
 evalIn(read("static/js/shortcuts.js"));
 evalIn(read("static/js/mobile.js"));
 evalIn(read("static/js/workspaces.js"));
@@ -46344,6 +46350,1002 @@ function check(label, cond, extra) {
     await tbShut();
 
     window.NB.menu.close();
+  }
+
+  // ===================================================================
+  // Sessions page
+  // docs/ui/sessions-page.md (the normative spec, AC1-AC19) and
+  // docs/architecture/sessions.md §7 (moveSessionTabs). Drives the real
+  // model (tabs.js), the real page (sessions-page.js), the real Sessions
+  // header (sessions.js) and the shared menu (menu.js); #sessions-page
+  // ships in the harness HTML above, beside #graph-view. Every scenario
+  // starts from a clean viewer cache and a restore() of the state it
+  // asserts against, and every scenario leaves no §sessions tab and no
+  // selection behind.
+  //
+  // jsdom limits, so a green run is not read for more than it shows:
+  // - HTML5 drag cannot be synthesised by the browser event loop here, so
+  //   the gestures are dispatched events with a plain dataTransfer stub.
+  //   Chromium refuses to fire `drop` after an un-prevented `dragover`;
+  //   jsdom does not, so the "no mark" half of AC11 is asserted on the
+  //   dragover, and the browser suite covers the real gesture.
+  // - jsdom never zeroes scrollTop when a scroller loses its content, so
+  //   the scroll assertion below is weak; the browser suite measures it.
+  // ===================================================================
+  console.log("== sessions page ==");
+  {
+    const S = window.NB.tabs;
+    const V = window.NB.viewer;
+    const spPage = $("sessions-page");
+
+    const spBtn = () => $("sessions-page-btn");
+    const spCards = () => Array.from(spPage.querySelectorAll(".session-card"));
+    const spCard = (id) => spCards()
+      .find((c) => c.dataset.sessionId === id) || null;
+    const spWraps = () => Array.from(
+      spPage.querySelectorAll(".session-card-tab-wrap"));
+    const spWrap = (id, path) => spWraps().find(
+      (w) => w.dataset.sessionId === id && w.dataset.path === path) || null;
+    const spRow = (id, path) => {
+      const w = spWrap(id, path);
+      return w ? w.querySelector(".session-card-tab") : null;
+    };
+    const spRowPaths = (id) => spWraps()
+      .filter((w) => w.dataset.sessionId === id)
+      .map((w) => w.dataset.path);
+    const spCountEl = (id) => {
+      const card = spCard(id);
+      return card ? card.querySelector(".session-card-count") : null;
+    };
+    const spCountText = (id) => {
+      const el = spCountEl(id);
+      return el ? el.textContent : "";
+    };
+    const spTitle = () => spPage.querySelector(".sessions-page-title");
+    const spSummary = () => spPage.querySelector(".sessions-page-summary");
+    const spChip = () => spPage.querySelector(".sessions-page-selection");
+    const spChipText = () => (spChip() ? spChip().textContent.trim() : "");
+    const spClearBtn = () => spPage.querySelector(".sessions-page-clear");
+    const spLive = () => spPage.querySelector(".sessions-page-live");
+    const spFoot = () => spPage.querySelector(".sessions-page-foot");
+    const spSelected = () => spWraps()
+      .filter((w) => w.querySelector(".session-card-tab.is-selected"));
+    const spSelectedPaths = (id) => spSelected()
+      .filter((w) => w.dataset.sessionId === id).map((w) => w.dataset.path);
+    const spCurrentRows = () => Array.from(
+      spPage.querySelectorAll('.session-card-tab[aria-current="true"]'));
+    const spSnap = () => S.snapshot();
+    const spStripTab = (path) => window.document.querySelector(
+      '#tab-bar .tab[data-path="' + path + '"]');
+    const spStateCell = (wrap) => wrap.querySelector(".session-card-state");
+    const spCardDot = (id) => {
+      const card = spCard(id);
+      return card ? card.querySelector(".session-card-header .session-card-dot") : null;
+    };
+    const spState = (list, activeId, pins) => ({
+      sessions: list.map((s) => ({
+        id: s.id, name: s.name,
+        openFiles: (s.openFiles || []).slice(),
+        activeFile: s.activeFile || null,
+      })),
+      activeSessionId: activeId,
+      pinnedFiles: (pins || []).slice(),
+      migrated: false,
+    });
+    const spLoad = async (list, activeId, pins) => {
+      // A selection key is {sessionId, path} and survives a restore, so no
+      // scenario may start with the previous one's keys still held.
+      await spClearSel();
+      V.clear();
+      await S.restore([], null, null, [], spState(list, activeId, pins));
+      await tick(60);
+    };
+    /* The base fixture: the page's own tab is the live session's active tab,
+     * so the page shows without a click and its own row is the current row.
+     * s1 = 3 entries, s2 = 2, s3 = 0 -> 3 sessions, 5 tabs. */
+    const spBase = () => [
+      { id: "s1", name: "Main",
+        openFiles: ["§sessions", "notes/a.md", "notes/b.md"],
+        activeFile: "§sessions" },
+      { id: "s2", name: "Work",
+        openFiles: ["notes/c.md", "notes/d.md"], activeFile: "notes/c.md" },
+      { id: "s3", name: "Empty", openFiles: [], activeFile: null },
+    ];
+    const spOpenPage = async () => {
+      spBtn().dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(60);
+    };
+    const spClearSel = async () => {
+      const btn = spClearBtn();
+      if (btn) btn.dispatchEvent(new window.Event("click", { bubbles: true }));
+      await tick(10);
+    };
+    const spMouse = (row, opts) => {
+      const o = opts || {};
+      const detail = o.detail == null ? 1 : o.detail;
+      const init = {
+        bubbles: true, cancelable: true, detail, button: 0,
+        ctrlKey: !!o.ctrl, metaKey: !!o.meta, shiftKey: !!o.shift,
+      };
+      row.dispatchEvent(new window.MouseEvent("mousedown", init));
+      row.dispatchEvent(new window.MouseEvent("mouseup", init));
+      row.dispatchEvent(new window.MouseEvent("click", init));
+    };
+    // Opening is a double click; the two clicks of it only clear the
+    // selection (docs/ui/sessions-page.md §7).
+    const spOpen = (row) => {
+      spMouse(row, { detail: 1 });
+      spMouse(row, { detail: 2 });
+      row.dispatchEvent(new window.MouseEvent("dblclick", {
+        bubbles: true, cancelable: true, detail: 2, button: 0,
+      }));
+    };
+    const spKeyAt = (row, key, mods) => {
+      const m = mods || {};
+      const ev = new window.KeyboardEvent("keydown", {
+        key, bubbles: true, cancelable: true,
+        shiftKey: !!m.shift, ctrlKey: !!m.ctrl, metaKey: !!m.meta,
+      });
+      row.dispatchEvent(ev);
+      return ev;
+    };
+    const spTransfer = () => {
+      const data = {};
+      return {
+        effectAllowed: "",
+        dropEffect: "",
+        setData: (type, value) => { data[type] = String(value); },
+        getData: (type) => (type in data ? data[type] : ""),
+        clearData: () => { Object.keys(data).forEach((k) => delete data[k]); },
+        types: [],
+      };
+    };
+    const spDragAt = (type, node, transfer, extra) => {
+      const ev = new window.Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(ev, "dataTransfer", { value: transfer || null });
+      if (extra) {
+        Object.keys(extra).forEach((k) => Object.defineProperty(ev, k, {
+          value: extra[k],
+        }));
+      }
+      node.dispatchEvent(ev);
+      return ev;
+    };
+    // Count the state writes one gesture emits. Registered after the page's
+    // own listener, so the DOM it asserts against is already refreshed.
+    const spChanges = () => {
+      let n = 0;
+      const fn = () => { n += 1; };
+      window.NB.evt.on("tabs:changed", fn);
+      return { count: () => n, stop: () => window.NB.evt.off("tabs:changed", fn) };
+    };
+    // The row menu's shape: one top-level item carrying one submenu flyout.
+    const spMenuEl = () => $("nb-menu");
+    const spMenuParent = () => spMenuEl().querySelector("button.submenu");
+    const spMenuItems = () => (spMenuParent()
+      ? Array.from(spMenuParent()
+        .querySelectorAll(":scope > .context-menu > button"))
+      : []);
+    const spMenuLabels = () => spMenuItems().map((b) => b.textContent);
+    // The parent's own label is a bare text node: its flyout is its child.
+    const spMenuParentLabel = () => (spMenuParent()
+      ? String(spMenuParent().childNodes[0].textContent) : "");
+
+    // The model's own copy, captured so the page cannot drift from it.
+    const spFullMessage = S.messages.sessionFull;
+    const spNotices = [];
+    const spNotifyOrig = window.NB.app.notify;
+    window.NB.app.notify = (msg) => { spNotices.push(String(msg)); };
+    const spRoleOrig = window.NB.pageRole;
+
+    // 40 known files, for the cap (AC1, AC12) and the 39-entry target
+    // (AC11's "a duplicate costs no capacity"). TREE drives restore()'s
+    // live-tree filter, so it is restored at the end of the block.
+    const spSavedTree = JSON.parse(JSON.stringify(TREE));
+    const spBulk = { name: "bulk", type: "dir", path: "notes/bulk", children: [] };
+    for (let i = 1; i <= 40; i += 1) {
+      const n = (i < 10 ? "0" : "") + i;
+      spBulk.children.push({
+        name: "f" + n + ".md", type: "file", path: "notes/bulk/f" + n + ".md",
+      });
+    }
+    TREE.push(spBulk);
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    const spBulkPaths = spBulk.children.map((c) => c.path);
+
+    // --- AC1: entry, host, one tab, a second click focuses it ----------
+    await spLoad([
+      { id: "s1", name: "Main",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: "notes/a.md" },
+      { id: "s2", name: "Work",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+    ], "s1");
+    check("sessions page: the host ships empty in the harness, beside #graph-view",
+      !!spPage && spPage.className === "sessions-page special-tab-view" &&
+      spPage.parentNode === $("graph-view").parentNode &&
+      spPage.parentNode.id === "edit-split" &&
+      spPage.hidden === true && !!spPage.querySelector(".sessions-page-grid"));
+    check("sessions page: the template ships the same host and the page sprite",
+      /<div id="sessions-page" class="sessions-page special-tab-view" hidden><\/div>/
+        .test(read("templates/index.html")) &&
+      /<symbol id="nb-icon-page-grid"/.test(read("templates/index.html")));
+    check("sessions page: the entry button is the Sessions header's second action",
+      !!spBtn() &&
+      spBtn() === $("sessions-view")
+        .querySelector(".panel-header-actions > *:nth-child(2)") &&
+      spBtn().className === "session-page-btn" &&
+      spBtn().getAttribute("aria-label") === "Open the sessions page" &&
+      spBtn().title === "Open the sessions page" &&
+      !!spBtn().querySelector('use[href="#nb-icon-page-grid"]'),
+      spBtn() ? spBtn().outerHTML.slice(0, 140) : "missing");
+    check("sessions page: the button sits after + and before the collapse control",
+      (() => {
+        const kids = Array.from(
+          $("sessions-view").querySelector(".panel-header-actions").children);
+        return kids.length === 3 && kids[0].className === "session-add" &&
+          kids[1].id === "sessions-page-btn" &&
+          kids[2].classList.contains("collapse-btn");
+      })(),
+      $("sessions-view").querySelector(".panel-header-actions").className);
+
+    const spWrites = spChanges();
+    await spOpenPage();
+    spWrites.stop();
+    check("sessions page: the header button opens exactly one §sessions tab",
+      S.getOpen().filter((p) => p === "§sessions").length === 1 &&
+      S.getOpen().length === 3 && S.getActive() === "§sessions" &&
+      window.document.querySelectorAll('#tab-bar .tab[data-path="§sessions"]').length === 1,
+      S.getOpen().join(","));
+    check("sessions page: the page replaces the reader and the strip and panels stay",
+      spPage.hidden === false && $("viewer").hidden === true &&
+      $("cm-host").hidden === true && $("welcome").hidden === true &&
+      $("tab-bar").hidden === false && $("sessions-view").hidden === false &&
+      $("side-panel").hidden === false && !$("outline-pane").hasAttribute("hidden"));
+    check("sessions page: the tab is a special tab labelled Sessions with the module sprite",
+      spStripTab("§sessions").classList.contains("special") &&
+      spStripTab("§sessions").getAttribute("aria-label") === "Sessions" &&
+      !!spStripTab("§sessions").querySelector('use[href="#nb-icon-session"]') &&
+      S.getSpecial("§sessions").label === "Sessions" &&
+      S.getSpecial("§sessions").icon === "nb-icon-session",
+      spStripTab("§sessions").getAttribute("aria-label"));
+    await spOpenPage();
+    check("sessions page: a second click focuses the same tab, it never duplicates",
+      S.getOpen().filter((p) => p === "§sessions").length === 1 &&
+      window.document.querySelectorAll('#tab-bar .tab[data-path="§sessions"]').length === 1 &&
+      S.getActive() === "§sessions" && spPage.hidden === false,
+      S.getOpen().join(","));
+
+    // The entry at the cap: 40 unpinned tabs in the active session.
+    spNotices.length = 0;
+    await spLoad([
+      { id: "full", name: "Full", openFiles: spBulkPaths.slice(0, 40),
+        activeFile: null },
+    ], "full");
+    await spOpenPage();
+    check("sessions page: at the cap the shipped notice appears and no page opens",
+      spNotices.length === 1 && spNotices[0] === spFullMessage &&
+      S.getOpen().indexOf("§sessions") < 0 && spPage.hidden === true,
+      spNotices.join("|") + " open=" + S.getOpen().length);
+
+    // --- AC2: the header ----------------------------------------------
+    await spLoad(spBase(), "s1");
+    check("sessions page: the page shows when §sessions is the active tab",
+      spPage.hidden === false && S.getActive() === "§sessions" &&
+      S.getActiveSessionId() === "s1");
+    check("sessions page: the title is the page's h1 with tabindex -1",
+      !!spTitle() && spTitle().tagName === "H1" &&
+      spTitle().className === "sessions-page-title" &&
+      spTitle().textContent === "Sessions" && spTitle().tabIndex === -1);
+    check("sessions page: the summary counts sessions and tab entries",
+      spSummary().textContent === "3 sessions · 5 tabs",
+      spSummary().textContent);
+    check("sessions page: the summary is not a live region",
+      !spSummary().getAttribute("role") &&
+      !spSummary().getAttribute("aria-live"));
+    check("sessions page: the selection chip is hidden until something is selected",
+      spChip().hidden === true && !!spClearBtn() &&
+      spClearBtn().getAttribute("aria-label") === "Clear selection");
+    check("sessions page: the live region is sr-only with role=status",
+      !!spLive() && spLive().getAttribute("role") === "status" &&
+      spLive().classList.contains("sr-only"));
+    await spLoad([
+      { id: "only", name: "Only",
+        openFiles: ["§sessions"], activeFile: "§sessions" },
+    ], "only");
+    check("sessions page: singular forms are 1 session and 1 tab",
+      spSummary().textContent === "1 session · 1 tab", spSummary().textContent);
+
+    // --- AC3: one card per session ------------------------------------
+    await spLoad(spBase(), "s1");
+    check("sessions page: one card per session, in sessionOrder",
+      spCards().length === spSnap().length &&
+      spCards().map((c) => c.dataset.sessionId).join(",") ===
+        spSnap().map((s) => s.id).join(","),
+      spCards().map((c) => c.dataset.sessionId).join(","));
+    check("sessions page: each card is a section named by its own h2",
+      spCards().every((c) => c.tagName === "SECTION" &&
+        !!c.getAttribute("aria-labelledby") &&
+        (window.document.getElementById(c.getAttribute("aria-labelledby")) || {})
+          .className === "session-card-title" &&
+        window.document.getElementById(c.getAttribute("aria-labelledby"))
+          .closest(".session-card") === c));
+    check("sessions page: each card names its session and its full name in title",
+      spCards().every((c) => {
+        const s = spSnap().find((x) => x.id === c.dataset.sessionId);
+        const name = c.querySelector(".session-card-name");
+        return !!name && name.textContent === s.name && name.title === s.name;
+      }));
+    check("sessions page: each card carries its unpinned count",
+      spCountText("s1") === "3 tabs" && spCountText("s2") === "2 tabs" &&
+      spCountText("s3") === "0 tabs",
+      [spCountText("s1"), spCountText("s2"), spCountText("s3")].join("/"));
+    check("sessions page: the current session's card is the only .is-current",
+      spCards().filter((c) => c.classList.contains("is-current"))
+        .map((c) => c.dataset.sessionId).join(",") === "s1" &&
+      Array.from(spCard("s1").querySelectorAll(".session-card-title .sr-only"))
+        .some((el) => el.textContent === ", current session"));
+
+    // The card dot: a draft in a stored session marks its header.
+    await S.swapTo("s2");
+    await tick(40);
+    V.setDraft("notes/c.md", { content: "C", mode: "source" });
+    await S.swapTo("s1");
+    await tick(60);
+    check("sessions page: a dirty session's card shows the dot after its h2",
+      (() => {
+        const header = spCard("s2").querySelector(".session-card-header");
+        const dot = header.lastElementChild;
+        const title = header.querySelector(".session-card-title");
+        return !!dot && dot.classList.contains("session-card-dot") &&
+          dot.getAttribute("aria-hidden") === "true" &&
+          title.nextElementSibling === dot &&
+          title.querySelector(".sr-dirty").textContent === ", unsaved changes";
+      })(),
+      spCard("s2").querySelector(".session-card-header").innerHTML.slice(0, 160));
+    check("sessions page: a clean session's card has no dot",
+      !spCardDot("s1") && !spCardDot("s3"));
+
+    // --- AC4: the rows -------------------------------------------------
+    check("sessions page: every card's rows equal that session's openFiles in order",
+      spSnap().every((s) =>
+        spRowPaths(s.id).join(",") === (s.openFiles || []).join(",")),
+      spSnap().map((s) => s.id + ":" + spRowPaths(s.id).join("|")).join(" / "));
+    check("sessions page: an empty session's card says 0 tabs and No tabs",
+      spCountText("s3") === "0 tabs" &&
+      spCard("s3").querySelector(".session-card-empty").textContent === "No tabs" &&
+      spCard("s3").querySelectorAll(".session-card-tab").length === 0);
+    check("sessions page: the page's own row is a row like any other",
+      !!spRow("s1", "§sessions") &&
+      spRow("s1", "§sessions").querySelector(".session-card-tab-name")
+        .textContent === "Sessions" &&
+      spWrap("s1", "§sessions").classList.contains("is-special") &&
+      !!spWrap("s1", "§sessions")
+        .querySelector('.session-card-mark use[href="#nb-icon-session"]'));
+    await spLoad(spBase(), "s1", ["Welcome.md"]);
+    check("sessions page: a pinned path appears nowhere on the page",
+      S.isPinned("Welcome.md") && S.getOpen()[0] === "Welcome.md" &&
+      spPage.querySelector('[data-path="Welcome.md"]') === null &&
+      spPage.textContent.indexOf("Welcome.md") < 0);
+
+    // --- AC5: the current row -----------------------------------------
+    check("sessions page: only the active session's active tab is aria-current",
+      spCurrentRows().length === 1 &&
+      spCurrentRows()[0].dataset.sessionId === "s1" &&
+      spCurrentRows()[0].dataset.path === "§sessions" &&
+      spRow("s2", "notes/c.md").getAttribute("aria-current") === null &&
+      spRow("s2", "notes/c.md").getAttribute("aria-label") === "c.md, unsaved changes",
+      spCurrentRows().map((r) => r.dataset.key).join(","));
+
+    // --- AC6: the jump -------------------------------------------------
+    await spLoad(spBase(), "s1");
+    spOpen(spRow("s1", "notes/b.md"));
+    await tick(100);
+    check("sessions page: a double click in the current session activates that tab only",
+      S.getActiveSessionId() === "s1" && S.getActive() === "notes/b.md" &&
+      spPage.hidden === true && S.getOpen().indexOf("§sessions") >= 0,
+      S.getActiveSessionId() + "/" + S.getActive());
+    await S.openSpecial("§sessions");
+    await tick(60);
+    spOpen(spRow("s2", "notes/d.md"));
+    await tick(160);
+    check("sessions page: a double click in another session swaps first, then activates",
+      S.getActiveSessionId() === "s2" && S.getActive() === "notes/d.md" &&
+      spPage.hidden === true &&
+      spSnap().find((s) => s.id === "s1").openFiles.indexOf("§sessions") >= 0,
+      S.getActiveSessionId() + "/" + S.getActive());
+    await spLoad(spBase(), "s1");
+    const spSwapOrig = S.swapTo;
+    S.swapTo = async () => false;
+    const spStuckRow = spRow("s2", "notes/c.md");
+    spStuckRow.focus();
+    spOpen(spStuckRow);
+    await tick(120);
+    check("sessions page: a swapTo returning false leaves the page and the focus",
+      S.getActiveSessionId() === "s1" && S.getActive() === "§sessions" &&
+      spPage.hidden === false && window.document.activeElement === spStuckRow,
+      S.getActiveSessionId() + "/" + S.getActive());
+    S.swapTo = spSwapOrig;
+
+    // --- AC7/AC8: the selection ----------------------------------------
+    await spLoad(spBase(), "s1");
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    await tick(20);
+    check("sessions page: Ctrl+click selects a row without opening it",
+      S.getActive() === "§sessions" && S.getActiveSessionId() === "s1" &&
+      spSelected().length === 1 &&
+      spSelected()[0].dataset.path === "notes/a.md" &&
+      spRow("s1", "notes/a.md").classList.contains("is-selected") &&
+      spRow("s1", "notes/a.md").getAttribute("aria-label") === "a.md, selected",
+      spRow("s1", "notes/a.md").getAttribute("aria-label"));
+    check("sessions page: one selected row shows no chip, the live region counts it",
+      spChip().hidden === true &&
+      spLive().textContent === "1 tab selected", spChipText());
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    await tick(20);
+    check("sessions page: a second Ctrl+click toggles it off and hides the chip",
+      spSelected().length === 0 && spChip().hidden === true &&
+      spLive().textContent === "Selection cleared" &&
+      spRow("s1", "notes/a.md").getAttribute("aria-label") === "a.md");
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    spMouse(spRow("s1", "notes/b.md"), { shift: true });
+    await tick(20);
+    check("sessions page: Shift+click selects the range inside that card only",
+      spSelected().length === 2 &&
+      spSelectedPaths("s1").join(",") === "notes/a.md,notes/b.md" &&
+      spSelectedPaths("s2").length === 0 &&
+      spChipText() === "2 tabs selected" &&
+      spLive().textContent === "2 tabs selected",
+      spSelectedPaths("s1").join(","));
+    spMouse(spRow("s2", "notes/d.md"), { shift: true });
+    await tick(20);
+    check("sessions page: a Shift+click in another card re-anchors instead of ranging",
+      spSelected().length === 3 && spSelectedPaths("s2").join(",") === "notes/d.md" &&
+      spChipText() === "3 tabs selected", spChipText());
+    spMouse(spRow("s2", "notes/c.md"), { shift: true });
+    await tick(20);
+    check("sessions page: a range replaces only its own card's rows",
+      spSelected().length === 4 &&
+      spSelectedPaths("s2").sort().join(",") === "notes/c.md,notes/d.md" &&
+      spSelectedPaths("s1").length === 2,
+      spSelectedPaths("s2").join(",") + " / " + spSelectedPaths("s1").join(","));
+    await spClearSel();
+    const spSpaceRow = spRow("s1", "notes/b.md");
+    spSpaceRow.focus();
+    const spSpaceEv = spKeyAt(spSpaceRow, " ");
+    await tick(20);
+    check("sessions page: Space toggles the row and prevents the synthesised click",
+      spSpaceEv.defaultPrevented === true && spSelected().length === 1 &&
+      spSelected()[0].dataset.path === "notes/b.md" &&
+      S.getActive() === "§sessions" && spPage.hidden === false);
+    spKeyAt(spSpaceRow, " ");
+    await tick(20);
+    check("sessions page: a second Space clears it again",
+      spSelected().length === 0 && spChip().hidden === true);
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    spMouse(spRow("s2", "notes/c.md"), { ctrl: true });
+    await tick(20);
+    spClearBtn().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("sessions page: the chip's × empties the selection and focuses the last row",
+      spSelected().length === 0 && spChip().hidden === true &&
+      spLive().textContent === "Selection cleared" &&
+      window.document.activeElement !== window.document.body &&
+      window.document.activeElement.classList.contains("session-card-tab") &&
+      window.document.activeElement.dataset.path === "notes/c.md",
+      String(window.document.activeElement && window.document.activeElement.className));
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    spMouse(spRow("s2", "notes/c.md"), { ctrl: true });
+    await tick(20);
+    spMouse(spRow("s1", "notes/b.md"));
+    await tick(100);
+    check("sessions page: a single click selects only that row and opens nothing",
+      spSelected().length === 1 &&
+      spSelected()[0].dataset.path === "notes/b.md" &&
+      spSelected()[0].querySelector(".session-card-tab")
+        .classList.contains("is-selected") &&
+      spChip().hidden === true &&
+      S.getActive() === "§sessions" && spPage.hidden === false,
+      spSelected().map((r) => r.dataset.key).join(","));
+    spPage.querySelector(".sessions-page-body").dispatchEvent(
+      new window.MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    await tick(20);
+    check("sessions page: a click on empty space clears the selection",
+      spSelected().length === 0 && spChip().hidden === true &&
+      S.getActive() === "§sessions" && spPage.hidden === false,
+      spLive().textContent);
+    spOpen(spRow("s1", "notes/b.md"));
+    await tick(100);
+    check("sessions page: a double click then opens that tab",
+      S.getActive() === "notes/b.md" && spPage.hidden === true,
+      String(S.getActive()));
+    await spLoad(spBase(), "s1");
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    spMouse(spRow("s1", "notes/b.md"), { ctrl: true });
+    await tick(20);
+    S.close("notes/b.md");
+    await tick(60);
+    check("sessions page: a closed tab's key is pruned from the selection",
+      spSelected().length === 1 && spChipText() === "1 tab selected" &&
+      spSelected()[0].dataset.path === "notes/a.md", spChipText());
+    S.close("notes/a.md");
+    await tick(60);
+    check("sessions page: pruning the last key hides the chip",
+      spSelected().length === 0 && spChip().hidden === true);
+
+    // --- AC13: read-only -----------------------------------------------
+    await spLoad(spBase(), "s1");
+    window.NB.pageRole = () => "viewer";
+    S.renameSession("s2", "Work II");       // a real tabs:changed rebuilds
+    await tick(40);
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    spKeyAt(spRow("s1", "notes/a.md"), " ");
+    await tick(20);
+    check("sessions page: a viewer cannot select",
+      spSelected().length === 0 && spChip().hidden === true &&
+      S.getActive() === "§sessions");
+    check("sessions page: a viewer's rows are not draggable",
+      spWraps().length === 5 && spWraps().every((w) => w.draggable === false),
+      spWraps().map((w) => String(w.draggable)).join(","));
+    check("sessions page: a viewer's footer drops the drag sentence",
+      spFoot().textContent ===
+        "Pinned tabs are shared and are not listed here.",
+      spFoot().textContent);
+    const spViewerStart = spDragAt("dragstart", spWrap("s1", "notes/a.md"),
+      spTransfer());
+    const spViewerOver = spDragAt("dragover", spCard("s2"), spTransfer());
+    check("sessions page: a viewer's dragstart is refused and dragover is not prevented",
+      spViewerStart.defaultPrevented === true &&
+      spViewerOver.defaultPrevented === false &&
+      !spCard("s2").classList.contains("is-drop-target") &&
+      spCountText("s2") === "2 tabs" &&
+      spPage.querySelectorAll(".is-dragging").length === 0,
+      "start=" + spViewerStart.defaultPrevented +
+        " over=" + spViewerOver.defaultPrevented);
+    spKeyAt(spRow("s1", "notes/a.md"), "F10", { shift: true });
+    await tick(20);
+    check("sessions page: a viewer's Move to session is disabled with its reason",
+      spMenuEl().hidden === false && !!spMenuParent() &&
+      spMenuParent().disabled === true &&
+      spMenuParent().title === "Read-only: sessions can’t be changed.",
+      spMenuParent() ? spMenuParent().title : "missing");
+    window.NB.menu.close();
+    await tick(10);
+    window.NB.pageRole = spRoleOrig;
+
+    // --- AC9: one row, one drag, one write -----------------------------
+    await spLoad(spBase(), "s1");
+    let spW = spChanges();
+    const spDt1 = spTransfer();
+    spDragAt("dragstart", spWrap("s1", "notes/b.md"), spDt1);
+    check("sessions page: the carried row is dimmed and the payload is its path",
+      spWrap("s1", "notes/b.md").classList.contains("is-dragging") &&
+      spDt1.getData("text/plain") === "notes/b.md" &&
+      spDt1.effectAllowed === "move" &&
+      spPage.querySelectorAll(".is-dragging").length === 1,
+      spDt1.getData("text/plain"));
+    spDragAt("dragover", spCard("s2"), spDt1);
+    check("sessions page: the hovered card takes the one drop mark and Move here",
+      spCard("s2").classList.contains("is-drop-target") &&
+      spCountText("s2") === "Move here" &&
+      spCards().filter((c) => c.classList.contains("is-drop-target")).length === 1);
+    spDragAt("drop", spCard("s2"), spDt1);
+    await tick(100);
+    const spWrites1 = spW.count();
+    spW.stop();
+    check("sessions page: the drop moves the row from the source into the target",
+      spRowPaths("s1").join(",") === "§sessions,notes/a.md" &&
+      spRowPaths("s2").join(",") === "notes/c.md,notes/d.md,notes/b.md" &&
+      spSnap().find((s) => s.id === "s2").openFiles.join(",") ===
+        "notes/c.md,notes/d.md,notes/b.md",
+      spRowPaths("s1").join(",") + " / " + spRowPaths("s2").join(","));
+    check("sessions page: the drop never switches sessions",
+      S.getActiveSessionId() === "s1" && S.getActive() === "§sessions");
+    check("sessions page: the marks and the count swap clear with the drop",
+      !spCard("s2").classList.contains("is-drop-target") &&
+      spCountText("s2") === "3 tabs" &&
+      spPage.querySelectorAll(".is-dragging").length === 0);
+    check("sessions page: a background tab move is one state write",
+      spWrites1 === 1, String(spWrites1));
+    spRow("s2", "notes/b.md").dispatchEvent(new window.MouseEvent("click",
+      { bubbles: true, cancelable: true, detail: 1 }));
+    await tick(100);
+    check("sessions page: the click that follows a drop is swallowed",
+      S.getActiveSessionId() === "s1" && S.getActive() === "§sessions" &&
+      spPage.hidden === false,
+      S.getActiveSessionId() + "/" + S.getActive());
+    spOpen(spRow("s2", "notes/b.md"));
+    await tick(160);
+    check("sessions page: a double click after the drop opens the moved row's tab",
+      S.getActiveSessionId() === "s2" && S.getActive() === "notes/b.md",
+      S.getActiveSessionId() + "/" + S.getActive());
+
+    // The page's own tab is a tab: it moves, and the source activates its
+    // neighbour -- the move's write plus the neighbour's own change.
+    await spLoad(spBase(), "s1");
+    spW = spChanges();
+    spDragAt("dragstart", spWrap("s1", "§sessions"), spTransfer());
+    spDragAt("dragover", spCard("s2"), spTransfer());
+    spDragAt("drop", spCard("s2"), spTransfer());
+    await tick(160);
+    const spOwnWrites = spW.count();
+    spW.stop();
+    check("sessions page: dragging the page's own row moves the page's tab",
+      spSnap().find((s) => s.id === "s1").openFiles.join(",") ===
+        "notes/a.md,notes/b.md" &&
+      spSnap().find((s) => s.id === "s2").openFiles.join(",") ===
+        "notes/c.md,notes/d.md,§sessions" &&
+      S.getActiveSessionId() === "s1" && S.getActive() === "notes/a.md" &&
+      spPage.hidden === true,
+      S.getActive() + " / " +
+        spSnap().find((s) => s.id === "s2").openFiles.join(","));
+    check("sessions page: the neighbour activation emits its own change after the move",
+      spOwnWrites === 2, String(spOwnWrites));
+
+    // --- AC10: a multi-card selection, one batch ------------------------
+    await spLoad(spBase(), "s1");
+    spMouse(spRow("s1", "notes/b.md"), { ctrl: true });
+    spMouse(spRow("s2", "notes/c.md"), { ctrl: true });
+    spMouse(spRow("s2", "notes/d.md"), { ctrl: true });
+    await tick(20);
+    spW = spChanges();
+    spDragAt("dragstart", spWrap("s1", "notes/b.md"), spTransfer());
+    check("sessions page: dragging a selected row carries the whole selection",
+      spPage.querySelectorAll(".is-dragging").length === 3,
+      String(spPage.querySelectorAll(".is-dragging").length));
+    spDragAt("dragover", spCard("s3"), spTransfer());
+    check("sessions page: the empty card is a drop target too",
+      spCard("s3").classList.contains("is-drop-target") &&
+      spCountText("s3") === "Move here");
+    spDragAt("drop", spCard("s3"), spTransfer());
+    await tick(160);
+    const spBatchWrites = spW.count();
+    spW.stop();
+    check("sessions page: every selected tab lands in the one target",
+      spRowPaths("s3").join(",") === "notes/b.md,notes/c.md,notes/d.md" &&
+      spRowPaths("s1").join(",") === "§sessions,notes/a.md" &&
+      spRowPaths("s2").length === 0 &&
+      spCard("s2").querySelector(".session-card-empty").textContent === "No tabs",
+      spRowPaths("s3").join(","));
+    check("sessions page: the batch is one state write", spBatchWrites === 1,
+      String(spBatchWrites));
+    check("sessions page: the moved keys leave the selection",
+      spSelected().length === 0 && spChip().hidden === true);
+
+    // --- AC11: duplicates collapse ------------------------------------
+    await spLoad([
+      { id: "s1", name: "Main",
+        openFiles: ["§sessions", "notes/a.md", "notes/b.md"],
+        activeFile: "§sessions" },
+      { id: "s2", name: "Work",
+        openFiles: ["notes/a.md", "notes/c.md"], activeFile: "notes/a.md" },
+      { id: "s3", name: "Empty", openFiles: [], activeFile: null },
+    ], "s1");
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    spMouse(spRow("s2", "notes/a.md"), { ctrl: true });
+    await tick(20);
+    spDragAt("dragstart", spWrap("s1", "notes/a.md"), spTransfer());
+    spDragAt("dragover", spCard("s3"), spTransfer());
+    spDragAt("drop", spCard("s3"), spTransfer());
+    await tick(160);
+    check("sessions page: a path carried from two cards lands once",
+      spRowPaths("s3").join(",") === "notes/a.md" &&
+      spSnap().find((s) => s.id === "s3").openFiles.length === 1 &&
+      spRowPaths("s1").indexOf("notes/a.md") < 0 &&
+      spRowPaths("s2").indexOf("notes/a.md") < 0,
+      spRowPaths("s3").join(",") + " / s1=" + spRowPaths("s1").join(","));
+    check("sessions page: a duplicate costs no capacity (39 + 1 = 40 is taken)",
+      await (async () => {
+        await spLoad([
+          { id: "s1", name: "Main",
+            openFiles: ["§sessions", "notes/a.md"], activeFile: "§sessions" },
+          { id: "s2", name: "Work",
+            openFiles: ["notes/a.md"], activeFile: "notes/a.md" },
+          { id: "nearly", name: "Nearly",
+            openFiles: spBulkPaths.slice(0, 39), activeFile: null },
+        ], "s1");
+        spNotices.length = 0;
+        spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+        spMouse(spRow("s2", "notes/a.md"), { ctrl: true });
+        await tick(20);
+        spDragAt("dragstart", spWrap("s1", "notes/a.md"), spTransfer());
+        const over = spDragAt("dragover", spCard("nearly"), spTransfer());
+        spDragAt("drop", spCard("nearly"), spTransfer());
+        await tick(160);
+        return over.defaultPrevented === true && spNotices.length === 0 &&
+          spRowPaths("nearly").length === 40 &&
+          spRowPaths("nearly").filter((p) => p === "notes/a.md").length === 1 &&
+          spCountText("nearly") === "40 tabs";
+      })(),
+      spRowPaths("nearly").length + " rows / " + spNotices.join("|"));
+    await spLoad([
+      { id: "s1", name: "Main",
+        openFiles: ["§sessions", "notes/a.md", "notes/b.md"],
+        activeFile: "§sessions" },
+      { id: "s2", name: "Work",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+      { id: "both", name: "Both",
+        openFiles: ["notes/a.md", "notes/b.md"], activeFile: null },
+    ], "s1");
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    spMouse(spRow("s1", "notes/b.md"), { ctrl: true });
+    await tick(20);
+    spDragAt("dragstart", spWrap("s1", "notes/a.md"), spTransfer());
+    const spBothOver = spDragAt("dragover", spCard("both"), spTransfer());
+    check("sessions page: a card holding every carried path takes no mark",
+      spBothOver.defaultPrevented === false &&
+      !spCard("both").classList.contains("is-drop-target") &&
+      spCountText("both") === "2 tabs");
+    spDragAt("dragover", spCard("s2"), spTransfer());
+    check("sessions page: a card holding only some carried paths is still marked",
+      spCard("s2").classList.contains("is-drop-target") &&
+      spCountText("s2") === "Move here" &&
+      !spCard("both").classList.contains("is-drop-target") &&
+      spCards().filter((c) => c.classList.contains("is-drop-target")).length === 1);
+    spDragAt("dragend", spWrap("s1", "notes/a.md"), spTransfer());
+    check("sessions page: dragend clears the mark and restores the count text",
+      spPage.querySelectorAll(".is-drop-target").length === 0 &&
+      spCountText("s2") === "1 tab");
+
+    // --- AC12: the cap refuses the batch whole --------------------------
+    await spLoad([
+      { id: "s1", name: "Main",
+        openFiles: ["§sessions", "notes/a.md"], activeFile: "§sessions" },
+      { id: "s2", name: "Work",
+        openFiles: ["notes/c.md"], activeFile: "notes/c.md" },
+      { id: "full", name: "Full",
+        openFiles: spBulkPaths.slice(0, 40), activeFile: null },
+      { id: "nearly", name: "Nearly",
+        openFiles: spBulkPaths.slice(0, 39), activeFile: null },
+    ], "s1");
+    spMouse(spRow("s1", "notes/a.md"), { ctrl: true });
+    await tick(20);
+    spNotices.length = 0;
+    spDragAt("dragstart", spWrap("s1", "notes/a.md"), spTransfer());
+    spDragAt("dragover", spCard("full"), spTransfer());
+    spDragAt("drop", spCard("full"), spTransfer());
+    await tick(160);
+    check("sessions page: a 40-tab target refuses with the shipped message",
+      spNotices.length === 1 && spNotices[0] === spFullMessage,
+      spNotices.join("|"));
+    check("sessions page: a refused drop moves nothing and keeps the selection",
+      spRowPaths("s1").join(",") === "§sessions,notes/a.md" &&
+      spRowPaths("full").length === 40 &&
+      spSelected().length === 1 && spChipText() === "1 tab selected",
+      spChipText());
+    spMouse(spRow("s2", "notes/c.md"), { ctrl: true });
+    await tick(20);
+    spNotices.length = 0;
+    spDragAt("dragstart", spWrap("s1", "notes/a.md"), spTransfer());
+    spDragAt("drop", spCard("nearly"), spTransfer());
+    await tick(160);
+    check("sessions page: a batch that does not fit is refused whole",
+      spNotices.length === 1 && spNotices[0] === spFullMessage &&
+      spRowPaths("nearly").length === 39 &&
+      spRowPaths("s1").indexOf("notes/a.md") >= 0 &&
+      spRowPaths("s2").indexOf("notes/c.md") >= 0 &&
+      spSelected().length === 2 && spChipText() === "2 tabs selected",
+      spNotices.join("|") + " " + spChipText());
+
+    // --- AC14: a re-render abandons the drag ---------------------------
+    await spLoad(spBase(), "s1");
+    spDragAt("dragstart", spWrap("s1", "notes/b.md"), spTransfer());
+    spDragAt("dragover", spCard("s2"), spTransfer());
+    check("sessions page: mid-drag the source and the target carry their marks",
+      spWrap("s1", "notes/b.md").classList.contains("is-dragging") &&
+      spCard("s2").classList.contains("is-drop-target") &&
+      spCountText("s2") === "Move here");
+    S.renameSession("s2", "Work II");
+    await tick(60);
+    check("sessions page: a tabs:changed mid-drag clears every mark and the count text",
+      spPage.querySelectorAll(".is-dragging").length === 0 &&
+      spPage.querySelectorAll(".is-drop-target").length === 0 &&
+      spCountText("s2") === "2 tabs" &&
+      spRowPaths("s2").join(",") === "notes/c.md,notes/d.md",
+      spCountText("s2"));
+    const spStaleDrop = spDragAt("drop", spCard("s2"), spTransfer());
+    await tick(60);
+    check("sessions page: the drop after the abandoned drag is a no-op",
+      spStaleDrop.defaultPrevented === false &&
+      spRowPaths("s2").join(",") === "notes/c.md,notes/d.md" &&
+      spRowPaths("s1").join(",") === "§sessions,notes/a.md,notes/b.md",
+      spRowPaths("s2").join(","));
+    const spStripDragTab = spStripTab("notes/a.md");
+    spDragAt("dragstart", spStripDragTab, spTransfer());
+    const spStripOver = spDragAt("dragover", spCard("s2"), spTransfer());
+    check("sessions page: a strip drag over the grid is not mistaken for a page drag",
+      spStripOver.defaultPrevented === false &&
+      !spCard("s2").classList.contains("is-drop-target") &&
+      spPage.querySelectorAll(".is-dragging").length === 0 &&
+      spPage.querySelectorAll(".is-drop-target").length === 0);
+    spDragAt("dragend", spStripDragTab, spTransfer());
+
+    // --- AC15: a patch, not a rebuild ----------------------------------
+    await spLoad(spBase(), "s1");
+    await S.swapTo("s2");
+    await tick(40);
+    await S.activate("notes/d.md");
+    await tick(60);
+    await S.swapTo("s1");
+    await tick(80);
+    check("sessions page: the page is back after the swaps",
+      spPage.hidden === false && S.getActiveSessionId() === "s1" &&
+      S.getActive() === "§sessions");
+    const spRowA = spRow("s1", "notes/a.md");
+    const spRowC = spRow("s2", "notes/c.md");
+    const spRowD = spRow("s2", "notes/d.md");
+    const spCellA = spStateCell(spWrap("s1", "notes/a.md"));
+    const spCellC = spStateCell(spWrap("s2", "notes/c.md"));
+    const spCellD = spStateCell(spWrap("s2", "notes/d.md"));
+    V.setDraft("notes/c.md", { content: "C-dirty", mode: "source" });
+    await tick(30);
+    check("sessions page: a dirty-changed rebuilds no row",
+      spRow("s1", "notes/a.md") === spRowA &&
+      spRow("s2", "notes/c.md") === spRowC &&
+      spRow("s2", "notes/d.md") === spRowD);
+    check("sessions page: a dirty-changed patches only that path's rows",
+      spStateCell(spWrap("s2", "notes/c.md")) !== spCellC &&
+      !!spStateCell(spWrap("s2", "notes/c.md"))
+        .querySelector(".session-card-dot") &&
+      spStateCell(spWrap("s1", "notes/a.md")) === spCellA &&
+      spStateCell(spWrap("s2", "notes/d.md")) === spCellD &&
+      spCellA.classList.contains("is-empty") &&
+      spRow("s2", "notes/c.md").getAttribute("aria-label") ===
+        "c.md, unsaved changes",
+      spRow("s2", "notes/c.md").getAttribute("aria-label"));
+    check("sessions page: the patch recomputes that card's accessible dirty text",
+      spCard("s2").querySelector(".session-card-title .sr-dirty")
+        .textContent === ", unsaved changes");
+    // spec §5 + AC15: the card header gains its dot from the patch, not only
+    // from a rebuild. This is the one assertion a keystroke cannot satisfy.
+    check("sessions page: the patch recomputes that card's header dot",
+      !!spCardDot("s2") && !spCardDot("s1"),
+      "dot=" + String(!!spCardDot("s2")) + " s1=" + String(!!spCardDot("s1")) +
+        " rowDots=" + spCard("s2").querySelectorAll(".session-card-dot").length);
+    V.setDraft("notes/d.md", { content: "D-dirty", mode: "source" });
+    await tick(20);
+    V.close("notes/c.md");
+    window.NB.evt.emit("viewer:dirty-changed", { path: "notes/c.md", dirty: false });
+    await tick(30);
+    check("sessions page: the card stays dirty while another of its rows is",
+      !spStateCell(spWrap("s2", "notes/c.md"))
+        .querySelector(".session-card-dot") &&
+      spRow("s2", "notes/c.md").getAttribute("aria-label") === "c.md" &&
+      !!spStateCell(spWrap("s2", "notes/d.md"))
+        .querySelector(".session-card-dot") &&
+      spCard("s2").querySelector(".session-card-title .sr-dirty")
+        .textContent === ", unsaved changes",
+      spRow("s2", "notes/c.md").getAttribute("aria-label"));
+    await spLoad(spBase(), "s1");
+    const spBody = spPage.querySelector(".sessions-page-body");
+    spBody.scrollTop = 120;
+    const spFocusRow = spRow("s1", "notes/a.md");
+    spFocusRow.focus();
+    S.renameSession("s3", "Empty II");
+    await tick(60);
+    check("sessions page: a rebuild restores focus to the same key",
+      window.document.activeElement === spRow("s1", "notes/a.md") &&
+      window.document.activeElement !== spFocusRow &&
+      spBody.scrollTop === 120,
+      String(window.document.activeElement && window.document.activeElement.dataset.key));
+    $("activity-settings-btn").focus();
+    S.renameSession("s3", "Empty III");
+    await tick(60);
+    check("sessions page: a rebuild with focus outside the page leaves it alone",
+      window.document.activeElement === $("activity-settings-btn"));
+    spRow("s1", "notes/a.md").focus();
+    S.close("notes/a.md");
+    await tick(80);
+    check("sessions page: a focused row that disappears falls to the h1",
+      window.document.activeElement === spTitle(),
+      String(window.document.activeElement && window.document.activeElement.className));
+
+    // --- AC17: the row menu --------------------------------------------
+    await spLoad(spBase(), "s1");
+    spKeyAt(spRow("s1", "notes/b.md"), "F10", { shift: true });
+    await tick(30);
+    check("sessions page: Shift+F10 opens the row menu with one item",
+      spMenuEl().hidden === false && !!spMenuParent() &&
+      spMenuParentLabel() === "Move to session" &&
+      spMenuEl().querySelectorAll(":scope > button").length === 1,
+      spMenuParentLabel() + " / " + spMenuEl().innerHTML.slice(0, 80));
+    check("sessions page: the submenu omits only the session holding the row",
+      spMenuLabels().join(",") === "Work,Empty", spMenuLabels().join(","));
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown",
+      { key: "Escape", bubbles: true, cancelable: true }));
+    await tick(30);
+    check("sessions page: Esc closes the menu and returns focus to the row",
+      spMenuEl().hidden === true &&
+      window.document.activeElement === spRow("s1", "notes/b.md"));
+    spMouse(spRow("s1", "notes/b.md"), { ctrl: true });
+    spMouse(spRow("s2", "notes/c.md"), { ctrl: true });
+    await tick(20);
+    spKeyAt(spRow("s1", "notes/b.md"), "F10", { shift: true });
+    await tick(30);
+    check("sessions page: a spanning selection lists every card that holds only some",
+      spMenuLabels().join(",") === "Main,Work,Empty", spMenuLabels().join(","));
+    window.NB.menu.close();
+    await tick(10);
+    spKeyAt(spRow("s2", "notes/d.md"), "ContextMenu");
+    await tick(30);
+    check("sessions page: the Menu key opens the same menu",
+      spMenuEl().hidden === false && !!spMenuParent());
+    window.NB.menu.close();
+    await tick(10);
+    spRow("s2", "notes/d.md").dispatchEvent(new window.MouseEvent("contextmenu",
+      { bubbles: true, cancelable: true, clientX: 40, clientY: 20 }));
+    await tick(30);
+    check("sessions page: a right-click opens the row menu too",
+      spMenuEl().hidden === false && !!spMenuParent() &&
+      spMenuLabels().join(",") === "Main,Empty");
+    window.NB.menu.close();
+    await tick(10);
+    await spLoad([
+      { id: "s1", name: "Main",
+        openFiles: ["§sessions", "notes/a.md"], activeFile: "§sessions" },
+      { id: "full", name: "Full",
+        openFiles: spBulkPaths.slice(0, 40), activeFile: null },
+    ], "s1");
+    spKeyAt(spRow("s1", "notes/a.md"), "F10", { shift: true });
+    await tick(30);
+    const spFullItem = spMenuItems().find((b) => b.textContent === "Full");
+    check("sessions page: a target without room is disabled with the shipped reason",
+      !!spFullItem && spFullItem.disabled === true &&
+      spFullItem.title === spFullMessage,
+      spFullItem ? spFullItem.title : "missing");
+    window.NB.menu.close();
+    await tick(10);
+    await spLoad([
+      { id: "only", name: "Only",
+        openFiles: ["§sessions", "notes/a.md"], activeFile: "§sessions" },
+    ], "only");
+    spKeyAt(spRow("only", "notes/a.md"), "F10", { shift: true });
+    await tick(30);
+    check("sessions page: with one session the parent is disabled with its reason",
+      !!spMenuParent() && spMenuParent().disabled === true &&
+      spMenuParent().title === "There is only one session.",
+      spMenuParent() ? spMenuParent().title : "missing");
+    window.NB.menu.close();
+    await tick(10);
+    await spLoad(spBase(), "s1");
+    spKeyAt(spRow("s1", "notes/b.md"), "F10", { shift: true });
+    await tick(30);
+    const spWorkItem = spMenuItems().find((b) => b.textContent === "Work");
+    spWorkItem.dispatchEvent(new window.Event("click",
+      { bubbles: true, cancelable: true }));
+    await tick(160);
+    check("sessions page: a menu pick moves the row and focuses it at its new key",
+      spRowPaths("s2").join(",") === "notes/c.md,notes/d.md,notes/b.md" &&
+      spRowPaths("s1").join(",") === "§sessions,notes/a.md" &&
+      spMenuEl().hidden === true &&
+      window.document.activeElement === spRow("s2", "notes/b.md") &&
+      window.document.activeElement.dataset.key ===
+        (spWrap("s2", "notes/b.md") || {}).dataset.key,
+      window.document.activeElement ? window.document.activeElement.dataset.key : "none");
+
+    // --- AC18 (DOM half): the page leaves with its tab when the shell locks
+    await spLoad(spBase(), "s1");
+    window.NB.evt.emit("auth:locked");
+    await tick(80);
+    check("sessions page: the page is gone with its tab after auth:locked",
+      S.getOpen().indexOf("§sessions") < 0 && spPage.hidden === true &&
+      spSnap().every((s) => (s.openFiles || []).length === 0));
+
+    // --- leave the harness as the next block expects it ----------------
+    window.NB.pageRole = spRoleOrig;
+    window.NB.app.notify = spNotifyOrig;
+    spNotices.length = 0;
+    window.NB.menu.close();
+    S.clearAll();
+    await tick(40);
+    TREE.length = 0;
+    spSavedTree.forEach((n) => TREE.push(n));
+    await window.NB.sidebar.refresh();
+    await tick(20);
+    check("sessions page: the block leaves no tab, no selection and the old tree",
+      spPage.hidden === true && S.getOpen().length === 0 &&
+      spSelected().length === 0 && TREE.length === spSavedTree.length,
+      String(TREE.length));
   }
 
   // ===================================================================
