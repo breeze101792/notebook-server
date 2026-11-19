@@ -26,10 +26,11 @@ maximize — §1.7 restates their contract and adds nothing to it. The API contr
 codes are server-side facts and this document only maps them to fields and copy.
 
 **The shipped look is the target.** The user likes the current dialogs. This document
-codifies them exactly and does not redesign them. §10.2 lists the eight applied exceptions:
+codifies them exactly and does not redesign them. §10.2 lists the nine applied exceptions:
 three are keyboard or screen-reader fixes with no visual delta (E5, E6, E8); five change a
 colour — one at rest (E1, the field boundary), two on focus (E2, E3), one in the dark-theme
-label of the login button (E4), and one on the phone only (E7). §12 lists every change that
+label of the login button (E4), and one on the phone only (E7); and one is a width floor on
+the password field that takes effect below 437 px (E9). §12 lists every change that
 would move a pixel at rest, applied to nothing.
 
 Source material, not current specs: [`../archive/ui/workspaces.md`](../archive/ui/workspaces.md)
@@ -276,7 +277,7 @@ Top to bottom:
 |---|---|---|
 | 1 | Header `<h2 id="auth-title">Sign in</h2>` + injected maximize | §1.3 |
 | 2 | Help paragraph `.auth-help` | `--text-muted`, `.93rem`, `margin: 4px 0 12px` (`:2291-2295`) |
-| 3 | Row: label `Password` (flex `0 0 130px`) + `<input type="password" class="auth-input">` | `:2005-2021`, `:2297-2307` |
+| 3 | Row: label `Password` (flex `0 0 130px`) + `<input type="password" class="auth-input">` | `:2299-2315`, `:2683-2692` |
 | 4 | Error slot `#auth-error[role="alert"]` | §1.9 |
 | 5 | Actions row `.settings-form-actions` with one `.settings-action.auth-submit` | `:2026-2031`, `:2308-2314` |
 
@@ -286,7 +287,56 @@ The field is the one **mono** field in the app besides the path chip: `font: 1re
 uses. Recorded, not corrected: the difference is a shade at the same radius and leaves no
 visible seam. §12 P12 proposes the shared face.
 
-Row padding is `8px 0` inside `.auth-form` (`:2296`), not the global `6px 0`.
+Row padding is `8px 0` inside `.auth-form` (`:2682`), not the global `6px 0`.
+
+The field's width is decided by the row it sits in, and the row is widened by the widest thing in
+it. Three rules do all of the work:
+
+- `.settings-row` is `display: flex; align-items: center; gap: 12px; min-width: 0` (`:2299-2310`).
+- `.settings-label` is `flex: 0 0 130px` (`:2311-2315`). It never shrinks on any width.
+- `.auth-input` is `flex: 1 1 auto` with **no** `min-width` (`:2683-2692`). A flex item's
+  `min-width: auto` floor is its intrinsic width, so the field refuses to go below the
+  `size=20` default: 196 px at the 14 px desktop type, 222 px at the 16 px type the phone rule
+  sets (`:8749`). Where the row has slack, `flex-grow` takes the field past that floor (240 px in
+  a 420 px box). Every other copy of the field already declares the floor —
+  `.settings-text-input` (`:2369`) and the Settings copy of `.auth-input` (`:1754`) — which is
+  why the workspace, session and Settings fields, with the same row shape and the same kind of
+  box, never showed this fault.
+
+One row therefore needs `130 + 12 + 222 = 364 px`. The box is `min(420px, 92vw)` and the body
+pads `18px` a side inside a `1px` border, so the content box is `min(382px, 92vw - 38px)`: 364 px
+of row only exists above **437 px** of viewport. Between 437 and 416 px of viewport the field
+eats the right padding; below 416 it runs past the box edge and `overflow: hidden` (`:2139`)
+cuts it. The 16 px phone type widens the fault by 26 px: at the 14 px desktop type the field is
+196 px, which overflows the content box by 17 px at 390 but still lands inside the 18 px padding,
+so nothing is clipped until the viewport drops below ~388. The type bump moves that threshold to
+~416 and puts the field's right border outside the box at every width the user reported.
+
+§10.2 E9 puts `min-width: 0` on `.auth-input`, the floor its sibling already has. With it:
+
+| Viewport | Box | Content box | Label | Field | Field to box edge |
+|---|---|---|---|---|---|
+| 320 | 294.4 | 256.4 | 130 | 114.4 | 19 |
+| 360 | 331.2 | 293.2 | 130 | 151.2 | 19 |
+| 390 | 358.8 | 320.8 | 130 | 178.8 | 19 |
+| 430 | 395.6 | 357.6 | 130 | 215.6 | 19 |
+| 437 | 402.0 | 364.0 | 130 | 222.0 | 19 |
+| 457 + | 420 | 382 | 130 | 240 | 19 |
+
+Every row is `label + 12 px gap + field = content box`, and the field ends 19 px inside the box
+border — its 18 px right padding plus the 1 px border — at every width. Shipped, the field stays
+at 222 px until the content box passes 364 px (about 437 px of viewport): 88.6 px past the box
+edge at 320 (40% of the field hidden), 24.2 px at 390, and 6.4 px into the right padding at 430.
+
+`NB.windows` can make this worse and E9 fixes that path too. A stored
+`localStorage["nb:windowGeometry"]["auth-overlay"]` writes an **inline** `width` on the box
+(`windows.js:60-75`), clamped only to `[320, vw - 24]` (`:21`), and an inline width outranks
+`.auth-modal` (§1.6). At 390 with a stored 320 px box the content box is 282 px and the shipped
+field lands 63 px past the box edge. The floor is on the field, not on the box, so no JS change
+is needed: the same declaration holds at any box width.
+
+Desktop pixels are unchanged by E9: above 437 px the row already has slack, `flex: 1 1 auto`
+grows the field to 240 px at 420, and `min-width: 0` only lowers a floor that is never reached.
 
 ### 2.2 Copy
 
@@ -912,10 +962,11 @@ in either theme.
 | **E6** | `#ws-name` gains `aria-describedby="ws-error"` | the path had it, the name did not; a name error was announced only as an alert | none |
 | **E7** | Phone: 16 px type and `min-height: var(--control-h-touch)` on fields and buttons in all four dialogs; export option rows and footer wrap | below 16 px iOS zooms the viewport on focus ([`foundations.md`](foundations.md) §4.4); three option labels clip at 390 + XL | phone only; 29 → 44 px fields, 12.6 → 16 px type |
 | **E8** | `touch-action: auto` and `overflow-y: auto` on the scrolling body (all four `.auth-form` instances, `.settings-sections`), with `max-height: calc(92vh - 130px)` so the auth form actually scrolls | `touch-action: none` on the box (`:1839`) stops a finger dragging a long body; a height-auto form has no scrollport, so the workspace/session errors clip. [`controls.md`](controls.md) C6 records the same defect | none |
+| **E9** | `.auth-input` gains `min-width: 0`, the floor `.settings-text-input` already has (`:2369`) | the login field was the one flex item in the set with an intrinsic width floor. `130 + 12 + 222` needs 364 px of row and the `min(420px, 92vw)` box only offers it above 437 px of viewport, so the field ran past the box and was clipped (`:2139`) — the reported phone bug. It reproduces with a stored window geometry too, so the floor goes on the field, not the box | phone only: at 390 the field is 178.8 px instead of a 222 px field with 24.2 px outside the box; at 320 it is 114.4 px instead of 222 px with 88.6 px outside. Desktop unchanged (the field already grows to 240 px there) |
 
 E1 is the only exception that changes every dialog at rest. It is a floor requirement, not a
 style choice; if it is rejected, the record must say so and `foundations.md` AC6 must change
-(§14.2).
+(§14.2). E9 changes one field, and only below 437 px of viewport.
 
 ### 10.3 Exact rules, in landing order
 
@@ -954,7 +1005,8 @@ declaration and needs no reordering.
   outline-offset: 1px;
 }
 
-/* E9: one field and button ladder across the four dialogs. */
+/* The field and button ladder across the four dialogs (§10.4; carries no
+ * exception number). */
 #auth-overlay .auth-input,
 #workspace-dialog .settings-text-input,
 #session-dialog .settings-text-input,
@@ -1014,6 +1066,19 @@ declaration and needs no reordering.
 }
 ```
 
+E9 is not part of the appended block: it is a floor on the field itself, so it goes inside the
+existing `.auth-input` rule at `style.css:2683-2692`, next to the `flex` it qualifies. Nothing
+else in that rule moves, and no media query is needed — the floor holds at every width and under
+an inline geometry (§1.6).
+
+```css
+.auth-input {
+  flex: 1 1 auto;
+  min-width: 0;   /* E9: the floor .settings-text-input already has (:2369) */
+  /* … background, border, radius, padding, font, outline: unchanged */
+}
+```
+
 E5 and E6 are markup and JS, not CSS:
 
 | Change | File | Line |
@@ -1059,6 +1124,19 @@ No colour literal is introduced. Every declaration above reads a token.
 | **AC12** | Every error slot is `role="alert"` and every failing field is described by it | `templates/index.html`, `workspaces.js`, `sessions.js`, `auth.js` | `#ws-name` and `#auth-password` point at their error; `#session-name` and `#ws-path` already do |
 | **AC13** | At 390 the four dialogs are 358.8 px, fields are 16 px, buttons are ≥44, and no dialog scrolls horizontally | `style.css` | A 390 browser run shows `dialog.getBoundingClientRect().width === 358.8` (±0.5), `scrollWidth === clientWidth` on the box, and an export option row that wraps rather than clips at XL |
 | **AC14** | No new motion is introduced, and any transition added ships its reduced-motion twin | `style.css` | No `transition` or `animation` exists on `.settings-overlay` or `.settings-modal`. With reduce emulated at 390 the toast appears instantly (`:7764-7770`); at desktop it still transitions, which is the pre-existing gap this pass does not widen |
+| **AC15** | Below 437 px of viewport the password field stays inside the box, and E9 is what keeps it there: `.auth-input` carries `min-width: 0` at every width, so at 390 the field is 178.8 px and ends 19 px inside the box border | `static/css/style.css` | At 390×844 `#auth-password.getBoundingClientRect().right` is 355.4 against the box's 374.4, and the box reports `scrollWidth === clientWidth`; the same holds at 320, 360 and 430, and with `localStorage["nb:windowGeometry"]` set to `{"auth-overlay":{"w":320,"h":260,"left":12,"top":12}}` |
+
+AC13 and AC15 are the phone pair: AC13 measures the box, AC15 measures the field inside it.
+
+AC15 is asserted by `tests/browser/test_auth_export_browser.js` in the block that follows the
+first `waitLoginModal`, before the wrong-password loop: `page.setViewportSize` at 320, 360, 390
+and 430, reading `#auth-password` and `.auth-modal` rects plus the box's
+`scrollWidth`/`clientWidth`; then a stored `nb:windowGeometry` `{"auth-overlay":{"w":320,…}}`
+with a reload, checking the inline width is applied and the field still fits; then the geometry
+is cleared, the page reloaded and the viewport restored to 1280×800. `(max-width: 860px)`
+matches in that context even though it is not `isMobile`, so the 16 px type arm is exercised.
+The desktop side is unchanged and untested by the block: at 1280 the field is still 240 px wide
+and the box is still 420.
 
 New assertions belong beside the existing blocks: `tests/dom/test_dom.js` around `:26335`
 (auth) and `:42750` (dialog options), `tests/browser/test_core_ui_browser.js:1711-1790`
@@ -1087,6 +1165,7 @@ Ordered by what it costs the user today. None is in the mockup.
 | **P12** | `.auth-input` takes `--surface-well` like every other field | it uses `--surface-page` (`:2299`), so the login field is a shade off every other field in both themes | 1 declaration; visible as a slightly different field face |
 | **P13** | Relabel `Will open` to `Path` (or keep it and have the server echo the realpath) | the row echoes the typed string while the server stores the realpath (§3.3) | copy only, or a new resolve endpoint |
 | **P14** | A keyboard path for the resize grip: `role="separator"`, `tabindex="0"`, arrow keys, `Home`/`End` | it is a pointer-only `div` (`windows.js:79-83`); the same gap as `edit-window.md` §12 P10, and one implementation should close both | JS on the grip plus a value contract per modal; the saved geometry is already there |
+| **P15** | Stack the auth row below 480 px: label above field, `flex-direction: column` with a 4 px gap | after E9 the fixed 130 px label is 50.7% of a 256.4 px content box at 320 and leaves the field 114.4 px; stacked, the field takes the whole 256.4 | one media query on `.auth-form .settings-row`, but it changes the login, workspace and session bodies at rest on the phone and breaks the label-left shape the four dialogs share. E9 fixes the reported bug in one declaration, so this is a comfort change, not a defect fix |
 
 ---
 

@@ -411,6 +411,57 @@ async function main() {
     }
 
     {
+      // E9 / AC15 (docs/ui/dialogs.md): the password field keeps its own
+      // width inside the dialog at phone widths. .auth-input's intrinsic
+      // <input size=20> floor overflowed the min(420px, 92vw) box below
+      // ~437px of viewport and the modal's overflow:hidden clipped it.
+      for (const width of [320, 360, 390, 430]) {
+        await page.setViewportSize({ width, height: 844 });
+        const g = await page.evaluate(() => {
+          const modal = document.querySelector(".auth-modal");
+          const input = document.getElementById("auth-password");
+          return {
+            clip: modal.scrollWidth - modal.clientWidth,
+            field: Math.round(input.getBoundingClientRect().width),
+            fieldRight: Math.round(input.getBoundingClientRect().right),
+            boxRight: Math.round(modal.getBoundingClientRect().right),
+          };
+        });
+        check("password field fits the dialog at " + width + "px",
+          g.clip === 0 && g.fieldRight < g.boxRight, JSON.stringify(g));
+      }
+
+      // NB.windows writes an inline width that outranks .auth-modal, so a
+      // stored geometry must not reopen the overflow; the floor sits on the
+      // field, not the box. windows.js reads the store at boot, hence the
+      // reload.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => localStorage.setItem("nb:windowGeometry",
+        JSON.stringify({ "auth-overlay": { w: 320, h: 260, left: 12, top: 12 } })));
+      await page.reload();
+      await waitLoginModal(page);
+      const stored = await page.evaluate(() => {
+        const modal = document.querySelector(".auth-modal");
+        const input = document.getElementById("auth-password");
+        return {
+          box: Math.round(modal.getBoundingClientRect().width),
+          clip: modal.scrollWidth - modal.clientWidth,
+          field: Math.round(input.getBoundingClientRect().width),
+          fieldRight: Math.round(input.getBoundingClientRect().right),
+          boxRight: Math.round(modal.getBoundingClientRect().right),
+        };
+      });
+      check("stored 320px window geometry is applied",
+        Math.abs(stored.box - 320) <= 1, JSON.stringify(stored));
+      check("password field fits a stored 320px window geometry",
+        stored.clip === 0 && stored.fieldRight < stored.boxRight, JSON.stringify(stored));
+      await page.evaluate(() => localStorage.removeItem("nb:windowGeometry"));
+      await page.reload();
+      await waitLoginModal(page);
+      await page.setViewportSize({ width: 1280, height: 800 });
+    }
+
+    {
       // Let the boot-time gated requests (config save + tree) finish their
       // 401s before the first attempt; each attempt is serialized on the
       // submit button, so no in-flight login 401 can clear the next fill.
