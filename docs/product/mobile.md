@@ -6,7 +6,7 @@ Related: [mobile-support research](../research/mobile-support.md) owns the fact 
 
 ## 1. Purpose and user goal
 
-> **On a phone, the user should reach a note, read it properly, find something, and write a quick thought — without a desktop beside them and without disturbing the desktop they left at home.**
+> **On a phone, the user should reach a note, read it properly, find something, and write a quick thought — without a desktop beside them and without changing what the desktop they left at home is looking at.**
 
 Before this change the four-column shell collapsed the editor to 0 px on a phone, so the product was desktop-only in practice. v1 made the same web app usable on a phone for reading and capture; v2 added WYSIWYG editing of the open note. It stays one web app over plain HTTP on the LAN: no framework, no bundler, no native shell, no TLS or reverse-proxy work, no offline guarantee.
 
@@ -71,7 +71,7 @@ Before this change the four-column shell collapsed the editor to 0 px on a phone
 
 ### M2 — Home and navigation
 
-1. Home shows, in order: Search entry, Continue, Bookmarks, Recent, Browse. Continue opens the last note read on this device; it is absent on first use, and a lost target shows a browse prompt.
+1. Home shows, in order: Search entry, Continue, Bookmarks, Recent, Browse. Continue opens the last note read on this device; it is absent on first use, and a lost target shows a browse prompt. When the shared workspace has a non-empty active session, a phone boot opens that session's active tab instead of Home; Home is the landing view when it has no tab.
 2. Bookmarks keeps the saved order read-only: tap opens a note; no add, remove, or reorder. Empty says how to add bookmarks on desktop.
 3. Recent lists server-side recent notes, newest first, bounded by a named cap. A phone read may add to it; it is shared with desktop by design.
 4. Browse opens the tree drawer; folders expand one level per tap, the open note is marked, and choosing a file opens it and closes the drawer. The note title opens the drawer, so Browse is one tap from a note.
@@ -129,7 +129,7 @@ Before this change the four-column shell collapsed the editor to 0 px on a phone
 ### M10 — Session and sidebar access
 
 1. The bottom rail shows the **first six views of the user's saved activity-bar order**, then a **More** control. In the default order that is Explorer, Sessions, Pinned folders, Bookmarks, Recent, Search. Sessions is one tap from any note and switches the session, and with it the open note. A view moved past the sixth on desktop appears in More instead.
-2. Tapping a view icon opens that view in the drawer over the note. Sessions lists the workspace's sessions: tapping a row switches to it and closes the drawer, whether or not the note changes and even when the target session has no tabs; `⋯` opens Move up / Move down / Rename / Delete, and `+` creates a session. Every target is at least 44 px, and no action needs a drag.
+2. Tapping a view icon opens that view in the drawer over the note. Sessions lists the workspace's sessions: tapping a row switches to it and closes the drawer, whether or not the note changes and even when the target session has no tabs; `⋯` opens Move up / Move down / Rename / Delete, and `+` creates a session. Every target is at least 44 px, and no action needs a drag. The list and each session's tabs are the shared workspace state, the same the desktop sees; a note opened on the phone joins the active session's tab list.
 3. More opens a sheet that lists every view the rail does not carry, then Settings, then Sign out when auth is on. Under the default order there is no such view, so the sheet is Settings and Sign out only. Choosing a view opens it in the drawer; Settings opens the settings sheet. AI has no phone surface and is in neither list; Graph is proposed, not built.
 4. A view hidden in Settings → Appearance → Activity bar appears in neither the rail nor More; it is the user's own choice, as on desktop. The order and the hide list are edited on desktop only; the phone obeys both.
 5. Back closes More when it is open, and closes the drawer before it leaves the note. Choosing a view from More turns the sheet into the drawer on the same history entry, so that trip also costs one back step, not two. While a session dialog is up, back closes the dialog and never the drawer under it.
@@ -185,7 +185,7 @@ Tagged **[H]** manual on a real phone (device matrix in the research document) o
 22. C2 — Every form field renders at 16 px or larger and focusing it does not zoom the page [H].
 23. C3 — Every tappable control measures at least 44 × 44 CSS px, including `…` buttons and drawer rows [D].
 24. C4 — At the desktop breakpoint the shell is unchanged: same four columns, tab strip, widths, and menus [D].
-25. C5 — Reading a note on a phone changes neither the desktop's open tabs, active file, nor panel widths [D].
+25. C5 — Opening a note on a phone adds it to the active session's shared tabs, but never switches the desktop's active session or active tab and never changes its panel widths [D].
 26. C6 — Unreachable and unauthorized are visually distinct: Retry versus sign-in; rotation and keyboard focus preserve the note, drawer state, and draft [H].
 27. M9 — With a note open, **Edit note** enters WYSIWYG mode; the toolbar keeps text on the caret, Save writes, and back/Done/Esc leave before navigating [D]. A viewer sees no edit entry, and no top-bar edit control exists [D].
 28. M10 — The rail is the first six views of the saved bar order plus More, which is last and opens a sheet; in the default order that is Explorer, Sessions, Pinned folders, Bookmarks, Recent, Search [D].

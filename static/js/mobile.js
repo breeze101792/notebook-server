@@ -1096,12 +1096,12 @@
   // keep a Home entry below it so the first back is Home. Idempotent: an
   // entry already naming the note/URL is not duplicated.
   function seedPhoneHistory() {
+    // A bad deep link deliberately keeps its address while its not-found
+    // screen is up, even when a shared session tab is restored behind it.
+    const stateHost = shell.state;
+    if (stateHost && !stateHost.hidden) return;
     const path = activePath();
     if (!path) {
-      // A bad deep link deliberately keeps its address while its
-      // not-found screen is up.
-      const stateHost = shell.state;
-      if (stateHost && !stateHost.hidden) return;
       replaceWithHome();
       return;
     }

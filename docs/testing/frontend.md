@@ -419,10 +419,10 @@ links, debounced search and hit marking, the phone config gate (merged
 `recentFiles` only; no `openFiles`/`activeFile`/`lastFile`/
 `sidebarCollapsed` writes), settings (theme/text size are server-wide,
 excluded surfaces, sign out only with auth), and `canWrite()` across auth
-off / no session / viewer / admin. `recentFiles` is a workspace-state key, so a
-phone page writes it through `/api/workspace-state` (merged and versioned like
-the desktop) and `POST /api/config` keeps the server's copy; the phone still
-does not poll.
+off / no session / viewer / admin. `recentFiles`, `sessions`, `activeSessionId`,
+`openFiles` and `activeFile` are workspace-state keys, so a phone page writes
+them through `/api/workspace-state` (merged and versioned like the desktop) and
+`POST /api/config` keeps the server's copy. The phone still does not poll.
 
 The jsdom mobile block is green, including the acceptance checks for search
 Retry, the desktop-only Bookmarks empty state, deleted-Continue Home
@@ -430,8 +430,10 @@ fallback, and the unreachable-server screen. `api:network-error` is asserted
 to fire on a fetch rejection only, never on HTTP 4xx/5xx, so a 401 produces
 `auth:required` instead. `tests/browser/test_mobile_browser.js` covers the
 phone boot path (a `?file=` deep link wins over resume; a bad link keeps its
-address) and the history invariant: cold-boot deep link and resume both back
-to Home, and A → B → back shows A with A's URL.
+address), the shared workspace state (a desktop session and its tab appear on
+the phone; a phone tab open reaches the server and survives a reload), and the
+history invariant: cold-boot deep link and resume both back to Home, and
+A → B → back shows A with A's URL.
 
 ### Cross-device sync (`== workspace sync ==`)
 

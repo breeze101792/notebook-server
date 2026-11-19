@@ -44889,7 +44889,7 @@ function check(label, cond, extra) {
       ssPaths().length === 0 && $("welcome").hidden === false,
       "open=" + ssPaths().join(","));
     check("sessions migration: app.js passes a fallback only when migrated",
-      /const fallback = \(sessionState && sessionState\.migrated\)/
+      /const fallback = \(sessionState\.migrated\)/
         .test(read("static/js/app.js")));
     window.NB.viewer.clear();
     await S.restore([], null, "notes/b.md", [], ssState(
@@ -47557,11 +47557,13 @@ function check(label, cond, extra) {
     // asserted instead of re-booting the window.
     const appSrc = read("static/js/app.js");
     check("device-local: boot prefers the local session and file",
-      /const sessionState = isPhoneMode\(\) \? null\s*\n\s*: NB\.tabs\.normaliseSessions\(bootSessionInput\(cfg, known\), known\);/
+      /const sessionState = NB\.tabs\.normaliseSessions\(\s*\n\s*bootSessionInput\(cfg, known\), known\);/
         .test(appSrc) &&
       /const localSession = readDeviceLocal\(DEVICE_ACTIVE_SESSION_KEY\)/
         .test(appSrc) &&
-      /const localFile = readDeviceLocal\(DEVICE_ACTIVE_FILE_KEY\)/
+      /const localFile = localActiveFile\(\)/
+        .test(appSrc) &&
+      /if \(stored\) return stored;[\s\S]{0,200}NB\.mobile\.resumePath\(\)/
         .test(appSrc));
 
     // --- NB.sync: the loop's own gates --------------------------------

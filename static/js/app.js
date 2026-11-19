@@ -35,6 +35,9 @@
   // open onto a hidden host. Sessions is a phone view hosted in the drawer,
   // so only AI stays here.
   const PHONE_HIDDEN_VIEWS = ["ai"];
+  // Special tabs with no phone surface. Restoring a shared session may make
+  // one active; the phone shows another tab or Home instead of that pane.
+  const PHONE_HIDDEN_TABS = ["§graph", "§sessions"];
   // Same debounce as the config write below.
   const WORKSPACE_SAVE_DELAY_MS = 250;
   // Cross-device sync: the poll interval while the tab is visible, and the
@@ -948,13 +951,26 @@
     } catch (e) { /* storage unavailable */ }
   }
 
+  /* The active tab this device last used. Desktop writes it from
+   * `tabs:changed`; a phone that has not yet written one falls back to its
+   * mobile resume note, so the first boot after the update keeps the note it
+   * was reading. */
+  function localActiveFile() {
+    const stored = readDeviceLocal(DEVICE_ACTIVE_FILE_KEY);
+    if (stored) return stored;
+    if (isPhoneMode() && NB.mobile && NB.mobile.resumePath) {
+      return NB.mobile.resumePath() || "";
+    }
+    return "";
+  }
+
   /* The input for NB.tabs.normaliseSessions: the shared `sessions` with this
    * device's active session and active tab preferred when they still name
    * something that exists. A local choice that names nothing falls back to
    * the shared value. */
   function bootSessionInput(shared, known) {
     const localSession = readDeviceLocal(DEVICE_ACTIVE_SESSION_KEY);
-    const localFile = readDeviceLocal(DEVICE_ACTIVE_FILE_KEY);
+    const localFile = localActiveFile();
     const raw = Array.isArray(shared.sessions) ? shared.sessions : [];
     const pins = Array.isArray(shared.pinnedFiles) ? shared.pinnedFiles : [];
     const namesSession = (id) => !!id &&
@@ -1123,7 +1139,6 @@
       // A remote apply rebuilds `cfg` from the model itself; taking the
       // payload here would race that rebuild and republish the peer's state.
       if (applyingRemote) return;
-      if (isPhoneMode()) return;   // phone tabs are one note and never persist
       cfg.openFiles = openFiles;
       cfg.activeFile = activeFile;
       if (pinnedFiles) cfg.pinnedFiles = pinnedFiles;
@@ -1508,12 +1523,14 @@
     // used only on the first boot after the upgrade: afterwards an empty
     // session stays empty.
     const known = (p) => isSpecialTab(p) || treeHas(tree, p);
-    // Desktop only: the phone never restores or stores sessions, so it does
-    // not even normalise them. The device-local active session and tab win
-    // over the shared ones while they still name something that exists.
-    const sessionState = isPhoneMode() ? null
-      : NB.tabs.normaliseSessions(bootSessionInput(cfg, known), known);
-    const fallback = (sessionState && sessionState.migrated)
+    // Both shells restore the same session model, so the list and its tabs
+    // are shared. The phone still shows one note at a time (no tab strip),
+    // but it no longer starts from a private "Main" that would overwrite the
+    // workspace on its first write. The device-local active session and tab
+    // win over the shared ones while they still name something that exists.
+    const sessionState = NB.tabs.normaliseSessions(
+      bootSessionInput(cfg, known), known);
+    const fallback = (sessionState.migrated)
       ? (cfg.lastFile && treeHas(tree, cfg.lastFile) ? cfg.lastFile
         : firstFilePath(tree) || null)
       : null;
@@ -1522,31 +1539,37 @@
     // history entries for the whole boot window) or replace the requested
     // note.
     const deepLink = parseDeepLink();
-    // Phone: one reader, one tab, no desktop session restore. A deep link
-    // wins over the device-local resume fallback; with neither, boot lands
-    // on Home. The phone passes no sessionState, so it neither reads nor
-    // writes sessions.
-    let restoreOpen = [];
-    let restoreActive = null;
-    let restoreFallback = fallback;
-    let restorePinned = [];
-    let restoreSessions = null;
-    if (isPhoneMode()) {
-      if (deepLink) {
-        restoreFallback = treeHas(tree, deepLink.file) ? deepLink.file : null;
-      } else {
-        const resume = (NB.mobile && NB.mobile.resumePath) ? NB.mobile.resumePath() : null;
-        restoreFallback = (resume && treeHas(tree, resume)) ? resume : null;
-      }
-    } else {
-      restoreSessions = sessionState;
-    }
+    // The phone's Continue note is its device-local selection and opens after
+    // restore; a deep link opens after that and wins. Without either, the
+    // shared active session's active tab shows, or Home when it has none. The
+    // phone never uses the desktop migration fallback (first file in the tree).
+    const phoneResume = (isPhoneMode() && NB.mobile && NB.mobile.resumePath)
+      ? NB.mobile.resumePath() : null;
+    const phoneResumeKnown = !!(phoneResume && treeHas(tree, phoneResume));
+    const restoreFallback = isPhoneMode() ? null : fallback;
     if (NB.mobile && NB.mobile.beginBoot) NB.mobile.beginBoot();
     try {
       try {
-        await NB.tabs.restore(restoreOpen, restoreActive, restoreFallback,
-                              restorePinned, restoreSessions);
+        await NB.tabs.restore([], null, restoreFallback, [], sessionState);
       } catch (e) { console.warn("restore tabs failed", e); }
+
+      // The shared active session may hold other tabs; the phone still
+      // opens the note it last read on this device, in that session.
+      if (phoneResumeKnown && !deepLink && NB.tabs.getActive() !== phoneResume) {
+        try { await NB.tabs.open(phoneResume); }
+        catch (e) { console.warn("resume open failed", e); }
+      }
+      // A shared active tab may be a desktop-only special view. Keep it in
+      // the model, but never make the phone render it on boot.
+      if (isPhoneMode()) {
+        const active = NB.tabs.getActive();
+        if (active && PHONE_HIDDEN_TABS.indexOf(active) >= 0) {
+          const visible = NB.tabs.getOpen()
+            .find(p => PHONE_HIDDEN_TABS.indexOf(p) < 0);
+          if (visible) await NB.tabs.activate(visible);
+          else { NB.tabs.clearActive(); NB.viewer.showSessionEmpty(); }
+        }
+      }
 
       // Deep link: if the URL requested a specific file (and optional
       // heading), override the restored active tab with it. Runs AFTER

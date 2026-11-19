@@ -1,8 +1,8 @@
 # Sessions — architecture and implementation contract
 
-Status: §§1-16 are implemented; the verification record is in the commit that
-landed them. **§17 (cross-device sync) is designed and not yet implemented.**
-The product definition is
+Status: §§1-17 are implemented; the verification record is in the commits that
+landed them. The phone shell restores the shared sessions and writes its own
+changes, but does not poll (§17.4). The product definition is
 [`requirements/features/sessions.md`](../requirements/features/sessions.md);
 the visual handoff, copy and CSS are [`ui/sessions.md`](../archive/ui/sessions.md).
 Where this document and those disagree, this document owns the data model and
@@ -26,11 +26,12 @@ are flat and belong to one workspace; nothing is shared across workspaces.
 | `static/css/style.css` | One appended block (UI spec Appendix A). No existing rule changes. |
 | `static/sw.js` | Precache `sessions.js`; bump `CACHE`. |
 | `app.py` | Two scoped keys; the workspace-state route preserves them when an older client omits them; `_ACTIVE_VIEWS` gains `sessions`. |
-| Server routes | **None added or changed in shape.** Sessions ride the existing workspace-state write. |
+| Server routes | None in the original feature; §17 adds `GET /api/workspace-state` and gives the POST a `base`. |
 
 Not touched: the HTTP API surface, the workspace registry, the file tree,
-search, the AI assistant, export, **the tab bar**, and the phone shell (the
-Sessions icon is hidden there; the phone has no tab bar, `style.css`).
+search, the AI assistant, export, and **the tab bar**. The phone shell keeps no
+tab strip, but it restores the same sessions and writes its changes; it never
+polls (§17.4).
 
 ## 2. Ownership
 
@@ -196,8 +197,12 @@ const fallback = state.migrated
   : null;
 ```
 
-The phone branch passes no `sessionState` and an empty set, so the phone never
-sees sessions.
+The phone passes the same `sessionState`. It has no tab strip and restores only
+the active session's active tab, but its session list and its writes are the
+workspace's shared ones. A phone whose device-local resume note is not yet in
+that session opens the note into the active session after restore. If the shared
+active tab is a desktop-only special view (`§sessions`, `§graph`), the phone
+activates another tab or Home; the tab stays in the model.
 
 ## 6. The swap
 
@@ -493,11 +498,9 @@ cannot see. `isOpen` is active-session-only, which is exactly the test.
 There is no first-paint session *name*: the view is rendered by `sessions.js`
 from the restored model, exactly like the Bookmarks list.
 
-Phone writes stay gated (`app.js`); the phone's restored state has no
-sessions. The phone must also not adopt a saved `activeView: "sessions"`
-(`app.js` already forces `ai` to explorer there; add `sessions`), and
-`html[data-ui-mode="phone"] .activity-btn[data-view="sessions"]` hides the rail
-icon.
+The phone writes the same state through `/api/workspace-state`; only its poll
+is off (§17.4). Its session changes and tab opens are shared, so the desktop
+sees them within one sync interval.
 
 ## 12. UI wiring (`sessions.js`)
 
@@ -543,8 +546,8 @@ NB.sessions = {
   list.
 - It must null-guard its host and no-op when `#sessions-view` is absent (an old
   cached shell, the jsdom harness), the way `tabs.js` guards a stale
-  `index.html`. On the phone the host exists but the rail icon is hidden and a
-  saved `activeView` falls back to Explorer, so the view is unreachable.
+  `index.html`. On the phone the view is a rail slot and opens in the drawer
+  (`mobile.md` §14.3).
 
 Placement, row anatomy, keyboard, focus, copy and CSS are in
 [`ui/sessions.md`](../archive/ui/sessions.md) §2-§8 and Appendix A.
@@ -647,19 +650,18 @@ Verification:
 ---
 
 
-## 17. Cross-device sync (designed 2026-11-15, not implemented)
+## 17. Cross-device sync (implemented 2026-11-15)
 
 Product rules: [`requirements/features/sessions.md`](../requirements/features/sessions.md)
 §10. This section owns the mechanism, the call order, and the failure matrix, and
 it **supersedes §11's write path**. §11 stays as the record of what shipped
 before this extension; where the two disagree, this section wins.
 
-> **Status.** Nothing in this section is implemented. The routes, the `rev` map,
-> the merge, and the client loop are all new. Every other document that marks a
-> row as part of this feature says so next to the row.
+> **Status.** Implemented: the versioned read, the rev map, the server-side
+> merge, and the client loop. The phone shell restores the same sessions and
+> writes its changes, but does not poll (§17.4).
 
-The shared set is stored today. What is missing is a **versioned read**, a
-**merge on the write**, and a client that **re-reads while it is open**:
+The shared set is held on the server. Three rules make it converge:
 
 1. one writer — `/api/workspace-state` and nothing else;
 2. a server-side three-way merge, so two clients that changed different sessions

@@ -133,7 +133,7 @@ Every `persistConfig()` path a phone can trigger (all verified):
 | Trigger | Keys written | Phone-reachable | v1 gate |
 | --- | --- | --- | --- |
 | `file:open` → `updateRecent` (`app.js`, `:377-382`) | `lastFile`, `recentFiles` | yes, every open | allow `recentFiles` only; `lastFile` stays desktop-owned (Continue is device-local) |
-| `tabs:changed` (`app.js`) | `openFiles`, `activeFile`, `pinnedFiles` | yes — fired by `tabs.restore` on boot | suppress (skip mutation + persist) |
+| `tabs:changed` (`app.js`) | `openFiles`, `activeFile`, `pinnedFiles`, `sessions`, `activeSessionId` | yes — fired by `tabs.restore` on boot | shared workspace state, written by `/api/workspace-state`; the global blob is not written from this event |
 | `activity:collapsed`/`expanded` (`app.js`) | `sidebarCollapsed` | yes (icon toggle / `‹`) | suppress |
 | `activity:changed` (`app.js`) | `activeView` | yes | suppress |
 | `outline-collapse`/`outline-toggle` (`app.js`) | `outlineCollapsed` | no (outline hidden) | n/a |
@@ -146,7 +146,7 @@ Every `persistConfig()` path a phone can trigger (all verified):
 
 **Pending keys and serialization.** The debounce accumulates a Set of pending keys instead of keeping the last call, so theme + text size + recent in one window all survive. Flushes are serialized through one promise chain: a flush that started with keys A cannot POST a stale A after a later flush wrote B; if new keys arrive during a flush, one follow-up pass runs. A failed GET or POST is caught and does not wedge the chain.
 
-**No server change.** `GET/POST /api/config` (`app.py`, `:882-898`) already carry the whole blob; the merge is client-side. The residual race is the GET→POST gap across devices — the same last-writer-wins race two desktop windows already share. A server-side per-key PATCH would close it fully; not justified for a single-user LAN app in v1.
+**No server change in v1.** `GET/POST /api/config` (`app.py`, `:882-898`) already carry the whole blob; the v1 merge is client-side. The residual race is the GET→POST gap across devices. Cross-device sync later adds `GET/POST /api/workspace-state` and takes every session and tab key out of this path (`sessions.md` §17).
 
 **Mobile last-note/scroll:** localStorage `nb:mobileResume` = `{v:1, path, scroll}` — written debounced on `file:open` and rAF-throttled on `#viewer-content` scroll (the viewer's own `scrollPositions` map, `viewer.js`, is in-memory only). The capture draft lives in `nb:captureDraft` and is saved while the sheet is open or the field is dirty. Both keys survive a 401/auth lock (the sheet text is cleared from the DOM but the stored draft remains); they are removed only on explicit sign-out or a confirmed send. **iOS home-screen storage isolation:** an installed web app has separate cookies and storage from Safari (research §5), so Continue and the draft do not cross Safari ↔ installed app, and auth-on deployments get a second login inside the installed app — accepted, documented. Storage eviction after long non-use: **not verified**; the designed fallback (Continue absent, draft gone) degrades gracefully per M2.1/M5.2. Per-device theme/text size: cut — theme and size stay server-wide, and the phone settings sheet disables them for a viewer.
 
@@ -215,7 +215,7 @@ gains `id`, `lang`, `dir` and the opaque v2 icon set. The renderer doc contract
 
 ## 10. Test plan
 
-**jsdom** (extend `tests/dom/test_dom.js`): set `document.documentElement.dataset.uiMode = "phone"` before boot (the mode reader's fallback; `getComputedStyle` returns no custom property without `style.css`). Assert: mode mirroring; drawer open/close classes + scrim; the capture sheet posts stubbed `/api/file/append` with `create: true` and the `"\n\n"` separator, Send disabled in flight, draft save/restore/clear; `canWrite()` across the four auth states; the persist gate — opening a file in mobile mode issues a merged POST whose body equals fresh-config + `recentFiles` and never contains phone `openFiles`; the `…` click opens `NB.menu` with sidebar items AND does not open the file; `popstate` order (drawer close, then `NB.viewer.goBack`); activity-bar taps do not write `sidebarCollapsed`.
+**jsdom** (extend `tests/dom/test_dom.js`): set `document.documentElement.dataset.uiMode = "phone"` before boot (the mode reader's fallback; `getComputedStyle` returns no custom property without `style.css`). Assert: mode mirroring; drawer open/close classes + scrim; the capture sheet posts stubbed `/api/file/append` with `create: true` and the `"\n\n"` separator, Send disabled in flight, draft save/restore/clear; `canWrite()` across the four auth states; the persist gate — opening a file in mobile mode issues a merged global-config POST whose body equals fresh-config + `recentFiles` and never contains phone `openFiles` (tab and session changes go to `/api/workspace-state`); the `…` click opens `NB.menu` with sidebar items AND does not open the file; `popstate` order (drawer close, then `NB.viewer.goBack`); activity-bar taps do not write `sidebarCollapsed`.
 
 **Playwright** (real browser, real layout): viewports 390×844 (portrait), 932×430 (iPhone landscape), 1280×800 (desktop regression, C4); touch context (`hasTouch`, `isMobile`) for the mobile two. Assert: no horizontal overflow (`scrollWidth ≤ innerWidth`), `#viewer` width > 0, tab strip hidden at mobile widths / visible at 1280, 44 px target measurement, drawer lifecycle, hardware back via `page.goBack()` closes the drawer then returns the note, desktop four-column parity at 1280×800. Isolation: the harness copies the designer pattern — `mkdtemp` + `NOTEBOOK_DATA_DIR`/`NOTEBOOK_CONFIG_DIR` env + `app.py` from `.venv_<hostname>` (`test_designer_browser.js`); the real `notebook/`/`config/` are never touched (jsdom stubs `fetch` entirely; `tests/test_app.py` redirects dirs before import).
 
@@ -364,8 +364,12 @@ cover only part of it:
 | Non-empty, **same note** | `pushNoteHistory` returns at `:953` before the layer branch, so the drawer stays open | move the `if (layer)` branch above the `state.nbFile === path` check. The same fix makes a Search hit on the already-open note close its sheet |
 | **Empty** | `activateSession` opens no file (`tabs.js:872-877`), so nothing closes the drawer | the row handler calls `NB.mobile.closeDrawer()` after the switch; the layer entry pops to the note |
 
-Session switching stays `tabs.js`'s swap path. The phone adds no session state, no config key and no
-localStorage entry.
+Session switching stays `tabs.js`'s swap path. The phone adds no session model of its own:
+it restores the workspace's shared sessions, writes its changes through
+`/api/workspace-state`, and does not poll (`sessions.md` §17.4). Its active session and
+active tab stay device-local in `nb:activeSession` and `nb:activeFile`. A restored active
+tab with no phone surface (`§sessions`, `§graph`) is not shown: the phone activates
+another tab, or Home, and leaves that tab in the shared model.
 
 **The session dialog.** Create and Rename open `#session-dialog`, the first body-level desktop modal
 reachable from the phone (`NB.dialog`, `dialog.js:76-120`, z 2000). Without a guard, hardware back

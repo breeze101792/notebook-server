@@ -955,6 +955,16 @@
     }
   }
 
+  /* Drop the active selection without closing anything. Used when the shared
+   * active tab is a desktop-only special view with no phone surface: the tab
+   * stays in the model, but the phone shows Home instead of that pane. */
+  function clearActive() {
+    if (activePath === null) return;
+    activePath = null;
+    render();
+    emitChanged();
+  }
+
   async function open(path, opts) {
     opts = opts || {};
     const doActivate = opts.activate !== false;
@@ -2119,6 +2129,7 @@
     getActiveSessionId,
     snapshot,
     swapTo,
+    clearActive,
     /* Cross-device apply (sessions.md §17.6): the runtime path a peer's state
      * takes, and the sanitiser it uses, both exposed as test seams. */
     applyRemoteState,

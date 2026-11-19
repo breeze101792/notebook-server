@@ -70,6 +70,40 @@ async function waitForServer(child) {
   throw new Error("server did not start");
 }
 
+// Each phone size is a separate device on one server. Reset the workspace's
+// shared session state so a run does not inherit the previous size's tabs.
+async function resetWorkspaceState() {
+  const cfg = await (await fetch(BASE + "/api/config")).json();
+  const base = (cfg.workspaceState && cfg.workspaceState.default) || {};
+  const state = {
+    sessions: [{ id: "main", name: "Main", openFiles: [], activeFile: null }],
+    activeSessionId: "main",
+    pinnedFiles: [], openFiles: [], activeFile: null,
+    lastFile: null, recentFiles: [], bookmarks: [], pinnedFolders: [],
+  };
+  const res = await fetch(BASE + "/api/workspace-state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: "default", state, base }),
+  });
+  if (!res.ok) throw new Error("reset workspace state failed: " + res.status);
+}
+
+async function serverState() {
+  const res = await fetch(BASE + "/api/workspace-state?id=default");
+  const body = await res.json();
+  return body.state || {};
+}
+
+async function waitForServerState(pred, ms) {
+  const deadline = Date.now() + (ms || 10000);
+  while (Date.now() < deadline) {
+    if (pred(await serverState())) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return false;
+}
+
 async function bootApp(page) {
   await page.waitForFunction(
     () => window.NB && window.NB.mobile && window.NB.tabs, null, { timeout: 20000 });
@@ -252,6 +286,7 @@ async function main() {
       { name: "932x430", width: 932, height: 430 },
     ];
     for (const size of phoneSizes) {
+      await resetWorkspaceState();
       const ctx = await browser.newContext({
         viewport: { width: size.width, height: size.height },
         isMobile: true,
@@ -821,6 +856,82 @@ async function main() {
       await ctx.close();
     }
 
+    // --- Sharing: desktop sessions and tabs reach the phone ----------
+    {
+      await resetWorkspaceState();
+      const dctx = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        serviceWorkers: "block",
+      });
+      const desktop = await dctx.newPage();
+      await desktop.goto(BASE + "/");
+      await bootApp(desktop);
+      await desktop.evaluate(async () => {
+        await window.NB.tabs.open("Welcome.md");
+        await window.NB.tabs.createSession("Work");
+        await window.NB.tabs.open("Second.md");
+      });
+      const desktopSession = await desktop.evaluate(() =>
+        window.NB.tabs.getActiveSessionId());
+      check("sharing: the desktop state reaches the server",
+        await waitForServerState((s) =>
+          (s.sessions || []).some((x) => x.name === "Work"), 10000));
+      await dctx.close();
+
+      const mctx = await browser.newContext({
+        viewport: { width: 390, height: 844 },
+        isMobile: true,
+        hasTouch: true,
+        deviceScaleFactor: 2,
+        serviceWorkers: "block",
+      });
+      const phone = await mctx.newPage();
+      const phoneErrors = [];
+      phone.on("pageerror", (e) => phoneErrors.push(String(e)));
+      await phone.goto(BASE + "/");
+      await bootApp(phone);
+      await phone.waitForFunction(
+        () => window.NB.tabs.getSessionList().length === 2, null, { timeout: 8000 });
+      const shared = await phone.evaluate(() => ({
+        list: window.NB.tabs.getSessionList().map((s) => s.name + ":" + s.count),
+        activeSession: window.NB.tabs.getActiveSessionId(),
+        active: window.NB.tabs.getActive(),
+        homeHidden: document.getElementById("mobile-home").hidden,
+      }));
+      check("sharing: the phone lists the desktop's sessions",
+        shared.list.join(",") === "Main:1,Work:1", shared.list.join(","));
+      check("sharing: the phone opens the shared session's active tab",
+        shared.activeSession === desktopSession && shared.active === "Second.md" &&
+        shared.homeHidden === true,
+        JSON.stringify(shared));
+      check("sharing: the phone still starts no poll",
+        await phone.evaluate(() => window.NB.sync.status().running === false));
+
+      // A phone open is shared back: it lands in the active session's list
+      // and the next phone boot restores the phone's own last note.
+      await phone.evaluate(() => window.NB.tabs.open("Welcome.md"));
+      check("sharing: a phone tab open is written to the workspace",
+        await waitForServerState((s) => {
+          const work = (s.sessions || []).find((x) => x.id === desktopSession);
+          return !!work && (work.openFiles || []).indexOf("Welcome.md") >= 0;
+        }, 10000));
+      await phone.reload();
+      await bootApp(phone);
+      await phone.waitForFunction(
+        () => window.NB.tabs.getActive() === "Welcome.md", null, { timeout: 8000 });
+      const after = await phone.evaluate(() => ({
+        session: window.NB.tabs.getActiveSessionId(),
+        active: window.NB.tabs.getActive(),
+      }));
+      check("sharing: a phone reload restores the shared session and its note",
+        after.session === desktopSession && after.active === "Welcome.md",
+        JSON.stringify(after));
+      check("sharing: no uncaught page errors", phoneErrors.length === 0,
+        phoneErrors.join(" | "));
+      await phone.screenshot({ path: path.join(tmp, "phone-shared.png") });
+      await mctx.close();
+    }
+
     // --- The narrow floor: seven slots still clear 44 px at 320 ----
     {
       const ctx = await browser.newContext({
@@ -929,6 +1040,7 @@ async function main() {
     }
     {
       // Resume boot: the note is above a Home entry, so back reaches Home.
+      await resetWorkspaceState();
       const ctx = await browser.newContext({
         viewport: { width: 390, height: 844 },
         isMobile: true,

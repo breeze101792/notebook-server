@@ -132,8 +132,9 @@ workspace:
 - The workspace-state write is admin-gated (`workspace_admin_required`) and capped
   at `WORKSPACE_STATE_MAX_BYTES` = 256 KiB, enforced in the `/api/workspace-state`
   route (`app.py`).
-- The phone boot drops desktop tabs entirely and never persists them (`boot()` in
-  `app.js`).
+- The phone boot restores the workspace's shared sessions. It shows one note at a
+  time, writes its changes back through `/api/workspace-state`, and does not poll
+  (`boot()` in `app.js`; §10 AC73).
 
 ---
 
@@ -736,12 +737,13 @@ feature.
 
 ---
 
-## 10. Cross-device sync (designed 2026-11-15)
+## 10. Cross-device sync (implemented 2026-11-15)
 
-**Status:** Designed, not implemented. Supersedes the persistence half of §3 and
-§7 AC58: the shared state is still stored on the server, but it is now also
-re-read while the page is open, and the split between shared and device-local
-state is a product rule, not an implementation detail.
+**Status:** Implemented. Supersedes the persistence half of §3 and §7 AC58: the
+shared state is stored on the server and re-read while the page is open, and the
+split between shared and device-local state is a product rule, not an
+implementation detail. The phone restores and writes the shared state but does
+not poll (AC73).
 
 **Goal.** The owner uses the same notebook from a laptop and a second browser or
 host. Sessions, their tabs and their order must be identical everywhere without a

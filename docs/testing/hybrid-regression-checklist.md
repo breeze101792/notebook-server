@@ -243,7 +243,7 @@ is given once per area. The authority for "expected" is the linked spec.
 | K1 | The phone pencil enters WYSIWYG; the phone has no source editor | `contenteditable`, edit bar, Save visible | `AUTO-js` `mobile edit: the pencil enters WYSIWYG mode`, `mobile edit: the formatting bar is shown`, `mobile edit: Save stays visible in the phone toolbar` |
 | K2 | Phone back leaves the edit layer before navigating | Same note, edit closed | `AUTO-js` `mobile edit: back leaves edit mode`, `mobile edit: back stays on the same note` |
 | K3 | A phone WYSIWYG edit saves to disk | Text on disk, edit closed | **GAP** (jsdom has no real contentEditable engine; the browser mobile suite has no hybrid typing/save case) |
-| K4 | Phone config writes are keyed/merged, never clobber desktop | No `openFiles`/`activeFile`/`lastFile`/`sidebarCollapsed` writes | `AUTO-js` phone config gate checks in `== mobile ==` |
+| K4 | Phone config writes are keyed/merged, never clobber desktop | The global config body has no `openFiles`/`activeFile`/`lastFile`/`sidebarCollapsed`; tab and session changes go through `/api/workspace-state` | `AUTO-js` phone config gate checks in `== mobile ==`; Playwright `sharing:` checks in `test_mobile_browser.js` |
 
 ### L. IME / composition
 

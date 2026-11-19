@@ -66,6 +66,25 @@ function check(name, cond, detail) {
   else { failed++; console.log("  FAIL " + name + (detail ? "  [" + detail + "]" : "")); }
 }
 
+// The phone restores the shared sessions; give it an empty Main so this
+// block's two opens are the whole workspace.
+async function resetWorkspaceState() {
+  const cfg = await (await fetch(BASE + "/api/config")).json();
+  const base = (cfg.workspaceState && cfg.workspaceState.default) || {};
+  const state = {
+    sessions: [{ id: "main", name: "Main", openFiles: [], activeFile: null }],
+    activeSessionId: "main",
+    pinnedFiles: [], openFiles: [], activeFile: null,
+    lastFile: null, recentFiles: [], bookmarks: [], pinnedFolders: [],
+  };
+  const res = await fetch(BASE + "/api/workspace-state", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: "default", state, base }),
+  });
+  if (!res.ok) throw new Error("reset workspace state failed: " + res.status);
+}
+
 async function waitForServer(child) {
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
@@ -594,6 +613,7 @@ async function main() {
 
     // --- 390: the drawer, the 44 px floor, a tap (AC11, AC12) --------
     {
+      await resetWorkspaceState();
       const ctx = await browser.newContext({
         viewport: { width: 390, height: 844 },
         isMobile: true,
