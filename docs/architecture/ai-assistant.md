@@ -345,10 +345,12 @@ surface as Apply/Reject cards.
   HTTP 400 (`_edit_find_replace`'s zero-match raise at `app.py`,
   mapped to 400 at `app.py`) and the card turns errored. The
   client preview is advisory; the server is the authority.
-- Applying a `write` calls `/api/create`. If the target already exists,
-  the card is blocked with "write cannot overwrite — ask the AI to patch
-  it instead" (`makeWriteCard`'s apply handler re-reads the path and
-  blocks on a readable file).
+- Applying a `write` calls `/api/create`. The path is normalised to a note
+  path before the card renders (`NB.sidebar.normaliseNotePath`): the tree
+  lists only `.md`, so `notes/chapter` creates `notes/chapter.md`. If the
+  target already exists, the card is blocked with "write cannot overwrite —
+  ask the AI to patch it instead" (`makeWriteCard`'s apply handler re-reads
+  the path and blocks on a readable file).
 - Applying emits `NB.evt("ai:applied", {path, data})`. The viewer refreshes
   its cache from that event and records a self-save so the watcher does not
   raise an "external change" prompt. An open edit session is preserved:
@@ -464,6 +466,11 @@ The store is one `localStorage["nb:aiChats"]` key, version 1:
   and a quota rejection raises the same warning as an over-budget skip.
 - **Viewer sessions.** The AI API is admin-only, so a viewer session neither
   restores the store nor writes it, and the bar and manager stay hidden.
+- **Rename and move.** A `file:moved` event re-keys every chat bound to the old
+  path, or under it when a folder moved, and writes the store; the chat follows
+  the note and the next turn's system prompt names the new path. The followed
+  path and a queued `file:open` switch are re-keyed the same way, so a rename
+  during a turn does not strand them on the old path.
 
 ### Attachments
 

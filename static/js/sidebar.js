@@ -1267,11 +1267,32 @@
     return dir + stem + ".md";
   }
 
+  /* The destination the server will store: outer whitespace and slashes go,
+   * "." segments and doubled slashes collapse, and ".." resolves lexically.
+   * A path that climbs above the root keeps its leading ".." so the server
+   * still refuses it. Without this the tab would be keyed to a spelling the
+   * tree never shows, and the next boot would drop it. */
+  function normaliseMovePath(path) {
+    const parts = [];
+    for (const segment of String(path).trim().split("/")) {
+      if (!segment || segment === ".") continue;
+      if (segment === ".." && parts.length && parts[parts.length - 1] !== "..") {
+        parts.pop();
+        continue;
+      }
+      parts.push(segment);
+    }
+    return parts.join("/");
+  }
+
   async function doNewFile(node, isDir) {
     const dir = dirForNew(node, isDir);
-    const name = prompt("New file name:", "untitled");
+    const raw = prompt("New file name:", "untitled");
+    if (!raw) return;
+    const name = normaliseMovePath(raw);
     if (!name) return;
-    const path = dir ? dir + "/" + withMdExtension(name) : withMdExtension(name);
+    const file = withMdExtension(name);
+    const path = dir ? dir + "/" + file : file;
     try {
       await NB.api.createItem(path, "file");
       await refresh();
@@ -1281,7 +1302,9 @@
 
   async function doNewFolder(node, isDir) {
     const dir = dirForNew(node, isDir);
-    const name = prompt("New folder name:", "new-folder");
+    const raw = prompt("New folder name:", "new-folder");
+    if (!raw) return;
+    const name = normaliseMovePath(raw);
     if (!name) return;
     const path = dir ? dir + "/" + name : name;
     try {
@@ -1293,11 +1316,15 @@
 
   async function doRename(node) {
     const to = prompt("Move / rename to (path relative to data/):", node.path);
-    if (!to || to === node.path) return;
+    if (!to) return;
+    let dest = normaliseMovePath(to);
+    if (!dest) return;
+    // A file keeps the note type the tree lists. A folder keeps its name.
+    if (node.type === "file") dest = withMdExtension(dest);
+    if (dest === node.path) return;
     try {
-      await NB.api.moveItem(node.path, to);
-      NB.evt.emit("file:moved", { from: node.path, to });
-      if (selectedPath === node.path) openFile(to);
+      await NB.api.moveItem(node.path, dest);
+      NB.evt.emit("file:moved", { from: node.path, to: dest });
       await refresh();
     } catch (e) { alert("Move failed: " + e.message); }
   }
@@ -1309,10 +1336,15 @@
     const suggested = parentOf(node.path)
       ? parentOf(node.path) + "/" + stem + "-copy" + ext
       : stem + "-copy" + ext;
-    const to = prompt("Copy to (path relative to data/):", suggested);
-    if (!to || to === node.path) return;
+    const raw = prompt("Copy to (path relative to data/):", suggested);
+    if (!raw) return;
+    let dest = normaliseMovePath(raw);
+    if (!dest) return;
+    // A copied file is still a note; a folder keeps its name.
+    if (node.type === "file") dest = withMdExtension(dest);
+    if (dest === node.path) return;
     try {
-      await NB.api.copyItem(node.path, to);
+      await NB.api.copyItem(node.path, dest);
       await refresh();
     } catch (e) { alert("Copy failed: " + e.message); }
   }
@@ -1365,7 +1397,7 @@
         " to (folder path relative to notebook root, empty for root):",
       defaultDest);
     if (answer === null) return;
-    const dest = answer.trim().replace(/\/+$/, "");
+    const dest = normaliseMovePath(answer);
     if (dest) {
       const target = findNode(treeCache, dest);
       if (!target || target.type !== "dir") {
@@ -1399,7 +1431,9 @@
 
   /* --- root-level shortcuts (top bar) -------------------------------- */
   async function createAtRoot(type) {
-    let name = prompt(type === "dir" ? "New folder name:" : "New file name:", type === "dir" ? "new-folder" : "untitled");
+    const raw = prompt(type === "dir" ? "New folder name:" : "New file name:", type === "dir" ? "new-folder" : "untitled");
+    if (!raw) return;
+    let name = normaliseMovePath(raw);
     if (!name) return;
     if (type === "file") name = withMdExtension(name);
     try {
@@ -1470,67 +1504,24 @@
     return true;
   }
 
-  function resolveDropTarget(targetRow, mouseX) {
-    if (!targetRow) return { dir: "", insertBefore: null };
+  function resolveDropTarget(targetRow) {
+    if (!targetRow) return { dir: "" };
     const node = findNode(treeCache, targetRow.dataset.path);
     if (node && node.type === "dir") {
-      return { dir: node.path, insertBefore: null };
+      return { dir: node.path };
     }
-    // file row -> drop beside, in the same parent
-    const parent = parentOf(targetRow.dataset.path);
-    const rect = targetRow.getBoundingClientRect();
-    const before = mouseX < rect.left + rect.width / 2;
-    return { dir: parent, insertBefore: { parent, path: targetRow.dataset.path, before } };
+    // A file row means its parent folder. The tree has no manual order, so
+    // a drop above or below a row cannot reorder anything.
+    return { dir: parentOf(targetRow.dataset.path) };
   }
 
   async function performMove(from, target) {
     if (isPhone()) return;   // phone Browse is read-only
-    let to;
-    if (target.insertBefore) {
-      const { parent, path, before } = target.insertBefore;
-      const name = baseName(from);
-      const siblings = (function listSiblings(t) {
-        if (parent === "") return t;
-        const p = findNode(t, parent);
-        return p ? p.children : [];
-      })(treeCache);
-      // Find the index of the target sibling among its parent's children
-      const i = siblings.findIndex(n => n.path === path);
-      const j = i + (before ? 0 : 1);
-      const beforeName = j > 0 ? baseName(siblings[j - 1].path) : null;
-      const afterName  = j < siblings.length ? baseName(siblings[j].path) : null;
-      // Backend requires an exact destination path (no "insert before X"
-      // syntax). Derive a non-conflicting destination by picking before or
-      // after and disambiguating on conflict.
-      const tryName = (suffix) => (parent ? parent + "/" : "") + name + suffix;
-      to = beforeName
-        ? tryName(" (before " + beforeName + ")")
-        : afterName
-          ? tryName(" (after " + afterName + ")")
-          : tryName("");
-      // Collapse "name (before X) (before Y)" style collisions: try
-      // sequentially and back off to a numbered copy on conflict.
-      let attempt = to;
-      for (let n = 2; n < 1000; n++) {
-        try {
-          await NB.api.moveItem(from, attempt);
-          to = attempt;
-          break;
-        } catch (e) {
-          if (!/409|exists|already/i.test(e.message) || n === 999) throw e;
-          attempt = tryName(" (" + n + ")");
-        }
-      }
-    } else {
-      // dropped onto a folder or the empty area
-      const name = baseName(from);
-      to = target.dir ? target.dir + "/" + name : name;
-      await NB.api.moveItem(from, to);
-    }
-    const wasSelected = selectedPath === from;
+    const name = baseName(from);
+    const to = target.dir ? target.dir + "/" + name : name;
+    if (to === from) return;
+    await NB.api.moveItem(from, to);
     NB.evt.emit("file:moved", { from, to });
-    remapSelectedPath([{ from, to }]);
-    if (wasSelected) openFile(to);
     await refresh();
   }
 
@@ -1592,31 +1583,25 @@
       row.classList.add("drop-folder-target");
       return;
     }
-    // A multi-item drop on a file lands inside its parent folder, so mark
-    // that folder instead of an insert-before/after line.
-    if (draggingNodes.length > 1) {
-      const parent = parentOf(row.dataset.path);
-      if (!parent) {
-        treeEl.classList.add("drop-empty");
-        return;
-      }
-      if (insideDraggedFolder(parent)) return;
-      const parentRow = treeEl.querySelector('.tree-row[data-path="' +
-        cssEscape(parent) + '"]');
-      if (parentRow) parentRow.classList.add("drop-folder-target");
+    // A file row means its parent folder. The tree order is alphabetical, so
+    // there is no insert position to show: mark the folder for every drop,
+    // single or multi. A root-level file row marks the whole tree.
+    const parent = parentOf(row.dataset.path);
+    if (!parent) {
+      treeEl.classList.add("drop-empty");
       return;
     }
-    const rect = row.getBoundingClientRect();
-    const before = e.clientX < rect.left + rect.width / 2;
-    row.classList.add(before ? "drop-before" : "drop-after");
+    if (insideDraggedFolder(parent)) return;
+    const parentRow = treeEl.querySelector('.tree-row[data-path="' +
+      cssEscape(parent) + '"]');
+    if (parentRow) parentRow.classList.add("drop-folder-target");
   });
 
   treeEl.addEventListener("drop", async (e) => {
     if (isPhone() || !draggingNodes.length) return;
     e.preventDefault();
     const row = e.target.closest && e.target.closest(".tree-row");
-    const target = row ? resolveDropTarget(row, e.clientX)
-                       : { dir: "", insertBefore: null };
+    const target = row ? resolveDropTarget(row) : { dir: "" };
     if (draggingNodes.length === 1) {
       const dragged = draggingNodes[0];
       // Final guard: a folder can't move into itself or a descendant. We
@@ -1633,10 +1618,9 @@
       catch (err) { alert("Move failed: " + err.message); await refresh(); }
       return;
     }
-    // Multi-item drop: insert-before/after has no meaning for a set, so
-    // every item moves into the resolved target folder. Reject the whole
-    // drop before moving anything if it targets a dragged row or would
-    // put a dragged folder inside itself.
+    // Multi-item drop: every item moves into the resolved target folder.
+    // Reject the whole drop before moving anything if it targets a dragged
+    // row or would put a dragged folder inside itself.
     if (row && draggingNodes.some(dn => dn.path === row.dataset.path)) {
       clearDragging();
       return;
@@ -1705,6 +1689,12 @@
     renameFile: (path) => doRename({ path, type: "file" }),
     copyFile: (path) => doCopy({ path, type: "file" }),
     deleteFile: (path) => doDelete({ path, type: "file" }),
+    // The path a new note must use: normalised like a move destination and
+    // carrying the .md the tree lists. The AI's write tool shares it.
+    normaliseNotePath: (path) => {
+      const base = normaliseMovePath(path);
+      return base ? withMdExtension(base) : "";
+    },
   };
 
   // Wire the pin list's drag-to-reorder + paint the (initially empty)

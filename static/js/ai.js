@@ -336,6 +336,16 @@
     return { segments, count: segments.filter(s => s.type === "card").length };
   }
 
+  /* A note the assistant creates must be one the tree can list: the notebook
+   * shows only .md files. The sidebar owns the one path rule; without it
+   * (a harness) the raw path is kept. */
+  function notePath(path) {
+    if (!NB.sidebar || typeof NB.sidebar.normaliseNotePath !== "function") {
+      return path;
+    }
+    return NB.sidebar.normaliseNotePath(path) || path;
+  }
+
   function tryParseTool(raw) {
     let obj;
     try { obj = JSON.parse(raw); } catch (e) { return null; }
@@ -347,10 +357,10 @@
         ? { tool: "read", path: obj.path } : null;
     }
     if (tool === "write") {
-      return (typeof obj.path === "string" && obj.path &&
-              typeof obj.content === "string")
-        ? { tool: "write", path: obj.path, content: obj.content }
-        : null;
+      if (typeof obj.path !== "string" || !obj.path ||
+          typeof obj.content !== "string") return null;
+      const path = notePath(obj.path);
+      return path ? { tool: "write", path, content: obj.content } : null;
     }
     if (tool === "patch") {
       return (typeof obj.path === "string" && obj.path && Array.isArray(obj.edits))
@@ -1395,6 +1405,20 @@
     refreshChatUi();
   }
 
+  /* Persist a store whose only change is a chat's file binding: sync the
+   * active chat's live state, but leave the timestamps alone so a rename
+   * never reorders the manager. */
+  function persistChatBindings() {
+    if (!historyVisible()) return;
+    const chat = activeChat();
+    if (chat) {
+      chat.conversation = conversation;
+      chat.toolFlags = conversation.map((m) => toolMessages.has(m));
+      if (activeChatSig === null) activeChatSig = chatSignature(chat);
+    }
+    writeChatStore();
+  }
+
   function chatSignature(chat) {
     return JSON.stringify(chat.conversation) + "\u0000" + chat.title;
   }
@@ -1499,6 +1523,28 @@
       if (!best || chat.updatedAt > best.updatedAt) best = chat;
     }
     return best;
+  }
+
+  /* The path after a move of `from` to `to`, or null when the move does
+   * not touch it. A folder move re-keys every note under it. */
+  function movedPath(path, from, to) {
+    if (!path || !from) return null;
+    if (path === from) return to;
+    const prefix = from + "/";
+    return path.startsWith(prefix) ? to + path.slice(from.length) : null;
+  }
+
+  /* Re-bind every chat whose file was moved: the chat follows the note to
+   * its new path instead of being stranded on the old one. */
+  function rekeyChatsForMove(from, to) {
+    let changed = false;
+    for (const chat of chatStore.chats) {
+      const mapped = movedPath(chat.file, from, to);
+      if (mapped === null) continue;
+      chat.file = mapped;
+      changed = true;
+    }
+    return changed;
   }
 
   /* Follow the viewer: the file's newest chat, or no active chat. */
@@ -4226,6 +4272,20 @@
       switchToFile(target);
     });
     NB.evt.on("file:external-change", () => invalidateSystem());
+    /* A renamed or moved note keeps its chats: re-key the binding, the
+     * followed path that gates the next file:open, and a queued switch. The
+     * system prompt names the file, so it is rebuilt on the next turn. */
+    NB.evt.on("file:moved", ({ from, to }) => {
+      const followed = movedPath(followedPath, from, to);
+      if (followed !== null) followedPath = followed;
+      if (pendingFileOpen !== null) {
+        const pending = movedPath(pendingFileOpen, from, to);
+        if (pending !== null) pendingFileOpen = pending;
+      }
+      if (!rekeyChatsForMove(from, to)) return;
+      invalidateSystem();
+      persistChatBindings();
+    });
   }
 
   let servers = [];

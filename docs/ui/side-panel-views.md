@@ -362,22 +362,28 @@ reachable without a pointer.
 
 ### 2.10 Drag
 
-Tree drag-move is shipped and stays (`sidebar.js:1467-1597`):
+Tree drag-move is shipped and stays (`sidebar.js:1489-1640`):
 
 | Gesture | Result |
 |---|---|
 | Drag a row onto a folder | move inside |
-| Drag a row onto a file | move beside, into the same parent (`:1403-1414`) |
+| Drag a row onto a file | move beside, into the same parent (`:1507-1527`) |
 | Drag onto empty tree area | move to the root |
-| Drag a multi-selection | every top-level selected path moves (`:1481-1486`, `:1580-1583`) |
-| Folder onto itself or a descendant | refused before the API call (`:1552-1559`) |
+| Drag a multi-selection | every top-level selected path moves (`:1537-1556`, `:1600-1639`) |
+| Folder onto itself or a descendant | refused before the API call (`:1609-1632`) |
 
-Visuals: source `opacity: var(--opacity-drag)`; insert mark `inset ±var(--stroke-2) 0 0
-var(--accent)`; folder target an accent outline; empty-area target the same dashed outline
-(`style.css:2888-2892`).
+Visuals: source `opacity: var(--opacity-drag)`; folder target an accent outline; empty-area
+target the same dashed outline (`style.css:2888-2892`). A file row is a folder target: the
+tree sorts by name, so there is no insert position to show.
 
 A drag is never the only way to move a file: the row menus carry `Rename / Move…` and
 `Move {n} items to…` (foundations §10.5 rule 4).
+
+`Rename / Move…` takes a path relative to the workspace root. The destination is
+normalised the way the server stores it (`./`, `//` and `..` collapse, outer whitespace
+and slashes go), and a file keeps the `.md` extension the tree lists, so typing
+`notes/chapter` renames the note to `notes/chapter.md`. A destination the tree cannot
+list would leave the note open in a tab that no later boot could restore.
 
 ### 2.11 Empty, loading, error, no workspace
 

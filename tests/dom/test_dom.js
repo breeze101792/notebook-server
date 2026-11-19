@@ -26298,33 +26298,32 @@ function check(label, cond, extra) {
   check("DnD: tree now contains notes/Welcome.md",
     !!window.document.querySelector('.tree-row[data-path="notes/Welcome.md"]'));
 
-  // Move notes/a.md onto the 'notes' folder row's CHILD (notes/b.md) ->
-  // a.md should land beside b.md, in the notes/ dir.
+  // Move notes/a.md onto the 'notes' folder row's CHILD (notes/b.md). The
+  // row's parent is the destination, so a file already in that folder has
+  // nowhere to go: no API call, no "(before b.md)"-style rename.
   TREE[0].children = TREE[0].children.filter(c => c.name !== "a.md");
   TREE[0].children.unshift({ name: "a.md", type: "file", path: "notes/a.md" });
   await window.NB.sidebar.refresh();
   await tick(20);
+  const beforeFileDrop = fetchLog.filter(l => l.startsWith("POST /api/move")).length;
   await dndDragDrop("notes/a.md", "notes/b.md", 10);
-  check("DnD: file->file move called API (notes/a.md -> notes/...)",
-    fetchLog.filter(l => l.startsWith("POST /api/move notes/a.md")).length >= 1,
+  check("DnD: file->file drop keeps the name and the folder",
+    fetchLog.filter(l => l.startsWith("POST /api/move")).length === beforeFileDrop &&
+    !!window.document.querySelector('.tree-row[data-path="notes/a.md"]'),
     fetchLog.filter(l => l.startsWith("POST /api/move")).join("; "));
 
-  // The destination a.md picked by the drop-beside logic in the absence of
-  // a real "insertBefore" semantic should land inside notes/ (same parent).
-  TREE[0].children.push({ name: "a.md", type: "file", path: "notes/a.md" });
-  await window.NB.sidebar.refresh();
-
-  // Drop on a folder with a different (file) type source: move to root.
-  // Set the tree to just a single file "f.md" then drag it onto the empty
-  // area. Stub the move to land at root and ensure the API was called.
+  // Drop on the empty area moves a nested file to the root; a root file
+  // dropped on the root is a no-op.
   TREE.length = 0;
-  TREE.push({ name: "f.md", type: "file", path: "f.md" });
-  FILES["f.md"] = "# F";
+  TREE.push({ name: "d", type: "dir", path: "d", children: [
+    { name: "f.md", type: "file", path: "d/f.md" },
+  ]});
+  FILES["d/f.md"] = "# F";
   await window.NB.sidebar.refresh();
   await tick(20);
-  await dndDragDrop("f.md", null, 30);
-  check("DnD: drop-on-empty called move with root destination",
-    fetchLog.some(l => /POST \/api\/move f\.md/.test(l)),
+  await dndDragDrop("d/f.md", null, 30);
+  check("DnD: drop-on-empty moves a nested file to the root",
+    fetchLog.some(l => /POST \/api\/move d\/f\.md -> f\.md/.test(l)),
     fetchLog.filter(l => l.startsWith("POST /api/move")).join("; "));
 
   // Folder-move self-recursion guard: dropping a folder into one of its
@@ -27328,6 +27327,17 @@ function check(label, cond, extra) {
         TREE.some((n) => n.path === "zz-folder"),
         "calls=" + JSON.stringify(calls));
 
+      // A messy root path is normalised and keeps the note type, so the new
+      // note has a tree row and its tab survives the next boot.
+      promptValue = "./notes//zz-root-nested";
+      await window.NB.sidebar.createAtRoot("file");
+      await tick(60);
+      check("sidebar files: root New file normalises the path and keeps .md",
+        FILES["notes/zz-root-nested.md"] === "" &&
+        window.NB.tabs.isOpen("notes/zz-root-nested.md"),
+        "files=" + Object.keys(FILES).join(",") + " tabs=" +
+          window.NB.tabs.getOpen().join(","));
+
       // Folder context menu -> New file creates inside the folder and
       // opens it.
       check("sidebar files: the notes folder row exists for its menu",
@@ -27355,31 +27365,38 @@ function check(label, cond, extra) {
       check("sidebar files: folder New folder creates a directory",
         calls.some((c) => c[0] === "create" && c[1] === "notes/zz-sub" && c[2] === "dir"));
 
-      // Rename / copy / delete through the file row menu.
+      // Rename / copy / delete through the file row menu. The destination
+      // arrives messy and without the extension; the tree lists only .md,
+      // so the note must land on the normalised, extended path or its tab
+      // has no row to return to on the next boot.
       calls.length = 0;
       moved.length = 0;
       check("sidebar files: the created note has a tree row", openRowMenu("notes/zz-child.md"));
       await tick(10);
-      promptValue = "notes/zz-renamed.md";
+      promptValue = "./notes//zz-renamed";
       window.prompt = () => promptValue;
       menuItem("Rename / Move…").dispatchEvent(new window.Event("click", { bubbles: true }));
       await tick(60);
-      check("sidebar files: Rename / Move calls the move API",
+      check("sidebar files: Rename / Move normalises the destination and keeps .md",
         calls.some((c) => c[0] === "move" && c[1] === "notes/zz-child.md" &&
           c[2] === "notes/zz-renamed.md"),
         JSON.stringify(calls));
       check("sidebar files: Rename emits file:moved for re-keying",
         moved.length === 1 && moved[0].from === "notes/zz-child.md" &&
         moved[0].to === "notes/zz-renamed.md", JSON.stringify(moved));
+      check("sidebar files: the renamed note keeps its tab at the new path",
+        window.NB.tabs.isOpen("notes/zz-renamed.md") &&
+        !window.NB.tabs.isOpen("notes/zz-child.md"),
+        "tabs=" + window.NB.tabs.getOpen().join(","));
 
       calls.length = 0;
       openRowMenu("notes/zz-child.md");
       await tick(10);
-      promptValue = "notes/zz-copy.md";
+      promptValue = "./notes//zz-copy";
       window.prompt = () => promptValue;
       menuItem("Copy…").dispatchEvent(new window.Event("click", { bubbles: true }));
       await tick(60);
-      check("sidebar files: Copy… calls the copy API",
+      check("sidebar files: Copy… normalises the destination and keeps .md",
         calls.some((c) => c[0] === "copy" && c[1] === "notes/zz-child.md" &&
           c[2] === "notes/zz-copy.md"), JSON.stringify(calls));
 
@@ -27437,7 +27454,7 @@ function check(label, cond, extra) {
       window.NB.evt.off("file:deleted", onDeleted);
       // Remove every fixture the stub created, then re-render.
       ["zz-root.md", "notes/zz-child.md", "notes/zz-renamed.md",
-       "notes/zz-copy.md", "zz-folders"].forEach((p) => {
+       "notes/zz-copy.md", "notes/zz-root-nested.md", "zz-folders"].forEach((p) => {
         delete FILES[p];
         delete MTIMES[p];
       });
@@ -27447,8 +27464,13 @@ function check(label, cond, extra) {
             n.path === "notes/zz-child.md" || n.path === "notes/zz-sub") {
           TREE.splice(i, 1);
         }
+        if (n.path === "notes" && Array.isArray(n.children)) {
+          n.children = n.children.filter(c =>
+            c.path !== "notes/zz-root-nested.md");
+        }
       }
-      ["zz-root.md", "notes/zz-child.md"].forEach((p) => {
+      ["zz-root.md", "notes/zz-child.md", "notes/zz-renamed.md",
+       "notes/zz-root-nested.md"].forEach((p) => {
         if (window.NB.tabs.isOpen(p)) window.NB.tabs.close(p, { force: true });
       });
       await window.NB.sidebar.refresh();
@@ -33170,10 +33192,13 @@ function check(label, cond, extra) {
     "");
 
   // --- Turn 5: write tool -> new file ok / existing file blocked -------
+  // The model omits the extension; the card and the create must land on the
+  // .md path the tree lists, or the note has no row after the turn.
+  const WRITE_RAW = "notes/new-note";
   const WRITE_PATH = "notes/new-note.md";
   aiChatStreams.push([
     sseFrame("Creating it.\n\n```nb-tool\n" + JSON.stringify({
-      tool: "write", path: WRITE_PATH,
+      tool: "write", path: WRITE_RAW,
       content: "# New note\n\ncreated by the AI\n" }) + "\n```"),
   ]);
   aiInput().value = "create a note";
@@ -33190,6 +33215,9 @@ function check(label, cond, extra) {
     writeCard.querySelector(".ai-stat.add") &&
     writeCard.querySelector(".ai-edit-path").textContent.includes("new file"),
     writeCard.querySelector(".ai-diff-stats").textContent);
+  check("ai: a write path without .md is created as a note",
+    /new-note\.md/.test(writeCard.querySelector(".ai-edit-path").textContent),
+    writeCard.querySelector(".ai-edit-path").textContent);
   writeCard.querySelector(".ai-apply").dispatchEvent(
     new window.MouseEvent("click", { bubbles: true }));
   await tick(100);
@@ -37055,6 +37083,59 @@ function check(label, cond, extra) {
         (chatById(store().activeId) && chatById(store().activeId).count) +
         " focus=" + (window.document.activeElement &&
           window.document.activeElement.id));
+
+    // (C18) a moved note keeps its chats: file:moved re-keys the binding,
+    // including the descendants of a moved folder, and persists it.
+    await chatsReset();
+    window.localStorage.setItem("nb:aiChats", JSON.stringify({
+      v: 1,
+      activeId: "cmovefile",
+      chats: [
+        { id: "cmovefile", file: "notes/a.md", title: "Moved file",
+          custom: true, createdAt: 1, updatedAt: 1,
+          conversation: [{ role: "user", content: "q" }],
+          toolFlags: [false], lastPrompt: "q" },
+        { id: "cmovefolder", file: "notes/dir/child.md", title: "Moved folder",
+          custom: true, createdAt: 2, updatedAt: 2,
+          conversation: [{ role: "user", content: "q" }],
+          toolFlags: [false], lastPrompt: "q" },
+      ],
+    }));
+    window.NB.ai._resetMemoryForTests();
+    window.NB.ai._restoreHistoryForTests(chatsLog());
+    await tick(20);
+    window.NB.evt.emit("file:moved",
+      { from: "notes/a.md", to: "notes/a-renamed.md" });
+    window.NB.evt.emit("file:moved",
+      { from: "notes/dir", to: "notes/arch" });
+    await tick(20);
+    check("ai chats: a moved note re-keys the chat to the new path",
+      !!chatById("cmovefile") &&
+      chatById("cmovefile").file === "notes/a-renamed.md" &&
+      chatById("cmovefile").updatedAt === 1 &&
+      bar().querySelector(".ai-chat-path").textContent === "notes/a-renamed.md",
+      "file=" + (chatById("cmovefile") && chatById("cmovefile").file) +
+      " updatedAt=" + (chatById("cmovefile") && chatById("cmovefile").updatedAt));
+    check("ai chats: a folder move re-keys the chats under it",
+      !!chatById("cmovefolder") &&
+      chatById("cmovefolder").file === "notes/arch/child.md",
+      "file=" + (chatById("cmovefolder") && chatById("cmovefolder").file));
+    const movedRaw = window.localStorage.getItem("nb:aiChats");
+    const movedStore = movedRaw ? JSON.parse(movedRaw) : null;
+    check("ai chats: the re-keyed binding is persisted",
+      !!movedStore &&
+      movedStore.chats.some((c) => c.file === "notes/a-renamed.md") &&
+      movedStore.chats.some((c) => c.file === "notes/arch/child.md"),
+      movedRaw ? movedRaw.slice(0, 160) : "no store");
+    // Move the open note back so later blocks see the fixture path again.
+    window.NB.evt.emit("file:moved",
+      { from: "notes/a-renamed.md", to: "notes/a.md" });
+    await tick(20);
+    check("ai chats: a move back re-keys the chat to the original path",
+      chatById("cmovefile").file === "notes/a.md" &&
+      window.NB.viewer.getPath() === "notes/a.md",
+      "file=" + chatById("cmovefile").file +
+      " path=" + window.NB.viewer.getPath());
 
     // Leave the panel idle and the storage clean for later blocks.
     await chatsReset();
