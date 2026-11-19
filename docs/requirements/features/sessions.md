@@ -133,8 +133,9 @@ workspace:
   at `WORKSPACE_STATE_MAX_BYTES` = 256 KiB, enforced in the `/api/workspace-state`
   route (`app.py`).
 - The phone boot restores the workspace's shared sessions. It shows one note at a
-  time, writes its changes back through `/api/workspace-state`, and does not poll
-  (`boot()` in `app.js`; §10 AC73).
+  time, writes its changes back through `/api/workspace-state`, and runs no poll:
+  it makes one conditional read when it comes back (`resumeSync()` in `app.js`;
+  §10 AC73).
 
 ---
 
@@ -742,8 +743,8 @@ feature.
 **Status:** Implemented. Supersedes the persistence half of §3 and §7 AC58: the
 shared state is stored on the server and re-read while the page is open, and the
 split between shared and device-local state is a product rule, not an
-implementation detail. The phone restores and writes the shared state but does
-not poll (AC73).
+implementation detail. The phone restores and writes the shared state and runs no
+poll; it makes one conditional read when it comes back (AC73).
 
 **Goal.** The owner uses the same notebook from a laptop and a second browser or
 host. Sessions, their tabs and their order must be identical everywhere without a
@@ -794,7 +795,7 @@ other is a design change, not a refactor.
 | AC70 | A client whose write is based on an older state is merged, not refused. A session the client did not touch keeps the newer copy; the client's own change survives; both devices show the same result after one round trip. | S5 |
 | AC71 | While the tab is hidden, no state requests are sent. On return, one runs immediately and the page catches up within 2 s. | S7 |
 | AC72 | A viewer-role page receives live updates and sends no state write. | S1 |
-| AC73 | The phone shell, and a page whose server lacks the endpoint, start no sync and make no repeating request. | S7 |
+| AC73 | The phone shell, and a page whose server lacks the endpoint, start no sync and make no repeating request. A phone page makes one conditional read when it becomes visible again, comes back online, is restored from the back/forward cache, or opens the drawer. | S7 |
 
 ### 10.4 Out of scope
 

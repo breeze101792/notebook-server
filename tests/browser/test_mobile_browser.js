@@ -876,7 +876,6 @@ async function main() {
       check("sharing: the desktop state reaches the server",
         await waitForServerState((s) =>
           (s.sessions || []).some((x) => x.name === "Work"), 10000));
-      await dctx.close();
 
       const mctx = await browser.newContext({
         viewport: { width: 390, height: 844 },
@@ -887,6 +886,12 @@ async function main() {
       });
       const phone = await mctx.newPage();
       const phoneErrors = [];
+      let phoneWsGets = 0;
+      phone.on("request", (r) => {
+        if (r.method() === "GET" && r.url().indexOf("/api/workspace-state") >= 0) {
+          phoneWsGets++;
+        }
+      });
       phone.on("pageerror", (e) => phoneErrors.push(String(e)));
       await phone.goto(BASE + "/");
       await bootApp(phone);
@@ -926,10 +931,42 @@ async function main() {
       check("sharing: a phone reload restores the shared session and its note",
         after.session === desktopSession && after.active === "Welcome.md",
         JSON.stringify(after));
+
+      // A phone kept alive in the background has no timer (AC73). Coming back
+      // must pick up a peer's change in one conditional read.
+      await desktop.evaluate(async () => {
+        await window.NB.tabs.createSession("Later");
+        await window.NB.tabs.open("notes/a.md");
+      });
+      check("sharing: a later desktop session reaches the server",
+        await waitForServerState((s) =>
+          (s.sessions || []).some((x) => x.name === "Later"), 10000));
+      // The catch-up read is skipped while a local write is queued (the write's
+      // response carries the merged state), so let the reload's write settle.
+      await phone.waitForFunction(
+        () => window.NB.sync.status().pending === false, null, { timeout: 8000 });
+      const getsBeforeCatchUp = phoneWsGets;
+      await phone.evaluate(() => {
+        window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+      });
+      await phone.waitForFunction(
+        () => window.NB.tabs.getSessionList().some((s) => s.name === "Later"),
+        null, { timeout: 8000 });
+      const caught = await phone.evaluate(() => ({
+        list: window.NB.tabs.getSessionList().map((s) => s.name + ":" + s.count),
+        active: window.NB.tabs.getActive(),
+        running: window.NB.sync.status().running,
+      }));
+      check("sharing: a resumed phone catches up without a reload",
+        caught.list.join(",") === "Main:1,Work:2,Later:1" &&
+        caught.active === "Welcome.md" && caught.running === false &&
+        phoneWsGets - getsBeforeCatchUp === 1,
+        JSON.stringify(caught) + " gets=" + (phoneWsGets - getsBeforeCatchUp));
       check("sharing: no uncaught page errors", phoneErrors.length === 0,
         phoneErrors.join(" | "));
       await phone.screenshot({ path: path.join(tmp, "phone-shared.png") });
       await mctx.close();
+      await dctx.close();
     }
 
     // --- The narrow floor: seven slots still clear 44 px at 320 ----
@@ -965,6 +1002,7 @@ async function main() {
 
     // --- Boot: a deep link wins over the device-local resume ------
     {
+      await resetWorkspaceState();
       const ctx = await browser.newContext({
         viewport: { width: 390, height: 844 },
         isMobile: true,

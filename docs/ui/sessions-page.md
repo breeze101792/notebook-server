@@ -53,7 +53,7 @@ rename, delete or reorder sessions.
 | Shown | `NB.viewer.showSpecial()` hides the viewer, welcome and editor, then the tab's `onActivate` unhides the host | `viewer.js:648-662` |
 | Hidden | `viewer.js` hides every `.special-tab-view` when a file, the welcome screen or another special tab shows | `viewer.js:639-642` |
 | Persistence | none of its own: `§sessions` is a path in a session's `openFiles`, like `§graph` | `tabs.js:270-283` |
-| Phone | no phone surface: the entry follows the graph button's hiding rule (§12.2) and the phone restores no tabs | `style.css:8077-8079` (the graph precedent); `app.js:1528-1545` |
+| Phone | no phone surface: the entry follows the graph button's hiding rule (§12.2); the phone restores the shared tabs but hides a `§sessions` tab that is active | `style.css:8077-8079` (the graph precedent); `app.js:1528-1545` |
 
 The button is inserted **before** the collapse control, which is the frame's second-action slot
 ([`shell-frame.md`](shell-frame.md) §4.2) and also what keeps
@@ -668,7 +668,7 @@ model and the DOM.
 | E1 | The page has an `<h1>`; the card header is an `<h2>` naming the card | `§graph` has no page title, and `reader.md` §9 records the reader's missing landmark as a gap (P6) | none |
 | E2 | Card rows are 30 high (`--control-h-md`), not the row contract's 27 | They list the same thing the Tabs view lists; the two surfaces must not drift (`tabs-view.md` E2) | +3 px per row |
 | E3 | The Sessions view header gains one action (2 before collapse) | The page needs a door; the frame's cap is 2 | +24 px of header |
-| E4 | No phone surface; the entry hides at the phone breakpoints | Touch cannot drag, the phone restores no tabs, and `§graph` sets the same precedent | none |
+| E4 | No phone surface; the entry hides at the phone breakpoints | Touch has no drag or range selection, and the phone strip is not shown; `§graph` sets the same precedent | none |
 | E5 | A row context menu on a content page | The drag has no keyboard or touch path; the Sessions view solved the same problem with its row menu (`sessions.md` §4) | one menu, one item |
 
 ---

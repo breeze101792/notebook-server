@@ -804,11 +804,15 @@
   }
 
   /* One pass. `unsupported` is the answer to a server without the endpoint,
-   * so the caller stops instead of asking again every interval. */
-  async function syncOnce() {
-    if (!workspaceId() || isPhoneMode() || !wsBootLoaded || wsSyncPaused || wsSyncing) {
+   * so the caller stops instead of asking again every interval. `force` is
+   * the phone's single catch-up read on return: the phone still arms no
+   * timer, but a page kept alive in the background must not stay stale
+   * (sessions.md §17.4, AC73). */
+  async function syncOnce(force) {
+    if (!workspaceId() || !wsBootLoaded || wsSyncPaused || wsSyncing) {
       return { ok: true, rev: wsRev };
     }
+    if (isPhoneMode() && !force) return { ok: true, rev: wsRev };
     // A queued or in-flight local write answers with the merged state;
     // polling now would apply the server's copy over an unsent change.
     if (wsSaveTimer !== null || wsWritesOutstanding > 0) return { ok: true, rev: wsRev };
@@ -898,7 +902,17 @@
   function pauseSync() { wsSyncPaused = true; }
 
   function resumeSync() {
+    // Network recovery can fire while the page is hidden; showing it again is
+    // what resumes, so a hidden page still sends nothing (AC71).
+    if (document.hidden) return;
     wsSyncPaused = false;
+    if (isPhoneMode()) {
+      // The phone has no timer (AC73). One conditional read when the page
+      // comes back is what lets a backgrounded PWA show the desktop's
+      // sessions and tabs without a reload.
+      void syncOnce(true);
+      return;
+    }
     // A page that booted offline never armed; coming back online starts it.
     if (!wsSyncRunning) {
       if (wsBootLoaded) void startSync();
@@ -913,6 +927,7 @@
     return {
       running: wsSyncRunning,
       paused: wsSyncPaused,
+      pending: wsSaveTimer !== null || wsWritesOutstanding > 0,
       rev: wsRev,
       delayMs: wsSyncDelay,
       lastAt: wsLastAt,
@@ -921,11 +936,13 @@
   }
 
   // A hidden tab sends nothing; showing it again polls at once. Coming back
-  // online is the same catch-up.
+  // online is the same catch-up. A page restored from the back/forward cache
+  // gets no visibilitychange, so it has its own hook.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) pauseSync(); else resumeSync();
   });
   window.addEventListener("online", resumeSync);
+  window.addEventListener("pageshow", (e) => { if (e.persisted) resumeSync(); });
 
   /* --- device-local tab selection ------------------------------------ */
   /* The active session and the active tab are one device's, so they are

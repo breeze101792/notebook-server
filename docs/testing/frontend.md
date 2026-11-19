@@ -431,7 +431,8 @@ to fire on a fetch rejection only, never on HTTP 4xx/5xx, so a 401 produces
 `auth:required` instead. `tests/browser/test_mobile_browser.js` covers the
 phone boot path (a `?file=` deep link wins over resume; a bad link keeps its
 address), the shared workspace state (a desktop session and its tab appear on
-the phone; a phone tab open reaches the server and survives a reload), and the
+the phone; a phone tab open reaches the server and survives a reload; a resumed
+phone catches up in one conditional read without arming a timer), and the
 history invariant: cold-boot deep link and resume both back to Home, and
 A → B → back shows A with A's URL.
 

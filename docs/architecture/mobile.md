@@ -366,10 +366,12 @@ cover only part of it:
 
 Session switching stays `tabs.js`'s swap path. The phone adds no session model of its own:
 it restores the workspace's shared sessions, writes its changes through
-`/api/workspace-state`, and does not poll (`sessions.md` §17.4). Its active session and
-active tab stay device-local in `nb:activeSession` and `nb:activeFile`. A restored active
-tab with no phone surface (`§sessions`, `§graph`) is not shown: the phone activates
-another tab, or Home, and leaves that tab in the shared model.
+`/api/workspace-state`, and runs no poll — one conditional read when the page comes
+back (visible, online, back/forward cache) or the drawer opens (`sessions.md` §17.4). Its
+active session and active tab stay device-local in `nb:activeSession` and
+`nb:activeFile`. A restored active tab with no phone surface (`§sessions`, `§graph`) is
+not shown: the phone activates another tab, or Home, and leaves that tab in the shared
+model.
 
 **The session dialog.** Create and Rename open `#session-dialog`, the first body-level desktop modal
 reachable from the phone (`NB.dialog`, `dialog.js:76-120`, z 2000). Without a guard, hardware back

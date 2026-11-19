@@ -59,7 +59,10 @@
  * together. sessions-page.js is precached: it registers the special tab
  * before app.js restores a saved §sessions, and a missing registration would
  * drop that tab from the state. */
-const CACHE = "notebook-v31";
+/* Bumped v31 -> v32: a resumed phone makes one catch-up read of the shared
+ * workspace state, so app.js and mobile.js must reach already installed
+ * workers. */
+const CACHE = "notebook-v32";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

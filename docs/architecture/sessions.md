@@ -498,9 +498,10 @@ cannot see. `isOpen` is active-session-only, which is exactly the test.
 There is no first-paint session *name*: the view is rendered by `sessions.js`
 from the restored model, exactly like the Bookmarks list.
 
-The phone writes the same state through `/api/workspace-state`; only its poll
-is off (§17.4). Its session changes and tab opens are shared, so the desktop
-sees them within one sync interval.
+The phone writes the same state through `/api/workspace-state`; it runs no poll
+(§17.4), only a conditional read when the page comes back or the drawer opens.
+Its session changes and tab opens are shared, so the desktop sees them within one
+sync interval, and a resumed phone picks up the desktop's within one read.
 
 ## 12. UI wiring (`sessions.js`)
 
@@ -889,24 +890,37 @@ state changes anything on screen.
 | --- | --- |
 | `start()` | Async, idempotent, resolves `true` when the chain is armed and `false` when it is not. Not armed when `isPhoneMode()`, `workspaceId()` is empty, or `wsBootLoaded` is false. Otherwise it runs one `syncOnce()` first and arms only when that returns `ok` without `unsupported` — a server without the endpoint is probed once and then left alone. |
 | `stop()` | Clears the timer; a later `start()` may follow. |
-| `pause()` / `resume()` | Set/clear `wsSyncPaused`. `resume()` ticks immediately. Used by the visibility handler. |
-| `tick()` | One pass now. Resolves `{ok, rev}`; `{ok:false, unsupported:true}` when the server has no such endpoint. |
-| `status()` | `{running, paused, rev, delayMs, lastAt, lastError}` — diagnostics and tests. |
+| `pause()` / `resume()` | Set/clear `wsSyncPaused`. `resume()` ticks immediately, and does nothing while `document.hidden`. Used by the visibility, `online` and `pageshow` handlers. |
+| `tick()` | One pass now, without `force`: a no-op on a phone. Resolves `{ok, rev}`; `{ok:false, unsupported:true}` when the server has no such endpoint. |
+| `status()` | `{running, paused, pending, rev, delayMs, lastAt, lastError}` — diagnostics and tests. `pending` is true while a write is queued or in flight. |
 
 One pass:
 
 ```js
-async function syncOnce() {
-  if (!workspaceId() || isPhoneMode() || !wsBootLoaded || wsSyncPaused || wsSyncing)
+async function syncOnce(force) {
+  if (!workspaceId() || !wsBootLoaded || wsSyncPaused || wsSyncing)
     return {ok: true, rev: wsRev};
+  // The phone arms no timer; only its explicit catch-up read passes `force`.
+  if (isPhoneMode() && !force) return {ok: true, rev: wsRev};
+  // A queued or in-flight write answers with the merged state; do not race it.
+  if (wsSaveTimer !== null || wsWritesOutstanding > 0) return {ok: true, rev: wsRev};
   wsSyncing = true;
+  const localKey = stateKey(workspaceStateSnapshot());
   try {
     const res = await NB.api.getWorkspaceState(workspaceId(), wsRevKnown ? wsRev : undefined);
     if (res && res.notModified) return {ok: true, rev: wsRev};
     if (!res || typeof res.rev !== "number") return {ok: false, rev: wsRev, unsupported: true};
+    if (wsRevKnown && res.rev < wsRev) return {ok: true, rev: wsRev};
+    if (stateKey(workspaceStateSnapshot()) !== localKey) {
+      // A local change outpaced this poll; keep it and update the base.
+      lastServerState = res.state || {};
+      lastAckKey = stateKey(lastServerState);
+      wsRev = res.rev; wsRevKnown = true;
+      return {ok: true, rev: wsRev};
+    }
+    await applyRemoteWorkspaceState(res.state || {});
     wsRev = res.rev;
     wsRevKnown = true;
-    await applyRemoteWorkspaceState(res.state || {});
     wsSyncDelay = WORKSPACE_SYNC_MS;
     return {ok: true, rev: wsRev};
   } catch (e) {
@@ -965,9 +979,16 @@ Wiring:
   `applyConfig`, the restore's own `tabs:changed` write already carries the right
   `base`; nothing is unconditional.
 - `visibilitychange`: hidden → `pause()`; visible → `resume()`.
-- `window` `online` → `resume()`.
+- `window` `online` → `resume()`, but `resume()` is a no-op while hidden, so a
+  network flap in the background sends nothing (AC71).
+- `window` `pageshow` with `persisted` → `resume()` (a page restored from the
+  back/forward cache gets no `visibilitychange`).
 - The phone never polls (`start()` returns false) but still writes; its `base` is
-  the boot state, so the merge protects the other devices from it.
+  the boot state, so the merge protects the other devices from it. `resume()`
+  makes one conditional read on a phone — when the page becomes visible, comes
+  back online, is restored from the back/forward cache, or opens the drawer — so
+  a PWA that was left open catches up without a reload. There is no timer behind
+  it, and `tick()` still no-ops on a phone.
 
 ### 17.5 Applying a remote state (`app.js`)
 
@@ -1193,7 +1214,7 @@ keep its existing "not already in `sessionOrder`" check.
 | Boot restore's write | Carries the `base` seeded from `/api/config`, so a peer write between boot and the first save is merged, not lost. |
 | Page loaded before this change | Its `/api/workspace-state` write is refused (no `base`); its `/api/config` write loses the state keys. No clobber. |
 | Endpoint missing (older server) | `start()` resolves `false` after one probe; no timer, no repeated request. |
-| Phone shell | No poll; writes carry the boot `base`, so the merge protects the other devices. |
+| Phone shell | No timer. Writes carry the boot `base`, so the merge protects the other devices. One conditional read when the page becomes visible again, comes back online, is restored from the back/forward cache, or opens the drawer. |
 | Hidden tab | No requests; one immediate poll on return. |
 | Server error or network down | Backoff from 3 s doubling to 30 s; recovery resets the delay. No user-visible error. |
 | 401 mid-poll | `request()` emits `auth:required` (`api.js:75-78`); the loop backs off. |

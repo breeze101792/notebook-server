@@ -396,6 +396,10 @@
     // which clears the attribute.
     document.body.dataset.drawerView = active;
     checkServer();
+    // The shared sessions and bookmarks may have changed on another device
+    // while this page was open. One conditional read refreshes the drawer;
+    // the phone runs no timer (AC73).
+    if (NB.sync && NB.sync.resume) NB.sync.resume();
     setTimeout(focusDrawer, 220);
   }
 
