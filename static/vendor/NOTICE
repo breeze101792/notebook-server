@@ -100,3 +100,52 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Typo.js
+-------
+Version:  2.0.0 (pinned exact in the source comment below; not a package.json
+          dependency — the files are vendored by hand)
+License:  BSD-3-Clause, per the package's package.json and README ("Modified BSD
+          License"). The upstream repository ships no LICENSE file; the npm
+          metadata is the distribution claim.
+Source:   https://registry.npmjs.org/typo-js (tarball typo-js-2.0.0.tgz)
+Files:    static/vendor/typo.js, copied byte-for-byte from the tarball's
+          package/typo.js, no local modification.
+  size:    63898 bytes
+  sha256:  309bc65ea508c7187fbf26338a09dfb39592819ffc405f776f55f452e42d2c23
+
+English dictionary (en_US)
+--------------------------
+Version:  2020.12.07, SCOWL size 60, 49,568 stems, from the same tarball
+          (package/dictionaries/en_US/). Byte-for-byte copies; the bundled
+          README.md (licence and credits) is vendored beside them.
+License:  SCOWL / Ispell terms (permissive; see the notice below). The .aff
+          file is a modified Ispell english.aff under Geoff Kuenning's BSD
+          license; the collective work is Copyright 2000-2018 Kevin Atkinson.
+Files:
+  static/vendor/dictionaries/en_US/en_US.aff
+    size:    3090 bytes
+    sha256:  c7a8c4d08c29d237880844b1623099f59092602f189be38ce3912e457ff38bc1
+  static/vendor/dictionaries/en_US/en_US.dic
+    size:    551762 bytes
+    sha256:  f0b1a234bd178bdd01875b2a392a9647f888b8fe879f79c52aae62c2759b3647
+  static/vendor/dictionaries/en_US/README.md
+    size:    15731 bytes
+    sha256:  2a7e8d8ae9e8facc84818546ae2a8d83aec5e9c80a675ff789acd1c338b53b3d
+
+SCOWL notice
+------------
+
+  Copyright 2000-2018 by Kevin Atkinson
+
+  Permission to use, copy, modify, distribute and sell these word
+  lists, the associated scripts, the output created from the scripts,
+  and its documentation for any purpose is hereby granted without fee,
+  provided that the above copyright notice appears in all copies and
+  that both that copyright notice and this permission notice appear in
+  supporting documentation. Kevin Atkinson makes no representations
+  about the suitability of this array for any purpose. It is provided
+  "as is" without express or implied warranty.
+
+The full copyright, source and credits list is in
+static/vendor/dictionaries/en_US/README.md.

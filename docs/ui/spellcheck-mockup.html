@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spelling — mockup</title>
+<style>
+  /* Reference mockup for docs/ui/spellcheck.md. Standalone, no scripts, no
+     network assets. Tokens are copied from static/css/style.css; the real
+     token layer is foundations.md. The misspelling underline is drawn here as a
+     static text-decoration because a highlight needs the CSS Custom Highlight
+     API and script; the normative rule is ::highlight(nb-spelling). */
+  :root {
+    --bg: #1a1b1f; --bg-panel: #22232a; --bg-elev: #2a2b34;
+    --fg: #e6e6ea; --fg-muted: #9799a4;
+    --accent: #7c9cff; --accent-soft: rgba(124,156,255,.18);
+    --border: #383a45; --code-bg: #14151a;
+    --danger: #ff6b6b; --warn: #f3b454; --ok: #5fd49a;
+    --text-ui: .86rem; --text-ui-lg: .93rem; --text-body: 1rem;
+    --radius-xs: 4px; --radius-sm: 6px; --radius-md: 8px;
+    --stroke-2: 2px; --space-1: 4px; --space-2: 8px;
+    --control-h-body: 32px; --stg-switch-knob: var(--fg);
+    --shadow-pop: 0 8px 24px rgba(0,0,0,.35);
+  }
+  [data-theme="light"] {
+    --bg: #ffffff; --bg-panel: #f6f7f9; --bg-elev: #eceef2;
+    --fg: #1f2330; --fg-muted: #5d6470;
+    --accent: #2f5fd0; --accent-soft: rgba(47,95,208,.12);
+    --border: #d8dde4; --code-bg: #f0f2f5;
+    --danger: #c0392b; --warn: #8a5a0b; --ok: #16703f;
+    --stg-switch-knob: #ffffff;
+    --shadow-pop: 0 8px 24px rgba(0,0,0,.16);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: #101116; color: #e6e6ea;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.5;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .lede { color: #9799a4; margin: 0 0 24px; max-width: 74ch; }
+  .themes { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .theme { flex: 1 1 460px; min-width: 420px; }
+  .theme h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase;
+              color: #9799a4; margin: 0 0 10px; }
+  .boards { display: flex; flex-direction: column; gap: 16px; }
+  .board {
+    background: var(--bg); color: var(--fg);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px; position: relative;
+  }
+  .board-label { position: absolute; top: -9px; left: 12px;
+    background: #101116; color: #9799a4; font-size: 10px;
+    letter-spacing: .08em; text-transform: uppercase; padding: 0 6px; }
+  [data-theme="light"] + .boards .board-label { background: #101116; }
+
+  /* --- prose --- */
+  .prose { font-size: var(--text-body); line-height: 1.65; max-width: 44ch; }
+  .prose p { margin: 0 0 10px; }
+  .prose :last-child { margin-bottom: 0; }
+  .prose a { color: var(--accent); text-decoration: none; }
+  .prose code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .88em; background: var(--code-bg);
+    border-radius: var(--radius-xs); padding: 1px 4px;
+  }
+  .miss {                      /* stand-in for ::highlight(nb-spelling) */
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: var(--danger);
+    text-decoration-thickness: 1.5px;   /* --spell-underline-thickness */
+    text-decoration-skip-ink: auto;
+    text-underline-offset: .18em;
+  }
+  .wikilink { text-decoration: underline; text-decoration-thickness: 2px;
+              color: var(--accent); }
+  .wikilink.miss { text-underline-offset: .36em; }
+
+  /* --- menu: the shipped .context-menu numbers --- */
+  .context-menu {
+    width: 232px; background: var(--bg-elev);
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    box-shadow: var(--shadow-pop); padding: var(--space-1);
+    display: inline-block;
+  }
+  .context-menu button {
+    display: block; width: 100%; text-align: left;
+    background: transparent; color: var(--fg); border: 0;
+    padding: 7px 10px; border-radius: 5px;
+    font: inherit; font-size: var(--text-ui-lg); cursor: default;
+  }
+  .context-menu button:hover { background: var(--accent-soft); }
+  /* the shipped disabled paint: colour only, no dimming (style.css:1548) */
+  .context-menu button[disabled] { color: var(--fg-muted); cursor: default; }
+  .context-menu button[disabled]:hover { background: none; }
+  .context-menu hr { border: 0; border-top: 1px solid var(--border);
+                     margin: 4px 0; }
+  .context-menu kbd { float: right; margin-left: 16px;
+                      font-family: inherit; font-size: .74rem; color: var(--fg-muted); }
+  .context-menu button.focus {   /* exception E1, shown statically */
+    outline: 2px solid var(--accent); outline-offset: -2px;
+  }
+  .menu-row { display: flex; gap: 16px; align-items: flex-start; }
+
+  /* --- settings --- */
+  .settings { width: 100%; max-width: 460px; }
+  .settings h3 { font-size: var(--text-ui); font-weight: 600; margin: 0 0 6px; }
+  .settings-help { color: var(--fg-muted); font-size: var(--text-ui); margin: 0 0 10px; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between;
+                  gap: 12px; min-height: var(--control-h-body); }
+  .settings-label { font-size: var(--text-ui); }
+  .switch { appearance: none; width: 36px; height: 20px; border-radius: 999px;
+            background: var(--code-bg); border: 1px solid var(--border-strong);
+            position: relative; margin: 0 0 0 auto; flex: 0 0 auto; }
+  .switch::after { content: ""; position: absolute; top: 1px; left: 1px;
+                   width: 16px; height: 16px; border-radius: 50%;
+                   background: var(--stg-switch-knob); }
+  .switch:checked { background: var(--accent); border-color: var(--accent); }
+  .switch:checked::after { transform: translateX(16px); }
+  .switch[disabled] { opacity: .45; cursor: not-allowed; }
+  .settings-note { font-size: var(--text-ui); margin-top: 8px; color: var(--fg-muted); }
+  .settings-note.warn { color: var(--warn); }
+  .settings-vimrc { display: block; margin-top: 12px; }
+  .settings-vimrc-area {
+    width: 100%; height: auto; margin-top: 6px; padding: 6px 8px; resize: vertical;
+    background: var(--code-bg); color: var(--fg);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    font-family: ui-monospace, Menlo, monospace; font-size: var(--text-ui);
+    line-height: 1.5;
+  }
+  .settings-vimrc-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .settings-action {
+    height: 30px; padding: 0 10px; border-radius: var(--radius-sm);
+    background: var(--bg-elev); color: var(--fg);
+    border: 1px solid var(--border-strong); font: inherit; font-size: var(--text-ui);
+  }
+  .settings-vimrc-status { font-size: var(--text-ui); }
+  .settings-vimrc-status.ok { color: var(--ok); }
+  /* The Settings window frame, cropped for this mockup; the full chrome is
+     settings-modal-mockup.html. */
+  .mini-modal {
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: var(--bg-panel); overflow: hidden;
+  }
+  .mini-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    font-size: var(--text-ui);
+  }
+  .mini-x { color: var(--fg-muted); }
+  .mini-body { display: flex; min-height: 300px; }
+  .mini-nav {
+    width: 150px; flex: 0 0 auto; border-right: 1px solid var(--border);
+    padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  }
+  .mini-nav span {
+    padding: 5px 8px; border-radius: var(--radius-xs);
+    font-size: var(--text-ui); color: var(--fg-muted);
+  }
+  .mini-nav span.active { background: var(--accent-soft); color: var(--fg); }
+  .mini-section { flex: 1 1 auto; min-width: 0; padding: 12px 14px; }
+  .mini-section h3 { margin: 0 0 6px; font-size: var(--text-ui); }
+  .mini-foot {
+    border-top: 1px solid var(--border); padding: 8px 12px;
+    display: flex; justify-content: flex-end;
+  }
+  .settings-help code { font-size: .9em; }
+  .caption { color: #9799a4; font-size: 12px; margin-top: 8px; }
+  code.k { font-family: ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<h1>Spelling — misspelling underline and the prose menu</h1>
+<p class="lede">Illustrative, not normative. The doc is
+<code class="k">docs/ui/spellcheck.md</code>. Two themes, the states the doc names:
+suggestions, no suggestions, a correct word, the Settings row on and off.</p>
+
+<div class="themes">
+
+  <!-- ======================= dark ======================= -->
+  <section class="theme">
+    <h2>Dark</h2>
+    <div class="boards">
+
+      <div class="board">
+        <span class="board-label">1 · Underlined prose</span>
+        <div class="prose">
+          <p>The <span class="miss">recieve</span> path buffers each sample, then
+             the <span class="miss">firmwar</span> hands it to the driver.</p>
+          <p>Keep <code>I2C_ADDR</code> and <code>0x20</code> as they are; they are
+             code, not prose. A <a class="wikilink" href="#">wiki link</a> keeps its
+             solid underline, so the squiggle sits one step lower.</p>
+        </div>
+        <p class="caption">Wavy, <code class="k">--danger</code>, 2&nbsp;px, offset
+          <code class="k">.18em</code> on <code class="k">#viewer-content</code>.
+          The rule is <code class="k">::highlight(nb-spelling)</code>.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">2 · Menu with suggestions</span>
+        <div class="menu-row">
+          <div class="prose">
+            <p>The <span class="miss">recieve</span> path buffers each sample.</p>
+          </div>
+          <div class="context-menu" role="menu" aria-label="Note actions">
+            <button class="focus">receive</button>
+            <button>relieve</button>
+            <button>recite</button>
+            <hr>
+            <button>Add to dictionary</button>
+            <button>Ignore</button>
+            <hr>
+            <button>Copy<kbd>Ctrl+C</kbd></button>
+            <button>Paste</button>
+            <button>Paste without formatting</button>
+            <hr>
+            <button>Inline</button>
+            <button>Heading</button>
+            <button>List</button>
+            <button>Insert</button>
+            <hr>
+            <button>History</button>
+            <button>Save<kbd>Ctrl+S</kbd></button>
+          </div>
+        </div>
+        <p class="caption">Up to five suggestions, separator, the two actions,
+          separator, then the menu exactly as it ships. The first item is drawn with
+          the keyboard focus ring (exception E1); pointer open does not show it.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">3 · No suggestions</span>
+        <div class="context-menu" role="menu" aria-label="Note actions">
+          <button disabled aria-disabled="true">No spelling suggestions</button>
+          <hr>
+          <button>Add to dictionary</button>
+          <button>Ignore</button>
+          <hr>
+          <button>Copy<kbd>Ctrl+C</kbd></button>
+          <button>Paste</button>
+        </div>
+        <p class="caption">The block stays anchored so the menu does not change shape.
+          The disabled item is skipped by the arrow walk.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">4 · Correct word — no block</span>
+        <div class="menu-row">
+          <div class="prose">
+            <p>Data sheets, erratum, oscilloscope.</p>
+          </div>
+          <div class="context-menu" role="menu" aria-label="Note actions">
+            <button>Copy<kbd>Ctrl+C</kbd></button>
+            <button>Paste</button>
+            <button>Paste without formatting</button>
+            <hr>
+            <button>Inline</button>
+            <button>Heading</button>
+            <button>List</button>
+            <button>Insert</button>
+            <hr>
+            <button>History</button>
+            <button>Save<kbd>Ctrl+S</kbd></button>
+          </div>
+        </div>
+        <p class="caption">No mark, no block, no separator above <code class="k">Copy</code>.
+          This is the common case and its shape must not change.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======================= light ======================= -->
+  <section class="theme" data-theme="light">
+    <h2>Light</h2>
+    <div class="boards">
+
+      <div class="board">
+        <span class="board-label">5 · Underlined prose</span>
+        <div class="prose">
+          <p>The <span class="miss">recieve</span> path buffers each sample, then
+             the <span class="miss">firmwar</span> hands it to the driver.</p>
+          <p>Keep <code>I2C_ADDR</code> and <code>0x20</code> as they are; they are
+             code, not prose. A <a class="wikilink" href="#">wiki link</a> keeps its
+             solid underline, so the squiggle sits one step lower.</p>
+        </div>
+        <p class="caption">Same rule, light tokens:
+          <code class="k">--danger #c0392b</code>, 5.49:1 on the page.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">6 · Menu with suggestions</span>
+        <div class="menu-row">
+          <div class="prose">
+            <p>The <span class="miss">recieve</span> path buffers each sample.</p>
+          </div>
+          <div class="context-menu" role="menu" aria-label="Note actions">
+            <button class="focus">receive</button>
+            <button>relieve</button>
+            <button>recite</button>
+            <hr>
+            <button>Add to dictionary</button>
+            <button>Ignore</button>
+            <hr>
+            <button>Copy<kbd>Ctrl+C</kbd></button>
+            <button>Paste</button>
+            <button>Paste without formatting</button>
+            <hr>
+            <button>Inline</button>
+            <button>Heading</button>
+            <button>List</button>
+            <button>Insert</button>
+            <hr>
+            <button>History</button>
+            <button>Save<kbd>Ctrl+S</kbd></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="board">
+        <span class="board-label">7 · Settings — on</span>
+        <div class="settings">
+          <h3>Spelling</h3>
+          <p class="settings-help" id="help-a">
+            Underline misspelled words while editing and offer corrections on right-click.
+          </p>
+          <div class="settings-row">
+            <label class="settings-label" for="sw-a">Spellcheck</label>
+            <input class="switch" type="checkbox" id="sw-a" checked aria-describedby="help-a">
+          </div>
+        </div>
+        <p class="caption">General tab, after Keyboard. Native checkbox, described by
+          the help line.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">8 · Settings — a note</span>
+        <div class="settings">
+          <h3>Spelling</h3>
+          <p class="settings-help">
+            Underline misspelled words while editing and offer corrections on right-click.
+          </p>
+          <div class="settings-row">
+            <label class="settings-label" for="sw-b">Spellcheck</label>
+            <input class="switch" type="checkbox" id="sw-b" checked>
+          </div>
+          <div class="settings-note warn" role="status">
+            Spelling dictionary could not be loaded.
+          </div>
+        </div>
+        <p class="caption">Failure note: the browser's spellcheck is back on and the app
+          menu opens on prose without a Spelling block. Off means no underline, no block,
+          and no browser spellcheck either.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">9 · Settings → General → Spelling</span>
+        <div class="mini-modal" role="dialog" aria-modal="true" aria-label="Settings">
+          <div class="mini-head"><strong>Settings</strong><span class="mini-x" aria-hidden="true">×</span></div>
+          <div class="mini-body">
+            <div class="mini-nav">
+              <span class="active">General</span>
+              <span>Workspaces</span>
+              <span>Appearance</span>
+              <span>Shortcuts</span>
+              <span>Security</span>
+              <span>AI</span>
+              <span>About</span>
+            </div>
+            <div class="mini-section">
+              <h3>Spelling</h3>
+              <p class="settings-help">
+                Underline misspelled words while editing and offer corrections on right-click.
+              </p>
+              <div class="settings-row">
+                <label class="settings-label" for="m-sw">Spellcheck</label>
+                <input class="switch" type="checkbox" id="m-sw" checked>
+              </div>
+              <div class="settings-row settings-vimrc">
+                <label class="settings-label" for="m-words">Personal words</label>
+                <textarea id="m-words" class="settings-vimrc-area" rows="10"
+                          spellcheck="false" placeholder="one word per line">fsm
+clk
+addr
+dout
+leds
+bmatrix
+rankdir
+rgba
+nmap
+gantt</textarea>
+                <div class="settings-vimrc-actions">
+                  <button class="settings-action settings-action--primary" type="button">Save</button>
+                  <span class="settings-vimrc-status ok">Saved 10 words.</span>
+                </div>
+              </div>
+              <p class="settings-help">
+                One word per line. These words are never marked, and compounds
+                made from them are accepted too.
+              </p>
+            </div>
+          </div>
+          <div class="mini-foot"><button class="settings-action" type="button">Close</button></div>
+        </div>
+        <p class="caption">The whole window: header, the seven-tab nav with General active,
+          the section, the footer. The full board is in
+          <code class="k">settings-modal-mockup.html</code> board 1. With a rejected line
+          the status reads <code class="k">Saved 8 words; 2 ignored: i2c, foo_bar.</code></p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">10 · Settings — off</span>
+        <div class="settings">
+          <h3>Spelling</h3>
+          <p class="settings-help">
+            Underline misspelled words while editing and offer corrections on right-click.
+          </p>
+          <div class="settings-row">
+            <label class="settings-label" for="sw-d">Spellcheck</label>
+            <input class="switch" type="checkbox" id="sw-d">
+          </div>
+        </div>
+        <p class="caption">Off: no mark, no Spelling block, and the browser's spellcheck
+          stays off too. The browser's menu returns on prose, without suggestions.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">11 · Settings — no highlight API</span>
+        <div class="settings">
+          <h3>Spelling</h3>
+          <p class="settings-help">
+            Underline misspelled words while editing and offer corrections on right-click.
+          </p>
+          <div class="settings-row">
+            <label class="settings-label" for="sw-c">Spellcheck</label>
+            <input class="switch" type="checkbox" id="sw-c" checked disabled>
+          </div>
+          <div class="settings-note" role="status">
+            This browser has no text-highlight API; its own spellcheck is used.
+          </div>
+        </div>
+        <p class="caption">The switch is disabled, not hidden: the stored preference is
+          shown, and the reason is stated.</p>
+      </div>
+
+      <div class="board">
+        <span class="board-label">12 · Failure or off — the browser's menu</span>
+        <div class="menu-row">
+          <div class="prose">
+            <p>The recieve path buffers each sample.</p>
+          </div>
+          <div style="border: 1px dashed var(--border); border-radius: var(--radius-md); padding: 14px; color: var(--fg-muted); font-size: var(--text-ui);">
+            the browser's own context menu<br>
+            (not drawn — not ours)
+          </div>
+        </div>
+        <p class="caption">Failed load, missing highlight API, switch off, phone, and
+          preview/source mode: no app mark, no Spelling block. On failure the browser's
+          spellcheck is back on; with the switch off it stays off.</p>
+      </div>
+
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

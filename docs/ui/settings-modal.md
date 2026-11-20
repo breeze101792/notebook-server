@@ -476,9 +476,17 @@ Controls are listed in shipped document order. "Writes" names the config key or 
 | 11 | Row: label `VIM mode` + switch | unchecked by default | live → `vimMode` |
 | 12 | Column row: label `VIM initial script`, textarea, actions | placeholder: "# One binding per line. Examples: / # nmap j gj / # imap jj <Esc> / # unmap <leader>w" (four lines) | 8 rows, mono; Save (primary) + status line, below the textarea |
 | 13 | Status line | `Saved (0 bindings; the editor is unchanged)` · `Saved (N binding(s) applied)` · `Line N: <message> (+K more)` · `Save failed: <message>` | Success is `--ok`; a parse or IO error is `--warn`; the status is hidden until a save; a failed parse keeps the last good config |
+| 14 | `h3` | `Spelling` | — |
+| 15 | Help paragraph `#settings-spellcheck-help` | "Underline misspelled words while editing and offer corrections on right-click." | `id` so the switch can name it via `aria-describedby` |
+| 16 | Row: label `Spellcheck` + switch | checked by default | live → `spellcheck`; plain checkbox, not `role="switch"` (§3.5); `aria-describedby` → the help paragraph |
+| 17 | Note `#settings-spellcheck-note` | "Spelling dictionary could not be loaded." · "This browser has no text-highlight API; its own spellcheck is used." | `.settings-note`, `role="status"`, hidden until a failure; `--warn` for the first, `--text-muted` for the second; the second disables the switch. Absent on the phone (§9.4) |
+| 18 | Column: label `Personal words`, textarea `#settings-spellcheck-words`, actions | placeholder `one word per line`; help "One word per line. These words are never marked, and compounds made from them are accepted too." | 10 rows, mono, `spellcheck="false"`; filled from `spellcheckWords` on open; Save + status line below (row 20) |
+| 19 | (help paragraph) | see row 18 | `id="settings-spellcheck-words-help"`, `aria-describedby` on the textarea |
+| 20 | Action row: `Save` (secondary) + status `#settings-spellcheck-words-status` | `Saved 24 words.` · `Saved 22 words; 2 ignored: i2c, foo_bar.` · `Saved 1,000 words; 12 dropped (the list is capped at 1,000).` · `Save failed: <message>` | `role="status"`, hidden until the first save; success `--ok`, otherwise `--warn` |
 
 Sources: `index.html:735-790`; `settings.js:393-414`, `:424-434`, `:436-444`, `:507-555`;
-`watcher.js:81-86`; `style.css:1691-1713`, `:1729-1731`.
+`watcher.js:81-86`; `style.css:1691-1713`, `:1729-1731`. Rows 14–20 are
+shipped: [`spellcheck.md`](spellcheck.md) §3.
 
 The VIM script is deliberately explicit: the parser reports line-level errors and a half-typed line
 must not be applied mid-keystroke (`settings.js:496-506`).
@@ -1025,6 +1033,7 @@ the sign-out control is present because signing out is not a write.
 | Security, tokens, AI, About | admin surfaces are desktop-only |
 | Modal width/height presets | the sheet is one size |
 | Shortcuts | keyboard-only surface; the phone has no hardware keyboard path |
+| Spelling | the app's spellcheck is desktop-only; the phone keeps the browser's (`spellcheck.md` §3) |
 
 These are deliberate. §13 forbids adding them.
 

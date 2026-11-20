@@ -1022,6 +1022,31 @@
                 <span id="settings-vimrc-status" class="settings-vimrc-status" hidden></span>
               </div>
             </div>
+            <h3 id="settings-spelling-heading">Spelling</h3>
+            <p class="settings-help" id="settings-spellcheck-help">
+              Underline misspelled words while editing and offer corrections on right-click.
+            </p>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-spellcheck-toggle">Spellcheck</label>
+              <input type="checkbox" id="settings-spellcheck-toggle" checked
+                aria-describedby="settings-spellcheck-help">
+            </div>
+            <div class="settings-note" id="settings-spellcheck-note" role="status" hidden></div>
+            <div class="settings-row settings-vimrc">
+              <label class="settings-label" for="settings-spellcheck-words">Personal words</label>
+              <textarea id="settings-spellcheck-words" class="settings-vimrc-area"
+                rows="10" spellcheck="false" placeholder="one word per line"
+                aria-describedby="settings-spellcheck-words-help"></textarea>
+              <div class="settings-vimrc-actions">
+                <button id="settings-spellcheck-words-save"
+                  class="settings-action settings-action--primary" type="button">Save</button>
+                <span id="settings-spellcheck-words-status"
+                  class="settings-vimrc-status" role="status" hidden></span>
+              </div>
+            </div>
+            <p class="settings-help" id="settings-spellcheck-words-help">
+              One word per line. These words are never marked, and compounds made from them are accepted too.
+            </p>
           </section>
 
           {% if boot.workspace_id %}
@@ -2075,6 +2100,7 @@
   <script src="/static/js/lightbox.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/blocks.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/menu.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/spellcheck.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/mermaid.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/wavedrom.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/katex.js?v={{ asset_v }}" defer></script>

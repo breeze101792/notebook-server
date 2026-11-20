@@ -19,7 +19,8 @@ the page and rendered prose, and [`content-blocks.md`](content-blocks.md) for th
 table, figure and diagram visuals. The edit/parse algorithm and the write-back contract
 are [`../architecture/hybrid-editing.md`](../architecture/hybrid-editing.md); this
 document never restates them. Source mode is [`source-editor.md`](source-editor.md), and
-the edit windows are separate documents.
+the edit windows are separate documents. The misspelling underline and the prose
+menu's Spelling block are [`spellcheck.md`](spellcheck.md).
 
 Paths: `style.css` is `static/css/style.css`; `index.html` is `templates/index.html`;
 `hybrid.js`, `list-edit.js`, `table-edit.js`, `table-select.js` and `copy-image.js` are in

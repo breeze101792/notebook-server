@@ -616,6 +616,31 @@ const html = `<!DOCTYPE html><html><head>
                 <span id="settings-vimrc-status" class="settings-vimrc-status" hidden></span>
               </div>
             </div>
+            <h3 id="settings-spelling-heading">Spelling</h3>
+            <p class="settings-help" id="settings-spellcheck-help">
+              Underline misspelled words while editing and offer corrections on right-click.
+            </p>
+            <div class="settings-row">
+              <label class="settings-label" for="settings-spellcheck-toggle">Spellcheck</label>
+              <input type="checkbox" id="settings-spellcheck-toggle" checked
+                aria-describedby="settings-spellcheck-help">
+            </div>
+            <div class="settings-note" id="settings-spellcheck-note" role="status" hidden></div>
+            <div class="settings-row settings-vimrc">
+              <label class="settings-label" for="settings-spellcheck-words">Personal words</label>
+              <textarea id="settings-spellcheck-words" class="settings-vimrc-area"
+                rows="10" spellcheck="false" placeholder="one word per line"
+                aria-describedby="settings-spellcheck-words-help"></textarea>
+              <div class="settings-vimrc-actions">
+                <button id="settings-spellcheck-words-save"
+                  class="settings-action settings-action--primary" type="button">Save</button>
+                <span id="settings-spellcheck-words-status"
+                  class="settings-vimrc-status" role="status" hidden></span>
+              </div>
+            </div>
+            <p class="settings-help" id="settings-spellcheck-words-help">
+              One word per line. These words are never marked, and compounds made from them are accepted too.
+            </p>
           </section>
           <section class="settings-section" data-section="appearance" id="settings-section-appearance" hidden>
             <h3>Appearance</h3>
@@ -2622,6 +2647,7 @@ evalIn(read("static/vendor/purify.min.js"));
   evalIn(read("static/js/lightbox.js"));
   evalIn(read("static/js/blocks.js"));
   evalIn(read("static/js/menu.js"));
+  evalIn(read("static/js/spellcheck.js"));
   evalIn(read("static/js/mermaid.js"));
   evalIn(read("static/js/wavedrom.js"));
   evalIn(read("static/js/katex.js"));
@@ -11113,6 +11139,349 @@ function check(label, cond, extra) {
     }
     await window.NB.hybrid.exit(false);
     await tick(50);
+
+    // --- spellcheck: the jsdom degraded path, the menu label, Settings --
+    // jsdom has neither caret API nor CSS.highlights, so NB.spellcheck
+    // reports "failed": the app must leave the browser's spellcheck alone,
+    // open its normal menu on prose, and paint nothing. The descriptors and
+    // the paint are browser-only (docs/testing/frontend.md).
+    {
+      const menuEl = $("nb-menu");
+      check("spellcheck: jsdom has no caretRangeFromPoint",
+        typeof window.document.caretRangeFromPoint === "undefined");
+      check("spellcheck: jsdom has no CSS.highlights",
+        !(window.CSS && window.CSS.highlights));
+      check("spellcheck: NB.spellcheck is published",
+        !!window.NB.spellcheck && typeof window.NB.spellcheck.state === "function");
+
+      await window.NB.hybrid.enter();
+      await tick(20);
+      check("spellcheck: enter() degrades to failed without the highlight API",
+        window.NB.spellcheck.state() === "failed",
+        "state=" + window.NB.spellcheck.state());
+      check("spellcheck: the editing surface carries no spellcheck attribute",
+        !vc.hasAttribute("spellcheck"), vc.getAttribute("spellcheck"));
+
+      // No caret API: isPlainTextTarget reports "structural", so the
+      // existing app menu opens -- with no Spelling block, because the
+      // dictionary is not ready.
+      const prose = window.document.createElement("p");
+      prose.textContent = "prose with a tpyo";
+      vc.appendChild(prose);
+      const proseCtx2 = new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 100, clientY: 100 });
+      vc.dispatchEvent(proseCtx2);
+      await tick(10);
+      const labels = Array.from(menuEl.querySelectorAll("button"))
+        .map((b) => b.textContent.trim());
+      check("spellcheck: prose right-click opens the existing app menu",
+        !menuEl.hidden && proseCtx2.defaultPrevented === true,
+        "open=" + !menuEl.hidden + " prevented=" + proseCtx2.defaultPrevented);
+      check("spellcheck: the first item is Copy (no block above it)",
+        labels[0] === "Copy", labels.slice(0, 3).join(","));
+      check("spellcheck: no Spelling block in the degraded state",
+        labels.indexOf("Add to dictionary") === -1 &&
+        labels.indexOf("Ignore") === -1 &&
+        labels.indexOf("No spelling suggestions") === -1,
+        labels.join(","));
+      window.NB.menu.close();
+      prose.remove();
+
+      // exit() must not throw and must cancel the refresh timer it armed.
+      const armed = [];
+      const cleared = [];
+      const realSet = window.setTimeout;
+      const realClear = window.clearTimeout;
+      window.setTimeout = function (fn, ms) {
+        const id = realSet.call(window, fn, ms);
+        armed.push({ id, ms });
+        return id;
+      };
+      window.clearTimeout = function (id) {
+        cleared.push(id);
+        return realClear.call(window, id);
+      };
+      let exitThrew = null;
+      let refreshArmed = false;
+      try {
+        window.NB.spellcheck.refresh();       // arms the 200 ms paint timer
+        refreshArmed = armed.some((a) => a.ms === 200);
+        window.NB.spellcheck.exit();
+      } catch (e) { exitThrew = e; } finally {
+        window.setTimeout = realSet;
+        window.clearTimeout = realClear;
+      }
+      check("spellcheck: refresh() arms its own 200 ms timer", refreshArmed);
+      check("spellcheck: exit() does not throw with no highlight registry",
+        exitThrew === null, exitThrew ? String(exitThrew) : "ok");
+      check("spellcheck: exit() cancels the pending refresh timer",
+        armed.length > 0 &&
+        armed.every((a) => cleared.indexOf(a.id) !== -1),
+        "armed=" + armed.map((a) => a.id) + " cleared=" + cleared);
+      check("spellcheck: exit() leaves no idle handle (jsdom has no idle API)",
+        typeof window.requestIdleCallback === "undefined");
+      check("spellcheck: exit() detaches the session (wordAtPoint is null)",
+        window.NB.spellcheck.wordAtPoint(10, 10) === null);
+
+      await window.NB.hybrid.exit(false);
+      await tick(50);
+
+      // --- the menu label option (T-SPELL-13) ---
+      window.NB.menu.open({
+        owner: "test", x: 10, y: 10, scope: window.document.body, label: "Note actions",
+        items: [{ label: "A", handler: () => {} }],
+      });
+      check("spellcheck: open({label}) names the shared host",
+        menuEl.getAttribute("aria-label") === "Note actions",
+        menuEl.getAttribute("aria-label"));
+      window.NB.menu.close();
+      window.NB.menu.open({
+        owner: "test", x: 10, y: 10, scope: window.document.body,
+        items: [{ label: "A", handler: () => {} }],
+      });
+      check("spellcheck: a later unlabelled open clears the aria-label",
+        !menuEl.hasAttribute("aria-label"),
+        menuEl.getAttribute("aria-label"));
+      window.NB.menu.close();
+
+      // Hybrid's own menu passes "Note actions"; the tree menu does not.
+      await window.NB.hybrid.enter();
+      await tick(20);
+      const table = window.document.createElement("table");
+      const tr = window.document.createElement("tr");
+      const td = window.document.createElement("td");
+      td.textContent = "cell";
+      tr.appendChild(td);
+      table.appendChild(tr);
+      vc.appendChild(table);
+      window.document.caretRangeFromPoint = () => {
+        const r = window.document.createRange();
+        r.setStart(td.firstChild, 0);
+        r.collapse(true);
+        return r;
+      };
+      td.dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 100, clientY: 100 }));
+      await tick(10);
+      check("spellcheck: hybrid's menu is labelled Note actions",
+        !menuEl.hidden && menuEl.getAttribute("aria-label") === "Note actions",
+        "open=" + !menuEl.hidden + " label=" + menuEl.getAttribute("aria-label"));
+      window.NB.menu.close();
+      delete window.document.caretRangeFromPoint;
+      table.remove();
+      await window.NB.hybrid.exit(false);
+      await tick(50);
+
+      const treeRow = window.document.querySelector("#file-tree .tree-row");
+      if (treeRow) {
+        treeRow.dispatchEvent(new window.MouseEvent("contextmenu",
+          { bubbles: true, cancelable: true, clientX: 30, clientY: 30 }));
+        await tick(10);
+        check("spellcheck: the tree menu gains no label",
+          !menuEl.hidden && !menuEl.hasAttribute("aria-label"),
+          "open=" + !menuEl.hidden + " label=" + menuEl.getAttribute("aria-label"));
+        window.NB.menu.close();
+      } else {
+        check("spellcheck: the tree menu gains no label", false, "no tree row");
+      }
+
+      // --- the Settings rows (T-SPELL-13, AC10) ---
+      const heading = $("settings-spelling-heading");
+      const help = $("settings-spellcheck-help");
+      const toggle = $("settings-spellcheck-toggle");
+      const note = $("settings-spellcheck-note");
+      check("spellcheck settings: the Spelling h3 exists",
+        !!heading && heading.textContent.trim() === "Spelling",
+        heading ? heading.textContent.trim() : "missing");
+      check("spellcheck settings: the help paragraph carries the fixed copy",
+        !!help && help.textContent.trim() ===
+          "Underline misspelled words while editing and offer corrections on right-click.",
+        help ? JSON.stringify(help.textContent.trim()) : "missing");
+      check("spellcheck settings: the label and switch are wired",
+        !!toggle && window.document.querySelector(
+          'label[for="settings-spellcheck-toggle"]').textContent.trim() === "Spellcheck");
+      check("spellcheck settings: the switch is described by the help line",
+        !!toggle && toggle.getAttribute("aria-describedby") === "settings-spellcheck-help");
+      check("spellcheck settings: the switch starts checked",
+        !!toggle && toggle.checked === true);
+      check("spellcheck settings: the note is a status region",
+        !!note && note.getAttribute("role") === "status" &&
+        note.classList.contains("settings-note"));
+      check("spellcheck settings: the template declares the note hidden",
+        /<div class="settings-note" id="settings-spellcheck-note" role="status" hidden><\/div>/
+          .test(read("templates/index.html")));
+      check("spellcheck settings: the group is in the General section",
+        !!toggle && $("settings-section-general").contains(toggle));
+
+      // The real template carries the same block (the harness fixture is a
+      // hand-kept mirror; this is the check that keeps them in step).
+      const indexHtml = read("templates/index.html");
+      check("spellcheck settings: templates/index.html carries the Spelling group",
+        indexHtml.indexOf('id="settings-spelling-heading"') !== -1 &&
+        indexHtml.indexOf('id="settings-spellcheck-help"') !== -1 &&
+        indexHtml.indexOf('id="settings-spellcheck-toggle"') !== -1 &&
+        indexHtml.indexOf('id="settings-spellcheck-note"') !== -1);
+
+      // Opening Settings syncs the switch: jsdom cannot paint the underline,
+      // so the switch is disabled and the API note shows.
+      click("activity-settings-btn");
+      await tick(20);
+      check("spellcheck settings: no highlight API disables the switch",
+        toggle.disabled === true);
+      check("spellcheck settings: no highlight API shows the API note",
+        note.hidden === false && /no text-highlight API/.test(note.textContent),
+        JSON.stringify(note.textContent));
+      check("spellcheck settings: the API note is not the warning style",
+        !note.classList.contains("settings-note--warn"));
+      window.NB.settings.close();
+      await tick(10);
+    }
+
+    // --- Personal words editor (T-SPELL-17) -----------------------------
+    // The textarea fills from config on open, saves on the button, names
+    // every rejected line, and keeps an unsaved edit when a remote
+    // config:changed lands (docs/ui/spellcheck.md §3, row 20).
+    {
+      const wordsEl = $("settings-spellcheck-words");
+      const wordsSave = $("settings-spellcheck-words-save");
+      const wordsStatus = $("settings-spellcheck-words-status");
+      const wordsHelp = $("settings-spellcheck-words-help");
+      check("T-SPELL-17: the harness fixture carries the Personal words editor",
+        !!(wordsEl && wordsSave && wordsStatus && wordsHelp));
+      check("T-SPELL-17: the textarea is ten rows, described by the help line",
+        !!wordsEl && wordsEl.getAttribute("rows") === "10" &&
+        wordsEl.getAttribute("aria-describedby") ===
+          "settings-spellcheck-words-help");
+      check("T-SPELL-17: the label points at the textarea",
+        !!wordsEl && window.document.querySelector(
+          'label[for="settings-spellcheck-words"]').textContent.trim() ===
+          "Personal words");
+      check("T-SPELL-17: the status line is a hidden status region",
+        !!wordsStatus && wordsStatus.getAttribute("role") === "status" &&
+        wordsStatus.hidden === true);
+      check("T-SPELL-17: the help line explains the personal list",
+        !!wordsHelp && /One word per line/.test(wordsHelp.textContent) &&
+        /compounds made from them are accepted/.test(wordsHelp.textContent),
+        wordsHelp ? JSON.stringify(wordsHelp.textContent.trim()) : "missing");
+      const wordsIndexHtml = read("templates/index.html");
+      check("T-SPELL-17: templates/index.html carries the Personal words editor",
+        wordsIndexHtml.indexOf('id="settings-spellcheck-words"') !== -1 &&
+        wordsIndexHtml.indexOf('id="settings-spellcheck-words-save"') !== -1 &&
+        wordsIndexHtml.indexOf('id="settings-spellcheck-words-status"') !== -1 &&
+        wordsIndexHtml.indexOf('id="settings-spellcheck-words-help"') !== -1 &&
+        /id="settings-spellcheck-words"[^>]*rows="10"/.test(wordsIndexHtml));
+      check("T-SPELL-17: the editor sits in the General section",
+        !!wordsEl && $("settings-section-general").contains(wordsEl));
+
+      const setWords = (list) => window.NB.app.setSpellcheckWords(list);
+      const typeWords = async (text) => {
+        wordsEl.value = text;
+        wordsEl.dispatchEvent(new window.Event("input", { bubbles: true }));
+        await tick(5);
+      };
+      const saveWords = () => click("settings-spellcheck-words-save");
+
+      // Open fills from config: normalised, one per line.
+      setWords(["alpha", "Beta", " gamma "]);
+      click("activity-settings-btn");
+      await tick(20);
+      check("T-SPELL-17: open fills the textarea from config, one word per line",
+        wordsEl.value === "alpha\nbeta\ngamma", JSON.stringify(wordsEl.value));
+
+      // Save normalises: trims, folds case, drops blanks and duplicates.
+      await typeWords("  Alpha  \nbeta\nalpha\n\ndelta");
+      saveWords();
+      check("T-SPELL-17: save trims, folds case and drops duplicates",
+        window.NB.app.getSpellcheckWords().join(",") === "alpha,beta,delta",
+        JSON.stringify(window.NB.app.getSpellcheckWords()));
+      check("T-SPELL-17: a clean save reports the count in .ok",
+        wordsStatus.hidden === false &&
+        wordsStatus.textContent === "Saved 3 words." &&
+        wordsStatus.classList.contains("ok") &&
+        !wordsStatus.classList.contains("error"),
+        JSON.stringify({ text: wordsStatus.textContent,
+          ok: wordsStatus.classList.contains("ok"),
+          error: wordsStatus.classList.contains("error") }));
+
+      // A rejected line is named, never dropped silently, and more than
+      // three collapse to "+K more" so the status stays one line.
+      await typeWords("alpha\n3d\na-b1\nx\ny_z");
+      saveWords();
+      check("T-SPELL-17: rejected lines are named in the status with .error",
+        wordsStatus.textContent ===
+          "Saved 1 word; 4 ignored: 3d, a-b1, x, +1 more." &&
+        wordsStatus.classList.contains("error") &&
+        !wordsStatus.classList.contains("ok"),
+        JSON.stringify({ text: wordsStatus.textContent,
+          ok: wordsStatus.classList.contains("ok"),
+          error: wordsStatus.classList.contains("error") }));
+      check("T-SPELL-17: a rejected line never reaches the config",
+        window.NB.app.getSpellcheckWords().join(",") === "alpha",
+        JSON.stringify(window.NB.app.getSpellcheckWords()));
+
+      // Past the cap the status says which words were dropped.
+      const letters = (n) => {
+        let s = "";
+        do {
+          s = String.fromCharCode(97 + (n % 26)) + s;
+          n = Math.floor(n / 26);
+        } while (n > 0);
+        return s;
+      };
+      const many = [];
+      for (let i = 0; i < 1001; i++) many.push("w" + letters(i) + "x");
+      await typeWords(many.join("\n"));
+      saveWords();
+      check("T-SPELL-17: a save past the cap says older words were dropped",
+        window.NB.app.getSpellcheckWords().length === 1000 &&
+        /older words were dropped \(the list is capped at 1,000\)/
+          .test(wordsStatus.textContent) &&
+        wordsStatus.classList.contains("error"),
+        JSON.stringify({ len: window.NB.app.getSpellcheckWords().length,
+          text: wordsStatus.textContent.slice(0, 120) }));
+
+      // An empty save clears the list and says so.
+      await typeWords("");
+      saveWords();
+      check("T-SPELL-17: an empty save clears the list",
+        window.NB.app.getSpellcheckWords().length === 0,
+        JSON.stringify(window.NB.app.getSpellcheckWords()));
+      check("T-SPELL-17: an empty save says so in .ok",
+        wordsStatus.textContent === "Saved 0 words (the list is empty)." &&
+        wordsStatus.classList.contains("ok") &&
+        !wordsStatus.classList.contains("error"),
+        JSON.stringify({ text: wordsStatus.textContent,
+          ok: wordsStatus.classList.contains("ok"),
+          error: wordsStatus.classList.contains("error") }));
+
+      // Typing wins over a remote change; an untouched field still takes it.
+      // The emit is asserted synchronously: the workspace sync can republish
+      // the server's older chrome copy a moment later, and that race is not
+      // what this case is about.
+      const remote = (list) => {
+        setWords(list);
+        window.NB.evt.emit("config:changed", window.NB.app.getCfg(),
+          { remote: true });
+      };
+      setWords(["alpha"]);
+      await tick(300);
+      await typeWords("alpha\nhandtyped");
+      const typed = wordsEl.value;
+      remote(["remote"]);
+      check("T-SPELL-17: a config:changed leaves an unsaved textarea alone",
+        wordsEl.value === typed,
+        JSON.stringify({ value: wordsEl.value, typed }));
+      saveWords();
+      await tick(300);
+      remote(["zulu"]);
+      check("T-SPELL-17: after a save a config:changed refills the textarea",
+        wordsEl.value === "zulu", JSON.stringify(wordsEl.value));
+
+      // Leave the config and the modal as the next block expects.
+      setWords([]);
+      window.NB.settings.close();
+      await tick(300);
+    }
 
     // --- plugin "Edit source" menu item ---------------------------------
     // Re-enter hybrid and right-click a rendered mermaid container:

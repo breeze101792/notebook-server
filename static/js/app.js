@@ -172,7 +172,25 @@
     // actions. Missing keys fall back to that module's DEFAULTS,
     // so a fresh `{}` here means "use the shipped defaults".
     shortcuts: {},
+    // The app's en_US spellcheck in hybrid mode: the misspelling
+    // underline and the right-click Spelling block. Off also keeps the
+    // browser's own spellcheck off on the editing surface, because the
+    // app owns the feature (docs/architecture/spellcheck.md).
+    spellcheck: true,
+    // Personal words added from the Spelling block, lower-cased and
+    // deduped. Normalised on read and on write below.
+    spellcheckWords: [],
   };
+
+  // Personal dictionary limits: refuse a word longer than the module's
+  // token limit and keep the newest entries, so a hand-edited config
+  // cannot grow the list without bound.
+  const SPELL_WORD_MAX_CHARS = 64;
+  const SPELL_WORD_MAX_ENTRIES = 1000;
+  // The same token rule spellcheck.js and the dictionary use; a word
+  // carrying anything else can never be matched to prose.
+  const SPELL_WORD_RE = /^[A-Za-z][A-Za-z'\u2019\-]*[A-Za-z]$/;
+  const CURLY_APOSTROPHE_RE = /\u2019/g;
 
   function clampAutosaveDelay(seconds) {
     const n = Math.round(Number(seconds));
@@ -192,6 +210,26 @@
       out.push(id);
     }
     return out;
+  }
+
+  /* The personal spelling list, in the shape every reader expects: strings
+   * only, trimmed, lower-cased, curly apostrophes folded, deduped in first-
+   * seen order, and capped at the newest entries. A hand-edited config is
+   * normalised on read, so the next write persists the clean list. */
+  function normalizeSpellcheckWords(list) {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const entry of list) {
+      if (typeof entry !== "string") continue;
+      const word = entry.trim().replace(CURLY_APOSTROPHE_RE, "'").toLowerCase();
+      if (!word || word.length > SPELL_WORD_MAX_CHARS) continue;
+      if (!SPELL_WORD_RE.test(word)) continue;
+      if (seen.has(word)) continue;
+      seen.add(word);
+      out.push(word);
+    }
+    return out.slice(-SPELL_WORD_MAX_ENTRIES);
   }
 
   // Width used while the side panel is collapsed. 0 -- the activity
@@ -543,6 +581,9 @@
       ? cfg.searchTarget : DEFAULTS.searchTarget;
     cfg.sidebarOrder = normalizeViewIdList(cfg.sidebarOrder);
     cfg.sidebarHidden = normalizeViewIdList(cfg.sidebarHidden);
+    cfg.spellcheck = (typeof cfg.spellcheck === "boolean")
+      ? cfg.spellcheck : DEFAULTS.spellcheck;
+    cfg.spellcheckWords = normalizeSpellcheckWords(cfg.spellcheckWords);
     if (NB.activity && NB.activity.setBarOrder) {
       NB.activity.setBarOrder(cfg.sidebarOrder);
     }
@@ -1878,6 +1919,26 @@
       persistConfig();
     },
     getAutosaveDelay: () => clampAutosaveDelay(cfg.autosaveDelay),
+    // The app's en_US spellcheck switch (hybrid mode). Hybrid reads it on
+    // every routing decision, so persisting the flag is enough; the
+    // config:changed emit repaints an open session.
+    setSpellcheck: (on) => {
+      cfg.spellcheck = on !== false;
+      persistConfig(["spellcheck"]);
+    },
+    getSpellcheck: () => cfg.spellcheck !== false,
+    // Replace the personal spelling list. The Spelling block is the only
+    // caller on the user-mutation path; the normaliser caps and dedupes it,
+    // and the module reads it call-time.
+    setSpellcheckWords: (words) => {
+      cfg.spellcheckWords = normalizeSpellcheckWords(words);
+      persistConfig(["spellcheckWords"]);
+      return cfg.spellcheckWords;
+    },
+    getSpellcheckWords: () => normalizeSpellcheckWords(cfg.spellcheckWords),
+    // The Personal words editor validates each line before it saves, so the
+    // same normaliser must be reachable from settings.js.
+    normalizeSpellcheckWords: (list) => normalizeSpellcheckWords(list),
     getWallpaperScroll: () => cfg.wallpaperScroll || "scroll",
     // Replace the full bookmark list. The bookmarks module is the only
     // caller on the user-mutation path; the config load path also

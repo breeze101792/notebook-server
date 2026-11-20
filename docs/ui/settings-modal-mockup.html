@@ -384,6 +384,7 @@ kbd { font-family: var(--font-mono); }
 }
 .settings-help { margin: 0 0 10px; color: var(--text-muted); font-size: .86rem; line-height: 1.5; }
 .settings-note { margin-top: var(--stg-space-1); font-size: .86rem; color: var(--text-muted); }
+.settings-note--warn { color: var(--warn); }
 .settings-hint { font-size: .78rem; color: var(--text-muted); }
 
 /* ---- rows ---- */
@@ -437,7 +438,7 @@ kbd { font-family: var(--font-mono); }
 .settings-modal .settings-auth-input { max-width: 260px; }
 .settings-modal .settings-number-input { flex: 0 0 90px; text-align: right; }
 .settings-modal .settings-vimrc-area {
-  flex: 0 0 auto; width: 100%;
+  flex: 0 0 auto; width: 100%; height: auto;
   font-family: var(--font-mono); font-size: .86rem; line-height: 1.45;
   padding: var(--space-2) 10px; resize: vertical;
 }
@@ -929,13 +930,14 @@ kbd { font-family: var(--font-mono); }
 <section class="sec">
   <h2>1 · General — dark</h2>
   <p class="lede">Site title in the focus state, file-watching status as a dot plus a word, the VIM
-    script with its explicit Save and success line. Nav: General active.</p>
+    script with its explicit Save and success line, and the Spelling group: the switch, the
+    personal-word textarea with Save and status, and the failure note. Nav: General active.</p>
 
   <div class="board">
-    <div class="board-head"><span class="dot"></span>General · 1280 × 1000 · medium preset (960 × 850)<span class="grow"></span><span class="size">dark</span></div>
-    <div class="stage stage--1000 theme-dark">
+    <div class="board-head"><span class="dot"></span>General · 1280 × 1360 · medium preset (960 × 1300)<span class="grow"></span><span class="size">dark</span></div>
+    <div class="stage theme-dark" style="width:1280px;height:1360px">
       <div class="settings-overlay">
-        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b1-title" tabindex="-1">
+        <div class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="b1-title" tabindex="-1" style="height:1300px">
           <div class="settings-header">
             <h2 id="b1-title">Settings</h2>
             <div class="settings-header-actions">
@@ -996,6 +998,32 @@ kbd { font-family: var(--font-mono); }
                     <span class="settings-vimrc-status ok" role="status">Saved (3 bindings applied)</span>
                   </div>
                 </div>
+
+                <h3>Spelling</h3>
+                <p class="settings-help">Underline misspelled words while editing and offer corrections on right-click.</p>
+                <div class="settings-row">
+                  <label class="settings-label" for="b1-spellcheck">Spellcheck</label>
+                  <input type="checkbox" id="b1-spellcheck" checked aria-describedby="b1-spellcheck-words-help">
+                </div>
+                <div class="settings-row settings-vimrc">
+                  <label class="settings-label" for="b1-spellcheck-words">Personal words</label>
+                  <textarea id="b1-spellcheck-words" class="settings-vimrc-area" rows="10" spellcheck="false" placeholder="one word per line" aria-describedby="b1-spellcheck-words-help">fsm
+clk
+addr
+dout
+leds
+bmatrix
+rankdir
+rgba
+nmap
+gantt</textarea>
+                  <div class="settings-vimrc-actions">
+                    <button class="settings-action settings-action--primary" type="button">Save</button>
+                    <span class="settings-vimrc-status ok" role="status">Saved 10 words.</span>
+                  </div>
+                </div>
+                <p class="settings-help" id="b1-spellcheck-words-help">One word per line. These words are never marked, and compounds made from them are accepted too.</p>
+                <p class="settings-note settings-note--warn" role="status">Spelling dictionary could not be loaded.</p>
               </section>
             </div>
           </div>

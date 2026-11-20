@@ -56,7 +56,8 @@ Start here depending on the job:
 | [`architecture/sessions.md`](architecture/sessions.md) | Session tab groups: the live-view ownership model, config shape, normalisation and migration, the swap algorithm and its tokens, file operations across stored sessions, the empty state, and test seams. §17 is the cross-device sync. |
 | [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the six special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
 | [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, the open questions, and §5.8 the Markdown debug pane's mechanism. |
-| [`architecture/context-menus.md`](architecture/context-menus.md) | The one shared `NB.menu` module: placement, keyboard, submenus, `onClose`, and the three pre-migration menus it replaced. |
+| [`architecture/context-menus.md`](architecture/context-menus.md) | The one shared `NB.menu` module: placement, keyboard, submenus, `onClose`, and the three pre-migration menus it replaced. §4.5 is the hybrid prose-menu amendment. |
+| [`architecture/spellcheck.md`](architecture/spellcheck.md) | The app's en_US spelling: `NB.spellcheck`, the word predicate and shapes, the highlight paint, the correction write path, the personal-word list, and the failure matrix. |
 | [`architecture/window-maximize.md`](architecture/window-maximize.md) | Shared window behavior: drag, resize, maximize/restore, the overlay inventory, and geometry persistence. |
 | [`architecture/ai-assistant.md`](architecture/ai-assistant.md) | The built-in assistant: provider setup, ACP profiles, the six tools, the tool loop, and reviewing edits. |
 | [`architecture/acp-provider-review.md`](architecture/acp-provider-review.md) | Superseded design review of the ACP provider; read `ai-assistant.md` for the as-built contract. |
@@ -87,6 +88,7 @@ Start here depending on the job:
 | [`requirements/features/ai-attachments.md`](requirements/features/ai-attachments.md) | Images and large text files in the AI composer: limits, resize pipeline, and failure messages. |
 | [`requirements/features/acp-image-input.md`](requirements/features/acp-image-input.md) | Implemented: ACP images as `session/prompt` image blocks — the newest turn only, limits, errors, tests, and the no-capability-gate deviation. |
 | [`requirements/features/context-menus.md`](requirements/features/context-menus.md) | The unified right-click menu requirement across the tree, tabs, and hybrid blocks. |
+| [`requirements/features/spellcheck.md`](requirements/features/spellcheck.md) | Spelling corrections in the hybrid page menu — goals, scope, flows, edge cases, AC1–AC19. |
 | [`requirements/features/mermaid-visual-editor.md`](requirements/features/mermaid-visual-editor.md) | The visual Mermaid editor requirement; the shipped design is in `architecture/mermaid-designer.md`. |
 
 ## Product definitions
@@ -134,6 +136,7 @@ directly in a browser.
 | [`ui/lightboxes.md`](ui/lightboxes.md) | The four full-screen viewers: open/close, controls, gestures, states, keyboard and phone. Mockup: [`ui/lightboxes-mockup.html`](ui/lightboxes-mockup.html). |
 | [`ui/source-editor.md`](ui/source-editor.md) | Markdown source mode: edit bar, CodeMirror surface, split preview, save/dirty, draft bar and phone. Mockup: [`ui/source-editor-mockup.html`](ui/source-editor-mockup.html). |
 | [`ui/hybrid-mode.md`](ui/hybrid-mode.md) | WYSIWYG mode: page state, block chrome, grips, overlays, code chip, save and conflict. Mockup: [`ui/hybrid-mode-mockup.html`](ui/hybrid-mode-mockup.html). |
+| [`ui/spellcheck.md`](ui/spellcheck.md) | The misspelling underline, the prose menu's Spelling block, the Settings rows including Personal words, states, ARIA, AC1–AC18. Mockup: [`ui/spellcheck-mockup.html`](ui/spellcheck-mockup.html). |
 | [`ui/hybrid-markdown-debug-pane.md`](ui/hybrid-markdown-debug-pane.md) | The hybrid split-view toggle and the read-only Markdown column: anatomy, tokens, states, the 1140 px breakpoint, accessibility, AC1–AC21. Mockup: [`ui/hybrid-markdown-debug-pane-mockup.html`](ui/hybrid-markdown-debug-pane-mockup.html). |
 | [`ui/graph-view.md`](ui/graph-view.md) | The `§graph` tab: header, controls, canvases, gestures, states, keyboard and phone. Mockup: [`ui/graph-view-mockup.html`](ui/graph-view-mockup.html). |
 | [`ui/mobile-shell.md`](ui/mobile-shell.md) | The phone shell: mode, topbar, rail, drawer, Home, capture, settings sheet, history and states. Mockup: [`ui/mobile-shell-mockup.html`](ui/mobile-shell-mockup.html). |
@@ -157,6 +160,7 @@ history and source material, not current specs.
 | [`research/acp-agent-commands.md`](research/acp-agent-commands.md) | Exact stdio launch commands for each supported ACP agent. |
 | [`research/acp-agent-integration.md`](research/acp-agent-integration.md) | What wiring an external coding agent into a web app means. |
 | [`research/pkm-naming-conventions.md`](research/pkm-naming-conventions.md) | PKM and AI-agent folder/file naming conventions. |
+| [`research/spellcheck-context-menu.md`](research/spellcheck-context-menu.md) | November 2026: whether a page can read or reuse the browser's spelling suggestions (it cannot), and the client-side/server-side spellcheck options. |
 
 ## Testing and operations
 

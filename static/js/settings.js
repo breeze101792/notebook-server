@@ -65,6 +65,26 @@
   const dataDirEl   = document.getElementById("settings-data-dir");
   const configDirEl = document.getElementById("settings-config-dir");
   const fontSizeCurrentEl = document.getElementById("settings-font-size-current");
+  const spellcheckToggleEl = document.getElementById("settings-spellcheck-toggle");
+  const spellcheckNoteEl = document.getElementById("settings-spellcheck-note");
+  const spellcheckWordsEl = document.getElementById("settings-spellcheck-words");
+  const spellcheckWordsSaveEl = document.getElementById("settings-spellcheck-words-save");
+  const spellcheckWordsStatusEl =
+    document.getElementById("settings-spellcheck-words-status");
+
+  // True while the personal-word textarea holds an unsaved edit, so a remote
+  // config change cannot overwrite typing in progress.
+  let spellcheckWordsDirty = false;
+  // The store's cap lives in app.js (SPELL_WORD_MAX_ENTRIES); the status
+  // line names the number, so it repeats the value here.
+  const SPELL_WORDS_CAP = 1000;
+
+  // General -> Spelling: the two degraded states, in the doc's wording
+  // (docs/ui/spellcheck.md §3). The first is a load failure, the second a
+  // browser without the CSS Highlight API.
+  const SPELL_FAILED_NOTE = "Spelling dictionary could not be loaded.";
+  const SPELL_UNSUPPORTED_NOTE =
+    "This browser has no text-highlight API; its own spellcheck is used.";
 
   // Shortcuts section handles. The rows themselves are rendered into
   // #settings-shortcuts-list by renderShortcuts() (the action list
@@ -240,6 +260,8 @@
     syncAutosaveToggle();
     syncVimrc();
     syncAppearanceText();
+    syncSpellcheck();
+    syncSpellcheckWords(true);
     refreshWatchStatus();
     refreshAuthState();
     renderShortcuts();
@@ -744,6 +766,82 @@
     }
   }
 
+  /* True when this browser can paint the misspelling underline at all. */
+  function hasHighlightApi() {
+    return !!(window.CSS && CSS.highlights &&
+      typeof window.Highlight === "function");
+  }
+
+  /* Sync the Spelling switch and its note. The note names the degraded
+   * state, and the switch is disabled where the feature cannot run: the
+   * app never removes the browser's spellcheck without replacing it. */
+  function syncSpellcheck() {
+    if (!spellcheckToggleEl) return;
+    const supported = hasHighlightApi();
+    const failed = !!(NB.spellcheck && NB.spellcheck.state() === "failed");
+    const on = (NB.app && NB.app.getSpellcheck) ? NB.app.getSpellcheck() : true;
+    spellcheckToggleEl.checked = on;
+    spellcheckToggleEl.disabled = !supported;
+    if (!spellcheckNoteEl) return;
+    if (!supported) {
+      spellcheckNoteEl.textContent = SPELL_UNSUPPORTED_NOTE;
+      spellcheckNoteEl.classList.remove("settings-note--warn");
+      spellcheckNoteEl.hidden = false;
+      return;
+    }
+    if (failed) {
+      spellcheckNoteEl.textContent = SPELL_FAILED_NOTE;
+      spellcheckNoteEl.classList.add("settings-note--warn");
+      spellcheckNoteEl.hidden = false;
+      return;
+    }
+    spellcheckNoteEl.textContent = "";
+    spellcheckNoteEl.classList.remove("settings-note--warn");
+    spellcheckNoteEl.hidden = true;
+  }
+
+  /* Fill the Personal words textarea from config. `force` is the open path;
+   * a config:changed only refills when there is no unsaved edit. */
+  function syncSpellcheckWords(force) {
+    if (!spellcheckWordsEl) return;
+    if (spellcheckWordsDirty && !force) return;
+    const words = (NB.app && NB.app.getSpellcheckWords)
+      ? NB.app.getSpellcheckWords() : [];
+    spellcheckWordsEl.value = words.join("\n");
+    spellcheckWordsDirty = false;
+  }
+
+  /* Save the list: one word per line. Rejected lines are named, never
+   * dropped silently (docs/ui/spellcheck.md §3, row 20). */
+  function saveSpellcheckWords() {
+    if (!spellcheckWordsEl || !spellcheckWordsStatusEl || !NB.app) return;
+    if (!NB.app.normalizeSpellcheckWords || !NB.app.setSpellcheckWords) return;
+    const lines = spellcheckWordsEl.value.split(/\r?\n/)
+      .map((line) => line.trim()).filter(Boolean);
+    const ignored = lines.filter(
+      (line) => NB.app.normalizeSpellcheckWords([line]).length === 0);
+    const kept = NB.app.setSpellcheckWords(lines) || [];
+    spellcheckWordsDirty = false;
+    const parts = [];
+    if (ignored.length) {
+      const names = ignored.slice(0, 3).join(", ");
+      const more = ignored.length > 3
+        ? ", +" + (ignored.length - 3) + " more" : "";
+      parts.push(ignored.length + " ignored: " + names + more);
+    }
+    if (kept.length === SPELL_WORDS_CAP) {
+      parts.push("older words were dropped (the list is capped at " +
+        SPELL_WORDS_CAP.toLocaleString() + ")");
+    }
+    let msg = "Saved " + kept.length + " word" + (kept.length === 1 ? "" : "s");
+    if (parts.length) msg += "; " + parts.join("; ");
+    else if (!kept.length) msg += " (the list is empty)";
+    spellcheckWordsStatusEl.textContent = msg + ".";
+    spellcheckWordsStatusEl.classList.toggle("ok", parts.length === 0);
+    spellcheckWordsStatusEl.classList.toggle("error", parts.length !== 0);
+    spellcheckWordsStatusEl.hidden = false;
+  }
+
   /* VIM toggle: live, same model as the radios. The actual work
    * (attaching the global keydown listener + tagging the three
    * windows) is in NB.vimnav.setEnabled; we just flip the cfg +
@@ -800,6 +898,36 @@
     siteTitleEl.addEventListener("input", () => {
       if (NB.app && NB.app.setSiteTitle) NB.app.setSiteTitle(siteTitleEl.value);
     });
+  }
+
+  /* Spellcheck: live. Hybrid reads the switch on every routing decision, so
+   * persisting it is enough; the note tracks the load state. */
+  if (spellcheckToggleEl) {
+    spellcheckToggleEl.addEventListener("change", () => {
+      if (NB.app && NB.app.setSpellcheck) {
+        NB.app.setSpellcheck(spellcheckToggleEl.checked);
+      }
+      syncSpellcheck();
+    });
+  }
+  NB.evt.on("spellcheck:state", () => {
+    if (isOpen()) syncSpellcheck();
+  });
+  NB.evt.on("config:changed", () => {
+    if (isOpen()) syncSpellcheck();
+    if (isOpen()) syncSpellcheckWords(false);
+  });
+
+  /* Personal words: an explicit Save, like the VIM script, because a line
+   * can be rejected and the user must see which one. Typing marks the
+   * textarea dirty so a remote config change cannot overwrite it. */
+  if (spellcheckWordsEl) {
+    spellcheckWordsEl.addEventListener("input", () => {
+      spellcheckWordsDirty = true;
+    });
+  }
+  if (spellcheckWordsSaveEl) {
+    spellcheckWordsSaveEl.addEventListener("click", saveSpellcheckWords);
   }
 
   /* VIM initial script (vimrc). The textarea holds the user's

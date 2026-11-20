@@ -127,6 +127,7 @@ These are settled by the owner and override any conflicting recommendation below
 | Q22 | **A raw HTML token with one rendered element is spliced; a multi-element token fails closed.** A raw `<table>` or a `<div>`-wrapped section must not disable the splice. | `htmlTokenElementCount` returns 1 for a token that renders exactly one element (including a `<table>`); `buildAlignment` pairs it like any block. A token that renders zero or several elements returns no count and disables the splice for the whole document, as today: whole-file canonicalization is bad, but silent loss or resurrection is worse. §5.5, AC21. |
 | Q23 | **The saved render is checked against the view.** A save must not leave the screen showing a document different from the file. | `verifySavedRender` runs after every write (including autosave) and on every explicit save and exit **even when the write is a no-op**, against `sessionSource`. The re-render runs only when no keystroke landed since the bytes were captured; otherwise reconciliation is deferred. A rebuild resets the undo history. §5.7, AC18. |
 | Q24 | **Table parts GFM cannot express are already converted.** Caption, `colgroup`/`col`, and `tfoot` have no GFM form. | Already implemented in `normalizeTablesForGfm`: caption text becomes the paragraph immediately before the table, `tfoot` rows become the last body rows, column widths are dropped. Verify only; no new branch. §4.12, AC18. |
+| Q25 | **The prose right-click opens the app menu, and the app owns en_US spelling** (2026-11-20). The native menu is reachable with `Shift`+right-click on desktop; the phone keeps the native menu. The correction is one undo step and goes through the same dirty/autosave path as typing. | Designed, not implemented: [spellcheck.md](spellcheck.md). Invariant I11; the menu policy is [context-menus.md](context-menus.md) §4.5; `onContentChange` gains one `snapshotNow` flag so the fix is not folded into a typing step. |
 
 ## Test suite
 
@@ -317,6 +318,11 @@ I10. **Saved equals viewed.** For the bytes `md` a save writes, the app's own
     surface, and a mismatch with newer keystrokes is deferred so nothing typed is
     lost. Notational canonicalization (setext to ATX, `*` to `-`) does not violate
     this: it renders to the same DOM.
+I11. **Painted marks are not DOM.** The misspelling underline is a CSS Custom
+    Highlight range, never a wrapper element ([spellcheck.md](spellcheck.md) §6).
+    It cannot reach `domToMarkdown`, a history snapshot, the change hash or the
+    splice cache, and `exit()` clears the registry entry. The spellcheck write (a
+    word replacement) is the only DOM mutation that feature performs.
 
 ### 1.4 Non-hard-coded values
 

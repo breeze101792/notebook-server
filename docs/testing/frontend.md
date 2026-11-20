@@ -413,6 +413,35 @@ text's selectable/copyable behaviour (native, inspection), and the listener
 unbind after close (the close path removes both listeners; inspection). Media
 queries do not run in jsdom, so every width check is browser-only.
 
+### Spellcheck (`== spellcheck ==`)
+
+Shipped: [`../architecture/spellcheck.md`](../architecture/spellcheck.md).
+jsdom has no caret API and no `CSS.highlights`, so the module reads as failed
+there; the harness asserts what that state must do, plus the config surface:
+
+- the degraded path: with no `caretRangeFromPoint` and no `CSS.highlights`, a
+  prose right-click opens the existing menu with no Spelling block and
+  `#viewer-content` carries no `spellcheck="false"`;
+- `NB.spellcheck.exit()` does not throw with no highlight registry and leaves no
+  timer or idle handle;
+- `app.js` normalisation of `spellcheckWords` (lower-case, dedupe, 64-character
+  refusal, 1,000-entry cap);
+- the menu label option: hybrid's menu gets `Note actions`, the tree and tab menus
+  do not;
+- the Personal words editor (T-SPELL-17): the harness fixture carries the same
+  rows as `templates/index.html` (ten-row textarea, Save, status region, help
+  line); opening fills the textarea from config one word per line; Save trims,
+  folds case and drops duplicates; a rejected line is named in the status with
+  `.error` and more than three collapse to `+K more`; a save past the cap says
+  older words were dropped; an empty Save clears the list and says so with
+  `.ok`; and a `config:changed` leaves an unsaved textarea alone while
+  refilling a clean one.
+
+Not assertable in jsdom, and therefore browser-only: the underline paint, the
+pointer and caret hit-tests, the Spelling descriptors (`menuItems` returns `[]`
+until the dictionary is ready), the replace, the undo step, and the focus return.
+See [`../architecture/spellcheck.md`](../architecture/spellcheck.md) §10.
+
 ### Mobile v1 (`== mobile ==`)
 
 The phone shell (`static/js/mobile.js`) is covered at the end of the jsdom
@@ -519,6 +548,17 @@ engine, no selection, and no native markup insertion, so the DOM a real
 browser produces never appears there. The Markdown debug pane is exercised
 here too: open it, type, save, and assert the pane text equals the file bytes;
 the 1139 px viewport hides both the toggle and the pane.
+
+The same suite covers the prose right-click, replacing the old block that
+asserted the native menu fell through. Coverage: the app menu opens on prose with
+the Spelling block; `Shift`+right-click leaves the event uncancelled; a suggestion
+replaces exactly one word and one `Ctrl+Z` reverts it alone; a pick after a note
+switch writes nothing; a misspelled word carries a `CSS.highlights` range while
+`code` text never does; a blocked dictionary restores the browser's spellcheck.
+The shape rules are asserted too: `SCPI`, `currentColor`, `box-shadow` and
+`MOSFET's` carry no range while `recieve` in the same paragraph does, and a
+personal `html` accepts `html-live`.
+See [`../architecture/spellcheck.md`](../architecture/spellcheck.md) §10.
 
 `tests/browser/test_designer_browser.js` (796 lines) is the same harness for
 the Mermaid designer: it loads the real Visimer bundle and real mermaid,

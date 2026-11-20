@@ -299,11 +299,11 @@
     }
   }
   const PLUGIN_CONTAINER_SELECTOR = PLUGIN_CONTAINER_SELECTORS.join(", ");
-  // Structural content whose right-click keeps the custom menu: a
-  // native spellcheck menu is only useful on plain prose, and these
-  // elements carry their own editing affordances. Plugin containers are
-  // part of the list (SVG included), so every rendered block behaves the
-  // same on right-click.
+  // Structural content whose right-click keeps the app menu when the browser
+  // owns spelling: these elements carry their own editing affordances, and
+  // the native menu's spellcheck is only useful on plain prose. Plugin
+  // containers are part of the list (SVG included), so every rendered block
+  // behaves the same on right-click.
   const NATIVE_MENU_BLOCKED_SELECTOR =
     "table, thead, tbody, tr, td, th, pre, code, img, .hybrid-lang-pill, " +
     "[contenteditable=\"false\"]" +
@@ -7367,6 +7367,10 @@
     // The debug pane tracks every content change, including the passes
     // that follow a save (the dirty guard below would skip those).
     scheduleDebugRefresh();
+    // Repaint the spelling underline here, not in scheduleSnapshot: the
+    // undo/redo path skips the snapshot (restoring) but still changes the
+    // DOM, and every innerHTML replacement invalidates every range.
+    if (NB.spellcheck) NB.spellcheck.refresh();
     // A save can reset the flag before this timer fires; in that case the
     // UI must not re-mark the tab dirty with no write behind it.
     if (!dirty) return;
@@ -7374,7 +7378,10 @@
     closeEditBtn.classList.add("unsaved");
     NB.evt.emit("viewer:dirty-changed", { path: activePath, dirty: true });
     armAutosave();
-    scheduleSnapshot();
+    // A spelling fix commits the pre-fix DOM first (fixWord), so its own
+    // change must not be folded into the typing before it.
+    if (opts && opts.snapshotNow) pushSnapshot();
+    else scheduleSnapshot();
   }
 
   function isDirty() { return dirty; }
@@ -8021,6 +8028,11 @@
       ? (NB.viewer.getContent() || "") : "");
     // Seed the undo history with the freshly rendered DOM.
     resetHistory();
+    // Bind the spelling session now the DOM is normalized. The phone keeps
+    // its own long-press menu and the browser's spellcheck (D7), so the
+    // app's checker is not started there.
+    if (NB.spellcheck && !isPhoneMode()) NB.spellcheck.enter(viewerContentEl);
+    syncSpellcheckAttr();
 
     // Wire listeners.
     viewerContentEl.addEventListener("input", onInput);
@@ -8097,6 +8109,10 @@
 
     // Remove contentEditable.
     viewerContentEl.removeAttribute("contenteditable");
+    if (NB.spellcheck) NB.spellcheck.exit();
+    // The preview DOM is reused, so a stale spellcheck="false" would follow
+    // the note into read mode. The phone attribute is never touched.
+    if (!isPhoneMode()) viewerContentEl.removeAttribute("spellcheck");
     // Undo the atomic-block markers (see markAtomicBlocks) so the
     // preview DOM is left exactly as the renderers produced it.
     unwatchAtomicBlocks();
@@ -8343,6 +8359,8 @@
     markAtomicBlocks();
     if (viewerScrollEl) viewerScrollEl.scrollTop = scrollTop;
     resetHistory();
+    // This path does not call onContentChange, so repaint here.
+    if (NB.spellcheck) NB.spellcheck.refresh({ immediate: true });
     rebaseSession(md);
     notifyRebuilt();
   }
@@ -10196,7 +10214,18 @@
   }
 
   function buildItems(e) {
+    // The Spelling block is first: a right-click on a marked word is aimed
+    // at the correction (docs/ui/spellcheck.md §2.1). The descriptors come
+    // from NB.spellcheck; the write is fixWord.
+    const hit = spellingHit(e);
+    const spelling = (hit && NB.spellcheck)
+      ? NB.spellcheck.menuItems(hit, {
+          pick: (word) => fixWord(hit, word),
+          done: restoreCaretPlusFocus,
+        })
+      : [];
     const items = [
+      ...spelling,
       // Clipboard (top-level)
       { label: "Copy", handler: () => doCopy() },
       { label: "Paste", handler: () => doPaste() },
@@ -10348,10 +10377,94 @@
     return chord ? NB.shortcuts.format(chord) : null;
   }
 
-  // True only for a pointer right-click landing on a plain-text run: the
-  // native menu (with the browser's spellcheck suggestions) should show
-  // there, not the custom one. Any structural target, or a missing caret
-  // API (jsdom), falls back to the custom menu.
+  /* --- spellcheck routing and the write path -----------------------
+   * Contract: docs/architecture/spellcheck.md §3.1 and §5. The app owns
+   * en_US spelling on desktop hybrid when the switch is on, the highlight
+   * API exists and the dictionary load has not failed; everywhere else the
+   * browser's own checker and menu keep the surface. */
+
+  function hasHighlightApi() {
+    return !!(window.CSS && CSS.highlights &&
+      typeof window.Highlight === "function");
+  }
+
+  function appOwnsSpellcheck() {
+    if (!active || isPhoneMode()) return false;
+    if (!NB.spellcheck || !hasHighlightApi()) return false;
+    if (NB.spellcheck.state() === "failed") return false;
+    return !(NB.app && NB.app.getSpellcheck) || NB.app.getSpellcheck();
+  }
+
+  /* Apply the `spellcheck` attribute for the current state. Off still sets
+   * "false": the app owns the surface, so off cannot leave the browser's
+   * checker marking the same page. A failed load or a missing highlight API
+   * removes it and the browser's checker takes over. The phone keeps the
+   * browser's spellcheck and the attribute is never touched there. */
+  function syncSpellcheckAttr() {
+    if (!viewerContentEl || isPhoneMode()) return;
+    if (!active || !NB.spellcheck || !hasHighlightApi() ||
+        NB.spellcheck.state() === "failed") {
+      viewerContentEl.removeAttribute("spellcheck");
+      return;
+    }
+    viewerContentEl.setAttribute("spellcheck", "false");
+  }
+
+  /* The word under the pointer, or at the caret for a keyboard-triggered
+   * contextmenu (Shift+F10 / the Menu key report 0,0). */
+  function spellingHit(e) {
+    if (!active || !NB.spellcheck) return null;
+    if (e && (e.clientX || e.clientY)) {
+      return NB.spellcheck.wordAtPoint(e.clientX, e.clientY);
+    }
+    return NB.spellcheck.wordAtCaret();
+  }
+
+  /* `cb.done()` for the Spelling actions: the menu button held focus while
+   * the handler ran, so hand both the caret and focus back to the page. */
+  function restoreCaretPlusFocus() {
+    restoreCaret();
+    viewerContentEl.focus();
+  }
+
+  /* Replace one word, in the order §5 fixes: revalidate, commit the pre-fix
+   * DOM as its own undo step, write, focus, mark dirty with an immediate
+   * snapshot, repaint. Any other order folds the fix into the typing before
+   * it or writes to a DOM that no longer holds the word. */
+  function fixWord(hit, replacement) {
+    if (!active || !hit || !hit.node || typeof hit.node.data !== "string") return;
+    if (!hit.node.isConnected || !viewerContentEl.contains(hit.node)) return;
+    if (hit.node.data.slice(hit.start, hit.end) !== hit.word) return;
+    if (historyTimer) {
+      clearTimeout(historyTimer);
+      historyTimer = null;
+      pushSnapshot();
+    }
+    const range = document.createRange();
+    range.setStart(hit.node, hit.start);
+    range.setEnd(hit.node, hit.end);
+    range.deleteContents();
+    const text = document.createTextNode(replacement);
+    range.insertNode(text);
+    // The menu closed before this handler ran, so restoreCaret() would put
+    // the caret back at the pre-menu position; place it after the fix.
+    const after = document.createRange();
+    after.setStartAfter(text);
+    after.collapse(true);
+    const sel = window.getSelection();
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(after);
+    }
+    viewerContentEl.focus();
+    onContentChange({ snapshotNow: true });
+    if (NB.spellcheck) NB.spellcheck.refresh({ immediate: true });
+  }
+
+  /* True only for a pointer right-click landing on a plain-text run while
+   * the browser owns spelling: its menu (with its own suggestions) should
+   * show there, not the app's. Structural content keeps the app menu, and a
+   * missing caret API (jsdom) reports structural, so the menu still works. */
   function isPlainTextTarget(e) {
     if (e.clientX === 0 && e.clientY === 0) return false;
     let node = null;
@@ -10391,9 +10504,11 @@
         anchorY = r.top + 8;
       }
     }
+    // The label names this surface on the shared singleton; the tree, tab
+    // and bookmark menus pass none and keep their current markup.
     NB.menu.open({
       owner: "hybrid", x: anchorX, y: anchorY, scope: viewerContentEl,
-      items: buildItems(e), focusFirst: true,
+      items: buildItems(e), focusFirst: true, label: "Note actions",
     });
   }
 
@@ -10401,9 +10516,18 @@
   // hybrid mode is active (openMenu guards on `active`).
   if (viewerContentEl) {
     viewerContentEl.addEventListener("contextmenu", (e) => {
-      // A pointer right-click on plain prose keeps the native menu (with
-      // spellcheck suggestions); structural content gets the custom menu.
-      if (active && isPlainTextTarget(e)) {
+      if (!active) return;
+      if (appOwnsSpellcheck()) {
+        // A pointer Shift+right-click keeps the browser's menu as an escape
+        // hatch. Shift is also true for Shift+F10 / the Menu key, which
+        // report 0,0 and must keep the app menu.
+        if (e.button === 2 && e.shiftKey && (e.clientX || e.clientY)) return;
+        openMenu(e);
+        return;
+      }
+      // The browser owns spelling here: a prose right-click keeps its menu,
+      // structural content keeps the app menu (its edit affordances).
+      if (isPlainTextTarget(e)) {
         NB.menu.close();
         return;
       }
@@ -10454,6 +10578,19 @@
   // Seed the initial state: a restored tab may already be active before
   // this module wired its listeners.
   updateButtonVisibility();
+
+  /* The dictionary load settles asynchronously, and the switch can change
+   * while the editor is open (locally or from another device). Both land
+   * here: the attribute follows the state, and the paint follows at once. */
+  NB.evt.on("spellcheck:state", () => {
+    syncSpellcheckAttr();
+    if (active && NB.spellcheck) NB.spellcheck.refresh({ immediate: true });
+  });
+  NB.evt.on("config:changed", () => {
+    if (!active) return;
+    syncSpellcheckAttr();
+    if (NB.spellcheck) NB.spellcheck.refresh({ immediate: true });
+  });
 
   /* Safety net: if CM6 source-edit mode starts while hybrid is active
    * (the viewer's toggleEdit tears hybrid down first, so this should not
@@ -10535,6 +10672,8 @@
     renderMarkdown(content);
     rebaseSession(content);
     resetDirty();
+    // The patch replaced every text node, so the old ranges are detached.
+    if (NB.spellcheck) NB.spellcheck.refresh({ immediate: true });
     return true;
   }
 

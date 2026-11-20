@@ -5,7 +5,8 @@ the three per-surface implementations that §1 inventories are gone from
 the tree. §1 is the pre-migration record — its file:line anchors are the
 design-time snapshot and are not re-anchored — and §2 onward is the
 shipped contract, amended where the build differed (the `onClose`
-callback; see §2.2 and §3.3).
+callback; see §2.2 and §3.3). §4.5 is a later, unbuilt amendment: the hybrid
+prose menu.
 
 Three independent right-click menus existed before the migration: the
 sidebar's (`sidebar.js`, serving tree rows, bookmark rows, and the tree
@@ -409,7 +410,8 @@ then one call*:
   NB.menu.close(); return; }` (no `preventDefault`, so spellcheck
   suggestions show). `isPlainTextTarget` and
   `NATIVE_MENU_BLOCKED_SELECTOR` (`:155-158`) stay in hybrid — they are
-  editing-policy, not menu mechanics.
+  editing-policy, not menu mechanics. **Amended 2026-11-20: the escape is
+  now conditional. See §4.5.**
 - `exit()` (`:4330`) → `NB.menu.close("hybrid")`.
 - Delete: `addMenuItem`/`addMenuSep`/`addSubmenu`/`addSubItem`
   (`:4570-4636`), `hideMenu` (`:4638`), the four document listeners
@@ -435,6 +437,41 @@ then one call*:
   click *before* `designMod.open` runs) and falls back to the diagram
   block. The menu element being persistent-and-hidden — never removed —
   is what keeps the invoker `isConnected` and `closest`-matching.
+
+### 4.5 Amendment — the hybrid prose menu (2026-11-20)
+
+Status: shipped (2026-11-20). Full contract:
+[spellcheck.md](spellcheck.md); visual spec: [`../ui/spellcheck.md`](../ui/spellcheck.md).
+
+The native-menu escape on prose stops being unconditional. The app owns en_US
+spelling (a bundled dictionary, its own underline), so the app menu can carry the
+corrections the native menu used to be the only route to.
+
+| Surface / state | Prose right-click | Structural right-click |
+|---|---|---|
+| Desktop hybrid, switch on, load not failed | `preventDefault`; `NB.menu` opens. The Spelling block is built only when the pointer (or the caret) is on a misspelled word | unchanged: `NB.menu` |
+| Desktop hybrid, pointer `Shift`+right-click (`e.button === 2 && e.shiftKey && (e.clientX \\|\\| e.clientY)`) | return **before** `preventDefault`; the browser's menu shows. Firefox does not fire `contextmenu` for the gesture, so it shows by itself | unchanged |
+| Desktop hybrid, switch off | no `preventDefault`; the browser's menu (its spellcheck stays off — off means off, `spellcheck.md` §3.1) | unchanged: `NB.menu` |
+| Desktop hybrid, load failed / no highlight API | no `preventDefault`; the browser's menu and the browser's spellcheck | unchanged: `NB.menu` |
+| Phone | no `preventDefault`; the long-press menu | unchanged |
+
+What moves and what stays:
+
+- The right-click branch is a **state test**, not a word test: desktop, switch on,
+  highlight API present, `NB.spellcheck.state() !== "failed"` → the app menu for
+  anything under `#viewer-content` that is not a blocked target. `wordAtPoint` /
+  `wordAtCaret` only decide whether the Spelling block is built, so whitespace
+  between two words still opens the app menu, with no block.
+- `isPlainTextTarget` (`hybrid.js:10355-10370`) survives only for the branch where
+  the app does **not** own spelling (switch off, load failed, no highlight API,
+  phone): there it still sends prose to the browser's menu and keeps the app menu
+  on structural targets, with `NATIVE_MENU_BLOCKED_SELECTOR` (`hybrid.js:307-310`).
+  When the app owns the surface it is not consulted at all. The spelling predicate
+  has its own, narrower exclusion list.
+- `buildItems` (`hybrid.js:10198`) gains the Spelling descriptors at the top; the
+  items themselves come from `NB.spellcheck.menuItems(hit, {pick, done})`.
+- `NB.menu` gains one option, `label`, so this surface can name its menu without
+  renaming the tree and tab menus. Nothing else in the module changes.
 
 ---
 

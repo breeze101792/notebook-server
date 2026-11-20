@@ -2581,11 +2581,15 @@ async function main() {
         pageErrors.length === 0, pageErrors.join(" | "));
     }
 
-    // --- native menu fall-through on plain prose (right-click) --------
-    // A real right-click on prose must leave the event uncancelled so the
-    // browser's own menu (with spellcheck) shows; a right-click on
-    // structural content keeps the custom menu. A bubble-phase document
-    // listener records defaultPrevented after the hybrid handler runs.
+    // --- context-menu routing on prose (right-click) ------------------
+    // With the app owning en_US spelling (desktop hybrid, switch on, the
+    // highlight API present and the load not failed), a pointer right-click
+    // on prose opens the app menu and calls preventDefault
+    // (docs/architecture/spellcheck.md §3.1). The browser's own menu is the
+    // Shift-gesture escape hatch (T-SPELL-10) and the fallback when the
+    // feature failed (T-SPELL-09). Structural content keeps the app menu as
+    // before. A bubble-phase document listener records defaultPrevented
+    // after the hybrid handler runs.
     writeNote("notes/ctxmenu.md",
       "hello world prose\n\n| a | b |\n| - | - |\n| 1 | 2 |\n");
     await gotoNote(page, "notes/ctxmenu.md");
@@ -2594,12 +2598,16 @@ async function main() {
     await page.waitForFunction(
       () => document.getElementById("viewer-content")
         .getAttribute("contenteditable") === "true", null, { timeout: 8000 });
+    await page.waitForFunction(() => window.NB.spellcheck &&
+      window.NB.spellcheck.state() === "ready", null, { timeout: 15000 });
+    await page.waitForTimeout(400);
     await page.evaluate(() => {
       window.__ctx = null;
       document.addEventListener("contextmenu", (e) => {
         window.__ctx = {
           defaultPrevented: e.defaultPrevented,
           x: e.clientX, y: e.clientY,
+          shift: e.shiftKey, button: e.button,
         };
       });
     });
@@ -2612,12 +2620,24 @@ async function main() {
       await page.mouse.click(proseBox.x, proseBox.y, { button: "right" });
       await page.waitForTimeout(120);
       const proseCtx = await page.evaluate(() => window.__ctx);
-      const menuHidden = await page.evaluate(
-        () => document.getElementById("nb-menu").hidden);
-      check("real browser: prose right-click is not defaultPrevented",
-        proseCtx && proseCtx.defaultPrevented === false, JSON.stringify(proseCtx));
-      check("real browser: prose right-click keeps the custom menu hidden",
-        menuHidden, "hidden=" + menuHidden);
+      const menuState = await page.evaluate(() => {
+        const m = document.getElementById("nb-menu");
+        return {
+          hidden: m.hidden,
+          label: m.getAttribute("aria-label"),
+          items: Array.from(m.children).map((c) =>
+            c.tagName === "HR" ? "HR" : c.textContent.trim()),
+        };
+      });
+      check("real browser spell: prose right-click is defaultPrevented",
+        proseCtx && proseCtx.defaultPrevented === true, JSON.stringify(proseCtx));
+      check("real browser spell: prose right-click opens the app menu",
+        !menuState.hidden, "hidden=" + menuState.hidden);
+      check("real browser spell: prose menu is named Note actions",
+        menuState.label === "Note actions", String(menuState.label));
+      check("real browser spell: a correct word gets the existing menu (Copy first)",
+        menuState.items[0] === "Copy" && !menuState.items.includes("Add to dictionary"),
+        menuState.items.slice(0, 4).join(","));
     }
     {
       const cellBox = await page.evaluate(() => {
@@ -2634,10 +2654,678 @@ async function main() {
         cellCtx && cellCtx.defaultPrevented === true, JSON.stringify(cellCtx));
       check("real browser: structural right-click opens the custom menu",
         menuOpen, "open=" + menuOpen);
+      await page.evaluate(() => window.NB.menu.close());
+    }
+    {
+      // T-SPELL-10, pointer half: Shift+right-click is the escape hatch.
+      // Chromium fires contextmenu and honours the early return; Firefox
+      // does not fire the event for the gesture, so the native menu appears
+      // without the branch running. Both are asserted, not assumed.
+      const proseBox = await page.evaluate(() => {
+        const p = document.querySelector("#viewer-content p");
+        const r = p.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+      await page.evaluate(() => { window.__ctx = null; });
+      await page.keyboard.down("Shift");
+      await page.mouse.click(proseBox.x, proseBox.y, { button: "right" });
+      await page.keyboard.up("Shift");
+      await page.waitForTimeout(150);
+      const shiftCtx = await page.evaluate(() => window.__ctx);
+      const shiftMenuOpen = await page.evaluate(
+        () => !document.getElementById("nb-menu").hidden);
+      check("real browser spell: Shift+right-click on prose is not defaultPrevented",
+        !shiftCtx || shiftCtx.defaultPrevented === false,
+        JSON.stringify({ browser: BROWSER, ctx: shiftCtx }));
+      check("real browser spell: Shift+right-click opens no app menu",
+        shiftMenuOpen === false, "open=" + shiftMenuOpen);
     }
     await page.click("#close-edit-btn");
     await page.waitForFunction(
       () => !window.NB.hybrid.isActive(), null, { timeout: 8000 });
+
+    // --- spellcheck: underline, Spelling block, write path --------------
+    // The real path: the dictionary loads, the underline paints, the menu
+    // carries corrections, a pick is one undo step, Add persists and Ignore
+    // does not. Cases numbered against docs/architecture/spellcheck.md §10.
+    {
+      const waitSpell = async () => {
+        await page.waitForFunction(() => window.NB.spellcheck &&
+          ["ready", "failed"].includes(window.NB.spellcheck.state()),
+          null, { timeout: 15000 });
+        await page.waitForTimeout(450);   // debounce + one idle pass
+      };
+      const enterSpellNote = async (rel, src) => {
+        writeNote(rel, src);
+        await gotoNote(page, rel);
+        await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+        await page.click("#hybrid-toggle");
+        await page.waitForFunction(() => window.NB.hybrid.isActive(),
+          null, { timeout: 8000 });
+        await waitSpell();
+      };
+      const leaveSpell = async () => {
+        await page.evaluate(() => window.NB.hybrid.exit(false));
+        await page.waitForFunction(() => !window.NB.hybrid.isActive(),
+          null, { timeout: 8000 });
+      };
+      // Right-click the middle of the first occurrence of `needle` in the
+      // editing root. Returns the click point (or throws if it is not
+      // rendered, which would be a layout failure, not an assertion).
+      const rightClickText = async (needle) => {
+        const box = await page.evaluate((needle) => {
+          const root = document.getElementById("viewer-content");
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          let node = null;
+          while ((node = walker.nextNode())) {
+            const i = node.data.indexOf(needle);
+            if (i === -1) continue;
+            const at = i + Math.floor(needle.length / 2);
+            const r = document.createRange();
+            r.setStart(node, at);
+            r.setEnd(node, at + 1);
+            const rect = r.getBoundingClientRect();
+            if (!rect.width && !rect.height) continue;
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+          }
+          return null;
+        }, needle);
+        if (!box) throw new Error("no rendered text matches " + needle);
+        await page.mouse.click(box.x, box.y, { button: "right" });
+        await page.waitForTimeout(180);
+      };
+      const menuState = () => page.evaluate(() => {
+        const m = document.getElementById("nb-menu");
+        const first = m.querySelector("button");
+        return {
+          hidden: m.hidden,
+          label: m.getAttribute("aria-label"),
+          children: Array.from(m.children).map((c) =>
+            c.tagName === "HR" ? "HR" : c.textContent.trim()),
+          active: document.activeElement && document.activeElement.tagName === "BUTTON"
+            ? document.activeElement.textContent.trim() : null,
+          firstDisabled: !!first && first.disabled,
+          firstAriaDisabled: first ? first.getAttribute("aria-disabled") : null,
+        };
+      });
+      const pickMenu = async (label) => {
+        await page.evaluate((label) => {
+          const btn = Array.from(document.querySelectorAll("#nb-menu button"))
+            .find((b) => b.textContent.trim() === label);
+          if (!btn) throw new Error("no menu item " + label);
+          btn.click();
+        }, label);
+        await page.waitForTimeout(350);
+      };
+      const paint = () => page.evaluate(() => {
+        const h = window.CSS && window.CSS.highlights &&
+          window.CSS.highlights.get("nb-spelling");
+        if (!h) return [];
+        return Array.from(h).map((r) => ({
+          text: r.toString(),
+          inCode: !!(r.startContainer.parentElement &&
+            r.startContainer.parentElement.closest("code, pre")),
+        }));
+      });
+      const paraText = () => page.evaluate(() => {
+        const p = document.querySelector("#viewer-content p");
+        return (p ? p.textContent : "").replace(/\u200B/g, "");
+      });
+      const waitConfigPost = (needle) => page.waitForRequest((r) =>
+        r.method() === "POST" && r.url().indexOf("/api/config") !== -1 &&
+        (r.postData() || "").indexOf(needle) !== -1, { timeout: 8000 });
+
+      // --- T-SPELL-06: one word replaced, dirty, autosaved, one undo step.
+      {
+        const file = "notes/spell-fix.md";
+        const SRC = "Hello wrld and wrld again.\n";
+        await enterSpellNote(file, SRC);
+        await page.evaluate(() => window.NB.app.setAutosaveDelay(1));
+        check("T-SPELL-06: both misspellings are underlined before the fix",
+          (await paint()).filter((r) => r.text === "wrld").length === 2,
+          JSON.stringify(await paint()));
+        await rightClickText("wrld");
+        const block = await menuState();
+        const suggestions = block.children.slice(0, block.children.indexOf("HR"));
+        const addAt = block.children.indexOf("Add to dictionary");
+        check("T-SPELL-04: the Spelling block leads with at most 5 suggestions",
+          !block.hidden && suggestions.length >= 1 && suggestions.length <= 5,
+          JSON.stringify(block.children.slice(0, 10)));
+        check("T-SPELL-04: suggestions, HR, Add, Ignore, HR, then Copy",
+          addAt === suggestions.length + 1 &&
+          block.children[addAt + 1] === "Ignore" &&
+          block.children[addAt + 2] === "HR" &&
+          block.children[addAt + 3] === "Copy",
+          JSON.stringify(block.children.slice(0, 12)));
+        check("T-SPELL-04: a misspelled word's first suggestion is focused",
+          block.active === suggestions[0], "active=" + block.active);
+        check("T-SPELL-04: menu host keeps role=menu",
+          await page.evaluate(() => document.getElementById("nb-menu")
+            .getAttribute("role") === "menu"));
+
+        await pickMenu(suggestions[0]);
+        const fixed = await paraText();
+        check("T-SPELL-06: the pick replaces exactly one word",
+          fixed.trim() === "Hello world and wrld again.",
+          JSON.stringify(fixed));
+        check("T-SPELL-06: the fix marks the session dirty",
+          await page.evaluate(() => window.NB.hybrid.isDirty() &&
+            !!document.querySelector("#tab-bar .tab.dirty")));
+        check("T-SPELL-06: the underline clears at the fixed word",
+          (await paint()).filter((r) => r.text === "wrld").length === 1,
+          JSON.stringify(await paint()));
+
+        let saved = readNote(file);
+        for (let i = 0; i < 40 && saved.trim() !== "Hello world and wrld again."; i++) {
+          await page.waitForTimeout(200);
+          saved = readNote(file);
+        }
+        check("T-SPELL-06: autosave writes the corrected file",
+          saved.trim() === "Hello world and wrld again.", JSON.stringify(saved));
+
+        await page.keyboard.press("Control+z");
+        await page.waitForTimeout(300);
+        const undone = await paraText();
+        check("T-SPELL-06: one Ctrl+Z restores only the fix",
+          undone.trim() === "Hello wrld and wrld again.",
+          JSON.stringify(undone));
+        check("T-SPELL-06: the undo leaves the session dirty against the saved bytes",
+          await page.evaluate(() => window.NB.hybrid.isDirty()));
+
+        await saveAndExit(page);
+        await page.waitForFunction(() => !window.NB.hybrid.isActive(),
+          null, { timeout: 8000 });
+        await page.waitForTimeout(200);
+        check("T-SPELL-06: saving the undone buffer restores the original bytes",
+          readNote(file) === SRC, JSON.stringify(readNote(file)));
+        await page.evaluate(() => window.NB.app.setAutosaveDelay(5));
+      }
+
+      // --- T-SPELL-08: the underline paints prose, never code; T-SPELL-04's
+      // no-suggestion branch (AC5).
+      {
+        const file = "notes/spell-paint.md";
+        const SRC = "Hello wrld here.\n\n`inline tpyo`\n\n```\nfenced tpyo\n```\n\nqqqqqq here.\n";
+        await enterSpellNote(file, SRC);
+        const state = await page.evaluate(() => {
+          const h = window.CSS && CSS.highlights && CSS.highlights.get("nb-spelling");
+          let rule = null;
+          for (const sheet of document.styleSheets) {
+            let rules;
+            try { rules = sheet.cssRules; } catch (_) { continue; }
+            for (const r of rules) {
+              if (r.selectorText === "::highlight(nb-spelling)") rule = r.cssText;
+            }
+          }
+          return {
+            ranges: h ? Array.from(h).map((r) => ({
+              text: r.toString(),
+              inCode: !!(r.startContainer.parentElement &&
+                r.startContainer.parentElement.closest("code, pre")),
+            })) : [],
+            rule,
+            offset: getComputedStyle(document.getElementById("viewer-content"))
+              .getPropertyValue("--spell-underline-offset").trim(),
+            thickness: getComputedStyle(document.getElementById("viewer-content"))
+              .getPropertyValue("--spell-underline-thickness").trim(),
+          };
+        });
+        check("T-SPELL-08: a misspelled prose word carries one range",
+          state.ranges.filter((r) => r.text === "wrld").length === 1,
+          JSON.stringify(state.ranges));
+        check("T-SPELL-08: a correct word carries no range",
+          !state.ranges.some((r) => /^hello$/i.test(r.text)),
+          JSON.stringify(state.ranges.map((r) => r.text)));
+        check("T-SPELL-08: no range starts inside code or pre",
+          state.ranges.every((r) => r.inCode === false),
+          JSON.stringify(state.ranges));
+        check("T-SPELL-08: code text is never underlined",
+          state.ranges.filter((r) => r.text === "tpyo").length === 0,
+          JSON.stringify(state.ranges.map((r) => r.text)));
+        check("AC1: ::highlight(nb-spelling) paints a wavy underline in --danger",
+          !!state.rule && /wavy/.test(state.rule) && /--danger/.test(state.rule) &&
+          /var\(--spell-underline-thickness\)/.test(state.rule), String(state.rule));
+        check("AC1: the underline thickness token carries 1.5px",
+          state.thickness === "1.5px", state.thickness);
+        check("AC1: the underline offset token carries .18em",
+          /\.18em/.test(state.offset), state.offset);
+
+        await rightClickText("qqqqqq");
+        const none = await menuState();
+        check("T-SPELL-04: no suggestions shows the disabled reason first",
+          none.children[0] === "No spelling suggestions" &&
+          none.firstDisabled === true && none.firstAriaDisabled === "true",
+          JSON.stringify(none.children.slice(0, 6)) +
+            " disabled=" + none.firstDisabled);
+        check("T-SPELL-04: the no-suggestion block still offers Add and Ignore",
+          none.children.indexOf("Add to dictionary") !== -1 &&
+          none.children.indexOf("Ignore") !== -1,
+          JSON.stringify(none.children.slice(0, 6)));
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(120);
+        await leaveSpell();
+      }
+
+      // --- T-SPELL-18: accepted shapes (AC19). An all-caps acronym, a
+      // camel/Pascal identifier, a possessive of a known word and a hyphen
+      // compound of known parts are notebook vocabulary, not errors; a
+      // lower-case typo is still flagged, and a personal part accepts the
+      // compound built from it.
+      {
+        const file = "notes/spell-shapes.md";
+        const SRC = "SCPI currentColor box-shadow MOSFET's recieve here.\n";
+        await enterSpellNote(file, SRC);
+        const shapes = await paint();
+        check("T-SPELL-18: only the lower-case typo carries a range",
+          shapes.length === 1 && shapes[0].text === "recieve",
+          JSON.stringify(shapes.map((r) => r.text)));
+        check("T-SPELL-18: acronym, identifier, compound and possessive are clean",
+          !shapes.some((r) => /^(SCPI|currentColor|box-shadow|MOSFET's)$/
+            .test(r.text)), JSON.stringify(shapes.map((r) => r.text)));
+        await leaveSpell();
+      }
+
+      {
+        const file = "notes/spell-shapes-personal.md";
+        const SRC = "Personal html and html-live here.\n";
+        await enterSpellNote(file, SRC);
+        const before = await paint();
+        check("T-SPELL-18: html-live is flagged before html is a personal word",
+          before.some((r) => r.text === "html-live"),
+          JSON.stringify(before.map((r) => r.text)));
+        const wordsPost = waitConfigPost('"html"');
+        await page.evaluate(() => {
+          window.NB.app.setSpellcheckWords(
+            window.NB.app.getSpellcheckWords().concat(["html"]));
+        });
+        await wordsPost;
+        await page.waitForTimeout(450);
+        const after = await paint();
+        check("T-SPELL-18: a personal html accepts html-live",
+          after.length === 0, JSON.stringify(after.map((r) => r.text)));
+        await leaveSpell();
+        // Leave the list as the later cases expect it.
+        await page.evaluate(() => window.NB.app.setSpellcheckWords([]));
+        await page.waitForTimeout(350);
+      }
+
+      // --- T-SPELL-07: the menu outlives the note switch; the pick aborts.
+      {
+        const A = "notes/spell-race-a.md";
+        const B = "notes/spell-race-b.md";
+        const SRC_A = "Switch a wrld here.\n";
+        const SRC_B = "Switch b text.\n";
+        writeNote(A, SRC_A);
+        writeNote(B, SRC_B);
+        await enterSpellNote(A, SRC_A);
+        await rightClickText("wrld");
+        await page.evaluate(() => {
+          window.__spellPick = document.querySelector("#nb-menu button");
+        });
+        // By this point in the suite the strip holds SESSION_FILES_MAX
+        // notes (every earlier case leaves its note open), so a new tab is
+        // refused. Make room with a clean tab first; the switch under test
+        // is the in-page one, not the open itself.
+        await page.evaluate(() => {
+          const active = NB.tabs.getActive();
+          const list = NB.tabs.getOpen();
+          for (let i = list.length - 1; i >= 0; i--) {
+            if (list[i] !== active && list[i].indexOf("/spell-") === -1) {
+              NB.tabs.close(list[i], { force: true });
+              return;
+            }
+          }
+        });
+        await page.waitForTimeout(80);
+        await page.evaluate((p) => window.NB.tabs.open(p), B);
+        await page.waitForFunction((p) => window.NB.tabs.getActive() === p &&
+          !window.NB.hybrid.isActive(), B, { timeout: 8000 });
+        check("T-SPELL-07: the note switch closes the menu and leaves hybrid",
+          await page.evaluate(() => document.getElementById("nb-menu").hidden));
+        await page.evaluate(() => window.__spellPick.click());
+        await page.waitForTimeout(700);
+        check("T-SPELL-07: a pick after the switch writes nothing",
+          readNote(A) === SRC_A && readNote(B) === SRC_B &&
+          !(await page.evaluate(() => window.NB.hybrid.isDirty())),
+          JSON.stringify({ a: readNote(A), b: readNote(B) }));
+      }
+
+      // --- T-SPELL-10: Shift+F10 on prose opens the block, first item focused
+      // (AC16/T-SPELL-14). The pointer Shift gesture is in the routing block.
+      {
+        const file = "notes/spell-key.md";
+        const SRC = "Keyboard wrld here.\n";
+        await enterSpellNote(file, SRC);
+        await page.evaluate(() => {
+          const root = document.getElementById("viewer-content");
+          const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+          let node = null;
+          while ((node = walker.nextNode())) {
+            if (node.data.indexOf("wrld") !== -1) break;
+          }
+          const at = node.data.indexOf("wrld") + 2;
+          const r = document.createRange();
+          r.setStart(node, at);
+          r.collapse(true);
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(r);
+          root.focus();
+          window.__kbEvents = [];
+          document.addEventListener("keydown", (e) => {
+            window.__kbEvents.push("keydown " + e.key);
+          }, true);
+          document.addEventListener("contextmenu", (e) => {
+            window.__kbEvents.push("contextmenu x=" + e.clientX +
+              " y=" + e.clientY);
+          }, true);
+        });
+        await page.keyboard.press("Shift+F10");
+        await page.waitForTimeout(250);
+        const kb = await menuState();
+        const kbEvents = await page.evaluate(() => window.__kbEvents || []);
+        if (BROWSER === "chromium") {
+          check("T-SPELL-10: Shift+F10 opens the app menu on prose",
+            !kb.hidden && kb.label === "Note actions",
+            JSON.stringify({ hidden: kb.hidden, label: kb.label,
+              events: kbEvents }));
+          check("T-SPELL-10: Shift+F10 focuses the first suggestion",
+            kb.active === kb.children[0], "active=" + kb.active +
+              " first=" + kb.children[0]);
+        } else {
+          // Firefox 155 delivers Shift+F10 and the Menu key as keydown only:
+          // it never dispatches `contextmenu`, so the app's documented
+          // keyboard entry (§5, AC16) cannot run there. Chromium proves the
+          // app's side; this records the engine gap rather than excusing it.
+          check("T-SPELL-10: Firefox dispatches contextmenu for Shift+F10 (AC16)",
+            kbEvents.some((e) => e.indexOf("contextmenu") === 0),
+            "events=" + JSON.stringify(kbEvents) +
+              " menu=" + JSON.stringify(kb));
+        }
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(120);
+        await leaveSpell();
+      }
+
+      // --- T-SPELL-16: the switch writes `spellcheck`; off means off; a
+      // remote config:changed applies live in hybrid.
+      {
+        const file = "notes/spell-switch.md";
+        const SRC = "Switch wrld here.\n\n| a | b |\n| - | - |\n| 1 | 2 |\n";
+        await enterSpellNote(file, SRC);
+        const attr = () => page.evaluate(() =>
+          document.getElementById("viewer-content").getAttribute("spellcheck"));
+
+        await page.click("#activity-settings-btn");
+        const offPost = waitConfigPost('"spellcheck":false');
+        await page.click("#settings-spellcheck-toggle");
+        const offReq = await offPost;
+        check("T-SPELL-16: the switch writes spellcheck:false",
+          (offReq.postData() || "").indexOf('"spellcheck":false') !== -1);
+        await page.click("#settings-close");
+        await page.waitForTimeout(600);
+        check("T-SPELL-16: off keeps spellcheck=false on the surface (off means off)",
+          (await attr()) === "false", String(await attr()));
+        check("T-SPELL-16: off paints no underline", (await paint()).length === 0,
+          JSON.stringify(await paint()));
+        await page.evaluate(() => {
+          window.__ctx = null;
+          window.__ctxListener = (e) => {
+            window.__ctx = { defaultPrevented: e.defaultPrevented };
+          };
+          document.addEventListener("contextmenu", window.__ctxListener);
+        });
+        await rightClickText("wrld");
+        const offCtx = await page.evaluate(() => window.__ctx);
+        check("T-SPELL-16: with the switch off prose keeps the browser menu",
+          offCtx && offCtx.defaultPrevented === false &&
+          await page.evaluate(() => document.getElementById("nb-menu").hidden),
+          JSON.stringify(offCtx));
+
+        // A structural target still opens the app menu when the browser owns
+        // spelling, but with the switch off menuItems() returns [] even
+        // there: no Spelling block anywhere.
+        await page.evaluate(() => { window.__ctx = null; });
+        const cellBox = await page.evaluate(() => {
+          const td = document.querySelector("#viewer-content td");
+          const r = td.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        });
+        await page.mouse.click(cellBox.x, cellBox.y, { button: "right" });
+        await page.waitForTimeout(180);
+        const offCellCtx = await page.evaluate(() => window.__ctx);
+        const offCellMenu = await menuState();
+        check("T-SPELL-16: with the switch off a cell keeps the app menu",
+          offCellCtx && offCellCtx.defaultPrevented === true && !offCellMenu.hidden,
+          JSON.stringify(offCellCtx));
+        check("T-SPELL-16: with the switch off the cell menu has no Spelling block",
+          offCellMenu.children[0] === "Copy" &&
+          offCellMenu.children.indexOf("Add to dictionary") === -1 &&
+          offCellMenu.children.indexOf("Ignore") === -1 &&
+          offCellMenu.children.indexOf("No spelling suggestions") === -1,
+          JSON.stringify(offCellMenu.children.slice(0, 6)));
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(120);
+        await page.evaluate(() => document.removeEventListener(
+          "contextmenu", window.__ctxListener));
+
+        await page.click("#activity-settings-btn");
+        const onPost = waitConfigPost('"spellcheck":true');
+        await page.click("#settings-spellcheck-toggle");
+        await onPost;
+        await page.click("#settings-close");
+        await page.waitForTimeout(600);
+        check("T-SPELL-16: on restores the attribute and the paint",
+          (await attr()) === "false" &&
+          (await paint()).some((r) => r.text === "wrld"),
+          JSON.stringify(await paint()));
+
+        // A remote change: the app has no config poll, so the delivery path
+        // is the sync loop's `config:changed` emit, and the handler reads
+        // cfg at call time. Emit it synchronously and assert the surface
+        // follows without waiting for this page's own write.
+        const remoteOff = await page.evaluate(() => {
+          window.NB.app.setSpellcheck(false);
+          window.NB.evt.emit("config:changed", window.NB.app.getCfg(),
+            { remote: true });
+          const h = window.CSS.highlights.get("nb-spelling");
+          return {
+            attr: document.getElementById("viewer-content")
+              .getAttribute("spellcheck"),
+            ranges: h ? Array.from(h).length : 0,
+          };
+        });
+        check("T-SPELL-16: a remote off applies live in hybrid",
+          remoteOff.attr === "false" && remoteOff.ranges === 0,
+          JSON.stringify(remoteOff));
+        const remoteOn = await page.evaluate(() => {
+          window.NB.app.setSpellcheck(true);
+          window.NB.evt.emit("config:changed", window.NB.app.getCfg(),
+            { remote: true });
+          const h = window.CSS.highlights.get("nb-spelling");
+          return {
+            attr: document.getElementById("viewer-content")
+              .getAttribute("spellcheck"),
+            ranges: h ? Array.from(h).map((r) => r.toString()) : [],
+          };
+        });
+        check("T-SPELL-16: a remote on repaints live in hybrid",
+          remoteOn.attr === "false" && remoteOn.ranges.indexOf("wrld") !== -1,
+          JSON.stringify(remoteOn));
+        await page.waitForTimeout(400);
+        await leaveSpell();
+      }
+
+      // --- T-SPELL-15: Add persists across a reload; Ignore lasts one
+      // session; typing after either lands in the note (AC8, AC9, AC15).
+      {
+        const file = "notes/spell-add.md";
+        const SRC = "Add wrld here.\n";
+        await enterSpellNote(file, SRC);
+        await rightClickText("wrld");
+        const addPost = waitConfigPost('"wrld"');
+        await pickMenu("Add to dictionary");
+        await addPost;
+        check("T-SPELL-15: Add to dictionary clears the mark at once",
+          !(await paint()).some((r) => r.text === "wrld"),
+          JSON.stringify(await paint()));
+        check("T-SPELL-15: Add to dictionary returns focus to the page",
+          await page.evaluate(() => document.activeElement &&
+            document.activeElement.id === "viewer-content"));
+        await page.keyboard.type("x");
+        await page.waitForTimeout(200);
+        const afterAddType = await paraText();
+        check("T-SPELL-15: typing after Add lands in the note",
+          afterAddType.length === "Add wrld here.".length + 1 &&
+          afterAddType.indexOf("x") !== -1, JSON.stringify(afterAddType));
+        await page.keyboard.press("Control+z");
+        await page.waitForTimeout(150);
+        await leaveSpell();
+
+        // A reload reads spellcheckWords from config.json.
+        await gotoNote(page, file);
+        await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+        await page.click("#hybrid-toggle");
+        await page.waitForFunction(() => window.NB.hybrid.isActive(),
+          null, { timeout: 8000 });
+        await waitSpell();
+        check("T-SPELL-15: Add to dictionary survives a reload",
+          !(await paint()).some((r) => r.text === "wrld"),
+          JSON.stringify(await paint()));
+        await page.waitForTimeout(300);
+        await leaveSpell();
+
+        // Put the config back so the later cases start clean.
+        const clearPost = waitConfigPost('"spellcheckWords":[]');
+        await page.evaluate(() => window.NB.app.setSpellcheckWords([]));
+        await clearPost;
+
+        // Ignore: session-scoped, so re-entering marks the word again.
+        const ifile = "notes/spell-ignore.md";
+        const ISRC = "Ignore tpyo here.\n";
+        await enterSpellNote(ifile, ISRC);
+        await rightClickText("tpyo");
+        await pickMenu("Ignore");
+        check("T-SPELL-15: Ignore clears the mark at once",
+          !(await paint()).some((r) => r.text === "tpyo"),
+          JSON.stringify(await paint()));
+        check("T-SPELL-15: Ignore returns focus to the page",
+          await page.evaluate(() => document.activeElement &&
+            document.activeElement.id === "viewer-content"));
+        await page.keyboard.type("y");
+        await page.waitForTimeout(200);
+        const afterIgnoreType = await paraText();
+        check("T-SPELL-15: typing after Ignore lands in the note",
+          afterIgnoreType.length === "Ignore tpyo here.".length + 1 &&
+          afterIgnoreType.indexOf("y") !== -1, JSON.stringify(afterIgnoreType));
+        await page.keyboard.press("Control+z");
+        await page.waitForTimeout(150);
+        await leaveSpell();
+        await page.click("#hybrid-toggle");
+        await page.waitForFunction(() => window.NB.hybrid.isActive(),
+          null, { timeout: 8000 });
+        await waitSpell();
+        check("T-SPELL-15: Ignore does not survive a re-entry",
+          (await paint()).some((r) => r.text === "tpyo"),
+          JSON.stringify(await paint()));
+        await leaveSpell();
+      }
+
+      // --- T-SPELL-09: a blocked dictionary fails the feature back to the
+      // browser (AC12): attribute removed, browser menu on prose, the note.
+      {
+        const file = "notes/spell-fail.md";
+        const SRC = "Recover wrld here.\n";
+        const DIC_ROUTE = "**/dictionaries/en_US/en_US.dic";
+        // page.route() cannot see a request the service worker answers, and
+        // the network-first handler caches the dictionary after first use.
+        // Drop the registration and the caches, and stub registration so the
+        // next load cannot hand the fetch to a worker again.
+        await page.addInitScript(() => {
+          if (navigator.serviceWorker && navigator.serviceWorker.register) {
+            navigator.serviceWorker.register = () => Promise.resolve({});
+          }
+        });
+        await page.evaluate(async () => {
+          if (navigator.serviceWorker) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map((r) => r.unregister()));
+          }
+          if (window.caches) {
+            const keys = await caches.keys();
+            await Promise.all(keys.map((k) => caches.delete(k)));
+          }
+        });
+        await page.route(DIC_ROUTE, (route) => route.fulfill({
+          status: 404, contentType: "text/plain", body: "not found",
+        }));
+        writeNote(file, SRC);
+        await gotoNote(page, file);
+        await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+        await page.click("#hybrid-toggle");
+        await page.waitForFunction(() => window.NB.hybrid.isActive(),
+          null, { timeout: 8000 });
+        await page.waitForFunction(() => window.NB.spellcheck &&
+          window.NB.spellcheck.state() === "failed", null, { timeout: 15000 });
+        check("T-SPELL-09: a blocked dictionary reports failed",
+          await page.evaluate(() => window.NB.spellcheck.state() === "failed"));
+        check("T-SPELL-09: a failed load removes the spellcheck attribute",
+          await page.evaluate(() => !document.getElementById("viewer-content")
+            .hasAttribute("spellcheck")));
+        await page.evaluate(() => {
+          window.__ctx = null;
+          window.__ctxListener = (e) => {
+            window.__ctx = { defaultPrevented: e.defaultPrevented };
+          };
+          document.addEventListener("contextmenu", window.__ctxListener);
+        });
+        await rightClickText("wrld");
+        const failCtx = await page.evaluate(() => window.__ctx);
+        check("T-SPELL-09: a failed load returns prose to the browser menu",
+          failCtx && failCtx.defaultPrevented === false &&
+          await page.evaluate(() => document.getElementById("nb-menu").hidden),
+          JSON.stringify(failCtx));
+
+        await page.click("#activity-settings-btn");
+        await page.waitForTimeout(150);
+        const noteState = await page.evaluate(() => {
+          const note = document.getElementById("settings-spellcheck-note");
+          const toggle = document.getElementById("settings-spellcheck-toggle");
+          return {
+            hidden: note.hidden,
+            text: note.textContent.trim(),
+            warn: note.classList.contains("settings-note--warn"),
+            disabled: toggle.disabled,
+          };
+        });
+        check("T-SPELL-09: the Settings note names the failed dictionary",
+          noteState.hidden === false &&
+          noteState.text === "Spelling dictionary could not be loaded." &&
+          noteState.warn === true, JSON.stringify(noteState));
+        await page.click("#settings-close");
+        await page.waitForTimeout(150);
+
+        // Recovery: the route is gone, so the next boot loads the pair.
+        await page.unroute(DIC_ROUTE);
+        await page.evaluate(() => document.removeEventListener(
+          "contextmenu", window.__ctxListener));
+        await leaveSpell();
+        await gotoNote(page, file);
+        await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+        await page.click("#hybrid-toggle");
+        await page.waitForFunction(() => window.NB.hybrid.isActive(),
+          null, { timeout: 8000 });
+        await waitSpell();
+        check("T-SPELL-09: the next enter retries and owns the surface again",
+          await page.evaluate(() => window.NB.spellcheck.state() === "ready" &&
+            document.getElementById("viewer-content")
+              .getAttribute("spellcheck") === "false"));
+        await leaveSpell();
+      }
+
+      check("real browser spell: no uncaught page errors",
+        pageErrors.length === 0, pageErrors.join(" | "));
+    }
 
     // --- hybrid chord core: preventDefault + selection survives prompt ---
     // AC13 is browser-only: jsdom does not blur on prompt() and cannot prove

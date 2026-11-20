@@ -215,6 +215,8 @@ for the default it is the unresolved `DATA_DIR` string.
 | `vimMode` | boolean | Enables the VIM keymap in the shell and in the editor (`app.js`) |
 | `vimrc` | string | User VIM initial script applied to the editor's vim plugin (`app.js`) |
 | `autosave` | boolean | Saves hybrid-mode edits after a typing pause; vim mode is unaffected. Off means a dirty tab switch stashes a recoverable draft instead of saving (`app.js`) |
+| `spellcheck` | boolean | The app's en_US spellcheck in hybrid mode: the misspelling underline and the right-click Spelling block. Off also keeps the browser's own spellcheck off on the editing surface, because the app owns the feature. Default `true`. Designed, not yet shipped: [`../architecture/spellcheck.md`](../architecture/spellcheck.md) |
+| `spellcheckWords` | array of strings | Personal words the user added from the Spelling block. Lower-cased, deduped, at most 64 characters each, capped at 1,000 (oldest dropped) on read and on write (`app.js`). Designed, not yet shipped |
 | `watchEnabled` | boolean | Starts the external-change watcher on boot. The Settings toggle writes it; `false` disables the polling fallback after config arrives (`app.js`, `settings.js`). Defaults to on. |
 | `shortcuts` | object | Per-action key bindings; missing actions fall back to `DEFAULTS` in `static/js/shortcuts.js` (`app.js`) |
 

@@ -48,9 +48,16 @@
     el.style.top = Math.max(VIEWPORT_EDGE, Math.min(opts.y, maxTop)) + "px";
     el.setAttribute("role", "menu");
 
+    // The accessible name belongs to the surface that opened the menu; the
+    // singleton is shared, so a fixed label would misname the other menus.
+    const label = typeof opts.label === "string" ? opts.label : "";
+    if (label) el.setAttribute("aria-label", label);
+    else el.removeAttribute("aria-label");
+
     state = {
       owner,
       scope,
+      label,
       onClose: typeof opts.onClose === "function" ? opts.onClose : null,
     };
     if (opts.focusFirst) {
