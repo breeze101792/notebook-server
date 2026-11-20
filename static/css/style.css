@@ -3655,6 +3655,8 @@ body > #nb-menu .submenu.open {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: 8px;
+  /* Symmetric box: the fence's language label lives in the 14px top strip,
+   * and the copy pair floats over the block's top-right corner on hover. */
   padding: 14px 16px;
   /* Match the paragraph/list/quote vertical rhythm so a codeblock toggle
    * keeps the same neighbour gap. Without this, <pre> fell back to the
@@ -3664,13 +3666,6 @@ body > #nb-menu .submenu.open {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   overflow-x: clip;
-}
-/* A fence reserves a top band for its language label and copy pair in every
- * state, so clicking it never changes the block's height. The band is the
- * 26px button plus --copy-btn-inset above and below (38px). Plugin error
- * boxes hold a text-only <pre>, so the :has() keeps the band off them. */
-.markdown-body pre:has(> code) {
-  padding-top: 38px;
 }
 .markdown-body pre code,
 .markdown-body pre code.hljs {
@@ -3730,24 +3725,23 @@ body > #nb-menu .submenu.open {
 .code-copy-btn.copied { color: var(--accent); border-color: var(--accent); }
 
 /* Language header on a code fence: the authored language is drawn as
- * generated text in the fence's reserved top band (see the padding-top on
- * .markdown-body pre:has(> code) above), so the type is visible in read and
- * edit mode alike and clicking the fence changes no height. No node is
- * added: the label cannot take a caret, be selected, copied or saved.
+ * generated text in the fence's top padding strip, so the type is visible in
+ * read and edit mode alike and clicking the fence changes no height. No node
+ * is added: the label cannot take a caret, be selected, copied or saved.
  *
  * While the fence is edited, the chip below replaces the label in the same
- * place; the band and the padding never change. */
+ * place; the padding never changes. */
 .markdown-body pre:has(> code)[data-fence-lang]:not([data-fence-lang=""])::after {
   content: attr(data-fence-lang);
   position: absolute;
-  /* The label's line box is the whole band, so its centre lines up with the
-   * copy pair's centre. */
+  /* Line box equal to the 14px top padding, so the label sits in the strip
+   * above the first code line. */
   top: 0;
   left: 16px;
   max-width: calc(100% - 134px);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: .72em;
-  line-height: 38px;
+  line-height: 14px;
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -3757,7 +3751,7 @@ body > #nb-menu .submenu.open {
 .markdown-body pre.hybrid-plugin-editing::after {
   display: none;
 }
-/* The fence buttons sit in the band above the first code line, so they must
+/* The fence buttons float over the block's top-right corner, so they must
  * paint over the code's own background. Position comes from the base rule. */
 .markdown-body pre:has(> code) > .code-copy-btn {
   z-index: 2;
@@ -3787,15 +3781,16 @@ body > #nb-menu .submenu.open {
 /* Language chip on a code block being edited in hybrid mode. Click and type
  * to change the fence language -- Enter commits, Esc cancels. The box keeps
  * the app's chip look so an empty language stays visible; it is absolutely
- * positioned, so it cannot change the block's height. Its text starts at
- * x = 16 (7 + 8 padding + 1 border), matching the generated label. */
+ * positioned, so it cannot change the block's height. It fills the fence's
+ * 14px top padding strip and covers the generated label there. Its text
+ * starts at x = 16 (7 + 8 padding + 1 border), matching that label. */
 .hybrid-lang-pill {
   position: absolute;
-  top: 10px;
+  top: 0;
   left: 7px;
   box-sizing: border-box;
-  height: 18px;
-  font: .72em/1.2 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  height: 14px;
+  font: .72em/12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   padding: 0 8px;
   border-radius: 4px;
   border: 1px dashed var(--border);
@@ -8346,7 +8341,7 @@ body[data-theme="light"] #dw-designer-overlay {
     line-height: 44px;
   }
   .hybrid-lang-pill {
-    top: 13px;
+    top: 15px;
     left: 5px;
   }
   /* Must out-specify the desktop pre > .code-copy-btn rule. */
