@@ -1558,6 +1558,9 @@ set tabstop=2</textarea></div>
         <button type="button" role="menuitem" disabled aria-disabled="true" title="Only the default workspace cannot be removed">Remove</button>
         <button type="button" role="menuitem" class="danger">Delete</button>
       </div>
+      <p class="note">A submenu flyout overlaps its parent item by 4 px so the pointer never
+        crosses a gap that closes it: <code>left: calc(100% - var(--space-1))</code>, never a
+        positive <code>margin-left</code>.</p>
     </div>
 
     <div class="cell">

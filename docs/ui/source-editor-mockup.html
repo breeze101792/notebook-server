@@ -331,7 +331,7 @@ body {
   font-size: .8em;
   color: var(--text-muted);
 }
-.submenu .menu { top: 0; left: 100%; right: auto; margin: 0 0 0 2px; min-width: 150px; }
+.submenu .menu { top: 0; left: calc(100% - var(--space-1)); right: auto; margin: 0; min-width: 150px; }
 
 /* Emoji picker — style.css:678-753 */
 .emoji-panel {
@@ -1186,7 +1186,8 @@ body {
     All four are <code>--surface-panel</code> boxes with a 6 px radius, 4 px padding, a 2 px
     gap and <code>--shadow-pop</code>. Items are 28 px, left-aligned, muted text, full width.
     The trigger takes the E7 accent border while expanded. Mermaid is the only group with a
-    flyout; it opens to the right at <code>left: 100%</code>. The table menu is 428 px tall
+    flyout; it opens to the right and overlaps the item by 4 px
+    (<code>left: calc(100% - var(--space-1))</code>, never a positive gap). The table menu is 428 px tall
     and has no flip or max-height (<code>§10</code> P4).</figcaption>
 </figure>
 

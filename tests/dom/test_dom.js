@@ -3909,7 +3909,7 @@ function check(label, cond, extra) {
       !!subA && subA.tagName === "BUTTON" &&
       Array.from(subA.children).some((c) => c.tagName === "DIV" && c.classList.contains("context-menu")));
     subA.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    check("menu module: submenu click toggles .open", subA.classList.contains("open"));
+    check("menu module: submenu click opens .open", subA.classList.contains("open"));
     subB.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     check("menu module: opening a sibling closes the first submenu",
       !subA.classList.contains("open") && subB.classList.contains("open"));
@@ -3919,6 +3919,61 @@ function check(label, cond, extra) {
     check("menu module: flyout item click closes the whole menu", menuEl.hidden);
     check("menu module: flyout item click leaves no .submenu.open",
       menuEl.querySelectorAll(".submenu.open").length === 0);
+
+    // --- submenu entry grace ---
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body,
+      items: [{ label: "Grace", submenu: [
+        { label: "G1", handler: () => {} },
+        { label: "G2", handler: () => {} },
+        { label: "G3", handler: () => {} },
+      ] }] });
+    const gWrap = menuEl.querySelector("button.submenu");
+    const gFly = gWrap.querySelector("div.context-menu");
+    // jsdom has no layout: hand the flyout the box the CSS produces so the
+    // grace triangle is measurable.
+    gWrap.getBoundingClientRect = () =>
+      ({ left: 0, right: 200, top: 100, bottom: 129, width: 200, height: 29 });
+    gFly.getBoundingClientRect = () =>
+      ({ left: 196, right: 356, top: 95, bottom: 245, width: 160, height: 150 });
+    const hover = (node) => node.dispatchEvent(new window.MouseEvent("mouseenter"));
+    const leave = (node, x, y) => node.dispatchEvent(
+      new window.MouseEvent("pointerleave", { clientX: x, clientY: y }));
+    const moveTo = (x, y) => window.document.dispatchEvent(
+      new window.MouseEvent("pointermove", { clientX: x, clientY: y, bubbles: true }));
+
+    hover(gWrap);
+    check("menu module: hovering a submenu item opens its flyout",
+      gWrap.classList.contains("open"));
+    leave(gWrap, 100, 129);
+    moveTo(150, 140);
+    check("menu module: the grace keeps the flyout through the wedge",
+      gWrap.classList.contains("open"));
+    moveTo(100, 150);
+    check("menu module: leaving the grace area straight down retires the flyout",
+      !gWrap.classList.contains("open"));
+
+    hover(gWrap);
+    leave(gWrap, 100, 129);
+    moveTo(200, 140);
+    check("menu module: reaching the flyout retires the grace and keeps the flyout",
+      gWrap.classList.contains("open"));
+
+    hover(gWrap);
+    gWrap.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    check("menu module: clicking a submenu parent opens, never toggles",
+      gWrap.classList.contains("open"));
+
+    // Two levels: opening the inner flyout must not close its ancestor.
+    window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body,
+      items: [{ label: "Outer", submenu: [
+        { label: "Inner", submenu: [{ label: "I1", handler: () => {} }] },
+      ] }] });
+    const outerSub = menuEl.querySelector("button.submenu");
+    const innerSub = outerSub.querySelector("button.submenu");
+    hover(outerSub);
+    hover(innerSub);
+    check("menu module: opening a nested submenu keeps its ancestor open",
+      outerSub.classList.contains("open") && innerSub.classList.contains("open"));
 
     // --- keyboard: submenu traversal ---
     window.NB.menu.open({ owner: "test", x: 5, y: 5, scope: window.document.body, focusFirst: false,

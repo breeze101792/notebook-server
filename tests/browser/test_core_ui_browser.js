@@ -242,6 +242,62 @@ async function main() {
     check("context menu closes on Escape",
       await page.evaluate(() => document.getElementById("nb-menu").hidden));
 
+    // ---------------------------------------------------------------
+    console.log("== menu module: submenu entry ==");
+    // A synthetic 6-row flyout: no shipped surface exposes a submenu here.
+    const itemBox = await page.evaluate(() => {
+      const rows = [];
+      for (let i = 1; i <= 6; i++) rows.push({ label: "Row " + i, handler: () => {} });
+      NB.menu.open({
+        owner: "test", x: 320, y: 180, scope: document.body,
+        items: [
+          { label: "Plain", handler: () => {} },
+          { label: "Sub", submenu: rows },
+          { label: "Tail", handler: () => {} },
+        ],
+      });
+      const r = document.querySelector("#nb-menu > button.submenu").getBoundingClientRect();
+      return { x: r.x, y: r.y, right: r.right, bottom: r.bottom, h: r.height };
+    });
+    await page.mouse.move(itemBox.x + 30, itemBox.y + itemBox.h / 2);
+    // Measured after the flyout is shown: display:none reports a zero box.
+    const flyGeom = await page.evaluate(() => {
+      const item = document.querySelector("#nb-menu > button.submenu");
+      const fly = item.querySelector(":scope > .context-menu");
+      const f = fly.getBoundingClientRect();
+      return {
+        left: f.left,
+        rows: Array.from(fly.querySelectorAll("button")).map((b) => {
+          const q = b.getBoundingClientRect();
+          return { x: q.x + q.width / 2, y: q.y + q.height / 2 };
+        }),
+      };
+    });
+    check("submenu flyout overlaps its item by 4px",
+      flyGeom.left <= itemBox.right && flyGeom.left >= itemBox.right - 8,
+      "flyout.left=" + flyGeom.left + " item.right=" + itemBox.right);
+
+    const flyShown = () => page.evaluate(() => {
+      const item = document.querySelector("#nb-menu > button.submenu");
+      const fly = item && item.querySelector(":scope > .context-menu");
+      return !!fly && item.classList.contains("open") &&
+        getComputedStyle(fly).display !== "none";
+    });
+
+    await page.mouse.move(itemBox.x + 30, itemBox.y + itemBox.h / 2);
+    check("submenu opens on hover", await flyShown());
+
+    const lastRow = flyGeom.rows[flyGeom.rows.length - 1];
+    await page.mouse.move(lastRow.x, lastRow.y, { steps: 20 });
+    check("submenu survives the diagonal path to its last row", await flyShown());
+
+    // Back to the item, then straight down onto the next row: the grace ends.
+    await page.mouse.move(itemBox.x + 30, itemBox.y + itemBox.h / 2, { steps: 20 });
+    await page.mouse.move(itemBox.x + 30, itemBox.bottom + 40, { steps: 8 });
+    check("submenu retires when the pointer leaves the grace area",
+      !(await flyShown()));
+    await page.evaluate(() => NB.menu.close());
+
     // Right-click a folder: its menu renders and a create item works.
     await row("notes").click({ button: "right" });
     await page.waitForFunction(() => !document.getElementById("nb-menu").hidden,

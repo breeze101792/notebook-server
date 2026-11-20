@@ -193,6 +193,7 @@ footer content. Settings and the dialogs reference it; they do not redefine its 
 | Markdown edit bar | 63 px at 772 (2 rows), 119 at 353 (4 rows) |
 | Modal edit bar | 57 px line, 44 px controls |
 | Modal box | `min(1320px, 96vw) × min(85vh, 92vh)` |
+| Menu flyout | overlaps its parent menu item by 4 px (`--space-1`); never a positive gap (`controls.md` §2.9.1) |
 | Settings box | `min(75vw, 96vw) × min(85vh, 92vh)` |
 | Dialog boxes | 420 (auth/workspace/session), 520 (export) |
 | Phone drawer | `min(86vw, 340px)` |

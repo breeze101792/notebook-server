@@ -220,7 +220,7 @@ z-index: 100`, `--bg-panel`, `1px --border`, radius 6, `--shadow-pop` literal, p
 | List | `☰` | `right: 0` | `min-width: 180px` | 28 px | Move item up, Move item down. Both `disabled` + `aria-disabled` unless the caret is on a list line, decided on open | `style.css:618-639`; `editbar.js:681-694` |
 | Table | `▦` | `left: 0` | `min-width: 170px`, measured 170 | 28 px | 14 items, in this order: Insert table, Move row up, Move row down, Move column left, Move column right, Align column (cycle), Insert row above, Insert row below, Delete row, Insert column left, Insert column right, Delete column, Toggle header row, Delete table | `index.html:342-357`; `style.css:643-648` |
 | Examples | `Examples ▾` | `left: 0` | `min-width: 170px` | 28 px | 6 rows from `NB.blocks.exampleGroups()`: Mermaid ▸, WaveDrom timing, Math (KaTeX), Graphviz graph, HTML preview, SVG drawing. The whole trigger hides when the registry is empty | `style.css:651-656`; `editbar.js:341-362` |
-| Mermaid flyout | `Mermaid ▸` | `left: 100%; top: 0; margin-left: 2px` | `min-width: 150px`, measured 160 | 28 px | Flowchart, Sequence, Pie, State, Class, ER, Gantt schedule, Timeline | `style.css:659-673` |
+| Mermaid flyout | `Mermaid ▸` | `left: calc(100% - var(--space-1)); top: 0; margin-left: 0` — overlaps the item by 4 px (`controls.md` §2.9.1) | `min-width: 150px`, measured 160 | 28 px | Flowchart, Sequence, Pie, State, Class, ER, Gantt schedule, Timeline | `style.css:659-673` |
 | Emoji | `😀` | `left: 0` | 268 px | see below | search field, 6 category tabs, 8-column grid | `style.css:679-753` |
 
 Item text is left-aligned and full width (`style.css:635-639`); the flyout marker is `▸`

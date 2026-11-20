@@ -622,7 +622,9 @@ the note `…` menu), and a real capture append to `Inbox.md` on disk.
 The audit suites cover the rest of the app end to end:
 
 - `test_core_ui_browser.js` — desktop tree and context menus with disk
-  assertions, tabs, real search, bookmarks, outline scroll-spy, settings,
+  assertions (including the submenu flyout: its 4 px overlap measured, and the
+  positional grace area that keeps it open across a diagonal pointer move), tabs, real search,
+  bookmarks, outline scroll-spy, settings,
   the watcher, the draft Recover bar on a tab switch, and the graph: 3D
   canvas pixels, orbit/wheel/pan through `getCamera()`, fit reset,
   keyboard select + Enter, projected double-click, filter count, depth 0%

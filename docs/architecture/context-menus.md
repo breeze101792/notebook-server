@@ -194,7 +194,7 @@ today.
 
 The module produces byte-identical DOM to today's menus so the CSS block
 (`style.css`) and the flyout rules (`:2587-2614`, which key off
-`.submenu > .context-menu` and `left: 100%`) need no changes:
+`.submenu > .context-menu`) need no changes beyond §5.1:
 
 - plain item → `<button>label</button>`; click = `NB.menu.close(); handler()`
   (close-then-run, as in all three modules today — `sidebar.js`,
@@ -202,8 +202,8 @@ The module produces byte-identical DOM to today's menus so the CSS block
 - separator → `<hr>`.
 - submenu → `<button class="submenu">label<div class="context-menu">…</div></button>`;
   click on the parent `stopPropagation`s, closes sibling `.submenu.open`,
-  and toggles `.open` (ported from `hybrid.js`); hover is pure
-  CSS. Flyout items recurse; separators inside flyouts work (hybrid's
+  and toggles `.open` (ported from `hybrid.js`); hover opens the flyout
+  through `.open` with a close grace (§5.1). Flyout items recurse; separators inside flyouts work (hybrid's
   List flyout has one, `hybrid.js`).
 - `kbd` → `<kbd class="context-menu-kbd">` appended inside the button —
   styled by `style.css`, available at top level and in
@@ -477,7 +477,7 @@ What moves and what stays:
 
 ## 5. Style unification
 
-**No CSS changes are required.** All per-menu styling is already shared
+**The migration required no CSS changes** (amended by §5.1, which adds one CSS rule and one `menu.js` behaviour). All per-menu styling is already shared
 through the one `.context-menu` block (`style.css`), and every
 feature the module renders has class-based rules: hover/danger
 (`:2574-2575`), separators (`:2576-2580`), the submenu flyout geometry
@@ -498,6 +498,144 @@ One optional cleanup while touching nothing else: the
 `.context-menu-kbd` rules at `style.css` live far from the
 menu block; moving them next to `:2552` groups the menu's styles.
 Cosmetic; do it or don't.
+
+### 5.1 Amendment — flyout seam and close grace (2026-11-20)
+
+Status: **shipped 2026-11-21.** `style.css:3504`/`:884` carry Rule 1 and `menu.js` carries
+Rule 2. Fixes "the submenu disappears while I move into it".
+
+**Two defects, one reported symptom.**
+
+*The seam.* A `.submenu` item is `width: 100%` of the panel's content box, so its right edge
+sits 4 px padding + 1 px border inside the panel's outer edge (`style.css:3450-3460`). The
+flyout was `left: 100%; margin-left: 2px` (`style.css:3504-3510`): its left edge landed
+**2 px past the item's right edge**. Visibility was `:hover` on the item
+(`style.css:3512-3515`) and the flyout is the item's child, so the two hit boxes left a
+2 px wide, item-tall strip belonging to neither. Measured on the running app, tab menu:
+item right `567`, flyout left `569`. A 1 px-step move across the strip ended with
+`display: none`. The same 2 px read as a seam, because the hover highlight stopped short of
+the flyout's left border.
+
+*The wedge.* Geometry alone does not keep a flyout open. The item is one row tall (29 px
+desktop) and the flyout sits beside it, so a pointer drifting down-right leaves the item's
+**bottom** edge while still far left of the flyout's **left** edge, and that wedge belongs
+to neither box. Measured with the seam fix applied, on a 6-row flyout: travel to row 1 keeps
+the flyout, travel to rows 2-6 hides it — identical before and after. The arithmetic is
+scale-independent: any flyout row below the first is unreachable by a diagonal path. No
+rectangle fixes this without covering the menu the flyout belongs to, and `display: none`
+cannot be transitioned, so the fix has to be state in `menu.js`.
+
+**Rule 1 — the seam (CSS, two sites).** Every flyout overlaps its parent item by
+`--space-1` (4 px):
+
+| Site | Before | After |
+|---|---|---|
+| `body > #nb-menu .submenu > .context-menu` (`style.css:3504`) | `left: 100%; margin-left: 2px` | `left: calc(100% - var(--space-1)); margin-left: 0` |
+| `#edit-bar .eb-submenu .eb-submenu-menu` (`style.css:884`) | `left: 100%; margin: 0 0 0 2px` | `left: calc(100% - var(--space-1)); margin: 0` |
+
+`#nb-menu`, panel outer right edge `R`: item right edge `R − 5`, flyout left edge `R − 9`.
+The flyout covers the panel's 4 px padding, its 1 px border, and 4 px of the item; the `▸`
+marker ends 10 px inside the item, so it stays visible. The edit-bar pair measures the same
+4 px because `.eb-submenu` (a `<span>`, `style.css:876`) is the containing block and has no
+padding or border, so its padding box equals the button's border box (measured: wrapper
+right `213` = button right `213`, flyout left `215` before / `209` after). `.eb`'s own 1 px
+transparent border does not enter the arithmetic; the **wrapper's** padding or border would,
+so a future padding on `.eb-submenu` eats the overlap.
+
+**Rule 2 — the wedge (JS, `menu.js`).**
+
+| Concern | Contract |
+|---|---|
+| Arm | `pointerleave` on an enabled submenu item — **not `mouseleave`** — records the exit point `P` and the flyout's border box `F` (`getBoundingClientRect()`). Skip `pointerType === "touch"`: no travel to protect |
+| Grace area | the triangle `P`, `(F.left, F.top)`, `(F.left, F.bottom)` — the wedge between the item and the flyout's near edge |
+| While inside | one `pointermove` listener tests the point; the flyout stays open, with no timeout |
+| Retire | entering the flyout ends the grace. The first `pointermove` outside the triangle clears `.open`. Nothing happens without motion — a pointer parked in the wedge keeps the flyout until it moves again. The listener is attached only while a grace is armed and removed when it retires |
+| Per level | one grace per submenu item, keyed by the element. A grace armed on a deeper level must not retire the outer level's. `pointerleave` of an ancestor clears its descendants' `.open` as well |
+| Cancel | `mouseenter` on the item, `close()`, and `open()` retire that item's grace |
+| Show | `mouseenter` on an enabled submenu item → `openOnly(item)`; `.submenu:hover` (kept, `style.css:3512`) displays the flyout immediately |
+| Click / touch | the parent item's click becomes `openOnly(item)`, not a toggle (`menu.js:153-157`). `.open` is already set by `mouseenter`, so a toggle would close the flyout on the first click, and phones dispatch `mouseenter` before `click`, so a tap would open and close it in one gesture. `openOnly` reproduces today's touch outcome, where `:hover` kept the flyout displayed after a second tap cleared `.open` |
+| Keyboard | `ArrowRight`/`ArrowLeft` unchanged. `Enter`/`Space` on a parent now open instead of toggling (`menu.js:206-208` dispatches `click`) |
+| Unchanged | `focusFirst`, disabled parents (`:9556`), single-open policy, `stopPropagation` on the parent |
+
+**Why `pointerleave`.** `MouseEvent.clientX/clientY` are integers; `PointerEvent` coordinates
+are fractional. The triangle's apex has zero width, so with integer coordinates the first
+`pointermove` after the arm lands 0-1 px from the apex and rounding decides whether it is
+inside — measured: identical code and path passed or died run to run, and switching only the
+arm event to `pointerleave` took 72 of 72 cells from mixed to pass.
+
+**No close timer.** A fixed delay cannot cover this wedge: measured on the app, reaching the
+last row of a 6-row flyout is a 100-145 px run, which 300 ms covers at 500 px/s and not at
+150 px/s, and a delay long enough for a slow pointer (>1 s) lingers over the menu after the
+pointer has chosen another row. The grace is positional, so it is speed-independent.
+Measured across 1-, 2- and 6-row flyouts at 150, 300 and 800 px/s from three exit points,
+every path kept the flyout. The triangle's slope follows the flyout's height: shallow for a
+tall flyout, ending at the flyout's own bottom for a one-row flyout, and straight down from
+the item is outside it, so the next `pointermove` toward another row retires the flyout.
+
+**Invariants to keep.**
+
+1. No positive `margin-left` on a flyout.
+2. `.open` must be set on hover, not only on click: `:hover` alone dies in the wedge.
+   Removing the `mouseenter` listener restores the reported bug even with Rule 1 in place.
+3. Clicking a submenu parent opens; it never toggles closed. Anything else makes one click
+   close what hover just opened.
+4. `openOnly` must close **siblings in the same panel**, never an ancestor. The hybrid prose
+   menu is two levels deep — `Insert › Mermaid › charts` (`hybrid.js:9822-9831`,
+   `hybrid.js:10340`) — and `openOnly`'s current `el.querySelectorAll(".submenu.open")`
+   (`menu.js:163`) would clear `Insert.open` when `Mermaid` opens, leaving the outer flyout
+   with no grace. Scope the query to `wrap.parentElement`'s direct children.
+5. One grace per submenu item, positional only. No timers, no pointer-speed heuristics, and
+   no single global grace slot: arming on a deeper level must not evict the outer level's,
+   or the pointer moving through the inner flyout retires the outer one and leaves it stuck
+   open on the next hover.
+6. Adding padding or a border to a flyout's containing-block wrapper eats the 4 px.
+
+**Scope.** `#nb-menu` serves every right-click menu in the app — tree rows and root,
+bookmarks, pins, tabs, the sessions list and page, hybrid prose and table menus, the phone
+note menu — so the two rules fix all of them. The edit-bar Example → Mermaid flyout
+(`editbar.js:336-375`) is the second, independent implementation: it opens on click, so it
+has neither defect, but it takes Rule 1 so the two nested menus measure alike and Rule 2 does
+not apply to it. Single-level surfaces are untouched, because their gaps separate a trigger
+from a panel and are closed by an outside click: the session and workspace pickers
+(`POP_GAP = 6`, `sessions.js:44`, `workspaces.js:45`), the table-view popover
+(`POP_GAP = 4`), the emoji panel, the list and table dropdowns, the phone sheet.
+
+**Not changed.** Flyout overflow past the viewport's right edge (§8 risk 2) still has no
+flip or repositioning.
+
+**Verification.**
+
+- jsdom, `== menu module ==` block (`test_dom.js:3895-3930`): jsdom has no layout, so stub
+  the flyout's `getBoundingClientRect()` (the block already stubs offsets for the clamp).
+  1. arm: `pointerleave` on the item at a point left of the flyout, then `pointermove` along
+     the triangle toward `(F.left, F.top + 4)` in several steps — `.open` must stay set;
+  2. escape: `pointermove` straight down from the exit point — `.open` cleared on the first
+     point outside the triangle;
+  3. return: `pointerleave`, then `mouseenter` on the item — the grace is retired and `.open`
+     is set;
+  4. click the parent twice — `.open` stays set (invariant 3);
+  5. nested: open `Insert`, open `Mermaid`, then arm a grace on `Mermaid` and assert
+     `Insert`'s button still carries `.open` (invariants 4 and 5).
+- Browser, `test_core_ui_browser.js` menu block: open `NB.menu` with a synthetic 6-item
+  submenu via `page.evaluate`, then
+  1. assert `flyout.left <= item.right` and `flyout.left >= item.right - 8`;
+  2. `page.mouse.move` to the item's centre, assert the flyout is rendered;
+  3. `page.mouse.move` to the **last** row's centre with `{ steps: 20 }`, assert `.submenu`
+     still has `.open` and the flyout is not `display: none`. This is the regression Rule 1
+     alone does not fix, and the positional grace makes it deterministic — a timer-based
+     fix fails this step on a slow machine;
+  4. re-open, then `page.mouse.move` straight down two rows **with `{ steps: 8 }`**, and
+     assert `.open` is cleared. A single jump does not test this: the arm happens at the
+     destination, no `pointermove` follows, and the flyout correctly stays open until the
+     pointer's next move.
+
+  `page.mouse.move(x, y, { steps })` is available (`test_core_ui_browser.js:937`) and
+  delivers one `pointermove` per step (measured 20 for `{ steps: 20 }`). No surface-level
+  suite names a submenu today, so the synthetic menu is the only reachable fixture; the tab
+  menu's "Move to session" (`tabs.js:1701`) is the surface case if a real one is wanted.
+- Mockups: [`../ui/source-editor-mockup.html`](../ui/source-editor-mockup.html) draws the
+  edit-bar flyout to Rule 1's geometry; [`../ui/controls-mockup.html`](../ui/controls-mockup.html)
+  §9 states it.
 
 ---
 
@@ -542,8 +680,9 @@ directly:
 - close paths: outside click; Esc; right-click outside `scope`; **not**
   closed by a right-click inside `scope` (module-level twin of the
   :13217 guard); `close(owner)` leaves other owners alone.
-- submenu: `button.submenu > div.context-menu` shape, click toggles
-  `.open` and closes siblings, flyout item click closes the whole menu.
+- submenu: `button.submenu > div.context-menu` shape, click **opens** `.open` (it does not
+  toggle, §5.1 invariant 3) and closes siblings in the same panel, flyout item click closes
+  the whole menu.
 - focusFirst: first non-disabled button focused when `true`, untouched
   when absent.
 
@@ -595,8 +734,9 @@ step interferes with its neighbors.
 
 - No generic popup framework: edit-bar dropdowns and table-view
   popovers stay as-is (§2.6).
-- No icons, checked/radio items, or multi-level submenus (CSS supports
-  one flyout level; hybrid needs exactly one).
+- No icons, checked/radio items, or a third flyout level. Two levels ship today
+  (`Insert › Mermaid › …`, `hybrid.js:9822-9831`, `:10340`); Rule 2's grace must stay
+  per-level for both.
 - No focus trap; `focusFirst` stays opt-in (§8).
 - No flyout viewport flipping (§8).
 - No server, `agent.md`, or config changes — menus are pure UI;
@@ -614,7 +754,7 @@ step interferes with its neighbors.
    `offsetHeight` y-clamp, so no regression — but the unit test must
    stub, not skip.
 2. **Submenu flyouts can overflow the right edge** near the viewport
-   border (CSS pins them to `left: 100%`, `style.css`).
+   border (CSS pins them to the right of the item, §5.1).
    Pre-existing, hybrid-only, unchanged by this design. Fixing it needs
    JS flyout repositioning — defer until someone hits it.
 3. **Esc is not consumed.** With a menu open, Esc also reaches other

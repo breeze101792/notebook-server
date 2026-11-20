@@ -24,6 +24,14 @@
   // is the element a right-click must land inside to leave the menu open.
   let state = null;
 
+  // Flyout entry grace, keyed by submenu button: { x, y, left, top, bottom }
+  // of the triangle between the pointer's exit point and the flyout's near
+  // edge. A pointer heading for a lower flyout row leaves the item through
+  // its bottom edge while still left of the flyout; inside the triangle the
+  // flyout stays open. `graceMove` is the document listener while armed.
+  const graces = new Map();
+  let graceMove = null;
+
   /* --- public API --------------------------------------------------- */
 
   function open(opts) {
@@ -36,6 +44,7 @@
     // A menu opened over another one closes the first with the "outside"
     // reason, so its owner can clear the state it set on the trigger.
     if (!el.hidden) close(undefined, "outside");
+    retireAllGraces();
 
     el.innerHTML = "";
     buildItems(el, items);
@@ -74,9 +83,76 @@
     if (owner != null && (!state || state.owner !== owner)) return;
     el.hidden = true;
     el.querySelectorAll(".submenu.open").forEach((s) => s.classList.remove("open"));
+    retireAllGraces();
     const finished = state;
     state = null;
     if (finished && finished.onClose) finished.onClose(reason || "outside");
+  }
+
+  /* --- flyout entry grace ------------------------------------------- */
+
+  // One listener while at least one grace is armed; nothing runs otherwise.
+  function trackGrace(e) {
+    for (const [wrap, g] of Array.from(graces)) {
+      if (e.clientX >= g.left && e.clientY >= g.top && e.clientY <= g.bottom) {
+        // Reached the flyout's column: its own hover takes over.
+        retireGrace(wrap);
+        continue;
+      }
+      if (inGrace(g, e.clientX, e.clientY)) continue;
+      retireGrace(wrap);
+      wrap.classList.remove("open");
+    }
+  }
+
+  // Point-in-triangle by the sign of three cross products.
+  function inGrace(g, x, y) {
+    const side = (ax, ay, bx, by) => (x - bx) * (ay - by) - (ax - bx) * (y - by);
+    const d1 = side(g.x, g.y, g.left, g.top);
+    const d2 = side(g.left, g.top, g.left, g.bottom);
+    const d3 = side(g.left, g.bottom, g.x, g.y);
+    const neg = d1 < 0 || d2 < 0 || d3 < 0;
+    const pos = d1 > 0 || d2 > 0 || d3 > 0;
+    return !(neg && pos);
+  }
+
+  function armGrace(wrap, e) {
+    // Touch has no travel to protect, and a stale grace would clear the
+    // flyout a later tap opens.
+    if (e.pointerType === "touch") return;
+    const fly = wrap.querySelector("." + MENU_CLASS);
+    if (!fly) return;
+    const box = fly.getBoundingClientRect();
+    // A hidden flyout measures 0; a triangle with no width has no interior.
+    if (!box.width || box.left <= e.clientX) return;
+    // A deeper flyout cannot outlive the level that anchors it.
+    for (const nested of fly.querySelectorAll("button.submenu")) {
+      nested.classList.remove("open");
+      retireGrace(nested);
+    }
+    graces.set(wrap, {
+      x: e.clientX,
+      y: e.clientY,
+      left: box.left,
+      top: box.top,
+      bottom: box.bottom,
+    });
+    if (!graceMove) {
+      graceMove = trackGrace;
+      document.addEventListener("pointermove", graceMove, true);
+    }
+  }
+
+  function retireGrace(wrap) {
+    graces.delete(wrap);
+    if (!graces.size && graceMove) {
+      document.removeEventListener("pointermove", graceMove, true);
+      graceMove = null;
+    }
+  }
+
+  function retireAllGraces() {
+    for (const wrap of Array.from(graces.keys())) retireGrace(wrap);
   }
 
   /* --- rendering ---------------------------------------------------- */
@@ -143,24 +219,43 @@
     if (item.disabled) {
       // A disabled parent advertises an unavailable command: native
       // disabled keeps it out of the arrow walk, and its reason stays on
-      // the title. No click toggle.
+      // the title. No click handler.
       wrap.disabled = true;
       wrap.setAttribute("aria-disabled", "true");
       if (item.title) wrap.title = item.title;
       return wrap;
     }
-    // Click toggles .open so touch / single-click devices work.
+    // Hover opens the flyout at once. `.open` is what survives the pointer
+    // leaving the item through its bottom edge, where :hover alone drops.
+    wrap.addEventListener("mouseenter", () => {
+      retireGrace(wrap);
+      openOnly(wrap);
+    });
+    wrap.addEventListener("pointerleave", (e) => {
+      if (wrap.classList.contains("open")) armGrace(wrap, e);
+    });
+    // Click opens, never toggles: hover has already set `.open`, so a toggle
+    // would close what the pointer just opened, and phones fire mouseenter
+    // before click.
     wrap.addEventListener("click", (e) => {
       e.stopPropagation();
-      el.querySelectorAll(".submenu.open").forEach((s) => { if (s !== wrap) s.classList.remove("open"); });
-      wrap.classList.toggle("open");
+      retireGrace(wrap);
+      openOnly(wrap);
     });
     return wrap;
   }
 
-  /* Open `wrap` and close any sibling submenu. */
+  /* Open `wrap` and close the flyouts beside it in the same panel. Ancestors
+   * stay open: the hybrid prose menu nests two levels (Insert > Mermaid). */
   function openOnly(wrap) {
-    el.querySelectorAll(".submenu.open").forEach((s) => { if (s !== wrap) s.classList.remove("open"); });
+    const panel = wrap.parentElement;
+    if (panel) {
+      for (const sib of Array.from(panel.children)) {
+        if (sib === wrap || !sib.classList.contains("submenu")) continue;
+        retireGrace(sib);
+        sib.classList.remove("open");
+      }
+    }
     wrap.classList.add("open");
   }
 
@@ -219,6 +314,7 @@
     if (e.key === "ArrowLeft") {
       const wrap = active.closest("button.submenu");
       if (wrap) {
+        retireGrace(wrap);
         wrap.classList.remove("open");
         wrap.focus({ preventScroll: true });
       }

@@ -508,7 +508,7 @@ than to a pointer (`workspaces.md` D2); the two inline dropdowns anchor to their
 | Item danger | `--danger` text; hover keeps the face and adds an inset `1px --danger` ring. **Not** a `--danger-soft` fill: `--danger` on `--danger-soft` is ≈3.7:1 in both themes (`sessions.md` Appendix A) |
 | Item current | `--accent` text + 600 + a 14 px check column (`aria-current` — the value the surface uses), no hover fill |
 | Kbd hint | right-aligned, `--text-xs`, `--font-mono`, `--text-muted` |
-| Submenu | same box, `position: absolute; left: 100%; top: -5px`, a `▸` marker in `--text-muted`, opens on hover and on click (`menu.js:145`) |
+| Submenu | same box, `position: absolute; top: -5px; left: calc(100% - var(--space-1))`, a `▸` marker in `--text-muted`, opens on hover and on click (`menu.js:153`). The flyout overlaps the parent item by 4 px (§2.9.1) and survives the diagonal entry path through a grace area (§2.9.2) |
 | Separator | `<hr>`, `1px var(--border)`, margin `var(--space-1) var(--space-2)` |
 | Phone | item `min-height: calc(var(--control-h-touch) + var(--space-1))` (48), `15 px`, padding-x `14 px` (`docs/archive/design/mobile-shell.md` §4.11) |
 
@@ -531,6 +531,66 @@ Roving tabindex is not used — focus is moved directly.
 `--shadow-pop`; an item is 32 px (48 on phone) with a 4 px radius. `.eb-menu` (`:618`) is the
 one that breaks both (28 px items, `--shadow-pop` at `:622`, `--z-chrome` 100) and becomes an
 inline instance of this component when that bar is next touched.
+
+#### 2.9.1 Flyout seam — geometry
+
+Status: shipped 2026-11-21 (`context-menus.md` §5.1).
+
+A flyout is the submenu item's DOM child, so a state on the item — `.open` after §2.9.2 — is
+what CSS tests (`style.css:3512-3519`). Whatever that state is, the item's hit box and the
+flyout's hit box must overlap: a positive gap is a strip where neither part is hovered, the
+flyout hides, and the submenu is gone mid-travel.
+
+| Rule | Value |
+|---|---|
+| Flyout box vs. submenu item box | overlap `--space-1` (4 px): `left: calc(100% - var(--space-1))`, `margin-left: 0` |
+| Never a positive `margin-left` on a flyout | any value above 0 opens a dead strip at the item's edge |
+
+4 px, not 1: the item's right padding is 10 px and the `▸` marker ends 10 px inside the
+item, so 4 px covers the panel's own padding and border without touching the marker, and
+it closes the visible seam the old `+2px` gap left next to the hover highlight.
+
+Both nested menus carry this rule: `body > #nb-menu .submenu > .context-menu`
+(`style.css:3504`) and `#edit-bar .eb-submenu .eb-submenu-menu` (`style.css:884`). A new
+nested menu adopts it before it ships.
+
+#### 2.9.2 Flyout entry — the grace area
+
+Geometry alone does not keep a flyout open, and this is the part the seam rule cannot fix.
+The item is one row tall (29 px desktop, 48 px phone) and the flyout sits beside it, so a
+pointer heading for a **lower** flyout row leaves the item's bottom edge while it is still
+left of the flyout's left edge. That wedge belongs to neither box, so the state drops and
+the flyout hides.
+
+A close delay does not solve it. Measured on the app, reaching the flyout's last row is a
+100-145 px run for a 6-row flyout: 300 ms covers it at 500 px/s and not at 150 px/s, and a
+delay long enough for a slow pointer (>1 s) leaves the flyout hanging over the menu long
+after the pointer has chosen another row. The grace must be a **place**, not a time.
+
+| Rule | Value |
+|---|---|
+| Arm | `pointerleave` on an enabled submenu item — **not `mouseleave`** — records the exit point `P` and the flyout's border box `F`. `PointerEvent` carries fractional coordinates; `MouseEvent.clientX/clientY` are integers, and the triangle's apex has zero width, so integer rounding alone decides whether the first `pointermove` falls inside. Do not arm for `pointerType === "touch"`: there is no travel to protect, and a stale grace would clear `.open` on the next tap |
+| Grace area | the triangle `P`, `(F.left, F.top)`, `(F.left, F.bottom)` — the wedge between the item and the flyout's near edge |
+| While inside | the flyout stays open, with no timeout. One `pointermove` test; nothing else runs |
+| Retire | entering the flyout ends the grace (the flyout is then hovered). The first `pointermove` outside the triangle clears `.open` |
+| Without motion | nothing happens. A pointer parked between the item and the flyout keeps the flyout open until it moves again, or until the menu closes |
+| Per level | one grace per submenu item, keyed by the element. A grace armed on a deeper level must not retire the outer level's. `pointerleave` of an ancestor clears its descendants' `.open` as well |
+| Cancel | `mouseenter` on the item, `NB.menu.close()`, and every `open()` retire that item's grace |
+| Show | `mouseenter` on an enabled submenu item → `openOnly(item)`. `.submenu:hover` stays as the immediate-display rule |
+| Click, touch | the parent item's click becomes `openOnly(item)`, not a toggle. `.open` is already set by `mouseenter`, so a toggle would close the flyout on the first click, and phones dispatch `mouseenter` before `click`, so a tap would open and close it in one gesture. `openOnly` reproduces today's touch outcome, where `:hover` kept the flyout displayed after a second tap cleared `.open` |
+| Keyboard | `ArrowRight`/`ArrowLeft` unchanged. `Enter`/`Space` on a parent now open instead of toggling, because they dispatch `click` (`menu.js:206-208`) |
+| Disabled parent | unchanged — `menu.js` returns before attaching listeners, and `:9556` hides the flyout |
+
+**Why that shape.** The triangle's slope follows the flyout's own height: a 6-row flyout
+gives a shallow wedge that a natural down-right path stays inside, and a 1-row flyout gives a
+wedge that ends at the flyout's own bottom edge, so a drift past it misses the flyout anyway
+and the flyout closes as it should. Straight **down** from the item is outside the triangle,
+so the next `pointermove` after leaving toward another row retires the flyout.
+
+**Cost.** One `pointermove` listener, attached only while a grace is armed and removed when
+it retires. No timer, no delay constant, no speed dependence, and no `mousemove` on the hot
+path. A pointer that parks inside the wedge holds the listener until its next move; `close()`
+and `open()` release it.
 
 ### 2.10 Tooltip
 

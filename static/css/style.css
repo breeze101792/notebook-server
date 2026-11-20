@@ -872,7 +872,8 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   min-width: 170px;
 }
 /* Nested flyout inside the example dropdown (Mermaid's six charts).
- * Left-click to open; the ▸ marker signals the extra level. */
+ * Left-click to open; the ▸ marker signals the extra level. It overlaps
+ * its item by 4px like the context-menu flyout (controls.md §2.9.1). */
 #edit-bar .eb-submenu { position: relative; display: block; }
 #edit-bar .eb-submenu-btn { width: 100%; }
 #edit-bar .eb-submenu-btn::after {
@@ -883,9 +884,9 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 }
 #edit-bar .eb-submenu .eb-submenu-menu {
   top: 0;
-  left: 100%;
+  left: calc(100% - var(--space-1));
   right: auto;
-  margin: 0 0 0 2px;
+  margin: 0;
   min-width: 150px;
 }
 
@@ -3485,10 +3486,12 @@ body > #nb-menu hr {
 }
 
 /* Submenu (flyout) support for context menus. A .submenu item is a
- * <button> that contains a nested .context-menu (the flyout). On hover
- * the flyout appears to the right of the parent item; a ▸ marker
- * signals that the item expands. Clicking the parent label also
- * toggles the flyout so touch / single-click devices work too. */
+ * <button> that contains a nested .context-menu (the flyout). A ▸ marker
+ * signals that the item expands. The flyout overlaps the item by 4px: a
+ * positive gap is a strip that belongs to neither element, so the pointer
+ * landing in it drops hover and the flyout vanishes. Hover opens the
+ * flyout; menu.js keeps it open while the pointer crosses the wedge below
+ * the item, and the parent label's click opens it for touch. */
 body > #nb-menu .submenu {
   position: relative;
   display: flex;
@@ -3503,10 +3506,10 @@ body > #nb-menu .submenu::after {
 }
 body > #nb-menu .submenu > .context-menu {
   position: absolute;
-  left: 100%;
+  left: calc(100% - var(--space-1));
   top: -5px;
   min-width: 150px;
-  margin-left: 2px;
+  margin-left: 0;
   display: none;
 }
 body > #nb-menu .submenu:hover > .context-menu,
