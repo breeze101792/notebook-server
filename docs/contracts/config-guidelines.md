@@ -18,7 +18,8 @@ seventh config file.
 
 `config/` is runtime state: the whole folder is git-ignored. A file that does
 not exist must be a valid state, never an error (`state.json`, `server.json`,
-`ai.json`).
+`ai.json`). A file a human is expected to edit ships a documented example in
+`config.template/`, and the example is tested so it cannot rot.
 
 ## Where a new value goes
 

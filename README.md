@@ -52,7 +52,8 @@ are plain `.md` files on disk — no database, no build step.
   self-contained **HTML** file, preserving diagrams and syntax
   highlighting exactly as rendered.
 - All UI state (open files, widths, theme, recent files, bookmarks, …) is
-  persisted to `config/config.json` and restored on next launch.
+  persisted to `config/config.json` and `config/state.json`, and restored on
+  next launch.
 
 ## Markdown syntax
 
@@ -161,10 +162,11 @@ applied to whichever provider is active sits below the provider list, and
 the **Web search** field sets the SearXNG instance for the `search` tool
 (the preferred provider; a keyless fallback answers when it is unset or
 unreachable).
-If one or more ACP profiles are configured, Settings → AI shows them in a
-read-only section, one block per profile, each with a **Make default** action
-(it only changes which provider the panel selects, not the profile itself).
-ACP profiles are edited in `config/acp.json`, not in the provider list.
+If one or more ACP profiles are configured, Settings → AI lists them in their
+own **ACP agents** panel: add a detected agent, edit its model, remove it, or
+make it the default. A profile whose agent is not installed is listed but cannot
+be picked. The profiles themselves live in `config/ai.json`, and a hand-written
+`command` profile is edited there on the server, not here.
 
 ### ACP providers (external coding agents)
 
@@ -190,16 +192,18 @@ its reply streams into the bubble and each tool it starts appears as a trace lin
 above the answer. **Stop** ends the turn and kills the agent process. Nothing runs
 until you send — detection and configuration only populate the picker.
 
-**Configure by hand.** ACP is configured in `config/acp.json` (copy
-`config/acp.json.example`). There is no web UI to edit it and no HTTP route
-writes it — a config blob any client can POST must never choose a command to
-run. The file holds a `profiles` list (a bare JSON array and the legacy single
-object are also accepted). Name a **known agent by key**; the server resolves the
+**Configure it.** The common case needs no file edit: Settings → AI → ACP
+agents adds a detected agent, names the profile, sets its model, and makes it the
+default. The profiles are stored in `config/ai.json`'s `acp` list, and that file
+is where a `command` profile, or a hand-set `cwd`, `env` or `timeout`, is edited.
+A config blob any client can POST must never choose a command to run, so the
+browser can name only a **known agent by key**; the server resolves the
 executable and argv from its own table:
 
 ```json
 {
-  "profiles": [
+  "servers": [],
+  "acp": [
     {
       "name": "opencode",
       "agent": "opencode",
@@ -228,17 +232,16 @@ executable and argv from its own table:
   or rejects the value, ends the turn with an in-band error instead of silently
   running a different model. For `opencode acp`, values look like
   `ollama/qwen3.8:latest`.
-- `cwd` — the agent's working directory; empty defaults to the notebook folder.
+- `cwd` — the agent's working directory; empty defaults to the active workspace root.
 - `env` — extra environment variables. They are overlaid on the server's full
   environment (the profile wins), so the agent inherits credentials and XDG
   paths the server exports.
 - `default` — `true` nominates the profile as the fallback default.
 - `timeout` — per-turn wall-clock cap in seconds; defaults to 900.
 
-Several profiles may coexist with each other and with API providers. Settings →
-AI lists each valid profile read-only, and **Make default** selects any provider
-(API or ACP) as the startup pick; it wins over `default: true` and never edits
-the ACP file.
+Several profiles may coexist with each other and with API providers. **Make
+default** selects any provider (API or ACP) as the startup pick; it wins over
+`default: true` and never edits the profile itself.
 
 Known keys: `opencode`, `claude`, `codex`, `gemini`, `goose`, `cursor`, `qwen`,
 `kimi`, `cline`, `openhands`, `auggie`, `copilot`, `kiro`. The command line
@@ -246,7 +249,7 @@ lives in the server table, not in the file, so the file (and the browser) can
 only name a key. `agent` and `command` are **mutually exclusive**: setting both
 drops that profile. An invalid entry is dropped on its own, so a typo does not
 disable the other profiles; if the selected agent's executable is not on the
-host's `PATH`, that profile is skipped.
+host's `PATH`, that profile is listed but cannot be picked until it is installed.
 
 **Claude Code / Codex setup.** Neither ships an ACP server of its own, so both
 need an adapter binary on `PATH` before the key will appear as launchable. The
@@ -266,32 +269,27 @@ wrapping CLI must be installed and logged in first (`claude` / `codex`).
    command -v claude-agent-acp    # or: command -v codex-acp
    ```
 
-3. Point `config/acp.json` at it **by key**. The server resolves the executable
-   and argv from its table, so no command path goes in the file:
+3. Open **Settings → AI → ACP agents**, pick the adapter in the `Agent`
+   select, name the profile, and press **Add agent**. The browser names the key;
+   the server resolves the executable and argv from its table, so no command
+   path is involved. The stored entry is
+   `{ "name": "claude", "agent": "claude", "model": "", "default": false }`.
 
-   ```json
-   { "profiles": [{ "name": "claude", "agent": "claude", "default": true }] }
-   ```
-
-   ```json
-   { "profiles": [{ "name": "codex", "agent": "codex", "default": true }] }
-   ```
-
-4. Reload the page, pick the profile in the ✨ panel, and send a message.
+4. Pick the profile in the ✨ panel and send a message.
 
 Until the adapter is installed, the key resolves to nothing: that profile is
-skipped and no ACP picker entry appears for it (`Settings → AI` still reports
-the CLI as present with its install hint). The adapter runs the underlying CLI
+listed but cannot be picked (`Settings → AI` still reports the CLI as present
+with its install hint). The adapter runs the underlying CLI
 as your user — to confine it, use the `command` escape hatch with the adapter as
 argv[0], following the sandbox pattern under **Trust boundary** below.
 
 **Escape hatch.** For an agent the table does not know, give `command` +
-`args` instead of `agent`. `command` is **argv[0] only, no shell**; put a
-wrapper executable here and the agent in `args`:
+`args` instead of `agent` in `config/ai.json`. `command` is **argv[0] only, no
+shell**; put a wrapper executable here and the agent in `args`:
 
 ```json
 {
-  "profiles": [
+  "acp": [
     {
       "name": "custom",
       "command": "my-agent-launcher",
@@ -312,9 +310,9 @@ reports the result as an `acpAgents` array of `{key, label, available}`, and an
 agent whose wrapper CLI is installed but whose ACP adapter binary is not (today
 Claude Code and Codex, which need the `claude-agent-acp` / `codex-acp` adapter
 packages) also carries `adapterMissing: true` and an install `hint`. Settings →
-AI lists the detected agents read-only with their status — installed, ACP
-adapter missing (with the install hint), or not installed — and shows each
-profile's allowlist key and configured model in its own block.
+AI lists the detected agents with their status — installed, ACP adapter
+missing (with the install hint), or not installed — and shows each profile's
+allowlist key and configured model on its own row.
 
 **Trust boundary.** The ACP agent is a child process that runs **as the
 server user, with that user's filesystem access**. The notebook does not
@@ -325,7 +323,7 @@ and only the notebook writable:
 
 ```json
 {
-  "profiles": [
+  "acp": [
     {
       "name": "opencode-sandboxed",
       "command": "systemd-run",
@@ -386,10 +384,10 @@ rendering.
 
 ```bash
 # Run the server (creates/refreshes the per-host venv, installs deps, runs app.py)
-./start.sh                       # 0.0.0.0:5000, debug off (reachable from LAN)
+./start.sh                       # config/server.json, else 0.0.0.0:5000, debug off
 ./start.sh --host 127.0.0.1      # bind loopback only
+./start.sh --port 8080 --debug   # override the file's port and debug value
 ./start.sh --debug               # enable Flask auto-reload
-./start.sh --port 8080 --debug
 ./start.sh --help                # all app.py CLI flags
 ```
 
@@ -397,6 +395,17 @@ Then open <http://127.0.0.1:5000> in your browser. On first launch the
 server copies `notebook.template/` into `notebook/` (starter notes:
 `Welcome.md`, `README.md`, `Syntax.md`) and creates an empty
 `config/config.json`.
+
+To set the port once instead of passing `--port` every launch, write
+`config/server.json`:
+
+```json
+{"host": "0.0.0.0", "port": 5000, "debug": false}
+```
+
+Any key may be omitted. A CLI flag beats the file, and the file beats the
+built-in default. A malformed file or an out-of-range value stops startup with
+`Cannot start: <path>: <reason>` on stderr and exit code 2.
 
 The venv path is `.venv_<hostname>` so the same checkout is safe to use
 on multiple machines without one machine's pip cache stomping the other.
@@ -413,10 +422,12 @@ removing a workspace changes only the list: the folder and its notes stay on
 disk.
 
 The registry lives in `config/workspaces.json`. Per-workspace UI state (open
-tabs, active file, recent files, pins, bookmarks, pinned folders) lives under
-`workspaceState.<id>` in `config/config.json`; table-view and phone resume
-state are namespaced in `localStorage`. A pre-workspace `config.json` is
-migrated once at server startup, so clients never carry the migration.
+tabs, active file, recent files, pins, bookmarks, pinned folders, sessions)
+lives in the server-owned `config/state.json`, keyed by workspace id;
+`GET /api/config` still delivers it as `workspaceState.<id>` so a page boots
+from one response. Table-view and phone resume state are namespaced in
+`localStorage`. A pre-workspace `config.json` is migrated once at server
+startup, so clients never carry the migration.
 
 **Security:** adding a workspace lets the server process read and write that
 folder as the user running the server. An admin credential is therefore
@@ -449,13 +460,17 @@ static/
   vendor/             marked, highlight.js, CodeMirror, Mermaid, WaveDrom, KaTeX,
                       Viz.js, Turndown, Paged.js (vendored, no CDN)
   css/                style.css, vimnav.css
-  sw.js               service worker (cache notebook-v23)
+  sw.js               service worker (cache notebook-v33)
   manifest.json       PWA manifest
   icons/ favicon.svg  PWA icons
 notebook/             your notebooks (.md files) — created on first run
-config/               config.json (UI state), auth.json (passwords), ai.json (AI),
-                      acp.json (ACP profiles, hand-edited), workspaces.json
-                      (workspace registry) — created on first run
+config/               created on first run: config.json (UI preferences),
+                      state.json (workspace state), auth.json (passwords),
+                      ai.json (AI + ACP profiles), workspaces.json
+                      (workspace registry). server.json (host/port/debug) is
+                      optional and never seeded.
+config.template/      copyable examples for the two files a human edits:
+                      server.json and ai.json, each documenting its keys
 tests/
   test_app.py         stdlib unittest, hits the real Flask app via test client
   dom/test_dom.js     jsdom tests, loads real vendor bundles + app modules

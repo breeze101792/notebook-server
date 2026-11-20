@@ -115,11 +115,14 @@ function waitConfig(pred, timeout) {
   return waitFor(() => { const c = readConfig(); return !!c && pred(c); }, timeout || 5000);
 }
 // Content-bearing UI state (open tabs, pins, bookmarks) is scoped per
-// workspace: config.json -> workspaceState["default"] for the fixture root.
+// workspace and lives in config/state.json: states["default"] for the fixture
+// root. config.json holds preferences only.
 function readWorkspaceState() {
-  const c = readConfig();
-  const all = c && c.workspaceState;
-  return all && all.default ? all.default : null;
+  try {
+    const doc = JSON.parse(fs.readFileSync(path.join(CONFIG, "state.json"), "utf8"));
+    const states = doc && doc.states;
+    return states && states.default ? states.default : null;
+  } catch (_) { return null; }
 }
 function waitWorkspaceState(pred, timeout) {
   return waitFor(() => {

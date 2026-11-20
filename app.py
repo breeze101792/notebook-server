@@ -71,12 +71,37 @@ DATA_DIR = os.environ.get("NOTEBOOK_DATA_DIR") or os.path.join(BASE_DIR, "notebo
 
 CONFIG_DIR = os.environ.get("NOTEBOOK_CONFIG_DIR") or os.path.join(BASE_DIR, "config")
 CONFIG_FILE = os.path.join(CONFIG_DIR, "config.json")
-# Serialises every config.json read-modify-write (set_config, the
-# workspace-state merge and the one-shot startup migration). Without it two
-# concurrent writers each read the old blob and the later write silently
-# loses the other's update. Reads stay lock-free: atomic_write publishes a
-# complete file, so a reader never sees a partial document.
+# Per-workspace UI state (tabs, sessions, pins, bookmarks) and its sync
+# revision live in their own server-owned file. They used to sit inside
+# config.json, whose blob any admin client POSTs wholesale: splitting them
+# means a preference save cannot carry another device's session, a corrupt
+# prefs file cannot take the state down with it, and the state file has one
+# writer. Shape: {"version": 1, "states": {<id>: {...}}, "revs": {<id>: n}}.
+STATE_FILE = os.path.join(CONFIG_DIR, "state.json")
+STATE_VERSION = 1
+_STATE_MAPS = ("states", "revs")
+# Startup values (bind address, port, debug) in their own file, so the port
+# can be set once instead of passed on every launch. Deliberately not seeded:
+# seed() runs at import, before the CLI is parsed, so it could only write
+# defaults that a --host flag would then contradict. A missing file means the
+# defaults below; a malformed one stops startup, because the fallback binds
+# 0.0.0.0 and the file is the only record of what the user meant.
+SERVER_FILE = os.path.join(CONFIG_DIR, "server.json")
+DEFAULT_HOST = "0.0.0.0"
+DEFAULT_PORT = 5000
+DEFAULT_DEBUG = False
+SERVER_PORT_MIN = 1
+SERVER_PORT_MAX = 65535
+# Serialises every config.json read-modify-write (set_config and the one-shot
+# startup migration). Without it two concurrent writers each read the old
+# blob and the later write silently loses the other's update. Reads stay
+# lock-free: atomic_write publishes a complete file, so a reader never sees a
+# partial document.
 _CONFIG_LOCK = threading.Lock()
+# Serialises every state.json read-modify-write (the workspace-state merge,
+# the workspace delete cleanup and the startup split). Lock order is
+# _CONFIG_LOCK before _STATE_LOCK, and only the startup split takes both.
+_STATE_LOCK = threading.Lock()
 # Auth lives in its own file so the UI-prefs blob (POSTed by any client) can
 # never accidentally include hashed credentials. Schema:
 #   {"secret": "<hex>", "admin_password_hash": "<bcrypt>", "viewer_password_hash": "<bcrypt>",
@@ -121,16 +146,18 @@ WORKSPACES_MAX_BYTES = 64 * 1024
 # workspace gate.
 PROXY_FORWARD_HEADERS = ("X-Forwarded-For", "X-Real-IP")
 # Content keys that used to sit at the top level of config.json and now live
-# under workspaceState["<id>"]. Kept as a tuple so the one-shot startup
-# migration and the ACP preamble agree on exactly which keys are scoped.
+# under a workspace entry in state.json. Kept as a tuple so the one-shot
+# startup fold, the split and the GET strip agree on exactly which keys are
+# scoped.
 _WORKSPACE_SCOPED_CONFIG_KEYS = (
     "lastFile", "openFiles", "activeFile", "pinnedFiles",
     "recentFiles", "bookmarks", "pinnedFolders",
     "sessions", "activeSessionId",
 )
-# The two top-level maps that hold the scoped state and its per-workspace
-# sync revision. Server-owned end to end: a whole-blob POST must never write
-# them, or one stale page would clobber another device's state and rev.
+# The two keys that used to hold the state maps inside config.json. They are
+# now the response fields GET /api/config splices in from state.json, and are
+# still stripped from a POST body so a client that predates the split cannot
+# re-plant them in the prefs file.
 _CONFIG_STATE_KEYS = ("workspaceState", "workspaceStateRev")
 
 # On first run, if DATA_DIR doesn't exist, the contents of this folder are
@@ -1234,7 +1261,8 @@ def workspace_admin_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
         if not auth_enabled():
-            forwarded = any(request.headers.get(name)
+            # `is not None`: an empty forwarded header still marks a proxy.
+            forwarded = any(request.headers.get(name) is not None
                             for name in PROXY_FORWARD_HEADERS)
             if forwarded or not _is_loopback(request.remote_addr):
                 return err("Workspace changes from another machine require "
@@ -1416,6 +1444,59 @@ def _read_stored_config():
     return cfg
 
 
+def _empty_state():
+    """The state.json document for a workspace set with no saved state."""
+    return {"version": STATE_VERSION, "states": {}, "revs": {}}
+
+
+def _read_stored_state():
+    """Read state.json for a read-modify-write, raising instead of masking.
+
+    A missing file is an empty state: first run, or the first launch after
+    the startup split. An unreadable, unparseable, wrongly-shaped or
+    future-version file raises OSError or ValueError, because writing over it
+    would drop every workspace's tabs and pins. GET paths use
+    _read_public_state() instead; only a startup quarantine writes.
+    """
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return _empty_state()
+    if not isinstance(data, dict):
+        raise ValueError("state.json is not a JSON object")
+    version = data.get("version", STATE_VERSION)
+    if version != STATE_VERSION:
+        raise ValueError("state.json version %r is not %d"
+                         % (version, STATE_VERSION))
+    state = {"version": STATE_VERSION}
+    for key in _STATE_MAPS:
+        entries = data.get(key, {})
+        if not isinstance(entries, dict):
+            raise ValueError("state.json %s is not a JSON object" % key)
+        state[key] = entries
+    # A revision with no state entry is unusable: it would let a client adopt
+    # an empty state at a revision it never saw. Dropped on read, so a
+    # hand-edited file heals on its next write and a GET never has to write.
+    state["revs"] = {wid: rev for wid, rev in state["revs"].items()
+                     if wid in state["states"]}
+    return state
+
+
+def _read_public_state():
+    """Never-raising state.json read for GET paths: empty on any failure."""
+    try:
+        return _read_stored_state()
+    except (OSError, ValueError):
+        return _empty_state()
+
+
+def _write_state(data):
+    """Persist state.json atomically, pinning the schema version."""
+    data["version"] = STATE_VERSION
+    atomic_write(STATE_FILE, json.dumps(data, indent=2))
+
+
 def _boot_workspaces():
     """First-paint workspace values for the shell.
 
@@ -1576,17 +1657,14 @@ def _render_index():
     return render_template("index.html", boot=state, asset_v=asset_version())
 
 
-def _workspace_state_rev(cfg, wid):
+def _workspace_state_rev(revs, wid):
     """One workspace's sync revision; 0 for anything unusable.
 
     The map is server-owned but hand-editable, and blobs written before sync
     shipped have no such key, so a missing, non-integer, negative or bool
     value must read as 0 instead of breaking every client's sync.
     """
-    if not isinstance(cfg, dict) or not isinstance(wid, str):
-        return 0
-    revs = cfg.get("workspaceStateRev")
-    if not isinstance(revs, dict):
+    if not isinstance(revs, dict) or not isinstance(wid, str):
         return 0
     rev = revs.get(wid)
     if isinstance(rev, bool) or not isinstance(rev, int) or rev < 0:
@@ -1685,25 +1763,45 @@ def _merge_workspace_state(current, base, incoming):
     return out
 
 
+def _newer_state(states, revs, other_states, other_revs):
+    """Combine two state maps, keeping each workspace's higher revision.
+
+    Used only by the startup split, where the same workspace can have a copy
+    in config.json and another in state.json. A tie keeps `states` (the first
+    pair), so an already-migrated file is left untouched. A negative or
+    non-integer revision reads as 0 through _workspace_state_rev.
+    """
+    out_states = dict(other_states)
+    out_revs = dict(other_revs)
+    for wid, state in states.items():
+        if not isinstance(wid, str) or not isinstance(state, dict):
+            continue
+        rev = _workspace_state_rev(revs, wid)
+        if rev >= _workspace_state_rev(out_revs, wid):
+            out_states[wid] = state
+            out_revs[wid] = rev
+    return out_states, out_revs
+
+
 def _drop_workspace_state(wid):
-    """Delete a removed workspace's state and rev in one config.json write.
+    """Delete a removed workspace's state and rev in one state.json write.
 
     Best effort, like save_workspaces(): a read failure skips the cleanup
     rather than writing a blob the server could not parse. An entry for a
-    workspace that no longer exists is unreachable; a clobbered config is
+    workspace that no longer exists is unreachable; a clobbered state file is
     not.
     """
     try:
-        with _CONFIG_LOCK:
-            cfg = _read_stored_config()
+        with _STATE_LOCK:
+            data = _read_stored_state()
             changed = False
-            for key in _CONFIG_STATE_KEYS:
-                entries = cfg.get(key)
+            for key in _STATE_MAPS:
+                entries = data.get(key)
                 if isinstance(entries, dict) and wid in entries:
                     del entries[wid]
                     changed = True
             if changed:
-                atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2))
+                _write_state(data)
     except (OSError, ValueError) as exc:
         sys.stderr.write("could not drop workspace state: %s\n" % exc)
 
@@ -1729,7 +1827,7 @@ def _migrate_workspace_state(cfg):
 
 
 def _migrate_config_at_startup():
-    """Run the one-shot workspace-state migration once at process start.
+    """Run the one-shot legacy fold once at process start.
 
     Best effort: a read or write failure leaves the old shape for the next
     launch. Held under _CONFIG_LOCK so it cannot interleave with a
@@ -1746,12 +1844,102 @@ def _migrate_config_at_startup():
             pass
 
 
+def _quarantine_bad_state_file():
+    """Move an unreadable state.json aside, once at process start.
+
+    Reads never write, so the quarantine lives here. The file is renamed, not
+    deleted: the user can recover tab lists from it by hand, and the server
+    starts empty instead of failing every route that touches state. Only a
+    rename failure (permissions) leaves the bad file in place, which makes
+    writes refuse with 500 -- correct, because that is a problem a rename
+    cannot fix. Returns True when a file was moved.
+    """
+    try:
+        _read_stored_state()
+        return False
+    except (OSError, ValueError) as exc:
+        target = "%s.corrupt-%d" % (STATE_FILE, int(time.time()))
+        try:
+            os.replace(STATE_FILE, target)
+        except OSError:
+            return False
+        sys.stderr.write("state.json unreadable (%s); moved to %s, starting "
+                         "with an empty state\n" % (exc, os.path.basename(target)))
+        return True
+
+
+def _migrate_state_out_of_config():
+    """Move workspaceState/workspaceStateRev out of config.json, once.
+
+    Runs after the legacy fold so the fold's workspaceState.default travels
+    with the rest. Per workspace the higher revision wins: a rollback to an
+    older build and a restored backup both write the maps into config.json,
+    and neither may be discarded in favour of the state file. Writes
+    state.json first and strips config.json second, so a crash in between
+    leaves the newer copy where the readers look and a redundant copy that
+    the next launch drops. Returns True when a map was carried over.
+    """
+    with _CONFIG_LOCK, _STATE_LOCK:
+        try:
+            cfg = _read_stored_config()
+        except (OSError, ValueError) as exc:
+            sys.stderr.write("could not split workspace state: %s\n" % exc)
+            return False
+        legacy_states = cfg.get("workspaceState")
+        legacy_revs = cfg.get("workspaceStateRev")
+        if not isinstance(legacy_states, dict) and not isinstance(
+                legacy_revs, dict):
+            return False
+        legacy_states = legacy_states if isinstance(legacy_states, dict) else {}
+        legacy_revs = legacy_revs if isinstance(legacy_revs, dict) else {}
+        try:
+            stored = _read_stored_state()
+        except (OSError, ValueError) as exc:
+            # The startup quarantine ran first, so this is a permissions or a
+            # mid-run failure: leave config.json alone rather than drop the
+            # only readable copy.
+            sys.stderr.write("could not read workspace state: %s\n" % exc)
+            return False
+        states, revs = _newer_state(
+            legacy_states, legacy_revs, stored["states"], stored["revs"])
+        if states != stored["states"] or revs != stored["revs"]:
+            try:
+                _write_state({"version": STATE_VERSION,
+                              "states": states, "revs": revs})
+            except OSError as exc:
+                sys.stderr.write("could not write workspace state: %s\n" % exc)
+                return False
+        for key in _CONFIG_STATE_KEYS:
+            cfg.pop(key, None)
+        try:
+            atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2))
+        except OSError as exc:
+            # The state file is safe; the redundant copy stays in config.json
+            # and the next launch retries. Do not report success.
+            sys.stderr.write("could not strip workspace state from config.json:"
+                             " %s\n" % exc)
+            return False
+        return True
+
+
 @app.route("/api/config", methods=["GET"])
 @read_login_required
 def get_config():
-    """Read config.json. The one-shot migration runs at startup, not here,
-    so a GET never writes a server-owned file."""
-    return jsonify(_read_public_config())
+    """Read the UI prefs, plus the shared workspace state spliced in.
+
+    The state lives in its own server-owned file but is returned under its
+    historical keys, `workspaceState` and `workspaceStateRev`, so the page
+    boots and polls with one response and the client contract does not
+    change. Both are always JSON objects, empty when nothing is saved, so the
+    response shape never depends on file contents. A corrupt state file reads
+    as empty here: the startup quarantine is what repairs it, and a GET never
+    writes.
+    """
+    cfg = _read_public_config()
+    stored = _read_public_state()
+    cfg["workspaceState"] = stored["states"]
+    cfg["workspaceStateRev"] = stored["revs"]
+    return jsonify(cfg)
 
 
 @app.route("/api/info", methods=["GET"])
@@ -1771,29 +1959,24 @@ def info():
 @app.route("/api/config", methods=["POST"])
 @admin_required
 def set_config():
-    """Replace config.json with the POSTed blob, minus the server-owned state.
+    """Replace config.json with the POSTed blob, minus the server-owned keys.
 
-    Held under _CONFIG_LOCK: set_workspace_state(), remove_workspace() and
-    the startup migration read-modify-write the same file, and without the
-    lock two writers can each read the old blob and silently lose the
-    other's update. The per-workspace state and its revisions are stripped
-    from the body and re-attached from disk, so this route can change chrome
-    preferences but never a session, a bookmark or a pin: those belong to
-    POST /api/workspace-state, which merges a stale write instead of
-    clobbering it. A stored file that cannot be read refuses the POST,
-    because there would be no state to re-attach.
+    This route writes preferences only. The per-workspace state lives in
+    state.json and is not readable or writable from here at all, so a stale
+    page cannot clobber another device's tabs; the strip is a defensive
+    measure for clients that still send the keys. The stored config.json is
+    read first, under _CONFIG_LOCK, so a file that cannot be parsed is
+    refused instead of silently replaced. Held under the lock for the same
+    reason as before: the startup migration read-modify-writes the same file.
     """
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
         return err("Expected a JSON object body", 400)
     try:
         with _CONFIG_LOCK:
-            stored = _read_stored_config()
+            _read_stored_config()
             for key in _CONFIG_STATE_KEYS + _WORKSPACE_SCOPED_CONFIG_KEYS:
                 data.pop(key, None)
-            for key in _CONFIG_STATE_KEYS:
-                if key in stored:
-                    data[key] = stored[key]
             atomic_write(CONFIG_FILE, json.dumps(data, indent=2))
     except (OSError, ValueError) as exc:
         return err("Could not write config: %s" % exc, 500,
@@ -1940,15 +2123,15 @@ def get_workspace_state():
     wid = wid.strip()
     if resolve_workspace(wid) is None:
         return err("Unknown workspace", 404, code="unknown_workspace")
-    cfg = _read_public_config()
-    rev = _workspace_state_rev(cfg, wid)
+    cfg = _read_public_state()
+    rev = _workspace_state_rev(cfg["revs"], wid)
     stored_rev = (request.args.get("rev") or "").strip()
     # Digits only, and bounded: int() would also accept "+7" and "1_0", and a
     # very long digit string raises on Python's int-conversion limit.
     if (len(stored_rev) <= 10 and stored_rev.isascii() and
             stored_rev.isdigit() and int(stored_rev) == rev):
         return ("", 304)
-    state = cfg.get("workspaceState")
+    state = cfg["states"]
     entry = state.get(wid) if isinstance(state, dict) else None
     return jsonify({"ok": True, "id": wid, "rev": rev,
                     "state": entry if isinstance(entry, dict) else {}})
@@ -1966,13 +2149,12 @@ def set_workspace_state():
     say what it started from is refused instead of overwriting newer data.
     There is no conflict status, because the merged result is the response.
 
-    Stored under config.json -> workspaceState -> <id>, with the new
-    revision under workspaceStateRev -> <id> in the same lock and the same
-    write. `state` and `base` are capped at WORKSPACE_STATE_MAX_BYTES because
-    the whole blob is re-read at every boot. Gated with
-    workspace_admin_required rather than admin_required: it writes a
-    server-owned file, so with auth off it must obey the same loopback rule as
-    the registry mutations.
+    Stored in state.json: states -> <id>, with the new revision in
+    revs -> <id> under the same lock and the same write. `state` and `base`
+    are capped at WORKSPACE_STATE_MAX_BYTES because the whole document is
+    read on every boot and poll. Gated with workspace_admin_required rather
+    than admin_required: it writes a server-owned file, so with auth off it
+    must obey the same loopback rule as the registry mutations.
     """
     data, error = expect_json("id", "state", "base", code="bad_body")
     if error:
@@ -1998,28 +2180,20 @@ def set_workspace_state():
         return err(_BASE_TOO_LARGE, 400, code="base_too_large")
     if resolve_workspace(wid) is None:
         return err("Unknown workspace", 404, code="unknown_workspace")
-    with _CONFIG_LOCK:
+    with _STATE_LOCK:
         # DELETE /api/workspaces/<id> can land between the lookup above and
         # this lock and clean up the entry; writing now would re-create it.
         if resolve_workspace(wid) is None:
             return err("Unknown workspace", 404, code="unknown_workspace")
-        # The strict reader, not _read_public_config(): attaching this body to
-        # a config that failed to parse would drop every other workspace's
-        # state and every global preference.
+        # The strict reader: attaching this body to a file that failed to
+        # parse would drop every other workspace's state.
         try:
-            cfg = _read_stored_config()
+            data = _read_stored_state()
         except (OSError, ValueError) as exc:
-            return err("Could not write config: %s" % exc, 500,
+            return err("Could not write workspace state: %s" % exc, 500,
                        code="write_failed")
-        # A present-but-unusable map is a read failure too, not an empty map.
-        workspace_state = cfg.get("workspaceState", {})
-        if not isinstance(workspace_state, dict):
-            return err("Could not write config: workspaceState is not a JSON "
-                       "object", 500, code="write_failed")
-        revs = cfg.get("workspaceStateRev", {})
-        if not isinstance(revs, dict):
-            return err("Could not write config: workspaceStateRev is not a "
-                       "JSON object", 500, code="write_failed")
+        workspace_state = data["states"]
+        revs = data["revs"]
         stored = workspace_state.get(wid)
         if not isinstance(stored, dict):
             stored = {}
@@ -2027,15 +2201,13 @@ def set_workspace_state():
             stored, base, state)
         if _json_size(merged) > WORKSPACE_STATE_MAX_BYTES:
             return too_large
-        rev = _workspace_state_rev(cfg, wid) + 1
+        rev = _workspace_state_rev(revs, wid) + 1
         workspace_state[wid] = merged
         revs[wid] = rev
-        cfg["workspaceState"] = workspace_state
-        cfg["workspaceStateRev"] = revs
         try:
-            atomic_write(CONFIG_FILE, json.dumps(cfg, indent=2))
+            _write_state(data)
         except OSError as exc:
-            return err("Could not write config: %s" % exc, 500,
+            return err("Could not write workspace state: %s" % exc, 500,
                        code="write_failed")
     return jsonify({"ok": True, "id": wid, "rev": rev, "state": merged})
 
@@ -2337,13 +2509,24 @@ def auth_tokens_delete(name):
 AI_FILE = os.path.join(CONFIG_DIR, "ai.json")
 
 # ACP profiles (Agent Client Protocol agents spawned as subprocesses) live in
-# their own hand-edited file -- deliberately NOT written through POST
-# /api/ai/config, because a config blob any authed client can POST must never
-# be able to choose a command to execute. See load_acp_configs().
-ACP_FILE = os.path.join(CONFIG_DIR, "acp.json")
+# config/ai.json under "acp", next to the OpenAI-compatible servers. They used
+# to live in their own hand-edited config/acp.json; the migration below folds
+# that file in once and renames it aside. The raw entry is what is stored (a
+# "command" entry is the hand-edited escape hatch); validation still happens on
+# every read, so loader output -- which carries a resolved command -- is never
+# written back. See load_acp_configs() and _merge_acp_profiles().
+ACP_LEGACY_FILE = os.path.join(CONFIG_DIR, "acp.json")
+ACP_LEGACY_SUFFIX = ".migrated"
+# The only fields a POST /api/ai/config body may carry for one ACP profile.
+# command/args/env/cwd/timeout are deliberately absent: a client-POSTable blob
+# must never choose an executable or the environment it runs in.
+_ACP_BODY_FIELDS = ("name", "agent", "model", "default")
+# Bound on the stored profile list: each entry costs a PATH lookup per read,
+# and the POST body is otherwise limited only by the request-size cap.
+ACP_MAX_PROFILES = 32
 
-# Bounds on config/acp.json fields. The file is server-local and trusted, but
-# a malformed entry should fail cleanly rather than spawn a runaway argv or
+# Bounds on a stored ACP profile. The entry is server-local and trusted, but
+# a malformed one should fail cleanly rather than spawn a runaway argv or
 # build a multi-gigabyte prompt.
 ACP_MAX_NAME_LEN = 60
 ACP_MAX_COMMAND_LEN = 300
@@ -2380,11 +2563,11 @@ ACP_CONTEXT_PREAMBLE = (
     "Context: the current working directory is the user's Markdown notebook. "
     "Treat the request below as the current turn in an ongoing conversation.")
 
-# Known ACP agents, keyed for config/acp.json's "agent" field. The command line
-# lives HERE, server-side, for the same reason config/acp.json is not writable
-# over HTTP: a config blob any client can POST must never choose a command to
-# execute. Both the config file and the browser may only name a key; the argv
-# is resolved from this table. "commands" is a preference list (an agent that
+# Known ACP agents, keyed for a profile's "agent" field. The command line lives
+# HERE, server-side: a config blob any client can POST must never choose a
+# command to execute, so the browser may only name a key and the argv is
+# resolved from this table. A hand-edited "command" entry stays as the escape
+# hatch for an agent the table does not know. "commands" is a preference list (an agent that
 # renamed its adapter binary keeps working); "requires" names the wrapping CLI
 # used for the "installed, but the ACP adapter is missing" hint. Sources:
 # docs/research/acp-agent-commands.md.
@@ -2536,11 +2719,11 @@ def _acp_agent_command(entry):
 
 
 def _acp_profile_entries(data):
-    """Raw profile objects from config/acp.json `data`, in file order.
+    """Raw profile objects from a legacy config/acp.json document.
 
-    Three shapes are accepted: the canonical {"profiles": [...]}, a bare
-    array, and the legacy single profile object. Anything else yields no
-    entries rather than raising.
+    Used only by the one-shot migration. Three shapes are accepted: the
+    canonical {"profiles": [...]}, a bare array, and the legacy single
+    profile object. Anything else yields no entries rather than raising.
     """
     if isinstance(data, list):
         return data
@@ -2552,8 +2735,70 @@ def _acp_profile_entries(data):
     return []
 
 
+def _acp_raw_entries(data):
+    """The raw ACP profile list from an ai.json document.
+
+    Entries are returned exactly as stored, including a hand-edited "command"
+    entry. Validation is a read-time concern (_validate_acp_profile), so a
+    profile whose agent is temporarily uninstalled survives in the file.
+    """
+    entries = data.get("acp")
+    if not isinstance(entries, list):
+        return []
+    return [entry for entry in entries if isinstance(entry, dict)]
+
+
+def _acp_raw_names(data):
+    """Names of the raw ACP profiles, for collision and default checks.
+
+    Unlike load_acp_configs(), this includes a profile whose agent is not
+    installed right now: the name is taken, and a server may not claim it.
+    """
+    names = set()
+    for entry in _acp_raw_entries(data):
+        name = entry.get("name")
+        if isinstance(name, str) and name.strip():
+            names.add(name.strip())
+    return names
+
+
+def _acp_hand_owned(entry):
+    """True for a profile the browser may not edit.
+
+    A hand-edited "command" entry, and an entry with neither "agent" nor a
+    command, are owned by the file: POST /api/ai/config preserves them
+    verbatim and refuses a body entry that reuses their name. Only an
+    allowlist-keyed entry ("agent" set, no "command") is browser-editable,
+    because only then is the argv chosen from the server's table.
+    """
+    command = entry.get("command")
+    agent = entry.get("agent")
+    if isinstance(command, str) and command.strip():
+        return True
+    return not (isinstance(agent, str) and agent.strip())
+
+
+def _acp_browser_owned(entry, saved_names=None):
+    """True when the browser can express this entry exactly.
+
+    That needs an allowlist key, no hand-written command, and a name the
+    route accepts. An entry keyed by an unknown agent, or named after a saved
+    server, stays file-owned: a body could not express it, so treating it as
+    editable would fail every save or delete the profile.
+    """
+    if _acp_hand_owned(entry):
+        return False
+    agent = entry.get("agent")
+    if not agent or _acp_known_agent(agent.strip()) is None:
+        return False
+    if saved_names is None:
+        return True
+    name = entry.get("name")
+    return not (isinstance(name, str) and name.strip() in saved_names)
+
+
 def _validate_acp_profile(data, saved_names):
-    """Validate one config/acp.json profile; None when the entry is invalid.
+    """Validate one stored ACP profile; None when the entry is invalid.
 
     Each entry is validated on its own and dropped on any violation, so one
     typo cannot disable every other profile. `saved_names` holds the names of
@@ -2659,25 +2904,25 @@ def _validate_acp_profile(data, saved_names):
 
 
 def load_acp_configs():
-    """Read the hand-edited config/acp.json and return its valid profiles.
+    """Read config/ai.json and return its valid ACP profiles.
 
-    ACP profiles are configured only by editing this file, never through
-    POST /api/ai/config (a client-POSTable blob must not pick a command to
-    run). Invalid entries are dropped individually so a typo in one profile
-    cannot disable the others; duplicate names keep the first entry. The file
-    is read once, and the ai.json server-name set once, so validation of N
-    profiles does not re-read the config per entry. Never raises: an unset,
-    unreadable or malformed file yields [].
+    The profiles live in the "acp" list next to the OpenAI servers. The raw
+    entry is what is stored; validation runs on every read and resolves an
+    allowlisted "agent" into an absolute command. Loader output is therefore
+    never written back -- only the browser-editable subset is, and it is
+    merged into the raw list (see _merge_acp_profiles).
+
+    Invalid entries are dropped individually so a typo in one profile cannot
+    disable the others; duplicate names keep the first entry; a name that
+    collides with an ai.json server is dropped so the OpenAI profile keeps it.
+    The file is read once, so validating N profiles does not re-read it.
+    Never raises: a missing, unreadable or malformed file yields [].
     """
-    try:
-        with open(ACP_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return []
-    saved_names = _saved_server_names(load_ai_config())
+    data = load_ai_config()
+    saved_names = _saved_server_names(data)
     profiles = []
     seen = set()
-    for raw in _acp_profile_entries(data):
+    for raw in _acp_raw_entries(data):
         profile = _validate_acp_profile(raw, saved_names)
         if profile is None or profile["name"] in seen:
             continue
@@ -2709,6 +2954,80 @@ def save_ai_config(data):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2)
     os.replace(tmp, AI_FILE)
+
+
+def _migrate_acp_file():
+    """Fold config/acp.json into config/ai.json's "acp" list, once.
+
+    Copies the RAW entries, never loader output: an allowlisted entry is
+    stored as {"agent": ...} and only resolved to a command at load time, so
+    writing the resolved form back would add a "command" the next read
+    rejects. A profile whose name is already stored is not copied again,
+    which makes a crash between the write and the rename harmless. An
+    unreadable legacy file, or an ai.json that exists but cannot be parsed,
+    is skipped with a warning rather than overwritten.
+
+    On success the legacy file is renamed to acp.json.migrated: kept for a
+    rollback, and out of the way of an edit that would otherwise silently do
+    nothing. Returns True when a profile was carried over.
+    """
+    if not os.path.isfile(ACP_LEGACY_FILE):
+        return False
+    try:
+        with open(ACP_LEGACY_FILE, "r", encoding="utf-8") as f:
+            legacy = json.load(f)
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("could not read config/acp.json: %s\n" % exc)
+        return False
+    raw = [entry for entry in _acp_profile_entries(legacy)
+           if isinstance(entry, dict)]
+    try:
+        with open(AI_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        data = {}
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("could not migrate config/acp.json: config/ai.json "
+                         "is unreadable (%s)\n" % exc)
+        return False
+    if not isinstance(data, dict):
+        sys.stderr.write("could not migrate config/acp.json: config/ai.json "
+                         "is not a JSON object\n")
+        return False
+    stored = _acp_raw_entries(data)
+    names = {name.strip() for name in (entry.get("name") for entry in stored)
+             if isinstance(name, str)}
+    server_names = _saved_server_names(data)
+    added = []
+    for entry in raw:
+        name = entry.get("name")
+        name = name.strip() if isinstance(name, str) else ""
+        if name and name in names:
+            continue
+        if name and name in server_names:
+            sys.stderr.write("config/acp.json: profile %r collides with a "
+                             "saved server name; not migrated\n" % name)
+            continue
+        added.append(entry)
+    if added:
+        data.setdefault("servers", [])
+        data["acp"] = stored + added
+        try:
+            save_ai_config(data)
+        except OSError as exc:
+            sys.stderr.write("could not write config/ai.json: %s\n" % exc)
+            return False
+    target = ACP_LEGACY_FILE + ACP_LEGACY_SUFFIX
+    counter = 1
+    while os.path.exists(target):
+        target = "%s%s.%d" % (ACP_LEGACY_FILE, ACP_LEGACY_SUFFIX, counter)
+        counter += 1
+    try:
+        os.replace(ACP_LEGACY_FILE, target)
+    except OSError as exc:
+        # Retried on the next launch; the name check above keeps it idempotent.
+        sys.stderr.write("could not rename config/acp.json: %s\n" % exc)
+    return bool(added)
 
 
 def _sanitize_server(raw, index):
@@ -2786,46 +3105,218 @@ def _detect_acp_agents():
 
 
 def _public_acp_configs(resolved_default):
-    """Browser-safe view of every ACP profile, in file order.
+    """Browser-safe view of every stored ACP profile, in file order.
 
-    Only the name, the model label, the allowlist key and the resolved
-    default flag are exposed. command / args / env / cwd / timeout stay
-    server-side: the browser never needs them and must not be able to read a
-    command line. The key is not a secret -- it names an entry in
-    ACP_KNOWN_AGENTS -- and the UI needs it to show which agent is selected.
-    A profile without a configured model carries the fixed ACP_LABEL so the
-    picker (which shows "name · model") always has a non-empty suffix.
+    Built from the RAW list so a profile whose agent is not installed right
+    now is still listed and still editable/removable; `available` tells the
+    picker whether it can be selected. Only the fields the UI needs are
+    projected: command / args / env / cwd / timeout never reach the browser,
+    because `env` is an overlay on the child's environment and is where an
+    agent credential or LD_PRELOAD would live.
 
-    `default` is computed from the resolved provider name, not from the raw
-    file flag, so a default chosen in the settings UI wins without the server
-    ever rewriting config/acp.json. `hasModel` distinguishes a configured
-    model from the ACP_LABEL fallback, so the settings panel does not present
-    the fallback as a real model id.
+    `editable` is false for a hand-owned entry (a "command" profile), which
+    the settings panel shows read-only. `default` is computed from the
+    resolved provider name, not from the raw file flag, so a default chosen
+    in the settings UI wins without the server rewriting anything.
+    `hasModel` distinguishes a configured model from the ACP_LABEL fallback,
+    so the settings panel does not present the fallback as a real model id.
     """
-    return [{"name": profile["name"],
-             "model": profile["model"] or ACP_LABEL,
-             "hasModel": bool(profile["model"]),
-             "agent": profile.get("agent", ""),
-             "default": profile["name"] == resolved_default}
-            for profile in load_acp_configs()]
+    data = load_ai_config()
+    saved_names = _saved_server_names(data)
+    public = []
+    seen = set()
+    for raw in _acp_raw_entries(data):
+        name = raw.get("name")
+        if not isinstance(name, str) or not name.strip():
+            continue
+        name = name.strip()
+        if name in seen:
+            # A duplicate name cannot be picked unambiguously; keep the first,
+            # exactly like load_acp_configs().
+            continue
+        seen.add(name)
+        agent = raw.get("agent")
+        agent = agent.strip() if isinstance(agent, str) else ""
+        if _acp_known_agent(agent) is None:
+            agent = ""
+        valid = _validate_acp_profile(raw, saved_names) is not None
+        model = raw.get("model")
+        model = model.strip() if isinstance(model, str) else ""
+        if len(model) > ACP_MAX_MODEL_LEN:
+            # A hand-edited value the loader rejects is not echoed back as a
+            # model id; the picker shows the type label instead.
+            model = ""
+        # Editable means the browser can express the whole entry: an
+        # allowlist key with no hand-written command, and a name the route
+        # would accept. An entry keyed by an unknown agent, or named after a
+        # saved server, is file-owned -- a body could not express it, so
+        # offering an edit would fail or delete the profile.
+        editable = _acp_browser_owned(raw, saved_names)
+        public.append({
+            "name": name,
+            "model": model or ACP_LABEL,
+            "hasModel": bool(model),
+            "agent": agent,
+            "default": name == resolved_default,
+            "available": valid,
+            "editable": editable,
+        })
+    return public
+
+
+def _acp_write_allowed():
+    """True when this request may edit the ACP profile list.
+
+    With auth on, admin_required already gated the route. With auth off every
+    route is open to the LAN, and creating an ACP profile is the one thing
+    this route can do that driving an existing agent cannot -- so, like the
+    workspace registry, the ACP half requires a loopback peer with no
+    forwarding header. Same rule and same reason as
+    workspace_admin_required: a same-host reverse proxy dials in from
+    127.0.0.1, so the header is what separates it from a LAN client.
+    """
+    if auth_enabled():
+        return True
+    # `is not None`, not truthiness: a proxy that forwards an empty header is
+    # still a proxy, and the empty value must not read as "no header".
+    for name in PROXY_FORWARD_HEADERS:
+        if request.headers.get(name) is not None:
+            return False
+    return _is_loopback(request.remote_addr)
+
+
+def _acp_raw_entry_named(entry, name):
+    """True when a raw profile carries this exact, trimmed name."""
+    stored = entry.get("name")
+    return isinstance(stored, str) and stored.strip() == name
+
+
+def _merge_acp_profiles(stored, incoming, saved_names):
+    """Fold a POSTed ACP list into the stored raw list.
+
+    `stored` is what is on disk, `incoming` is the body's list. A body entry
+    may carry name / agent / model / default only; every other stored field
+    of an entry it names is carried over unchanged, so a hand-edited cwd or
+    env survives an edit made in the browser. A hand-owned entry is never
+    edited and never dropped, and a body entry that reuses its name is
+    refused (see _acp_hand_owned). `incoming` is None when the body omits the
+    field, which keeps the whole list -- the same "omitted means unchanged"
+    rule customPrompt and searxngUrl follow.
+
+    Returns (list, error); error is a (message, status_code) pair or None.
+    """
+    if incoming is None:
+        return stored, None
+    if not isinstance(incoming, list):
+        return None, ("acp must be a list", 400)
+    if len(incoming) > ACP_MAX_PROFILES:
+        return None, ("at most %d ACP profiles are supported"
+                      % ACP_MAX_PROFILES, 400)
+    by_name = {}
+    for raw in stored:
+        name = raw.get("name")
+        if isinstance(name, str) and name.strip():
+            by_name.setdefault(name.strip(), []).append(raw)
+    out = []
+    seen = set()
+    for index, entry in enumerate(incoming):
+        if not isinstance(entry, dict):
+            return None, ("acp[%d] must be an object" % index, 400)
+        extra = [key for key in entry if key not in _ACP_BODY_FIELDS]
+        if extra:
+            return None, ("acp[%d] may not set %s"
+                          % (index, ", ".join(sorted(extra))), 400)
+        name = entry.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return None, ("acp[%d].name must be a non-empty string"
+                          % index, 400)
+        name = name.strip()
+        if len(name) > ACP_MAX_NAME_LEN:
+            return None, ("acp[%d].name is longer than %d chars"
+                          % (index, ACP_MAX_NAME_LEN), 400)
+        agent = entry.get("agent")
+        if not isinstance(agent, str) or not agent.strip():
+            return None, ("acp[%d].agent must name a known agent" % index, 400)
+        agent = agent.strip()
+        if _acp_known_agent(agent) is None:
+            return None, ("acp[%d].agent is not a known agent" % index, 400)
+        model = entry.get("model", "")
+        if model is None:
+            model = ""
+        if not isinstance(model, str):
+            return None, ("acp[%d].model must be a string" % index, 400)
+        model = model.strip()
+        if len(model) > ACP_MAX_MODEL_LEN:
+            return None, ("acp[%d].model is longer than %d chars"
+                          % (index, ACP_MAX_MODEL_LEN), 400)
+        default = entry.get("default", False)
+        if not isinstance(default, bool):
+            return None, ("acp[%d].default must be true or false"
+                          % index, 400)
+        if name in seen:
+            return None, ("duplicate ACP profile name: %s" % name, 400)
+        if name in saved_names:
+            return None, ("acp[%d].name collides with a saved server" % index,
+                          400)
+        seen.add(name)
+        previous_entries = by_name.get(name) or []
+        # Every stored entry with this name must be browser-owned, or the
+        # preserve loop below would drop a file-owned duplicate in silence.
+        if any(not _acp_browser_owned(raw, saved_names)
+               for raw in previous_entries):
+            return None, ("acp[%d].name names a hand-edited profile"
+                          % index, 400)
+        previous = previous_entries[0] if previous_entries else None
+        if "default" in entry:
+            clean = {"name": name, "agent": agent, "model": model,
+                     "default": default}
+        else:
+            # The settings UI never sends the flag; keep the stored one so a
+            # save cannot clear a hand-edited fallback default.
+            clean = {"name": name, "agent": agent, "model": model,
+                     "default": bool(previous and previous.get("default"))}
+        if previous is not None and previous.get("agent") == agent:
+            # Keep the fields the browser cannot express (a hand-edited cwd,
+            # env or timeout) so an edit here never silently drops them. An
+            # agent change starts a clean entry: a credential provisioned for
+            # one binary must not follow the name onto another.
+            for key in ("cwd", "env", "timeout"):
+                if key in previous:
+                    clean[key] = previous[key]
+        out.append(clean)
+    for raw in stored:
+        name = raw.get("name")
+        name = name.strip() if isinstance(name, str) else ""
+        if name in seen:
+            continue
+        if _acp_hand_owned(raw):
+            out.append(raw)
+            continue
+        if name in saved_names:
+            # A keyed profile under a saved server's name can never launch --
+            # load_acp_configs drops it -- so the server keeps the name and
+            # this dead entry is not preserved.
+            continue
+        if _acp_browser_owned(raw, saved_names):
+            continue
+        out.append(raw)
+    return out, None
 
 
 def _resolve_default_provider(data):
     """Name of the provider the UI should select by default.
 
-    An ai.json "default" wins when it names a saved server or an ACP profile,
-    so "Make default" in the settings UI always takes effect. Otherwise the
-    first ACP profile flagged default:true keeps the legacy behaviour, and ""
-    lets the frontend fall back to the first entry.
+    An ai.json "default" wins when it names a saved server or any stored ACP
+    profile, so "Make default" in the settings UI always takes effect and a
+    profile whose agent is uninstalled keeps its flag until it is removed.
+    Otherwise the first ACP profile flagged default:true keeps the legacy
+    behaviour, and "" lets the frontend fall back to the first entry.
     """
     stored = data.get("default", "")
-    server_names = _saved_server_names(data)
-    profiles = load_acp_configs()
-    if (isinstance(stored, str) and stored
-            and (stored in server_names
-                 or any(p["name"] == stored for p in profiles))):
+    names = _saved_server_names(data) | _acp_raw_names(data)
+    if isinstance(stored, str) and stored and stored in names:
         return stored
-    for profile in profiles:
+    for profile in load_acp_configs():
         if profile["default"]:
             return profile["name"]
     return ""
@@ -2836,8 +3327,9 @@ def _public_ai_config():
 
     The stored api_key is NEVER echoed back -- the settings UI re-sends
     replaceSecret to keep it, so a stolen config response can't be replayed.
-    "acp" is the first ACP profile, kept for older clients; "acps" is the
-    full list.
+    "acp" is the first usable ACP profile, kept for older clients; "acps" is
+    every stored profile with an `available` flag so the picker can skip one
+    whose agent is not installed.
     """
     data = load_ai_config()
     servers = []
@@ -2858,10 +3350,13 @@ def _public_ai_config():
     searx = data.get("searxng_url")
     default = _resolve_default_provider(data)
     acps = _public_acp_configs(default)
+    # The legacy scalar names a usable profile only: an older client that
+    # reads just "acp" must never be handed one that cannot launch.
+    usable = [profile for profile in acps if profile["available"]]
     return {"servers": servers, "default": default,
             "customPrompt": custom if isinstance(custom, str) else "",
             "searxngUrl": searx if isinstance(searx, str) else "",
-            "acp": acps[0] if acps else None,
+            "acp": usable[0] if usable else None,
             "acps": acps,
             "acpAgents": _detect_acp_agents()}
 
@@ -2908,8 +3403,9 @@ def ai_config_post():
 
     Body: {"servers": [{name, baseUrl, apiKey?, model, replaceSecret?},
     ...], "default": "<name>", "customPrompt": "<global instructions>",
-    "searxngUrl": "<optional SearXNG instance>"}.
-    The list replaces the stored one but entries whose apiKey is "" +
+    "searxngUrl": "<optional SearXNG instance>", "acp": [{name, agent,
+    model, default}, ...]}.
+    The server list replaces the stored one but entries whose apiKey is "" +
     replaceSecret:true carry over the previously stored key, so the UI can
     round-trip profiles without echoing secrets back through the browser.
     customPrompt is the global assistant instruction text (applies to
@@ -2917,9 +3413,17 @@ def ai_config_post():
     preserved when the field is omitted (older clients). searxngUrl is the
     optional SearXNG instance the search tool queries; it is preserved when
     omitted and cleared when sent as "".
-    `default` may name a saved server or an ACP profile, and a server name
-    that collides with an ACP profile is rejected so routing stays
-    unambiguous. config/acp.json itself is never written here.
+
+    `acp` is the browser-editable half of the ACP profile list: name, agent
+    key, model and default. It is preserved when omitted, because every save
+    path that predates ACP editing omits it. A body may not carry command,
+    args, env, cwd or timeout -- a POSTable blob must not choose an
+    executable or its environment -- and a hand-edited "command" entry is
+    preserved verbatim and cannot be named here. See _merge_acp_profiles.
+    `default` may name a saved server or any stored ACP profile. With auth
+    off this route is reachable from the LAN, so the ACP half additionally
+    requires a loopback peer: creating a profile is the one thing it can do
+    that driving an existing agent cannot.
     """
     data, error = expect_json("servers")
     if error:
@@ -2930,10 +3434,11 @@ def ai_config_post():
         return err("servers must be a list", 400)
     if not isinstance(default, str):
         return err("default must be a string", 400)
+    stored = load_ai_config()
     custom_prompt = data.get("customPrompt")
     if custom_prompt is None:
         # Field absent -> keep whatever is stored (round-trip safety).
-        custom_prompt = load_ai_config().get("custom_prompt", "")
+        custom_prompt = stored.get("custom_prompt", "")
     if not isinstance(custom_prompt, str):
         return err("customPrompt must be a string", 400)
     if len(custom_prompt) > 8000:
@@ -2942,7 +3447,7 @@ def ai_config_post():
     searxng_url = data.get("searxngUrl")
     if searxng_url is None:
         # Field absent -> keep whatever is stored (round-trip safety).
-        searxng_url = load_ai_config().get("searxng_url", "")
+        searxng_url = stored.get("searxng_url", "")
     if not isinstance(searxng_url, str):
         return err("searxngUrl must be a string", 400)
     searxng_url = searxng_url.strip()
@@ -2951,10 +3456,11 @@ def ai_config_post():
     if len(searxng_url) > 300:
         return err("searxngUrl is longer than 300 chars", 400)
     searxng_url = searxng_url.rstrip("/")
-    # A posted server that reuses an ACP profile's name would make routing
-    # ambiguous; the file stays hand-edited, so reject the save instead of
-    # creating the collision.
-    acp_names = {p["name"] for p in load_acp_configs()}
+    acp_in = data.get("acp")
+    if acp_in is not None and not _acp_write_allowed():
+        return err("Editing ACP profiles requires a loopback client while "
+                   "authentication is off", 403, code="loopback_required")
+    acp_stored = _acp_raw_entries(stored)
     cleaned = []
     seen = set()
     for i, raw in enumerate(servers_in):
@@ -2962,18 +3468,32 @@ def ai_config_post():
             clean = _sanitize_server(raw, i)
         except ValueError as exc:
             return err(str(exc), 400)
-        if clean["name"] in acp_names:
-            return err("servers[%d].name collides with an ACP profile" % i, 400)
         if any(s["name"] == clean["name"] for s in cleaned):
             return err("duplicate server name: %s" % clean["name"], 400)
         seen.add(clean["name"])
         cleaned.append(clean)
+    acp_out, problem = _merge_acp_profiles(acp_stored, acp_in, seen)
+    if problem:
+        return err(problem[0], problem[1])
+    # A keyed profile under a server's name is dead (load_acp_configs drops
+    # it) and the next save removes it, so only a file-owned entry under that
+    # name is refused -- that one cannot be resolved from the browser.
+    for i, clean in enumerate(cleaned):
+        if any(_acp_raw_entry_named(entry, clean["name"])
+               and _acp_hand_owned(entry) for entry in acp_out):
+            return err("servers[%d].name collides with a hand-edited ACP "
+                       "profile" % i, 400)
+    acp_names = {name for name in
+                 (entry.get("name") for entry in acp_out)
+                 if isinstance(name, str)}
     if default and default not in seen and default not in acp_names:
         return err("default is not a saved server or ACP profile", 400)
+    payload = dict(stored)
+    payload.update({"servers": cleaned, "default": default,
+                    "custom_prompt": custom_prompt,
+                    "searxng_url": searxng_url, "acp": acp_out})
     try:
-        save_ai_config({"servers": cleaned, "default": default,
-                        "custom_prompt": custom_prompt,
-                        "searxng_url": searxng_url})
+        save_ai_config(payload)
     except OSError as exc:
         return err("Could not write AI config: %s" % exc, 500)
     return jsonify(_public_ai_config())
@@ -3229,20 +3749,16 @@ def _acp_context_preamble(workspace_id=None):
     result is prepended to the flattened transcript on every turn, so it is
     never duplicated into the conversation.
 
-    The open note is per workspace: workspaceState["<id>"].activeFile, falling
-    back to the top-level activeFile written by clients that predate
-    workspaces. `workspace_id` defaults to the default workspace.
+    The open note is per workspace: state.json states["<id>"].activeFile,
+    falling back to the top-level activeFile written by clients that predate
+    workspaces (that key still lives in config.json). `workspace_id` defaults
+    to the default workspace.
     """
     lines = [ACP_CONTEXT_PREAMBLE]
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            cfg = json.load(f)
-    except (OSError, ValueError):
-        cfg = {}
-    if not isinstance(cfg, dict):
-        cfg = {}
+    cfg = _read_public_config()
+    stored = _read_public_state()
     active = None
-    scoped = cfg.get("workspaceState")
+    scoped = stored["states"]
     if isinstance(scoped, dict):
         state = scoped.get(workspace_id or WORKSPACE_DEFAULT_ID)
         if isinstance(state, dict):
@@ -3275,7 +3791,7 @@ def _acp_sse_error(message):
 def _acp_chat_response(acp, data):
     """Stream one ACP turn as SSE: one agent process per request.
 
-    The ACP profile lives in config/acp.json (never in the ai.json server
+    The ACP profile lives in config/ai.json's "acp" list (never in the server
     list), so this branch is reached when the POSTed server name matches an
     ACP profile. Message validation is shared with the OpenAI path; system
     messages are then dropped (the agent has its own prompt) and the surviving
@@ -3395,8 +3911,8 @@ def ai_chat():
     relayed unmodified with Content-Type: text/event-stream (this endpoint
     IS the upstream body).
 
-    The same route serves ACP profiles (config/acp.json): if the name is not
-    an OpenAI server but matches an ACP profile, the turn is driven through
+    The same route serves ACP profiles (config/ai.json's "acp" list): if the
+    name is not an OpenAI server but matches an ACP profile, the turn is driven through
     acp_client and streamed in the same SSE envelope.
     """
     data = request.get_json(silent=True)
@@ -4822,34 +5338,115 @@ def spa(p):
 # --------------------------------------------------------------------------- #
 # CLI / entrypoint
 # --------------------------------------------------------------------------- #
+def _port_arg(text):
+    """argparse type for --port: an integer inside the bindable range.
+
+    The same bounds load_server_config() enforces, so `--port 70000` fails
+    with a usage message instead of a bind traceback, and `--port 0` cannot
+    silently bind an ephemeral port the banner then prints as `:0`.
+    """
+    try:
+        port = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError("port must be an integer")
+    if not SERVER_PORT_MIN <= port <= SERVER_PORT_MAX:
+        raise argparse.ArgumentTypeError("port must be %d-%d"
+                                         % (SERVER_PORT_MIN, SERVER_PORT_MAX))
+    return port
+
+
 def parse_args(argv=None):
-    """Command-line options. `python app.py --help` shows usage."""
+    """Command-line options. `python app.py --help` shows usage.
+
+    Every flag defaults to None so "not passed" is distinguishable from a
+    value: only then can config/server.json fill the gap, and only then can
+    --no-debug beat a "debug": true in the file.
+    """
     parser = argparse.ArgumentParser(
         prog="app.py",
         description="Markdown notebook server. Run and open the printed URL "
                     "in a browser.",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        epilog="host, port and debug default to config/server.json when it "
+               "exists, else %s:%d with debug off."
+               % (DEFAULT_HOST, DEFAULT_PORT),
     )
     parser.add_argument(
         "-H", "--host",
-        default="0.0.0.0",
-        help="Bind address. Defaults to 0.0.0.0 so the server is reachable "
-             "from other devices on the LAN; pass --host 127.0.0.1 to bind "
+        default=None,
+        help="Bind address, overriding config/server.json. 0.0.0.0 is "
+             "reachable from other devices on the LAN; 127.0.0.1 binds "
              "loopback only.",
     )
     parser.add_argument(
         "-p", "--port",
-        type=int,
-        default=5000,
-        help="Port to listen on.",
+        type=_port_arg,
+        default=None,
+        help="Port to listen on, overriding config/server.json.",
     )
     parser.add_argument(
         "--debug", dest="debug",
         action=argparse.BooleanOptionalAction,
-        default=False,
-        help="Flask debug + auto-reload. Off by default; pass --debug to opt in.",
+        default=None,
+        help="Flask debug + auto-reload, overriding config/server.json.",
     )
     return parser.parse_args(argv)
+
+
+def load_server_config(path=None):
+    """Read config/server.json into a dict; {} when the file is missing.
+
+    Raises ValueError with the file name and the bad key when a value is
+    malformed. The file decides which interface the server binds and whether
+    the interactive debugger is exposed, so a typo must stop startup instead
+    of silently falling back to 0.0.0.0. Unknown keys are ignored; a key that
+    is absent keeps its built-in default.
+    """
+    path = path or SERVER_FILE
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as exc:
+        raise ValueError("%s: %s" % (path, exc))
+    if not isinstance(data, dict):
+        raise ValueError("%s: expected a JSON object" % path)
+    config = {}
+    host = data.get("host")
+    if host is not None:
+        if not isinstance(host, str) or not host.strip():
+            raise ValueError("%s: host must be a non-empty string" % path)
+        config["host"] = host.strip()
+    port = data.get("port")
+    if port is not None:
+        # bool is an int subclass; reject it rather than treat True as 1.
+        if (isinstance(port, bool) or not isinstance(port, int)
+                or not SERVER_PORT_MIN <= port <= SERVER_PORT_MAX):
+            raise ValueError("%s: port must be an integer %d-%d"
+                             % (path, SERVER_PORT_MIN, SERVER_PORT_MAX))
+        config["port"] = port
+    debug = data.get("debug")
+    if debug is not None:
+        if not isinstance(debug, bool):
+            raise ValueError("%s: debug must be true or false" % path)
+        config["debug"] = debug
+    return config
+
+
+def resolve_startup(args, stored):
+    """Effective (host, port, debug): CLI flag, then file, then default.
+
+    `stored` is load_server_config()'s dict. The caller runs the banner and
+    the LAN-debugger warning from the returned tuple, so a value that came
+    from the file is printed and warned about exactly like a flag.
+    """
+    host = args.host if args.host is not None else stored.get(
+        "host", DEFAULT_HOST)
+    port = args.port if args.port is not None else stored.get(
+        "port", DEFAULT_PORT)
+    debug = args.debug if args.debug is not None else stored.get(
+        "debug", DEFAULT_DEBUG)
+    return host, port, debug
 
 
 def reachable_urls(host, port):
@@ -4924,11 +5521,19 @@ def _lan_ipv4_addresses():
 seed_notes = seed()
 
 # One-shot, best-effort startup maintenance, now that the folders exist:
-# fold legacy top-level config keys under workspaceState["default"], then
-# rebuild the registry when the carried file is stale (an old DATA_DIR path,
-# a corrupt item list, or more entries than the cap). Reads stay pure -- only
+# fold legacy top-level config keys under workspaceState["default"], move the
+# state maps into config/state.json (after the fold, so the folded entry
+# travels too), fold a legacy config/acp.json into config/ai.json, then
+# rebuild the registry when the carried file is stale (an old DATA_DIR path, a
+# corrupt item list, or more entries than the cap). Reads stay pure -- only
 # startup and the mutating routes ever write these files.
 _migrate_config_at_startup()
+if _quarantine_bad_state_file():
+    seed_notes.append("Moved an unreadable config/state.json aside")
+if _migrate_state_out_of_config():
+    seed_notes.append("Moved workspace state to config/state.json")
+if _migrate_acp_file():
+    seed_notes.append("Moved ACP profiles into config/ai.json")
 if _persist_workspaces_if_changed():
     seed_notes.append("Rebuilt config/workspaces.json")
 
@@ -4939,16 +5544,23 @@ app.secret_key = _auth_state["secret"]
 
 if __name__ == "__main__":
     args = parse_args()
+    try:
+        stored_server_config = load_server_config()
+    except ValueError as exc:
+        print("Cannot start: %s" % exc, file=sys.stderr)
+        sys.exit(2)
+    host, port, debug = resolve_startup(args, stored_server_config)
     print("Markdown notebook server")
     print("  notebook: %s" % DATA_DIR)
     print("  config  : %s" % CONFIG_DIR)
     for note in seed_notes:
         print("  " + note)
-    print("  -> http://%s:%d  (Ctrl+C to quit)" % (args.host, args.port))
-    for url in reachable_urls(args.host, args.port)[1:]:
+    print("  -> http://%s:%d  (Ctrl+C to quit)" % (host, port))
+    for url in reachable_urls(host, port)[1:]:
         print("  -> %s" % url)
-    if args.debug and args.host not in ("127.0.0.1", "localhost"):
-        print("  WARNING: --debug with a non-loopback host exposes the "
+    if debug and host not in ("127.0.0.1", "localhost"):
+        print("  WARNING: debug mode with a non-loopback host exposes the "
               "interactive debugger to anyone on the network. Pass --no-debug "
-              "if the server is reachable beyond your machine.")
-    app.run(host=args.host, port=args.port, debug=args.debug)
+              "or set \"debug\": false in config/server.json if the server is "
+              "reachable beyond your machine.")
+    app.run(host=host, port=port, debug=debug)

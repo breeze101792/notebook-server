@@ -2041,10 +2041,10 @@ body[data-theme="light"] #settings-overlay {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
-/* Settings -> ACP read-only panel (config/acp.json is hand-edited on the
- * server; this block only reports status). */
-#settings-overlay .settings-ai-acp-row,
-#settings-overlay .settings-ai-acp-info {
+/* Settings -> ACP agent panel. Profiles live in config/ai.json's "acp"
+ * list; the rows carry their own card shell, the inline model field and the
+ * read-only probe list. */
+#settings-overlay .settings-ai-acp-row {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--stg-radius-md);
@@ -2059,20 +2059,34 @@ body[data-theme="light"] #settings-overlay {
   margin: 0; font-size: .74rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: .7px; color: var(--fg-muted);
 }
+/* An ACP row mirrors the provider card, but stays off .settings-ai-row so it
+ * is never counted as an OpenAI provider. The row wraps: when the action
+ * cluster does not fit beside the name, it takes its own line instead of
+ * squeezing the name to a few characters. */
 #settings-overlay .settings-ai-acp-profile {
   display: flex; align-items: center; flex-wrap: wrap;
-  gap: var(--stg-space-2);
-  padding: var(--stg-space-3);
-  border: 1px solid var(--border);
-  border-left: 2px solid var(--accent);
-  border-radius: var(--stg-radius-sm);
-  background: var(--bg);
-  margin: 0 0 var(--stg-space-3);
+  gap: var(--stg-space-2) var(--stg-space-3);
+  padding: var(--stg-space-3) var(--stg-space-4);
+  border: 1px solid var(--border); border-radius: var(--stg-radius-md);
+  background: var(--bg-elev); margin: 0 0 var(--stg-space-2);
+  min-width: 0;
 }
-#settings-overlay .settings-ai-acp-profile-name { font-weight: 600; font-size: .93rem; color: var(--fg); }
-#settings-overlay .settings-ai-acp-profile-meta {
-  flex: 1 1 100%; font-size: .78rem; color: var(--fg-muted);
+#settings-overlay .settings-ai-acp-profile .settings-label {
+  flex: 1 1 10em; min-width: 0;
+  color: var(--fg); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* The model field is the one inline editor on an ACP row: it shares the
+ * action cluster, so it takes a small flexible basis and shrinks first. */
+#settings-overlay .settings-ai-acp-model {
+  flex: 0 1 13em; min-width: 6em; max-width: 20em;
+  font-size: var(--text-sm);
+}
+/* A server-local profile's model is reported, not edited. */
+#settings-overlay .settings-ai-acp-model[readonly] {
+  opacity: var(--opacity-disabled); cursor: default;
+}
+#settings-overlay .settings-ai-acp-tag { flex: 0 0 auto; }
 #settings-overlay .settings-ai-acp-agents {
   display: flex; flex-direction: column; gap: var(--stg-space-2);
 }
@@ -2098,7 +2112,7 @@ body[data-theme="light"] #settings-overlay {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: .74rem; color: var(--stg-warn); overflow-wrap: anywhere;
 }
-#settings-overlay .settings-ai-acp-note { margin: var(--stg-space-3) 0 0; }
+#settings-overlay .settings-ai-acp-add { margin: var(--stg-space-3) 0 0; }
 
 :where(body > .settings-overlay) > .settings-modal {
   /* The modal is its own positioned window on the viewport, not a flex

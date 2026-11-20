@@ -10,8 +10,8 @@ so `unittest discover -s tests` never collects it. Run it by hand:
 It exercises both halves the same way the server does:
 
   1. POST /api/ai/chat through the real Flask test client against a temp
-     config dir containing a copy of config/acp.json (no auth.json, so the
-     route is open). Consume the SSE stream.
+     config dir holding the project's ACP profile in config/ai.json (no
+     auth.json, so the route is open). Consume the SSE stream.
   2. acp_client.run_turn("opencode", ["acp"], ...) directly.
 
 Both turns run with a temp notebook dir as cwd. A watcher thread records every
@@ -85,15 +85,33 @@ class PidWatcher:
         return sorted(pid for pid in self.seen if os.path.exists("/proc/%d" % pid))
 
 
+def _live_acp_profile():
+    """The project's configured ACP profile, as a dict.
+
+    config/ai.json stores it in the "acp" list; a checkout that predates the
+    merge still keeps it in config/acp.json.
+    """
+    ai_path = os.path.join(ROOT, "config", "ai.json")
+    try:
+        with open(ai_path, encoding="utf-8") as f:
+            data = json.load(f)
+        entries = data.get("acp")
+        if isinstance(entries, list) and entries and isinstance(entries[0], dict):
+            return dict(entries[0])
+    except (OSError, ValueError):
+        pass
+    with open(os.path.join(ROOT, "config", "acp.json"), encoding="utf-8") as f:
+        return json.load(f)
+
+
 def _build_temp_envs():
-    """Temp data + config dirs with a copied acp.json and no auth.json."""
+    """Temp data + config dirs with the live ACP profile and no auth.json."""
     base = tempfile.mkdtemp(prefix="acpreal_")
     data_dir = os.path.join(base, "notebook")
     config_dir = os.path.join(base, "config")
     os.makedirs(data_dir)
     os.makedirs(config_dir)
-    live = os.path.join(ROOT, "config", "acp.json")
-    cfg = json.load(open(live, encoding="utf-8"))
+    cfg = _live_acp_profile()
     cfg.update({"name": SERVER, "cwd": data_dir, "timeout": TURN_TIMEOUT})
     if not cfg.get("agent"):
         # Escape-hatch form: pin the command/args the script wants to run. The
@@ -102,8 +120,8 @@ def _build_temp_envs():
         cfg.pop("agent", None)
         cfg["command"] = AGENT
         cfg["args"] = AGENT_ARGS
-    with open(os.path.join(config_dir, "acp.json"), "w", encoding="utf-8") as f:
-        json.dump(cfg, f)
+    with open(os.path.join(config_dir, "ai.json"), "w", encoding="utf-8") as f:
+        json.dump({"servers": [], "default": SERVER, "acp": [cfg]}, f)
     # No auth.json -> every /api route is open.
     return base, data_dir, config_dir
 
@@ -145,7 +163,8 @@ def run_flask_path():
     import app as nb   # noqa: E402  (env set first: resolves DATA/CONFIG at import)
 
     print("== Flask test_client path ==")
-    print("config/acp.json =", json.load(open(nb.ACP_FILE, encoding="utf-8")))
+    print("config/ai.json acp =",
+          json.load(open(nb.AI_FILE, encoding="utf-8")).get("acp"))
     # The script writes no auth.json. app.py's import-time ensure_auth_secret()
     # still creates a secret-only one (Flask session key), so the meaningful
     # assertion is that auth is DISABLED: no admin password hash.

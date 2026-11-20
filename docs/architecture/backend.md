@@ -11,10 +11,11 @@ Two folders are deliberately separate:
 
 - `notebook/` holds the user's notes. It is a symlink to
   `/mnt/projects/notebook` in this checkout.
-- `config/` holds settings: `config.json` (UI state), `auth.json`
-  (password hashes, token hashes, session-signing secret), `ai.json`
-  (OpenAI-compatible provider profiles), `acp.json` (one hand-edited
-  ACP agent profile), and `workspaces.json` (the named notebook roots).
+- `config/` holds settings: `config.json` (UI preferences), `state.json`
+  (the workspace tab and session state), `server.json` (optional startup
+  values: host, port, debug), `auth.json` (password hashes, token hashes,
+  session-signing secret), `ai.json` (provider profiles, including the ACP
+  profiles), and `workspaces.json` (the named notebook roots).
 
 `notebook.template/` ships a starter notebook. On a fresh install the
 server copies it into `notebook/`.
@@ -29,7 +30,7 @@ test suites are described in [`../testing/README.md`](../testing/README.md).
 
 ## 2. Backend structure
 
-The backend is two files. `app.py` is the 4205-line Flask module: every route
+The backend is two files. `app.py` is the 5565-line Flask module: every route
 returns JSON except `GET /` (serves `index.html`), `GET /agent.md` (serves
 Markdown), and `POST /api/ai/chat` (relays `text/event-stream`).
 `acp_client.py` (306 lines) is the one exception to the single-file rule —
@@ -50,12 +51,17 @@ time (`app.py`, defined at `app.py`):
 
 The migration only runs when `DATA_DIR` is the default path; a custom
 `NOTEBOOK_DATA_DIR` is left untouched. Import-time startup maintenance then
-runs before the server starts: `_migrate_config_at_startup()` moves legacy
-config keys under `workspaceState.default`, and
+runs before the server starts, in this order (`app.py`):
+`_migrate_config_at_startup()` moves legacy config keys under
+`workspaceState.default`; `_quarantine_bad_state_file()` renames a corrupt or
+future-version `config/state.json` aside; `_migrate_state_out_of_config()`
+moves the state maps into `config/state.json`; `_migrate_acp_file()` folds a
+legacy `config/acp.json` into `config/ai.json`; and
 `_persist_workspaces_if_changed()` rebuilds `config/workspaces.json` when it
 is missing or not canonical. The auth secret is loaded or generated right
 after `seed()` (`ensure_auth_secret()`) and assigned as Flask's
-session-signing key.
+session-signing key. `seed()` creates only `config.json`: `state.json` and
+`server.json` are never seeded.
 
 ### Route organisation
 
@@ -111,19 +117,22 @@ file then calls `os.replace`. The temp name includes pid, thread id, and a
 counter, so concurrent writers to the same target never
 share a temp file. `save_auth()` uses the same pattern.
 
-Five files sit under `config/`: `config.json` (opaque UI-state JSON,
-POSTable by any authenticated client), `auth.json`
-(`secret`, password hashes, `tokens`), `ai.json` (provider profiles, global
-prompt, SearXNG URL), `acp.json` (a hand-edited ACP agent profile: a
-`command` line, or a well-known `agent` key that resolves to one, plus
-`args`), and `workspaces.json` (the server-owned workspace registry).
-`auth.json`, `ai.json`, and `acp.json` are split out of the POSTable
+Six files sit under `config/`: `config.json` (opaque UI-preference JSON,
+POSTable by any authenticated client), `state.json` (the per-workspace tab
+and session state, owned by the workspace routes), `server.json`
+(optional startup values, read by the CLI entrypoint, never written),
+`auth.json` (`secret`, password hashes, `tokens`), `ai.json` (provider
+profiles, the ACP profile list, global prompt, SearXNG URL), and
+`workspaces.json` (the server-owned workspace registry).
+`state.json`, `auth.json`, and `ai.json` are split out of the POSTable
 `config.json` blob because a client that can POST settings must not reach
-credential storage, and must never be able to choose a command to execute.
-`workspaces.json` is split out for the same reason in the other direction: a
-client that can POST settings must not be able to point the server at an
-arbitrary folder. `acp.json` and `workspaces.json` are never written through
-`POST /api/config`; only the workspace routes and startup touch the registry.
+credential storage, another device's tabs, or a command to execute (a POSTed
+ACP entry can only name an allowlisted agent). `workspaces.json` is split
+out for the same reason in the other direction: a client that can POST
+settings must not be able to point the server at an arbitrary folder.
+`state.json` is reachable only through `/api/workspace-state`, `ai.json`
+only through `/api/ai/config` (whose ACP half is allowlist-only), and
+`workspaces.json` only through the workspace routes and startup.
 
 ### Workspace roots
 
@@ -167,30 +176,35 @@ default path overwritten with the current install's `DATA_DIR`: the identity
 must be this process's root, not the previous install's.
 
 **Config serialisation.** `_CONFIG_LOCK` guards every `config.json`
-read-modify-write: `set_config()`, `set_workspace_state()`, and the startup
-migration. Without it two writers each read the old blob and the later write
-silently loses the other's update. Reads stay lock-free because
-`atomic_write()` publishes a complete file.
+read-modify-write: `set_config()` and the startup folds. `_STATE_LOCK` guards
+every `state.json` read-modify-write: `set_workspace_state()`,
+`_drop_workspace_state()` and the startup split. Without them two writers each
+read the old blob and the later write silently loses the other's update. Lock
+order is `_CONFIG_LOCK` before `_STATE_LOCK`, and only the startup split takes
+both. Reads stay lock-free because `atomic_write()` publishes a complete file.
 
 **Startup migration.** `_migrate_config_at_startup()` runs once at import time,
 after `seed()` and before the server starts, and moves the nine
 workspace-scoped top-level keys (`lastFile`, `openFiles`, `activeFile`,
 `pinnedFiles`, `sessions`, `activeSessionId`, `recentFiles`, `bookmarks`,
-`pinnedFolders`) under
-`workspaceState.default`. It is idempotent, leaves a blob that already has
-`workspaceState` alone, and is best effort under `_CONFIG_LOCK`. It
-deliberately does not run from `GET /api/config`, because a read route must not
-write a server-owned file. `POST /api/config` still folds stray legacy keys
-under `default` on every write, so a whole-blob POST cannot strand them.
+`pinnedFolders`) under `workspaceState.default`. It is idempotent, leaves a
+blob that already has `workspaceState` alone, and is best effort under
+`_CONFIG_LOCK`. `_migrate_state_out_of_config()` then moves both state maps
+into `config/state.json`, keeping the higher revision per workspace, so a
+rollback build or a restored backup written into `config.json` is not
+discarded. It writes `state.json` first and strips `config.json` second, so a
+crash in between is harmless and the next launch finishes the job. Neither
+migration runs from `GET /api/config`, because a read route must not write a
+server-owned file. `POST /api/config` no longer folds anything: it strips the
+state keys and the scoped keys and writes preferences only.
 
-**Session state.** `POST /api/workspace-state` replaces the whole entry, so a
-client loaded before sessions existed (or a second stale tab) would otherwise
-delete `sessions`/`activeSessionId`. The route keeps those two keys from the
-stored entry when the incoming body omits them and the stored entry has
-`sessions`; a current client always sends both, so a real change is never
-blocked. `_ACTIVE_VIEWS` also gains `sessions`, so a saved view id is accepted
-by `boot_state()` and the view is painted on the first frame. See
-[sessions.md](sessions.md) §3, §11.
+**Session state.** `POST /api/workspace-state` takes `{id, state, base}` and
+merges a stale write instead of replacing the entry, so a second client that
+started from an older state cannot drop a session a peer added in between.
+`DELETE /api/workspaces/<id>` removes the workspace's entry and rev in one
+`state.json` write. `_ACTIVE_VIEWS` also contains `sessions`, so a saved view
+id is accepted by `boot_state()` and the view is painted on the first frame.
+See [sessions.md](sessions.md) §3, §17.
 
 ## 4. Auth architecture
 
@@ -289,30 +303,35 @@ re-emitted in-band as `event: error` frames (`app.py`), because
 EventSource cannot read a non-200 status; the relay handles `GeneratorExit`
 so an early disconnect does not become an error banner.
 
-**ACP branch.** The same route serves ACP profiles. `config/acp.json` is a
-separate, hand-edited file holding one or more profiles (`name`, `agent` or
-`command`, `args`, `cwd`, `env`, `model`, `default`, `timeout`). Three shapes
-are accepted — `{"profiles": [...]}`, a bare array, and the legacy single
-object — and each entry is validated independently. `load_acp_configs()`
-(`app.py`) returns the valid profiles, dropping an invalid entry, a duplicate
-name, or a name that collides with an `ai.json` server; `load_acp_config()` is a
-compatibility wrapper returning the first profile or `{}`. The file
-deliberately never comes through `POST /api/ai/config` (`app.py`) — a config
-blob any authed client can POST must not be able to choose a command to
-execute. `ai_chat` resolves an OpenAI profile first; when the posted `server`
-instead matches an ACP profile (`_acp_profile`, `app.py`) it calls
-`_acp_chat_response` (`app.py`). Messages go through the shared
-`_validate_chat_messages` (`app.py`), the system turn is dropped, image
-parts are rejected, and the rest is flattened to one prompt
+**ACP branch.** The same route serves ACP profiles. They live in
+`config/ai.json`'s `acp` list, one or more profiles (`name`, `agent` or
+`command`, `args`, `cwd`, `env`, `model`, `default`, `timeout`), in the shape
+the legacy `config/acp.json` used. Each entry is validated independently.
+`load_acp_configs()` (`app.py`) returns the valid profiles, dropping an invalid
+entry, a duplicate name, or a name that collides with an `ai.json` server;
+`load_acp_config()` is a compatibility wrapper returning the first profile or
+`{}`. The raw entry is what is stored: an allowlisted `agent` is resolved to an
+absolute command at read time, and loader output is never written back.
+`POST /api/ai/config` can edit only the `name`/`agent`/`model`/`default`
+subset; `command`, `args`, `env`, `cwd` and `timeout` cannot come from a body,
+because a config blob any authed client can POST must not choose a command to
+execute. A `command` entry, or one keyed by an agent this server does not know,
+is file-owned: preserved verbatim and refused if a body reuses its name
+(`_merge_acp_profiles`, `app.py`). A legacy `config/acp.json` is folded in once
+at startup and renamed `acp.json.migrated`. `ai_chat` resolves an OpenAI
+profile first; when the posted `server` instead matches an ACP profile
+(`_acp_profile`, `app.py`) it calls `_acp_chat_response` (`app.py`). Messages go
+through the shared `_validate_chat_messages` (`app.py`), the system turn is
+dropped, image parts are re-wrapped, and the rest is flattened to one prompt
 (`_flatten_acp_prompt`, `app.py`). The profile's `model`, when set, is passed to
 `acp_client.run_turn` and applied after `session/new` through the agent's model
 config option; `run_turn` also merges the server's full environment with the
 profile's `env` (the profile wins) before spawning. The turn is streamed as the
 same OpenAI delta frames plus `data: [DONE]` and `event: error` frames, so the
 browser parser is unchanged. `GET /api/ai/config` exposes the browser-safe list
-as `acps` (with `acp` as the first entry for older clients), and
+as `acps` (with `acp` as the first available entry for older clients), and
 `_resolve_default_provider` (`app.py`) picks the default from `ai.json` or an
-ACP profile without ever writing the ACP file. `acp_client` is imported lazily
+ACP profile. `acp_client` is imported lazily
 (`app.py`), so a missing `agent-client-protocol` package disables only ACP
 rather than the server. See
 [ai-assistant.md](ai-assistant.md#acp-providers) for the full contract,
@@ -415,10 +434,12 @@ repository, not generated code.
 
 ## 9. Design decisions and trade-offs
 
-**Config split.** `auth.json`, `ai.json`, and `acp.json` are split out of
+**Config split.** `state.json`, `auth.json`, and `ai.json` are split out of
 `config.json` so the client-POSTable settings blob provably cannot carry
-secrets (`auth.json`, `ai.json`) or choose a command to execute
-(`acp.json`). The cost is four small files instead of one.
+secrets (`auth.json`, `ai.json`), another device's tabs and sessions
+(`state.json`), or choose a command to execute (the ACP entries in `ai.json`
+can only name an allowlisted agent). The cost is several small files instead
+of one.
 
 **Single-file backend.** `app.py` keeps import-time state (paths, seeding)
 trivial and avoids a package layout for a single-user tool. The cost is a
@@ -460,23 +481,23 @@ no `allow-same-origin`.
 
 ```
 notebook-server/
-  app.py                  Flask backend (4205 lines)
+  app.py                  Flask backend (5565 lines)
   acp_client.py           Flask-free ACP client, one agent process per turn (306 lines)
   agent.md                machine-readable API guide, served at /agent.md
   start.sh                venv bootstrap + launcher
   requirements.txt        Python dependencies
   notebook/               notes (symlink to /mnt/projects/notebook)
   notebook.template/      starter notebook copied on first run
-  config/                 config.json, auth.json, ai.json, acp.json,
-                          workspaces.json
+  config/                 config.json, state.json, server.json, auth.json,
+                          ai.json, workspaces.json
   templates/index.html    the single SPA shell (1953 lines)
   static/
     manifest.json         PWA manifest
-    sw.js                 service worker source, served at /sw.js, cache notebook-v23 (sw.js)
+    sw.js                 service worker source, served at /sw.js, cache notebook-v33 (sw.js)
     css/ icons/ vendor/   styles, PWA icons, vendored libraries
     js/                   45 app modules sharing window.NB
   tests/
-    test_app.py           461 test methods, 51 TestCase classes (6504 lines)
+    test_app.py           597 test methods, 63 TestCase classes (8731 lines)
     dom/test_dom.js       jsdom frontend harness (40695 lines, 116 sections)
     browser/              Playwright suites; run_all.js runs every suite
   docs/

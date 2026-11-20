@@ -182,11 +182,15 @@
     // undefined to let the server preserve whatever is stored.
     // searxngUrl is the optional SearXNG instance for the search tool;
     // pass undefined to preserve, "" to clear.
-    aiSaveConfig: (servers, dflt, customPrompt, searxngUrl) =>
+    // acp is the browser-owned ACP profile list (name/agent/model); pass
+    // undefined to leave the stored profiles untouched, or the complete
+    // list to replace them.
+    aiSaveConfig: (servers, dflt, customPrompt, searxngUrl, acp) =>
       request("POST", "/api/ai/config", Object.assign(
         { servers, default: dflt },
         customPrompt !== undefined ? { customPrompt } : {},
-        searxngUrl !== undefined ? { searxngUrl } : {})),
+        searxngUrl !== undefined ? { searxngUrl } : {},
+        acp !== undefined ? { acp } : {})),
     aiProbe: (name) => request("GET", "/api/ai/probe?server=" + encodeURIComponent(name)),
     // AI agent tools: server-side fetch (CORS) and SearXNG search.
     aiFetch: (url) => request("POST", "/api/ai/fetch", { url }),

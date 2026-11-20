@@ -2181,9 +2181,10 @@
     scrollLog(log);
   }
 
-  /* An ACP profile (config/acp.json) is tagged client-side by loadAiConfig.
-   * It accepts images like any provider, but ACP takes one prompt per turn,
-   * so only the newest genuine user turn's images are worth sending. */
+  /* An ACP profile (config/ai.json's "acp" list) is tagged client-side by
+   * loadAiConfig. It accepts images like any provider, but ACP takes one
+   * prompt per turn, so only the newest genuine user turn's images are worth
+   * sending. */
   function activeServerIsAcp() {
     return servers.some((s) => s && s.name === currentServer && s.acp === true);
   }
@@ -4296,14 +4297,16 @@
     try {
       const cfg = await NB.api.aiGetConfig();
       servers = (cfg && cfg.servers) || [];
-      // ACP profiles live in config/acp.json, not the ai.json server list, so
-      // the backend exposes them separately for the picker only. Only each
-      // profile's name and model label reach the browser; command/args stay
-      // server-side. `acp` is the legacy single profile an older server sends.
+      // ACP profiles live in config/ai.json's "acp" list, not the server
+      // list, so the backend exposes them separately for the picker only.
+      // Only each profile's name and model label reach the browser;
+      // command/args/env stay server-side. A profile whose agent is not
+      // installed (`available: false`) is skipped: picking it could only
+      // fail. `acp` is the legacy single profile an older server sends.
       const acps = (cfg && cfg.acps) ||
         (cfg && cfg.acp ? [cfg.acp] : []);
       for (const p of acps) {
-        if (!p || !p.name) continue;
+        if (!p || !p.name || p.available === false) continue;
         servers = servers.concat([{
           name: p.name,
           baseUrl: "",

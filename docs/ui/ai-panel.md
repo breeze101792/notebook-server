@@ -188,10 +188,10 @@ selected provider can be ACP. The panel shows two things the OpenAI state does n
 | Copy | "Runs its own tools. Changes are applied outside this panel's review." |
 | Attach | No `accept` filter; title and label `Attach files` (`ai.js:2298, 2316-2317`). Images work like any provider. |
 
-The note is not a "Read-only" tag. Settings → AI carries that tag for the *profile*, which
-is hand-edited (`settings.js:1361-1378`); in the chat panel the word would read as "chat is
-read-only", which is false. The panel states the actual consequence — the agent's edits are
-not reviewed here — in visible text, per `controls.md` §2.10.
+The note is not a "Read-only" tag. Settings → AI edits the profile itself (name, agent,
+model, remove); in the chat panel the word would read as "chat is read-only", which is false.
+The panel states the actual consequence — the agent's edits are not reviewed here — in
+visible text, per `controls.md` §2.10.
 
 An image attached while ACP is active is sent: only the newest genuine user turn
 keeps its image parts, and older image-bearing messages go out as text

@@ -37,6 +37,21 @@ fs.mkdirSync(DATA, { recursive: true });
 fs.mkdirSync(CONFIG, { recursive: true });
 fs.writeFileSync(path.join(CONFIG, "config.json"), "{}");
 
+/* ACP profiles live in config/ai.json's "acp" list (config/acp.json is no
+ * longer read). Rewrite the file, keeping every other key and creating it
+ * when absent. */
+function writeAiConfig(update) {
+  const file = path.join(CONFIG, "ai.json");
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_) {}
+  if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) cfg = {};
+  update(cfg);
+  fs.writeFileSync(file, JSON.stringify(cfg));
+}
+function clearAcpProfiles() {
+  writeAiConfig((cfg) => { delete cfg.acp; });
+}
+
 /* The note fixture renders its own mermaid and wavedrom figures, so the
  * chat figures have wider figures to be compared against, and the panel's
  * wavedrom exclusion can be contrasted with the note path. */
@@ -341,7 +356,7 @@ async function main() {
       }],
       default: "stubai",
     }));
-    try { fs.unlinkSync(path.join(CONFIG, "acp.json")); } catch (_) {}
+    clearAcpProfiles();
 
     await startServer();
 

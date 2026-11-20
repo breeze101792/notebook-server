@@ -159,12 +159,15 @@ for (const [rel, body] of Object.entries(NOTES)) {
 }
 
 /* Seed the workspace state the matrix needs: two sessions, three bookmarks,
- * three recents and one pinned folder. These are the same config keys the core
- * suite writes through the UI (config.json -> workspaceState.<id>). */
+ * three recents and one pinned folder. The content keys live in
+ * config/state.json under states.<id>; config.json keeps preferences only. */
 fs.writeFileSync(path.join(CONFIG, "config.json"), JSON.stringify({
   fontSize: "medium",
   theme: "dark",
-  workspaceState: {
+}, null, 2));
+fs.writeFileSync(path.join(CONFIG, "state.json"), JSON.stringify({
+  version: 1,
+  states: {
     default: {
       openFiles: ["Welcome.md", "notes/a.md"],
       activeFile: "Welcome.md",
@@ -179,6 +182,7 @@ fs.writeFileSync(path.join(CONFIG, "config.json"), JSON.stringify({
       pinnedFolders: ["notes"],
     },
   },
+  revs: { default: 1 },
 }, null, 2));
 
 /* ---- local OpenAI-compatible SSE stub (no provider, no network) ----- */

@@ -104,8 +104,8 @@ the `{% from "_edit_window.html" import ... %}` line, one `{% call edit_bar %}`
 per window, and that the templated ids live in the macro file while the
 removed sidebar sections and the old dw compact strip/source button are gone
 from `index.html`. `edit-window.js` is asserted ahead of `table-editor.js` and
-`designer-shell.js` and inside the `sw.js` `PRECACHE`; `CACHE` is
-`notebook-v26`.
+`designer-shell.js` and inside the `sw.js` `PRECACHE`; `CACHE` is at
+least `notebook-v26`.
 
 `_edit_window.html` has no Flask route and is never served directly; the
 routing tests cover only real page and API paths, so there is no
@@ -134,7 +134,14 @@ scroll, AI, sessions, workspaces, the mermaid visual designer, lazy vendor
 loading, and first-paint boot state. The AI block includes the ACP image
 path: no attach `accept` filter, the `image_url` part in the request body, a
 later text turn carrying none, and an older transcript image collapsing to
-text.
+text. The `== acp provider ==` block also covers the Settings → AI ACP
+editor: one row per stored profile in file order, the `not installed` and
+`server-local` tags, `Remove` on browser-owned rows only, the inline model
+edit posting one entry per browser-owned profile (a file-owned entry is never
+posted back, and no server-only field leaks into the body), `Make default`
+setting the top-level name with no per-profile flag, the add form offering
+only launchable unclaimed agents, a refused save showing the server message
+and rolling the model field back, and the empty/filter cases.
 
 Scroll assertions target `#viewer-scroll` (the only scroll container);
 `#viewer-content` is the non-scrolling page that holds the markdown and, in

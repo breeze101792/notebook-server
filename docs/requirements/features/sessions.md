@@ -78,7 +78,7 @@ Ranked by the job the feature does.
 - Nested sessions or session folders. Sessions are flat.
 - Sessions that span workspaces, or moving a session between workspaces.
 - Any sync, sharing, or server-side session history. Sessions are UI state in
-  `config.json`, not content.
+  `config/state.json`, not content.
 - Drag-a-tab-onto-a-session in the Sessions view, and drag-reorder of sessions.
   Moving a tab is the tab menu's job; session order is creation order in v1.
 - Keyboard shortcuts for sessions — no new binding in v1.

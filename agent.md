@@ -76,7 +76,8 @@ header and no session cookie reaches the **default root only**.
 | PATCH | `/api/workspaces/<id>` | `{"name": "Renamed"}` | `{"workspace": {...}}` |
 | DELETE | `/api/workspaces/<id>` | — | `{"ok": true}` |
 | POST | `/api/workspaces/active` | `{"id": "<workspace id>"}` | `{"ok": true, "active": "<id>"}` |
-| POST | `/api/workspace-state` | `{"id": "<workspace id>", "state": {...}}` | `{"ok": true, "id": "<id>"}` |
+| GET | `/api/workspace-state` | — | `{"ok": true, "id": "<id>", "rev": <int>, "state": {...}}`; send `?id=<id>&rev=<n>` for an empty **304** when nothing changed |
+| POST | `/api/workspace-state` | `{"id": "<workspace id>", "state": {...}, "base": {...}}` | `{"ok": true, "id": "<id>", "rev": <int>, "state": {...}}`. `base` is the state you started from; a stale base is merged per session, never rejected. Missing `base` is 400. |
 
 `path` is the stored absolute path. The default entry's path is always the
 server's current data folder, which may be unresolved. `available` is false
@@ -129,7 +130,7 @@ Workspace routes put a stable `code` beside the prose:
 | `timeout` | 504 | `/api/graph` scan exceeded the deadline |
 | `not_admin` | 403 | Caller is a viewer |
 | `loopback_required` | 403 | Auth is off and the add/rename/remove request is not a local, non-proxied one |
-| `write_failed` | 500 | `config.json` could not be written |
+| `write_failed` | 500 | `config.json` or `state.json` could not be written |
 
 `POST /api/ai/chat` accepts an optional `workspace` body field for ACP
 profiles. It selects the folder the agent runs in when the ACP profile does not
@@ -163,7 +164,7 @@ the server is bound beyond loopback.
 | `GET /api/file?path=notes/a.md` | `{path, content, size, mtime}`. Add `&ifModifiedSince=<mtime>` to get an empty **304** when unchanged. |
 | `GET /api/search?q=text` | See [Search](#search) below. |
 | `GET /api/graph` | `{nodes: [{id, name, links}], edges: [{source, target}]}` — wikilink/markdown-link graph between notes. |
-| `GET /api/config` | The UI preferences object (opaque). Per-workspace state is under `workspaceState.<id>`. |
+| `GET /api/config` | The UI preferences object (opaque) with the shared workspace state spliced in: `workspaceState.<id>` and `workspaceStateRev.<id>` (always objects, `{}` when empty). |
 | `GET /api/info` | `{data_dir, config_dir, workspace}` — the active workspace root, the config folder, and the active workspace id. |
 
 ### Search
@@ -247,13 +248,49 @@ Line ops normalise the buffer so the file ends with a trailing newline.
 
 ### Config & tokens (admin role)
 
+Server-side files under `config/`: `config.json` (UI preferences),
+`state.json` (the workspace state above), `auth.json` (credentials and tokens),
+`ai.json` (AI provider profiles and ACP profiles), `workspaces.json` (the
+workspace registry), and the optional `server.json` (host, port, debug).
+
 ```
-POST /api/config                body: the full preferences JSON object (replaces it)
+POST /api/config                body: the preferences JSON object (replaces it;
+                                workspaceState, workspaceStateRev and the scoped
+                                content keys are stripped; state.json untouched)
 GET  /api/auth/tokens           → {"tokens": [{name, role, created}]}
 POST /api/auth/tokens           {"name": "my-agent", "role": "viewer"}
                                 → {"ok": true, name, role, created, "token": "nbtk_..."}  # shown ONCE
 DELETE /api/auth/tokens/<name>  → {"ok": true}
 ```
+
+### AI config (admin role)
+
+`GET /api/ai/config` returns:
+`{"servers": [{name, baseUrl, model, hasKey}], "default", "customPrompt",
+"searxngUrl", "acp", "acps", "acpAgents"}`. The stored API key is never
+echoed. `acps` lists every ACP profile as `{name, model, hasModel, agent,
+default, available, editable}`; `acp` is the first available profile or null.
+`available: false` means the agent's executable is not on the server's PATH;
+`editable: false` means the profile is file-owned (a hand-written `command`, or
+an unknown `agent` key).
+
+```
+POST /api/ai/config
+{"servers": [{"name": "local", "baseUrl": "http://localhost:11434",
+              "apiKey": "", "model": "llama3"}],
+ "default": "local", "customPrompt": "", "searxngUrl": "",
+ "acp": [{"name": "opencode", "agent": "opencode", "model": "", "default": false}]}
+→ the same shape as GET
+```
+
+`servers` is replaced wholesale. An omitted `acp` leaves the stored ACP list
+unchanged; each `acp` entry may carry only `name`, `agent`, `model` and
+`default` (`command`, `args`, `env`, `cwd`, `timeout` are 400). With auth off,
+an `acp` body requires a loopback client with no `X-Forwarded-For` /
+`X-Real-IP` header (403 `loopback_required`).
+
+`POST /api/ai/chat` with a `server` naming an ACP profile drives that agent
+instead of an OpenAI endpoint.
 
 ## Markdown rendering (when authoring notes)
 

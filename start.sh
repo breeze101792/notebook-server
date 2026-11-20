@@ -3,13 +3,15 @@
 # start.sh -- set up the Python venv (if missing) and run the notebook server.
 #
 # Usage:
-#   ./start.sh                 # run with defaults (0.0.0.0:5000, debug off, reachable from LAN)
+#   ./start.sh                 # config/server.json, else 0.0.0.0:5000, debug off
 #   ./start.sh --debug         # enable Flask debug + auto-reload
 #   ./start.sh --host 127.0.0.1 # bind loopback only
 #   ./start.sh --port 8080 --debug
 #   ./start.sh --help          # see all app.py options
 #
-# Any arguments after the flags above are forwarded straight to app.py.
+# host, port and debug come from config/server.json when it exists; a flag
+# overrides the file. Any arguments after the flags above are forwarded
+# straight to app.py.
 
 set -euo pipefail
 

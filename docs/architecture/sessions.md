@@ -67,7 +67,7 @@ the record it consumes; `storeOutgoing()` writes the record it leaves.
 
 ## 3. Config shape
 
-Under `config.json -> workspaceState.<workspace id>`:
+Under `config/state.json -> states.<workspace id>`:
 
 ```json
 {
@@ -690,14 +690,16 @@ never applied from a poll, so a peer's tab click cannot move this reader.
 
 ### 17.2 Server contract
 
-Five changes in `app.py`. All writes stay under `_CONFIG_LOCK`.
+Five changes in `app.py`. All state writes stay under `_STATE_LOCK`, and only
+the startup split takes `_CONFIG_LOCK` first.
 
-**`workspaceStateRev`** — a new top-level map in `config.json`, sibling to
-`workspaceState`:
+**`workspaceStateRev`** — the `revs` map in the server-owned
+`config/state.json`, sibling to `states`:
 
 ```json
-{ "workspaceState": { "default": { "...": "..." } },
-  "workspaceStateRev": { "default": 7 } }
+{ "version": 1,
+  "states": { "default": { "...": "..." } },
+  "revs": { "default": 7 } }
 ```
 
 | Rule | Detail |
@@ -705,10 +707,13 @@ Five changes in `app.py`. All writes stay under `_CONFIG_LOCK`.
 | Type | one non-negative `int` per workspace id; missing, non-int, or negative reads as `0` |
 | Owner | the server only. A client-supplied `workspaceStateRev` is discarded on every route |
 | Bump | `+1` on every accepted `POST /api/workspace-state`, in the same lock and the same `atomic_write` as the state |
-| Delete | `remove_workspace()` drops the entry and its rev in the same lock, so a removed workspace leaves nothing behind |
+| Delete | `remove_workspace()` drops the entry and its rev in the same `state.json` write, so a removed workspace leaves nothing behind |
 | Lifetime | otherwise permanent for the life of the entry |
 
-`_workspace_state_rev(cfg, wid) -> int` is the one reader; it never raises.
+`_workspace_state_rev(revs, wid) -> int` is the one reader; it never raises.
+`GET /api/config` still returns the maps under `workspaceState` and
+`workspaceStateRev`, spliced in from `state.json`, so the boot payload is
+unchanged.
 
 **`GET /api/workspace-state`** — new, `@read_login_required`:
 
@@ -745,7 +750,7 @@ entry, or the `state` returned by the previous GET or POST. It is required.
 | `base` over `WORKSPACE_STATE_MAX_BYTES` | 400 `{error, code: "base_too_large"}` — a base that large can never equal a stored entry, and parsing it costs memory for nothing |
 | unknown workspace | 404 `unknown_workspace` |
 | the workspace is removed between the id check and the write | 404 `unknown_workspace`, re-checked under the lock, so a removed workspace is never re-created |
-| `config.json` unreadable, or its `workspaceState`/`workspaceStateRev` not objects | 500 `write_failed`; nothing is written, so a corrupt file cannot be replaced with one workspace's state |
+| `state.json` unreadable, unparseable, wrongly shaped or future-version | 500 `write_failed` with the message `Could not write workspace state: …`; nothing is written, so a corrupt file cannot be replaced with one workspace's state |
 | `base` equals the stored entry | store `state` unchanged |
 | `base` differs from the stored entry | store `_merge_workspace_state(stored, base, state)` |
 | success | 200 `{ok: true, id, rev, state}` with the **new** rev and the **stored** state after the write |
@@ -815,13 +820,11 @@ def merge_sessions(current, base, incoming):
 
 **`POST /api/config`** — stops being a state writer:
 
-1. Inside `_CONFIG_LOCK`, read the stored file. If the read fails or the result
-   is not a dict, refuse the whole POST with 500 `write_failed` — never replace
-   a file whose state cannot be re-attached.
+1. Inside `_CONFIG_LOCK`, read the stored preferences file. If the read fails
+   or the result is not a dict, refuse the whole POST with 500 `write_failed`.
 2. Delete from the incoming body: `workspaceState`, `workspaceStateRev`, and
    every key in `_WORKSPACE_SCOPED_CONFIG_KEYS`.
-3. Re-attach the stored `workspaceState` and `workspaceStateRev`.
-4. `atomic_write` the result.
+3. `atomic_write` the result. `state.json` is never opened.
 
 Consequences, all deliberate:
 
@@ -835,9 +838,10 @@ Consequences, all deliberate:
 - A page with no workspace id never persists scoped state. It could not reach
   `/api/workspace-state` before either (see §17.11).
 
-Single-writer invariant: **only `set_workspace_state()` writes `workspaceState`
-or `workspaceStateRev`; `remove_workspace()` deletes one entry of each under the
-same lock.** Any other write path is a defect.
+Single-writer invariant: **no request path other than `set_workspace_state()`
+writes `state.json`; `remove_workspace()` deletes one entry of each map in the
+same write.** The startup split and the corrupt-file quarantine also write the
+file, at import time only. Any other write path is a defect.
 
 ### 17.3 Client transport (`static/js/api.js`)
 
@@ -1218,7 +1222,7 @@ keep its existing "not already in `sessionOrder`" check.
 | Hidden tab | No requests; one immediate poll on return. |
 | Server error or network down | Backoff from 3 s doubling to 30 s; recovery resets the delay. No user-visible error. |
 | 401 mid-poll | `request()` emits `auth:required` (`api.js:75-78`); the loop backs off. |
-| Corrupt `config.json` at a `POST /api/config` | The POST is refused (500 `write_failed`) rather than dropping every workspace's state. |
+| Corrupt `config.json` at a `POST /api/config` | The POST is refused (500 `write_failed`) instead of dropping the preferences. The state lives in `state.json` and is untouched. |
 | State over the cap | 400 `state_too_large`; `console.warn` once, as today. |
 | Hand-edited remote sessions | Sanitised per §17.6 step 2; never throws, never renames a peer's session. |
 

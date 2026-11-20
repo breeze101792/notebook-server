@@ -180,8 +180,8 @@ The store is in-process, so it resets on restart and is best-effort.
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| GET | `/api/config` | read | Returns the stored `config.json` verbatim. Missing or corrupt file returns `{}`. The one-shot workspace-state migration runs at server startup, not on this read, so a GET never writes a server-owned file. |
-| POST | `/api/config` | admin | **Planned change (sync §17.2):** the state keys are stripped and the stored maps re-attached. Today the body is stored with legacy scoped keys folded into `workspaceState.default`. Body must be a JSON object. Stores it with no schema validation, **except** that `workspaceState`, `workspaceStateRev` and every per-workspace content key (`lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`, `sessions`, `activeSessionId`) are removed from the body and the stored `workspaceState`/`workspaceStateRev` are re-attached unchanged. `/api/workspace-state` is the only writer of that state. 400 if not an object, 500 on write failure. |
+| GET | `/api/config` | read | Returns the stored `config.json`, with `workspaceState` and `workspaceStateRev` spliced in from `config/state.json` as JSON objects (`{}` when nothing is saved). Missing or corrupt files read as empty. A GET never writes. |
+| POST | `/api/config` | admin | Writes preferences only. The body must be a JSON object. `workspaceState`, `workspaceStateRev` and every per-workspace content key (`lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `recentFiles`, `bookmarks`, `pinnedFolders`, `sessions`, `activeSessionId`) are removed from the body, and `state.json` is never opened. The stored `config.json` is read first: if it cannot be parsed the POST is refused with 500 `write_failed`. 400 if the body is not an object, 500 on write failure. `/api/workspace-state` is the only writer of the state. |
 | GET | `/api/info` | read | `{data_dir, config_dir, workspace}`: the active workspace root, the config folder, and the active workspace id. For the default root, `data_dir` is the unresolved `DATA_DIR` string. |
 
 ### Workspaces
@@ -198,8 +198,8 @@ limits, and the trust boundary are in
 | PATCH | `/api/workspaces/<id>` | workspace admin | `{name}` | `{workspace: {...}}`. Renaming never changes the id or the path. |
 | DELETE | `/api/workspaces/<id>` | workspace admin | — | `{ok: true}`. Removes the entry only; the folder and notes stay on disk. The default is not removable. |
 | POST | `/api/workspaces/active` | read | `{id}` | `{ok: true, active: "<id>"}`. Stores the id in the signed session. A viewer may switch too. |
-| POST | `/api/workspace-state` | workspace admin | `{id, state, base}` | **Planned (sync §17.2).** `{ok: true, id, rev, state}`. Stores `state` under `workspaceState.<id>`, preserving other entries and unrelated keys; `state` is capped at 256 KiB. `base` is the state the client started from: when it differs from the stored entry the server **merges** the two instead of replacing (per session, three-way) and returns the merged state. A missing `base` is refused with 400 `bad_body`, which is what stops a stale page from overwriting newer data; a `base` over 256 KiB is 400 `base_too_large`. An unreadable `config.json`, or a stored state map that is not an object, is 500 `write_failed` with nothing written. See [Per-workspace state](#per-workspace-state). |
-| GET | `/api/workspace-state` | read | — | **Planned (sync §17.2).** `?id=<wid>[&rev=<int>]`. **304** with an empty body when `rev` equals the stored rev; otherwise `{ok: true, id, rev, state}`, with `state: {}` for an entry never written. 400 `bad_body` without an `id`, 404 `unknown_workspace` for an id no workspace has. |
+| POST | `/api/workspace-state` | workspace admin | `{id, state, base}` | `{ok: true, id, rev, state}`. Stores `state` under `states.<id>` in `config/state.json`, preserving other entries; `state` is capped at 256 KiB. `base` is the state the client started from: when it differs from the stored entry the server **merges** the two instead of replacing (per session, three-way) and returns the merged state. A missing `base` is refused with 400 `bad_body`, which is what stops a stale page from overwriting newer data; a `base` over 256 KiB is 400 `base_too_large`. An unreadable, unparseable, wrongly shaped or future-version `state.json` is 500 `write_failed` with nothing written. See [Per-workspace state](#per-workspace-state). |
+| GET | `/api/workspace-state` | read | — | `?id=<wid>[&rev=<int>]`. **304** with an empty body when `rev` equals the stored rev; otherwise `{ok: true, id, rev, state}`, with `state: {}` for an entry never written. 400 `bad_body` without an `id`, 404 `unknown_workspace` for an id no workspace has. A corrupt `state.json` answers the empty shape; a GET never writes. |
 
 **Resolution.** `_bind_workspace()` runs as a `before_request` hook and binds
 the request's root to `g.data_dir` and its id to `g.workspace_id`. It reads
@@ -256,41 +256,38 @@ Workspace routes add a stable `code` to the shared error body:
 | `timeout` | 504 | The `/api/graph` scan exceeded the scan deadline; no partial graph is returned. |
 | `not_admin` | 403 | Caller is a viewer. |
 | `loopback_required` | 403 | Auth is off and the registry change is not a local, non-proxied request. |
-| `write_failed` | 500 | `config.json` could not be written. |
+| `write_failed` | 500 | `config.json` or `state.json` could not be written. |
 
 
 The frontend maps these codes to the dialog field and message
 (`ERROR_FIELD_BY_CODE`, `static/js/workspaces.js`); unknown codes fall back to
 the prose.
 
-> **Status — designed, not implemented (sync §17).** This route pair changes
-> together: the `workspaceStateRev` map, the conditional read, the `base`-and-merge
-> write, and the `/api/config` strip all land in one change. Until then the route
-> replaces the entry with no version, `GET` does not exist, and `/api/config`
-> folds legacy keys. See
-> [`architecture/sessions.md`](../architecture/sessions.md) §17.2.
-
 #### Per-workspace state
 
-`config.json` holds two sibling maps:
+`config/state.json` holds the state and its revision:
 
 ```json
-"workspaceState":    { "default": { "sessions": [], "pinnedFiles": [] } },
-"workspaceStateRev": { "default": 7 }
+{
+  "version": 1,
+  "states": { "default": { "sessions": [], "pinnedFiles": [] } },
+  "revs": { "default": 7 }
+}
 ```
 
 | Rule | Contract |
 | --- | --- |
 | Rev type | One non-negative integer per workspace id. Missing, non-integer, or negative reads as `0`. |
 | Rev owner | The server. A `workspaceStateRev` in any request body is discarded. |
-| Rev bump | `+1` on every accepted `POST /api/workspace-state`, written under the same `_CONFIG_LOCK` and `atomic_write` as the state. |
+| Rev bump | `+1` on every accepted `POST /api/workspace-state`, written under `_STATE_LOCK` in the same `atomic_write` as the state. |
 | Conditional read | `GET /api/workspace-state?id=<wid>&rev=<int>` answers **304** with an empty body when the rev matches. No `ETag` is used; the query parameter is the conditional, matching the `ifModifiedSince` parameter of `GET /api/file`. |
-| Write | `POST` carries `{state, base}`. `base` equal to the stored entry stores `state` verbatim; a different `base` stores the three-way merge and returns it. There is no conflict status: a stale write is merged, not rejected. Both fields are capped at 256 KiB. The stored file is read strictly: an unreadable or unparseable `config.json`, or a state map that is not an object, refuses the write instead of replacing it. |
+| Write | `POST` carries `{state, base}`. `base` equal to the stored entry stores `state` verbatim; a different `base` stores the three-way merge and returns it. There is no conflict status: a stale write is merged, not rejected. Both fields are capped at 256 KiB. The file is read strictly: an unreadable, unparseable, wrongly shaped or future-version `state.json` refuses the write instead of replacing it. |
 | Merge unit | Per session, keyed by `sessions[].id`. A session the client did not change takes the server's copy; a session it changed takes the client's; a session either side added survives. List fields (`pinnedFiles`, `bookmarks`, `recentFiles`, `pinnedFolders`) take the client's copy when it differs from `base`, else the server's. Scalars take the client's. |
 | Delete | A session in `base`, absent from the request, and untouched on the server is dropped; if the server changed it, the server's copy is kept. |
-| Rev regression | Impossible through the API. `POST /api/config` re-attaches the stored map, and no route accepts a client rev. |
-| Single writer | Only `/api/workspace-state` writes either map; `DELETE /api/workspaces/<id>` removes that workspace's entry and rev under the same lock. |
-| Corrupt read | If `config.json` cannot be read when `POST /api/config` runs, the POST is refused with 500 `write_failed` rather than dropping every workspace's state. |
+| Rev regression | Impossible through the API. `POST /api/config` never writes the state, and no route accepts a client rev. |
+| Single writer | Only `/api/workspace-state` writes the file; `DELETE /api/workspaces/<id>` removes that workspace's state and rev in the same write. |
+| Corrupt file | A corrupt, wrongly shaped or future-version file is moved to `state.json.corrupt-<epoch>` at startup and the server starts empty. If the rename fails (permissions), writes answer 500 `write_failed` and reads answer empty state. |
+| Bad prefs file | If `config.json` cannot be read when `POST /api/config` runs, the POST is refused with 500 `write_failed`. The state file is not involved. |
 
 ```bash
 # Read: 304 while nothing changed, then the state after a peer writes.
@@ -435,18 +432,18 @@ misrepresent the notebook.
 ### AI assistant
 
 These routes read and write `config/ai.json` (`app.py`), which holds
-OpenAI-compatible provider profiles, the optional global custom prompt, and the
-optional SearXNG URL. A second provider kind, ACP, is configured separately in
-`config/acp.json` (`app.py`) as a list of profiles and is **read-only from the
-server** — no route writes it. The stored key is never returned in a response to
-the browser, but the server attaches it to the upstream request sent to whatever
-`base_url` the profile names. All routes below are admin-gated **only while auth
-is on**.
+OpenAI-compatible provider profiles, the ACP profile list, the optional global
+custom prompt, and the optional SearXNG URL. A second provider kind, ACP, is
+configured in that file's `acp` list (`app.py`); the browser may edit only the
+`name`/`agent`/`model`/`default` subset of a profile, described below. The
+stored key is never returned in a response to the browser, but the server
+attaches it to the upstream request sent to whatever `base_url` the profile
+names. All routes below are admin-gated **only while auth is on**.
 
 | Method | Path | Auth | Body / params | Notes |
 | --- | --- | --- | --- | --- |
-| GET | `/api/ai/config` (`app.py`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acps, acpAgents}`. The key is never echoed. `acps` lists every ACP profile as `{name, model, hasModel, agent, default}`; `model` is the configured agent model or the label `"ACP"`, and `agent` is the selected known-agent key (`""` when the profile uses `command`). `acp` is the first entry (or `null`), kept for older clients. `default` may name a saved server or an ACP profile. `acpAgents` is always present. |
-| POST | `/api/ai/config` (`app.py`) | admin | `{servers, default?, customPrompt?, searxngUrl?}` | Replaces the profile list wholesale. Returns the masked config. `default` may name an ACP profile. A server name that collides with an ACP profile is 400. Never touches `acp.json`. |
+| GET | `/api/ai/config` (`app.py`) | admin | — | `{servers: [{name, baseUrl, model, hasKey}], default, customPrompt, searxngUrl, acp, acps, acpAgents}`. The key is never echoed. `acps` lists every stored ACP profile in file order as `{name, model, hasModel, agent, default, available, editable}`; `model` is the configured agent model or the label `"ACP"`, and `agent` is the selected known-agent key (`""` when the profile uses `command`). `available` is false when the loader would reject the entry, and `editable` is false for a file-owned entry. `acp` is the first **available** profile (or `null`), kept for older clients. `default` may name a saved server or an ACP profile, including an unavailable one. `acpAgents` is always present. |
+| POST | `/api/ai/config` (`app.py`) | admin | `{servers, default?, customPrompt?, searxngUrl?, acp?}` | Replaces the profile list wholesale. Returns the masked config. `default` may name an ACP profile. A server name that collides with a *file-owned* ACP entry is 400; a keyed profile under that name is dead and a save that keeps the server drops it. An omitted `acp` leaves the stored ACP list untouched; when present it must be a list of `{name, agent, model, default}` — any other key is 400, as is an unknown agent, a name over 60 characters or one colliding with a server, and a model over 200 characters. Hand-owned entries are preserved verbatim and a body entry reusing their name is 400. With auth off an `acp` body additionally requires a loopback peer (403 `loopback_required`); a prefs-only save does not. |
 | GET | `/api/ai/probe` (`app.py`) | admin | `?server=<name>` | Reachability check. Any HTTP answer, including 401, counts as reachable. Connection failure returns `{ok: false}` with HTTP 200. No ACP branch: it resolves OpenAI profiles only. |
 | POST | `/api/ai/chat` (`ai_chat`) | admin | `{server, messages, workspace?}` | SSE relay. Serves ACP profiles too. See below. |
 | POST | `/api/ai/fetch` (`app.py`) | admin | `{url}` | Server-side fetch. See below. |
@@ -517,9 +514,9 @@ ignored and stripped from the upstream payload. The response uses the identical
 SSE envelope — OpenAI-shaped `data:` delta frames, `data: [DONE]` on completion,
 and `event: error` frames on failure — so clients parse it unchanged; one extra
 frame, `data: {"acp": "trace", "text": "<tool title>"}`, marks each tool the
-agent starts and is ignored by any client that does not read it. No API route
-writes `config/acp.json`; see
-[configuration.md](configuration.md#configacpjson--acp-agent).
+agent starts and is ignored by any client that does not read it. ACP profiles
+live in `config/ai.json`'s `acp` list; see
+[configuration.md](configuration.md#acp-profiles-in-aijson).
 
 `GET /api/ai/config` reports host availability of the known agents in an
 always-present `acpAgents` array: `[{key, label, available}]`, one entry per

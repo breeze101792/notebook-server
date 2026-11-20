@@ -446,7 +446,7 @@ holds one Close button and says so in the markup comment (`index.html:1227-1232`
 | Disabled field | `opacity: var(--opacity-disabled)`, `cursor: not-allowed` | the autosave delay while autosave is off (`settings.js:431`) |
 | Disabled button | `opacity: var(--opacity-disabled)`, face reset, hover inert | Save until passwords match (`settings.js:597-616`) |
 | Disabled row action | `disabled` + a `title` naming the reason | Workspaces Remove for the default or the active workspace (`workspaces.js:877-885`) |
-| Read-only block | `--surface-raised` face, `1px --border`, `--radius-md`, a `Read-only` tag; no editable field | the ACP panel (`style.css:1744-1759`) |
+| Read-only field | `opacity: var(--opacity-disabled)`, `cursor: default`; still selectable and in the tab order | a file-owned ACP profile's model (`style.css:2086-2088`) |
 | Missing value | em dash `—` | token and provider counts before a fetch, or when not admin (`settings.js:976`, `:1600`) |
 | Unknown value | `…`, then `(failed to load)` | About folders (`index.html:1218`, `:1222`; `settings.js:560-566`) |
 
@@ -634,9 +634,9 @@ Admin-only in effect, same gate (`settings.js:1092-1126`). The tab is one page i
 Sources: `index.html:1139-1211`; `settings.js:1036-1090` (refs, error), `:1092-1126` (control and
 help state), `:1628-1778` (add/edit/save); `style.css:1469-1471`, `:1506-1535`.
 
-The ACP block is read-only and lives **inside** the list, above the add form, on purpose: it is the
-read-only member of the same provider set the assistant picker shows
-(`settings.js:1504-1540`; `docs/archive/design/settings-modal.md:218-234`).
+The ACP panel lives **inside** the list, between the provider rows and the provider add form, on
+purpose: it is a member of the same provider set the assistant picker shows, and a provider save
+carries both lists (`settings.js:2025-2049`; `docs/archive/design/settings-modal.md:218-234`).
 
 ### 4.7 About
 
@@ -761,29 +761,31 @@ the title (no row highlight ships — `ai-editing`/`editing` classes are set but
 `settings.js:1224-1227`). Renaming carries the stored key over through `replaceSecretFor`
 (`settings.js:1726-1729`).
 
-**Empty.** Count `0`, no rows; the add form follows directly. If ACP agents are detected but no
-profile is configured, the read-only info panel appears in the list instead of a bare count
-(`settings.js:1585-1593`).
+**Empty.** Count `0`, no rows; the add form follows directly. If an ACP agent is detected but no
+profile is configured, the ACP panel appears in the list with its add form instead of a bare count
+(`settings.js:2065-2080`).
 
 **Errors.** `#settings-ai-error` above the form actions; the optimistic row is rolled back
 (`settings.js:1279-1282`, `:1764-1774`).
 
-### 5.5 ACP panel (read-only)
+### 5.5 ACP agents panel
 
 | Part | Value | Source |
 |---|---|---|
-| Box | `.settings-ai-acp-row` / `-info`: `--surface-raised`, `1px --border`, `--radius-md`, `padding: 12px`, `margin: 6px 0 8px` | `style.css:1744-1751` |
-| Head | title `ACP agents` (`.74rem` 600 uppercase, tracking `.7px`, muted) + `Read-only` tag | `style.css:1752-1759`; `settings.js:1361-1381` |
-| Read-only tag | `.stg-tag` with a lock glyph and the word `Read-only`; `title="Configured by editing config/acp.json on the server"` | `settings.js:1372-1377`; `style.css:1714-1720` |
-| Help | "Local coding agents the assistant can drive over the Agent Client Protocol. `config/acp.json` may hold several profiles and is edited on the server (not editable here)." | `settings.js:1516-1526` |
-| Profile block | name 600; `Default` tag or `Make default`; meta `allowlist key <code>` or the explicit-command sentence; optional `agent model <code>` | `style.css:1760-1773`; `settings.js:1447-1502` |
-| Agent line | name 600; status dot + word; the allowlist key in mono, right-aligned; an optional warn hint on its own full-width line | `style.css:1774-1798`; `settings.js:1390-1441` |
-| Selected agent | `--accent-soft` face + `inset 2px 0 0 --accent` | `style.css:1783-1786` |
-| Statuses | `Installed` (`--ok`), `Adapter missing` (`--warn`), `Not installed` (muted, no dot colour) — always a word plus a dot | `settings.js:1405-1418`; `style.css:1691-1713` |
+| Box | `.settings-ai-acp-row`: `--bg-elev` face, `1px --border`, `--radius-md`, `--stg-space-4` padding, `margin: var(--stg-space-2) 0 var(--stg-space-3)` | `style.css:2047-2053` |
+| Head | title `ACP agents` (`.74rem` 600 uppercase, tracking `.7px`, muted); no tag, because the panel is editable | `style.css:2054-2063`; `settings.js:1691-1700` |
+| Help | "Local coding agents the assistant can drive over the Agent Client Protocol. A profile whose agent is not installed cannot be picked until it is installed on the server. A hand-written profile with its own "command" is edited in `config/ai.json` on the server, not here." | `settings.js:2034-2043` |
+| Profile row | `.settings-ai-acp-profile`: name 600; the `Default` tag or a `Make default` action; the inline model field; a `not installed` (`stg-tag--danger`) or `server-local` tag; `Remove` on a browser-owned row only | `style.css:2066-2079`, `:2089`; `settings.js:1807-1910` |
+| Model field | `.settings-ai-acp-model`: the only inline editor on the row, `maxLength` 200; a change commits the whole browser-owned list. A file-owned row shows the stored model read-only (dimmed, still selectable) | `style.css:2081-2088`; `settings.js:1841-1868` |
+| Add form | title `Add agent`; a native `Agent` select of launchable agents no profile has claimed; `Profile name` (placeholder `e.g. opencode-local`, `maxLength` 60, defaults to the agent label); an `Add agent` primary button | `settings.js:1914-2023` |
+| Detected agents | sub-title `Detected agents`; one line per shown agent: name 600, status dot + word, the allowlist key in mono, an optional wrap-anywhere warn hint; the line for an agent a profile selects gets `--accent-soft` + an inset accent rail | `style.css:2090-2114`; `settings.js:1747-1805` |
+| Statuses | `Installed` (`--ok`), `Adapter missing` (`--warn`), `Not installed` (muted, no dot colour) — always a word plus a dot | `settings.js:1765-1778`; `style.css:1691-1713` |
 
-`Make default` here posts `default: <profile name>` to `ai.json`; it never writes `config/acp.json`
-(`docs/contracts/configuration.md:550-563`). `command`, `args`, `env`, `cwd`, `timeout` never reach
-the browser (`docs/contracts/configuration.md:546-549`).
+Every write posts the complete browser-owned `acp` list alongside the provider list, in one
+`POST /api/ai/config`; a file-owned entry is never posted back, so it cannot be dropped. `Make
+default` posts the top-level `default` name and no per-profile flag. `command`, `args`, `env`,
+`cwd`, `timeout` never reach the browser
+(`docs/contracts/configuration.md` §ACP profiles in `ai.json`; §5.5).
 
 ### 5.6 List rules shared by all four
 
@@ -928,7 +930,7 @@ beyond ids. This is exception **E1**.
 | Status lines | `.settings-watch-status`, `.settings-vimrc-status`, prompt/SearXNG/TEST labels | **no** `role="status"` → E3 |
 | Errors | `.auth-error` blocks are `role="alert"` | yes — `index.html:1096`, `:1131`, `:1210` |
 | Live count notes | `API tokens: N`, `Providers: N` | no live region; the list change is the signal → keep |
-| Read-only ACP tag | text, not a control | yes — `settings.js:1372-1377` |
+| ACP status tags (`not installed`, `server-local`) | text, not controls | yes — `settings.js:1855-1873` |
 | Activity-bar order list | `role="list"` + `role="listitem"`; each row `aria-posinset` / `aria-setsize`; the list points `aria-describedby` at the help paragraph; a `.sr-only` `role="status"` announces `<View> moved to position <n> of 7.`, `<View> hidden.` and `<View> shown.` | yes — `settings.js:369-414`, `:569-581` |
 
 ### 8.4 Focus order
@@ -1085,7 +1087,7 @@ sanctioned component tier (`foundations.md` §2.1). No alias is added back into 
 | Field height `--control-h-lg` 36 | 29 | fixed by the unified block |
 | Button height `--control-h-md` 30 | 31.6 | normalised to 30 by the unified block |
 | No `filter: brightness()` as a state | primary hover `brightness(1.06)` | fixed: halo, no filter |
-| No emoji chrome | seven nav glyphs + the lock in the read-only tag | fails — proposal P1 |
+| No emoji chrome | seven nav glyphs | fails — proposal P1 |
 | 4 px spacing grid | 6 px row padding, 6 px group gap, 10 px field padding | fields and buttons snap; row padding stays 6 (E5) |
 | Reduced motion twin for every transition | switches yes; chips yes; **capture pulse no** | fails — exception E8 |
 
@@ -1320,7 +1322,7 @@ Each is testable and names its file and check. `style.css` = `static/css/style.c
 | **AC11** | A viewer sees the read-only Security state | `settings.js` | Fields disabled and cleared; `Remove admin password` and viewer actions hidden; help reads "Sign in as admin to change passwords." |
 | **AC12** | Tokens are one-time, revocable, and gated | `settings.js` | Count `0`, issued box on create, `Revoke` after confirm, error keeps the form; list has `role="list"` with `role="listitem"` rows; auth off → count `—`, name and Create disabled, help asks to sign in (`tests/dom/test_dom.js:26797-26812`) |
 | **AC13** | AI providers add, edit, rename, save-as-new, remove, test | `settings.js` | Primary reads `Add provider` / `Save changes`; `Cancel` and `Save as new` only in edit; `Default` tag or `Make default`; key note `key stored`/`no key`; duplicate name error; provider rows are a `role="list"` that excludes the ACP panel |
-| **AC14** | The ACP panel is read-only and never enters a save payload | `settings.js`, `style.css` | `Read-only` tag, profile blocks and agent lines with dot + word; `Make default` posts only the default name; `aiProviders` never holds an ACP entry (`tests/dom/test_dom.js:33137-33320`) |
+| **AC14** | The ACP panel edits only the browser-expressible subset | `settings.js`, `style.css` | One row per profile with the `Default` tag or `Make default`, an inline model field, `Remove` on browser-owned rows only, and `not installed` / `server-local` tags; the save posts one `{name, agent, model}` entry per browser-owned profile; `aiProviders` never holds an ACP entry (`tests/dom/test_dom.js` `== acp provider ==`) |
 | **AC15** | Prompt and SearXNG save independently | `settings.js` | Each button enabled only when the value differs; busy `Saving…`; status `Saved` for 2 s; Ctrl/Cmd+Enter saves; a provider save does not clobber either |
 | **AC16** | About reports the two folders and survives a failure | `settings.js` | Paths render in mono; a failure reads `(failed to load)`; a long path wraps instead of widening the modal |
 | **AC17** | Keyboard and containment match the dialog contract | `dialog.js`, `settings.js` | Initial focus Close; Tab wraps; 40 Tab presses stay inside; Esc closes; a nested workspace dialog closes alone; backdrop click closes; focus returns to `#activity-settings-btn` (`tests/browser/test_auth_export_browser.js:286-380`) |
@@ -1345,7 +1347,7 @@ Each names what it would touch.
 
 | # | Proposal | Why | Cost / risk |
 |---|---|---|---|
-| **P1** | Replace the seven nav emoji and the lock in the read-only tag with `nb-icon-*` sprite glyphs on the 16 grid | Foundations P6 and §9.3 forbid emoji as chrome; the nav is the last emoji control set in the app | Touches `index.html:723-731` and `settings.js:1374-1377`; needs six new symbols; five DOM tests read the nav label text, so the labels stay and only the `.nav-icon` content changes |
+| **P1** | Replace the seven nav emoji with `nb-icon-*` sprite glyphs on the 16 grid | Foundations P6 and §9.3 forbid emoji as chrome; the nav is the last emoji control set in the app | Touches `index.html:723-731`; needs six new symbols; five DOM tests read the nav label text, so the labels stay and only the `.nav-icon` content changes |
 | **P2** | Below 1024 (or at ≤860) turn the nav into a horizontal scrolling strip above the sections, and give the modal a `min(560px, 96vw)` floor | At 390 the measured modal is 292 px with a 112 px content column (§9.2) | New refinement query scoped to `.settings-modal`; the strip duplicates the active-bar idea from the file tabs; must not become a second mode switch |
 | **P3** | *(applied)* field height 36, button height 30 | The 29 px field is below the 36 px field token | Visible: 7 px of field height |
 | **P4** | Grow the switch hit to 24 px without changing the 36 × 20 track, using padding on the label | The 20 px box is under the 24 px fine-pointer floor | No visual change if the label already spans the row; needs a measurement per row |
@@ -1379,7 +1381,7 @@ P2 and P3 are the two that matter for correctness. The rest are finish.
 | A custom tooltip for the disabled Remove buttons | The `title` carries the reason; controls §2.10 forbids a tooltip component |
 | Drag-to-reorder tabs, or a settings search field | Neither is asked for; the nav is seven rows and every tab is one click |
 | Whole-row drag, or a gap / ghost drop indicator, on the activity-bar order list | The handle is the only drag source and the 2 px line is the only marker; a gap reflows under the pointer and a ghost duplicates the drag image ([`activity-bar-order.md`](activity-bar-order.md) §4) |
-| Editing `config/acp.json` from the UI | The file chooses a command to execute; it stays server-side and read-only (`docs/contracts/configuration.md:435-445`; §5.5) |
+| Supplying `command`, `args`, `env`, `cwd` or `timeout` from the UI | A config blob any client can POST must never choose a command or its environment; those fields stay file-owned, and the server refuses them in a body (`docs/contracts/configuration.md` §ACP profiles in `ai.json`; §5.5) |
 | Revealing an API key after it is stored | The server never returns it; only `hasKey` (`docs/contracts/configuration.md:422-429`) |
 | Re-showing an issued token after the list refreshes | It is shown once per create, by design (§5.3) |
 | A toast for every live toggle | The control is the feedback; the write is debounced and silent (§3.7) |

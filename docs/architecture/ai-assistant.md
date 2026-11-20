@@ -55,15 +55,13 @@ coding agent as a subprocess and streams its prose into the same panel. It is
 a peer of the OpenAI profiles in the picker only; the execution model is not
 the same.
 
-**Config and the picker.** ACP is configured in `config/acp.json`, a
-hand-edited file of one or more profiles. Three shapes are accepted: the
-canonical `{"profiles": [ ... ]}` (shown below), a bare JSON array, and the
-legacy single profile object. Each profile names a **known agent by key**; the
-server resolves the executable and argv from its own table (`ACP_KNOWN_AGENTS`,
-`app.py`):
+**Config and the picker.** ACP is configured in `config/ai.json`'s `acp`
+list, one or more profiles next to the OpenAI-compatible servers. Each profile
+names a **known agent by key**; the server resolves the executable and argv from
+its own table (`ACP_KNOWN_AGENTS`, `app.py`):
 
 ```jsonc
-{"profiles": [
+{"acp": [
   {"name": "opencode", "agent": "opencode",
    "model": "ollama/qwen3.8:latest",
    "cwd": "", "env": {}, "default": true, "timeout": 900},
@@ -72,13 +70,19 @@ server resolves the executable and argv from its own table (`ACP_KNOWN_AGENTS`,
 ]}
 ```
 
-The command line lives in the server table, never in the file: a config blob
-any authenticated client can POST must never choose a command to execute, so
-both the file and the browser may only name a key. `agent` and `command` are
+The command line for an allowlisted key lives in the server table, never in a
+POSTed body: a config blob any authenticated client can POST must never choose
+a command to execute, so the browser may only name a key. A hand-edited file
+may carry an explicit `command` + `args` for an agent the table does not know;
+that entry is file-owned and the browser cannot edit or name it. `agent` and
+`command` are
 mutually exclusive — the `command` + `args` form is the escape hatch for an
 agent the table does not know. Known keys: `opencode`, `claude`, `codex`,
 `gemini`, `goose`, `cursor`, `qwen`, `kimi`, `cline`, `openhands`, `auggie`,
-`copilot`, `kiro`.
+`copilot`, `kiro`. The raw entry is what is stored: an allowlisted `agent` is
+resolved to an absolute command when it is read, and loader output is never
+written back, so a profile whose agent is not installed right now keeps its
+entry in the file.
 
 `model` is optional (≤ 200 characters) and names the agent's own model. After
 `session/new`, `acp_client` looks for the session's model config option — the
@@ -103,42 +107,67 @@ typo cannot disable the other profiles; duplicate names keep the first entry; a
 name that collides with an `ai.json` profile is dropped so the API profile keeps
 the name (the ACP branch could never run for it). Per-entry bounds: `name` ≤ 60
 characters, `command` ≤ 300, `args` ≤ 32 entries of ≤ 1000 characters each,
-`cwd` a string, `env` a string-to-string map, `model` ≤ 200 characters,
-`default` a boolean, `timeout` a finite positive number. An `agent` must name a
-table entry and must not be set alongside `command`; if the selected agent's
-executable is not on `PATH` that entry is dropped, so a missing agent never
-yields a picker entry that always errors. The feature is off when no valid
-profile remains.
+`cwd` a string (empty means the active workspace root), `env` a
+string-to-string map, `model` ≤ 200 characters, `default` a boolean, `timeout`
+a finite positive number (default 900 s). An `agent` must name a table entry and
+must not be set alongside `command`; if the selected agent's executable is not
+on `PATH` that entry is not usable, so a missing agent never yields a picker
+entry that always errors. The feature is off when no valid profile remains.
 
-`GET /api/ai/config` returns every profile in an `acps` array as
-`{name, model, hasModel, agent, default}`; `model` is the configured model or the fallback
-label `"ACP"`, and `acp` carries the first entry (or `null`) for older clients.
-`command`, `args`, `env`, `cwd`, and `timeout` stay server-side. The `default`
-flag is computed from the resolved default provider
-(`_resolve_default_provider`, `app.py`): a stored `ai.json` `default` that names
-a saved server or an ACP profile wins; otherwise the first profile flagged
-`default: true`; otherwise `""` and the frontend falls back to the first entry.
-A default chosen in Settings therefore wins without the server rewriting
-`config/acp.json`. It also returns an always-present `acpAgents` array —
-`[{key, label, available}]`, built by a read-only `shutil.which` PATH lookup
-(`_detect_acp_agents`, `app.py`) — so the UI can show which known agents
-the host can launch; an agent whose wrapping CLI is present but whose ACP
-adapter is missing gains `adapterMissing: true` and a `hint` install command
-(today Claude Code and Codex). `loadAiConfig` appends **every** `acps` entry as
-an option labelled `<name> · <model>` after the OpenAI profiles, tags each
-client-side with `acp: true`, and selects `cfg.default` when it names a listed
-provider (`static/js/ai.js`). Settings → AI renders one read-only ACP section
-from `cfg.acps`: one panel head/help, one block per profile (a `Default` tag, or
-a `Make default` button), and one detected-agent list (`buildAiAcpSection`,
-`buildAiAcpProfile`, `static/js/settings.js`). "Make default" posts
-`default: <profile name>`; it never edits the profile. ACP profiles are
-deliberately kept out of the editable provider list, so a provider save cannot
-re-send or overwrite them. When no profile is configured yet but an agent is
-detected, an info row prompts the user to add an `agent` key by hand
-(`buildAiAcpInfoRow`) — the UI only reports; it never writes the file. `POST
-/api/ai/config` never writes `config/acp.json`: a config blob any authenticated
-client can POST must never choose a command to execute. The file is read on
-every request, so an edit takes effect on the next send without a restart.
+`GET /api/ai/config` returns every stored profile in file order in an `acps`
+array as `{name, model, hasModel, agent, default, available, editable}`;
+`model` is the configured model or the fallback label `"ACP"`, and `acp`
+carries the first **available** entry (or `null`) for older clients.
+`command`, `args`, `env`, `cwd`, and `timeout` stay server-side. `available` is
+false when the loader would reject the entry — typically because the agent's
+executable is not on `PATH`; the profile is still listed, still saved back, and
+still editable. `editable` is false for an entry the browser cannot express: a
+non-empty `command`, an entry with neither form, or an `agent` key this server
+does not recognise. The `default` flag is computed from the resolved default
+provider (`_resolve_default_provider`, `app.py`): a stored `ai.json` `default`
+that names a saved server or an ACP profile wins; otherwise the first profile
+flagged `default: true`; otherwise `""` and the frontend falls back to the first
+entry. It may therefore name an unavailable profile. A default chosen in
+Settings therefore wins without the server rewriting the file. It also returns
+an always-present `acpAgents` array — `[{key, label, available}]`, built by a
+read-only `shutil.which` PATH lookup (`_detect_acp_agents`, `app.py`) — so the UI
+can show which known agents the host can launch; an agent whose wrapping CLI is
+present but whose ACP adapter is missing gains `adapterMissing: true` and a
+`hint` install command (today Claude Code and Codex). `loadAiConfig` appends
+every `acps` entry whose `available` is not false as an option labelled
+`<name> · <model>` after the OpenAI profiles, tags each client-side with
+`acp: true`, and selects `cfg.default` when it names a listed provider
+(`static/js/ai.js`).
+
+Settings → AI edits the ACP profiles. One row per stored profile carries the
+name, a `Default` tag or a `Make default` action, an inline model field, a
+status tag (`not installed`, `server-local`) and, for a browser-owned entry, a
+`Remove` action; the add form offers a launchable agent no profile has claimed
+(`buildAiAcpSection`, `buildAiAcpProfile`, `buildAcpAddForm`,
+`static/js/settings.js`). A row whose agent is not installed is listed but
+cannot be picked in the chat panel. A file-owned row is read-only: it keeps its
+`server-local` tag and no `Remove`. "Make default" posts `default: <profile
+name>`; it never writes a per-profile flag.
+
+`POST /api/ai/config` accepts an optional `acp` list of
+`{name, agent, model, default}` — those four keys only. Any other key
+(`command`, `args`, `env`, `cwd`, `timeout`) is 400. An omitted `acp` leaves
+the stored list untouched, which is what every save path predating ACP editing
+relies on. A hand-owned entry is preserved verbatim and never dropped; a body
+entry that reuses its name is 400; editing a browser-owned entry keeps its
+stored `cwd`, `env` and `timeout`. With auth off, a body that carries `acp`
+from a non-loopback peer, or with an `X-Forwarded-For` or `X-Real-IP` header, is
+403 `loopback_required` (`_acp_write_allowed`, `app.py`): creating a profile is
+the one thing this route can do that driving an existing agent cannot. A
+prefs-only save from the same client still succeeds. The list is read on every
+request, so an edit takes effect on the next send without a restart.
+
+A legacy `config/acp.json` is folded into `ai.json`'s `acp` list once at
+startup (`_migrate_acp_file`, `app.py`) as raw entries — a name already stored
+is not copied again — and then renamed `acp.json.migrated`. The renamed file is
+kept for a rollback and is no longer read. An unreadable `acp.json`, or an
+`ai.json` that exists but cannot be parsed, skips the migration with a warning
+and leaves both files alone.
 
 **One turn.** `POST /api/ai/chat` serves ACP when the posted `server` is not
 an OpenAI profile but matches an ACP profile (`ai_chat`, `app.py`).
@@ -170,8 +199,9 @@ session's model config option between `session/new` and `prompt` (`_drive`,
 so a long multi-step turn shows activity; thought, plan, and usage updates are
 dropped (`acp_client.py`). The prompt is prefixed with a short preamble
 (`_acp_context_preamble`, `app.py`) built from server state: the fixed
-`ACP_CONTEXT_PREAMBLE` lead, the user's open note (`config/config.json`
-`activeFile`), and the global custom prompt (`config/ai.json` `custom_prompt`).
+`ACP_CONTEXT_PREAMBLE` lead, the user's open note (`config/state.json`
+`states.<id>.activeFile`), and the global custom prompt (`config/ai.json`
+`custom_prompt`).
 It is re-sent on every turn, so it is never duplicated into the transcript.
 
 The notebook's `nb-tool` contract is never sent to the ACP agent, because the

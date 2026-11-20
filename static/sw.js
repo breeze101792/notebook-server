@@ -62,7 +62,10 @@
 /* Bumped v31 -> v32: a resumed phone makes one catch-up read of the shared
  * workspace state, so app.js and mobile.js must reach already installed
  * workers. */
-const CACHE = "notebook-v32";
+/* Bumped v32 -> v33: ACP profiles are editable from Settings -> AI, so
+ * settings.js and ai.js must reach already installed workers (api.js carries
+ * the save call, style.css the row layout). */
+const CACHE = "notebook-v33";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

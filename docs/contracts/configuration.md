@@ -3,25 +3,27 @@
 ## Overview
 
 This server keeps notes and settings in two separate folders. `notebook/`
-holds the Markdown notes. `config/` holds five settings files:
-`config.json` (UI state), `auth.json` (passwords, session secret, API
-tokens), `ai.json` (assistant provider profiles), `acp.json` (one
-hand-edited ACP agent), and `workspaces.json` (the named workspace roots).
-The split is deliberate: a client can POST the UI-prefs blob, and that blob
-must never be able to carry credentials, choose a command to run
-(`acp.json`), or point the server at an arbitrary folder
-(`workspaces.json`).
+holds the Markdown notes. `config/` holds six settings files:
+`config.json` (UI preferences), `state.json` (the workspace tab and session
+state), `server.json` (host, port, debug; optional), `auth.json` (passwords,
+session secret, API tokens), `ai.json` (assistant provider profiles,
+including the ACP profiles), and `workspaces.json` (the named workspace
+roots). The split is deliberate: a client can POST the UI-prefs blob, and
+that blob must never be able to carry credentials, choose a command to run
+(a POSTed ACP entry can only name an allowlisted agent), or point the server
+at an arbitrary folder (`workspaces.json`).
 
-The server stores `config.json` with no schema validation. One rule applies on
-every write: the per-workspace state (`workspaceState` and `workspaceStateRev`)
-is server-owned and only `/api/workspace-state` writes it, so a whole-blob POST
-carries it through unchanged (see
-[per-workspace state](#per-workspace-state)). The authoritative schema lives
-in the frontend. `boot_state()` in `app.py` sanitizes a small subset for the
-first page paint.
+The server stores `config.json` with no schema validation. It holds
+preferences only: the per-workspace state lives in `config/state.json`, only
+`/api/workspace-state` writes it, and `POST /api/config` strips its keys from
+the body (see [`config/state.json`](#configstatejson--workspace-state)). The
+authoritative schema lives in the frontend. `boot_state()` in `app.py`
+sanitizes a small subset for the first page paint.
 
 Related docs:
 
+- [`config-guidelines.md`](config-guidelines.md) — the rulebook for choosing a
+  file, naming, validation, locks, secrets and migrations.
 - [`http-api.md`](http-api.md) — the HTTP endpoint reference for the routes
   that read and write these files.
 - [`../architecture/backend.md`](../architecture/backend.md) — import-time
@@ -49,22 +51,53 @@ Flags and defaults:
 
 | Command | Effect |
 | --- | --- |
-| `./start.sh` | Binds `0.0.0.0:5000`, debug off, reachable from the LAN |
+| `./start.sh` | Uses `config/server.json`, else binds `0.0.0.0:5000` with debug off, reachable from the LAN |
 | `./start.sh --host 127.0.0.1` | Binds loopback only |
 | `./start.sh --port 8080` | Listens on port 8080 |
 | `./start.sh --debug` | Flask debug and auto-reload (the startup banner prints twice) |
 | `./start.sh --help` | Shows every `app.py` flag |
 
-`app.py` accepts `-H/--host` (default `0.0.0.0`), `-p/--port` (default
-5000), and `--debug` / `--no-debug` (`app.py`). On startup it
-prints the notebook folder, the config folder, and one URL per reachable
-address (`app.py`). Debug mode with a non-loopback host prints a
-warning because Flask exposes the interactive debugger to the network
-(`app.py`).
+`app.py` accepts `-H/--host`, `-p/--port`, and `--debug` / `--no-debug`
+(`app.py`). Every flag defaults to "unset", not to a value, so the file can
+supply the missing ones and `--no-debug` can beat a `"debug": true` in
+`config/server.json`. Precedence is the flag, then `config/server.json`, then
+the built-in default `0.0.0.0:5000` with debug off. On startup it prints the
+notebook folder, the config folder, and one URL per reachable address
+(`app.py`). Debug mode with a non-loopback host prints a warning because Flask
+exposes the interactive debugger to the network; the banner and that warning
+are printed from the resolved values, so a value taken from the file is warned
+about exactly like a flag (`app.py`).
 
 Python dependencies (`requirements.txt`): `Flask==3.0.3`, `bcrypt==5.0.0`,
 and `agent-client-protocol==0.12.1` (the ACP SDK, used only by the ACP
 provider).
+
+## `config/server.json` — startup values
+
+An optional file that records the bind address, port, and debug flag, so the
+port is set once instead of passed on every launch. It is **never seeded**: a
+missing file simply means the built-in defaults. A copyable example with every
+key documented inside the file is
+[`config.template/server.json.example`](../../config.template/server.json.example).
+
+```json
+{"host": "0.0.0.0", "port": 5000, "debug": false}
+```
+
+| Key | Type | Rule |
+| --- | --- | --- |
+| `host` | string | Non-empty; surrounding whitespace is trimmed. |
+| `port` | integer | 1-65535 (`SERVER_PORT_MIN` / `SERVER_PORT_MAX`); the `--port` flag is checked against the same range. A boolean is rejected, even though `True` is an `int` in Python. |
+| `debug` | boolean | `true` or `false` only. |
+
+Any key may be omitted, and an absent key keeps its built-in default. Unknown
+keys are ignored (`load_server_config`, `app.py`).
+
+A malformed file, or an out-of-range value, stops startup: the process prints
+`Cannot start: <path>: <reason>` on stderr and exits 2, because the fallback
+would bind `0.0.0.0` and the file is the only record of what the user meant
+(`app.py`). The resolved triple comes from `resolve_startup(args, stored)`
+(`app.py`).
 
 ## Environment variables
 
@@ -93,18 +126,35 @@ things in order:
 
 The template is copied, not symlinked, so editing notes never touches it.
 
-After `seed()`, import-time startup maintenance runs before the server accepts
-requests: `_migrate_config_at_startup()` folds legacy config keys under
-`workspaceState.default`, and `_persist_workspaces_if_changed()` rebuilds
-`config/workspaces.json` when it is missing or stale. Both are best effort; a
-failure leaves the previous file for the next launch.
+`seed()` creates only `config/config.json`. `config/state.json` and
+`config/server.json` are never seeded: the state file appears on the first
+accepted workspace-state write (or the first startup split), and a missing
+server file means the built-in startup defaults.
 
-## `config/config.json` — UI state
+After `seed()`, import-time startup maintenance runs before the server accepts
+requests, in this order (`app.py`):
+
+1. `_migrate_config_at_startup()` folds legacy top-level config keys under
+   `workspaceState.default`.
+2. `_quarantine_bad_state_file()` renames a corrupt, wrongly shaped, or
+   future-version `config/state.json` to `state.json.corrupt-<epoch>`.
+3. `_migrate_state_out_of_config()` moves the state maps out of `config.json`
+   into `config/state.json`.
+4. `_migrate_acp_file()` folds a legacy `config/acp.json` into
+   `config/ai.json`.
+5. `_persist_workspaces_if_changed()` rebuilds `config/workspaces.json` when
+   it is missing or stale.
+
+Each step is best effort; a failure leaves the previous file for the next
+launch. Reads stay pure: only startup and the mutating routes write these
+files.
+
+## `config/config.json` — UI preferences
 
 The server stores this file with no schema validation. `POST /api/config`
-only checks that the body is a JSON object, then folds legacy top-level content
-keys under `workspaceState.default`. Missing keys fall back to
-`DEFAULTS` in `static/js/app.js`. The server embeds a validated subset
+only checks that the body is a JSON object, strips the server-owned state keys
+and every workspace-scoped content key, and writes the rest. Missing keys fall
+back to `DEFAULTS` in `static/js/app.js`. The server embeds a validated subset
 into the page shell for first paint.
 
 ### Theme and appearance
@@ -137,9 +187,10 @@ into the page shell for first paint.
 
 ### Files and tabs
 
-These keys follow the workspace root, not the whole app. On a workspace-aware
-client they live under `workspaceState.<id>`; the top-level copies are the
-pre-workspace format and the fallback for a page without a workspace.
+These keys follow the workspace root, not the whole app. They live in
+`config/state.json` under `states.<workspace id>`; a top-level copy in
+`config.json` is the pre-workspace format and is folded into the default
+workspace once at startup.
 
 | Key | Effect |
 | --- | --- |
@@ -152,71 +203,6 @@ pre-workspace format and the fallback for a page without a workspace.
 | `activeSessionId` | The session this device last had on screen; a fallback for a page with no device-local value, never applied by a poll |
 | `bookmarks` | Ordered array of bookmarked paths; missing files are pruned on tree refresh (`app.js`) |
 | `pinnedFolders` | Pinned folder paths shown in the Pinned view |
-
-> **Status — designed, not implemented (sync §17).** The `workspaceStateRev`
-> map, the merge on write and the `/api/config` strip are not in the code yet.
-> See [`architecture/sessions.md`](../architecture/sessions.md) §17.2.
-
-### Per-workspace state
-
-`config.json` may carry a `workspaceState` object keyed by workspace id:
-
-```json
-{
-  "theme": "dark",
-  "workspaceState": {
-    "default": {
-      "lastFile": "README.md",
-      "sessions": [
-        {"id": "main", "name": "Main", "openFiles": ["README.md"], "activeFile": "README.md"}
-      ],
-      "activeSessionId": "main",
-      "pinnedFiles": ["Welcome.md"],
-      "openFiles": ["Welcome.md", "README.md"],
-      "activeFile": "README.md"
-    },
-    "work-1a2b": {"lastFile": "plan.md", "openFiles": ["plan.md"], "activeFile": "plan.md"}
-  },
-  "workspaceStateRev": { "default": 7, "work-1a2b": 2 }
-}
-```
-
-| Rule | Behavior |
-| --- | --- |
-| Scoped keys | `lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `sessions`, `activeSessionId`, `recentFiles`, `bookmarks`, `pinnedFolders`. Everything else is global and stays top-level. |
-| Read overlay | The client loads `config.json`, then overlays `workspaceState.<active id>` on top of the top-level values. A missing field falls back to the top-level copy, so the first load after a migration shows the same session. |
-| Write path | `POST /api/workspace-state` with `{id, state, base}` replaces that entry under `_CONFIG_LOCK` and preserves every other entry and unrelated key. `state` and `base` must be JSON objects; `state` is capped at 256 KiB (`WORKSPACE_STATE_MAX_BYTES`). When `base` equals the stored entry the state is stored verbatim; when it differs the server merges per session (a session the client did not change keeps the server's copy) and returns the merged state. The route answers `{ok, id, rev, state}`. A missing `base` is **400** `bad_body` and a `base` over the cap is **400** `base_too_large`; there is no conflict status. The stored file is read strictly: an unreadable or unparseable `config.json`, or a state map that is not an object, answers 500 `write_failed` and writes nothing. |
-| Rev map | `workspaceStateRev` is a sibling map of non-negative integers, one per state entry, bumped on every accepted write. The server owns it; a client-supplied copy is discarded. Missing reads as `0`. It is the conditional for `GET /api/workspace-state?id=…&rev=…` (304 when equal). It is not a write precondition: the write merges. |
-| Whole-blob POST | `POST /api/config` is **not** a state writer. It removes `workspaceState`, `workspaceStateRev` and every scoped key from the body, then re-attaches the stored maps unchanged. It no longer folds legacy scoped keys; the startup migration below is the only fold. If the stored file cannot be read, the POST is refused with 500 `write_failed` instead of dropping the maps. |
-| Single writer | Only `/api/workspace-state` writes `workspaceState` or `workspaceStateRev`. `DELETE /api/workspaces/<id>` removes that workspace's entry and rev under the same lock. Any other write path is a defect. |
-| Startup migration | `_migrate_config_at_startup()` moves legacy top-level scoped keys under `workspaceState.default` once per process start, under `_CONFIG_LOCK`. A blob that already has `workspaceState` is left alone. The migration is best effort and deliberately never runs from `GET /api/config`, so a read never writes a server-owned file. |
-| Viewer and anonymous | `POST /api/workspace-state` requires workspace admin (admin, or a loopback peer while auth is off). A viewer or the unauthenticated shell reads the server copy, polls it for live updates, and does not queue a write. |
-| Client sync | An open page polls `GET /api/workspace-state` every 3 s, paused while hidden, and applies the shared half of the state. The active session and active tab are device-local (`localStorage`). See [`architecture/sessions.md`](../architecture/sessions.md) §17. |
-
-### Sessions
-
-A session is a named set of unpinned tabs with its own active tab. The
-workspace's pinned tabs are shared: `pinnedFiles` sits outside `sessions` and
-every session sees the same pins. The model and the algorithms are in
-[`architecture/sessions.md`](../architecture/sessions.md).
-
-```json
-"sessions": [
-  {"id": "main", "name": "Main",
-   "openFiles": ["notes/a.md"], "activeFile": "notes/a.md"},
-  {"id": "s-7f3a2c", "name": "Reading", "openFiles": [], "activeFile": null}
-],
-"activeSessionId": "main"
-```
-
-| Rule | Behavior |
-| --- | --- |
-| Invariant | A pinned path never appears in `sessions[].openFiles`; the pinned set is shared. An unpinned path may be open in **several** sessions — each occurrence is its own tab and they share one viewer buffer. |
-| `openFiles` / `activeFile` | Mirrors of the active session, pins included. A reader that predates sessions (the ACP open-note hint, `app.py`) keeps working. |
-| Limits | 20 sessions, 40 characters per name, 40 unpinned tabs per session; names are unique after trim and case-folding. |
-| Migration | A workspace state with no `sessions` becomes one session `{id: "main", name: "Main"}` built from the existing `openFiles`/`activeFile`; that first boot keeps the `lastFile` fallback. |
-| Empty session | `openFiles: []` is valid and is persisted; it is not the same as a missing entry. |
-| Read-only | A viewer may switch sessions in memory; structural changes are not offered and nothing is written. |
 
 `GET /api/info` reports the active root and id alongside the config folder:
 `{data_dir, config_dir, workspace}`. `data_dir` is the active workspace root;
@@ -264,6 +250,71 @@ checked against an allowlist so a hand-edited file cannot inject markup.
 The login screen gets only the theme (`app.py`). If auth is off, or a
 session role is present, the shell gets the full first-paint subset
 (`app.py`).
+
+## `config/state.json` — workspace state
+
+The per-workspace UI state is server-owned and lives in its own file:
+
+```json
+{
+  "version": 1,
+  "states": {
+    "default": {
+      "lastFile": "README.md",
+      "sessions": [
+        {"id": "main", "name": "Main", "openFiles": ["README.md"], "activeFile": "README.md"}
+      ],
+      "activeSessionId": "main",
+      "pinnedFiles": ["Welcome.md"],
+      "openFiles": ["Welcome.md", "README.md"],
+      "activeFile": "README.md"
+    },
+    "work-1a2b": {"lastFile": "plan.md", "openFiles": ["plan.md"], "activeFile": "plan.md"}
+  },
+  "revs": { "default": 7, "work-1a2b": 2 }
+}
+```
+
+`version` is `1` (`STATE_VERSION`, `app.py`). `states` and `revs` are maps
+keyed by workspace id.
+
+| Rule | Behavior |
+| --- | --- |
+| Scoped keys | `lastFile`, `openFiles`, `activeFile`, `pinnedFiles`, `sessions`, `activeSessionId`, `recentFiles`, `bookmarks`, `pinnedFolders`. Everything else is a global preference and stays in `config.json`. |
+| Boot read | `GET /api/config` reads `config.json`, then splices `states` and `revs` in as `workspaceState` and `workspaceStateRev`, always as JSON objects (`{}` when nothing is saved). The page boots from one response and the client contract is unchanged. A GET never writes. |
+| Write path | `POST /api/workspace-state` with `{id, state, base}` replaces that entry under `_STATE_LOCK` and preserves every other entry. `state` and `base` must be JSON objects; `state` is capped at 256 KiB (`WORKSPACE_STATE_MAX_BYTES`). When `base` equals the stored entry the state is stored verbatim; when it differs the server merges per session (a session the client did not change keeps the server's copy) and returns the merged state. The route answers `{ok, id, rev, state}`. A missing `base` is **400** `bad_body` and a `base` over the cap is **400** `base_too_large`; there is no conflict status. The file is read strictly: an unreadable, unparseable, wrongly shaped, or future-version `state.json` answers **500** `write_failed` (`Could not write workspace state: …`) and writes nothing. |
+| Rev map | `revs` is a sibling map of non-negative integers, one per state entry, bumped on every accepted write. The server owns it; a client-supplied copy is discarded. Missing reads as `0`. It is the conditional for `GET /api/workspace-state?id=…&rev=…` (304 when equal). It is not a write precondition: the write merges. |
+| Whole-blob POST | `POST /api/config` writes preferences only. It strips `workspaceState`, `workspaceStateRev` and every scoped key from the body and never opens `state.json`. It still reads the stored preferences first and refuses with **500** `write_failed` when that file cannot be parsed. |
+| Single writer | Only `/api/workspace-state` writes a workspace's state; `DELETE /api/workspaces/<id>` removes that workspace's state and rev in the same file write. Any other write path is a defect. |
+| Startup split | `_migrate_state_out_of_config()` moves `workspaceState` and `workspaceStateRev` out of `config.json` once per process start, after the legacy fold. Per workspace the copy with the higher revision wins, so a rollback build or a restored backup written into `config.json` is not discarded. `state.json` is written first and `config.json` stripped second; a crash in between is harmless and the next launch finishes the job. Idempotent, and it never runs from a GET. |
+| Quarantine | A corrupt, wrongly shaped, or future-version `state.json` is renamed at startup to `state.json.corrupt-<epoch>`. The file is preserved, not deleted, and the server starts with empty state. If the rename is impossible (permissions), state writes answer **500** `write_failed` and GETs answer empty state. |
+| Viewer and anonymous | `POST /api/workspace-state` requires workspace admin (admin, or a loopback peer while auth is off). A viewer or the unauthenticated shell reads the server copy, polls it for live updates, and does not queue a write. |
+| Client sync | An open page polls `GET /api/workspace-state` every 3 s, paused while hidden, and applies the shared half of the state. The active session and active tab are device-local (`localStorage`). See [`architecture/sessions.md`](../architecture/sessions.md) §17. |
+
+### Sessions
+
+A session is a named set of unpinned tabs with its own active tab. The
+workspace's pinned tabs are shared: `pinnedFiles` sits outside `sessions` and
+every session sees the same pins. The model and the algorithms are in
+[`architecture/sessions.md`](../architecture/sessions.md).
+
+```json
+"sessions": [
+  {"id": "main", "name": "Main",
+   "openFiles": ["notes/a.md"], "activeFile": "notes/a.md"},
+  {"id": "s-7f3a2c", "name": "Reading", "openFiles": [], "activeFile": null}
+],
+"activeSessionId": "main"
+```
+
+| Rule | Behavior |
+| --- | --- |
+| Invariant | A pinned path never appears in `sessions[].openFiles`; the pinned set is shared. An unpinned path may be open in **several** sessions — each occurrence is its own tab and they share one viewer buffer. |
+| `openFiles` / `activeFile` | Mirrors of the active session, pins included. A reader that predates sessions (the ACP open-note hint, `app.py`) keeps working. |
+| Limits | 20 sessions, 40 characters per name, 40 unpinned tabs per session; names are unique after trim and case-folding. |
+| Migration | A workspace state with no `sessions` becomes one session `{id: "main", name: "Main"}` built from the existing `openFiles`/`activeFile`; that first boot keeps the `lastFile` fallback. |
+| Empty session | `openFiles: []` is valid and is persisted; it is not the same as a missing entry. |
+| Read-only | A viewer may switch sessions in memory; structural changes are not offered and nothing is written. |
 
 ## `config/auth.json` — passwords and tokens
 
@@ -411,12 +462,18 @@ loopback, and bind loopback when you do not need remote access.
 
 This file is separate from `config.json` so the client-posted blob can
 never hold an API key. Stored keys are snake_case; the HTTP API uses
-camelCase.
+camelCase. A copyable example that documents every key, including the
+hand-only `env`/`args`/`cwd`/`timeout` fields, is
+[`config.template/ai.json.example`](../../config.template/ai.json.example).
 
 ```json
 {
   "servers": [
     {"name": "local", "base_url": "http://localhost:11434", "api_key": "...", "model": "llama3"}
+  ],
+  "acp": [
+    {"name": "opencode", "agent": "opencode", "model": "ollama/qwen3.8:latest",
+     "cwd": "", "default": true, "timeout": 900}
   ],
   "default": "local",
   "custom_prompt": "",
@@ -426,7 +483,11 @@ camelCase.
 
 - `servers` is the provider profile list. `base_url` and `name` are
   required (`app.py`).
-- `default` names the preselected profile.
+- `acp` is the ACP profile list, in the schema the old `config/acp.json`
+  used (`name`, `agent` or `command`, `args`, `cwd`, `env`, `model`,
+  `default`, `timeout`). See [ACP profiles in `ai.json`](#acp-profiles-in-aijson).
+- `default` names the preselected profile. It may name a saved server or an
+  ACP profile, so "Make default" in Settings → AI always takes effect.
 - `custom_prompt` is a global assistant instruction, stored outside the
   server list (`app.py`).
 - `searxng_url` is the optional SearXNG instance the search tool queries.
@@ -446,42 +507,24 @@ Base URLs are normalized on save: a trailing slash and a trailing `/v1`
 are stripped. The chat endpoint appends `/v1/chat/completions`
 (`app.py`, `app.py`).
 
-## `config/acp.json` — ACP agent
+## ACP profiles in `ai.json`
 
-A second provider kind, the Agent Client Protocol (ACP), is configured in
-`config/acp.json` (`ACP_FILE`, `app.py`). The file holds one or more profiles;
-the feature is off when the file is missing or holds no valid profile. Several
-ACP profiles may coexist, and any of them may be the default.
+A second provider kind, the Agent Client Protocol (ACP), is configured in the
+`acp` list of `config/ai.json`, next to the OpenAI-compatible servers. The
+feature is off when no valid profile remains. Several ACP profiles may coexist,
+and any of them may be the default.
 
-This file is **hand-edited**. The server never writes it and no HTTP route
-touches it, deliberately: a config blob that any authenticated client can POST
-must never be able to choose a command to execute (`app.py`). Copy
-`config/acp.json.example` and edit it:
+An entry has the shape the old `config/acp.json` used:
 
 ```json
-{
-  "profiles": [
-    {
-      "name": "opencode",
-      "agent": "opencode",
-      "model": "ollama/qwen3.8:latest",
-      "cwd": "",
-      "env": {},
-      "default": true,
-      "timeout": 900
-    },
-    {
-      "name": "local-agent",
-      "command": "/usr/local/bin/my-agent",
-      "args": ["--acp"]
-    }
-  ]
-}
+{"acp": [
+  {"name": "opencode", "agent": "opencode",
+   "model": "ollama/qwen3.8:latest", "cwd": "", "env": {},
+   "default": true, "timeout": 900},
+  {"name": "local-agent", "command": "/usr/local/bin/my-agent",
+   "args": ["--acp"]}
+]}
 ```
-
-Three shapes are accepted: the canonical `{"profiles": [ ... ]}`, a bare JSON
-array of profiles, and the legacy single profile object. Anything else yields
-no profiles.
 
 | Key | Type | Meaning |
 | --- | --- | --- |
@@ -489,17 +532,20 @@ no profiles.
 | `agent` | string | Key in the server's known-agent table; the command line is resolved from it. Mutually exclusive with `command`. |
 | `command` | string | Executable to spawn, argv[0] only, no shell. Required unless `agent` is set; the escape hatch for an agent the table does not know. |
 | `args` | string[] | Arguments passed to `command`. Default `[]`. Used only with `command`. |
-| `cwd` | string | Agent working directory; empty defaults to the notebook folder. |
+| `cwd` | string | Agent working directory; empty defaults to the active workspace root. |
 | `env` | object | Environment variables overlaid on the server's own environment (string to string). The profile wins on a key collision. |
-| `model` | string | Optional agent model id, at most 200 characters, applied after the session is created. |
+| `model` | string | Optional agent model id, at most 200 characters, applied after the session is created. Empty shows the label `ACP`. |
 | `default` | boolean | `true` nominates the profile as the fallback default when `ai.json` names none. |
 | `timeout` | number | Per-turn wall-clock cap in seconds; default 900. |
 
 The known-agent keys are `opencode`, `claude`, `codex`, `gemini`, `goose`,
 `cursor`, `qwen`, `kimi`, `cline`, `openhands`, `auggie`, `copilot`, and
 `kiro` (`ACP_KNOWN_AGENTS`, `app.py`). The executable and argv for each
-live in that server-side table, not in the file, so neither the file nor the
-browser can supply a command for the common case. `agent` and `command` are
+live in that server-side table, so a POSTed body can never supply a command:
+the browser may only name a key. A hand-edited file may still carry
+`command` + `args` for an agent the table does not know; that entry is
+file-owned and cannot be edited or named from the browser. `agent` and
+`command` are
 mutually exclusive: supplying both drops that entry. Provenance for each
 command line is in
 [`../research/acp-agent-commands.md`](../research/acp-agent-commands.md). One
@@ -507,14 +553,19 @@ fact there is unresolved: Gemini's dedicated ACP doc says `--acp` while the same
 repo's CLI cheatsheet still lists `--experimental-acp`; the table uses
 `--acp`.
 
+The raw entry is what is stored. A profile whose `agent` is allowlisted is
+resolved to an absolute command when it is read; loader output is never written
+back, so the stored entry stays in raw form and an agent whose executable is
+missing right now keeps its profile in the file.
+
 `load_acp_configs` (`app.py`) validates each entry on its own and returns the
 valid profiles; `load_acp_config` is a compatibility wrapper returning the first
-profile or `{}`. It never raises: an unset, unreadable, or malformed file yields
-`[]`. An invalid entry is dropped individually, so one typo cannot disable the
-other profiles. Duplicate names keep the first entry, and an entry whose name
-equals an `ai.json` server name is dropped so the API profile keeps it (such a
-name would be a dead picker entry, because `ai_chat` resolves the OpenAI profile
-first). Per-entry rules:
+profile or `{}`. It never raises: a missing, unreadable, or malformed `ai.json`
+yields `[]`. An invalid entry is dropped individually, so one typo cannot
+disable the other profiles. Duplicate names keep the first entry, and an entry
+whose name equals an `ai.json` server name is dropped so the API profile keeps
+it (such a name would be a dead picker entry, because `ai_chat` resolves the
+OpenAI profile first). Per-entry rules:
 
 - `name` must be a non-empty, non-whitespace string of at most 60 characters.
 - `agent`, when set, must name a key in `ACP_KNOWN_AGENTS` and must not be
@@ -554,34 +605,72 @@ ids: verified against `opencode acp`, whose values look like
 
 Because `command` is argv[0] with no shell, a wrapper executable belongs in
 `command` and the agent in `args`; a single string such as
-`"systemd-run --scope opencode acp"` silently fails. The file is re-read on
-every request, so an edit takes effect on the next send with no restart.
+`"systemd-run --scope opencode acp"` silently fails. The list is re-read on
+every AI request, so an edit takes effect on the next send with no restart.
 
-Four fields per profile reach the browser: `name`, `model` (the configured model
-or the fallback label `"ACP"`), the allowlist key `agent` (possibly `""` when
-the profile uses `command`), and `default` (`_public_acp_configs`, `app.py`).
+Seven fields per profile reach the browser: `name`, `model` (the configured
+model or the fallback label `"ACP"`), `hasModel` (whether `model` is a real id),
+the allowlist key `agent` (possibly `""` when the profile uses `command`),
+`default`, `available` and `editable` (`_public_acp_configs`, `app.py`).
 `command`, `args`, `env`, `cwd`, and `timeout` stay server-side.
-`GET /api/ai/config` returns every profile in an `acps` array and keeps `acp` as
-the first profile (or `null`) for older clients. The `default` flag is computed from
-the resolved default provider, not from the raw file flag, so a default chosen
-in Settings → AI wins without the server rewriting `config/acp.json`
-(`_resolve_default_provider`, `app.py`):
+`available` is false when the loader would reject the entry — typically because
+the agent's executable is not on `PATH`. `editable` is false for a file-owned
+entry: a non-empty `command`, an entry with neither form, or an `agent` key this
+server does not recognise. `GET /api/ai/config` returns every stored profile in
+file order in an `acps` array and keeps `acp` as the first **available** profile
+(or `null`) for older clients. The `default` flag is computed from the resolved
+default provider, not from the raw file flag, so a default chosen in Settings →
+AI wins without the server rewriting `ai.json`, and it may name an unavailable
+profile (`_resolve_default_provider`, `app.py`):
 
 1. a stored `ai.json` `default` that names a saved server or an ACP profile;
 2. otherwise the first ACP profile flagged `default: true`;
 3. otherwise `""`, and the frontend falls back to the first entry.
 
-`POST /api/ai/config` accepts a `default` naming an ACP profile, so "Make
-default" in Settings → AI always takes effect. It rejects a posted server whose
-name equals an ACP profile name with 400, because routing would be ambiguous,
-and it still never creates, edits, or deletes `config/acp.json`.
+`POST /api/ai/config` accepts an optional `acp` list of
+`{name, agent, model, default}` — those four keys only. Any other key
+(`command`, `args`, `env`, `cwd`, `timeout`) is **400**. An omitted `acp` leaves
+the stored list untouched, because every save path that predates ACP editing
+omits it. `agent` must name a key in `ACP_KNOWN_AGENTS`; `name` must be at most
+60 characters and unique across servers and profiles; `model` at most 200
+characters; `default` a boolean, and a body entry that omits it keeps the
+stored flag. A list longer than 32 entries is **400** (`ACP_MAX_PROFILES`).
+Entries the browser cannot express are preserved verbatim and are never dropped
+by a save; a body entry that reuses their name is **400**. Editing a
+browser-owned entry keeps its stored `cwd`, `env` and `timeout`, so a
+hand-edited value survives a change made in the browser — but only while the
+posted `agent` stays the same, because a credential provisioned for one binary
+must not follow the name onto another. A keyed profile whose name duplicates a
+saved server's can never launch, so a save that keeps the server drops it; a
+*file-owned* entry under that name instead makes the save **400**.
+
+With auth off, a body carrying `acp` from a non-loopback peer, or with an
+`X-Forwarded-For` or `X-Real-IP` header, is **403** `loopback_required`
+(`_acp_write_allowed`, `app.py`); a prefs-only save from the same client still
+succeeds. The caveat the workspace registry states applies here too: a
+same-host proxy that strips both headers is indistinguishable from a local
+client, so the rule is only as strong as the proxy configuration.
+
+Settings → AI edits the ACP profiles: add one of the detected agents, edit its
+model, remove it, and make it the default. A row whose agent is not installed is
+listed but not selectable. The full trust boundary — the agent runs as the
+server user with filesystem access and is not constrained by `safe_path` — is in
+[`../architecture/ai-assistant.md`](../architecture/ai-assistant.md#acp-providers).
 
 The always-present `acpAgents` array in `GET /api/ai/config` reports which known
 agents the host can launch, with an adapter hint when a wrapper CLI is installed
-but its ACP adapter is missing (`_detect_acp_agents`, `app.py`). The full trust
-boundary — the agent runs as the server user with filesystem access and is not
-constrained by `safe_path` — is in
-[`../architecture/ai-assistant.md`](../architecture/ai-assistant.md#acp-providers).
+but its ACP adapter is missing (`_detect_acp_agents`, `app.py`).
+
+**Migration from `config/acp.json`.** A legacy `config/acp.json` is folded into
+`ai.json`'s `acp` list once at startup (`_migrate_acp_file`, `app.py`): the raw
+entries are copied (a name already stored is not copied again, and one that
+duplicates a saved server's name is skipped with a warning, because it could
+never launch), then the file is renamed to `acp.json.migrated` (or
+`.migrated.1`, … so an earlier archive is never overwritten). The renamed file
+is kept for a rollback and is no longer read; note that it still holds every
+`env` value in cleartext, exactly as the live file did. An unreadable
+`acp.json`, or an `ai.json` that exists but cannot be parsed, skips the
+migration with a warning and leaves both files alone.
 
 ## Browser storage
 
@@ -604,7 +693,7 @@ knows the legacy names stays clean. Every other workspace is namespaced.
 
 `static/manifest.json` declares the app name "Notebook",
 `display: standalone`, and the icon set. `static/sw.js` is served at `/sw.js` (scope `/`) and caches the app shell
-under the cache version `notebook-v23` (`CACHE` in `sw.js`). Bump that version whenever
+under the cache version `notebook-v33` (`CACHE` in `sw.js`). Bump that version whenever
 a precached asset changes. The service worker strategy: non-GET requests pass through,
 `/api/*` is network-only and returns a 503 JSON error when offline, and
 everything else is network-first with a cache fallback. A navigation request

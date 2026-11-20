@@ -34,6 +34,21 @@ fs.mkdirSync(DATA, { recursive: true });
 fs.mkdirSync(CONFIG, { recursive: true });
 fs.writeFileSync(path.join(CONFIG, "config.json"), "{}");
 
+/* ACP profiles live in config/ai.json's "acp" list (config/acp.json is no
+ * longer read). Rewrite the file, keeping every other key and creating it
+ * when absent. */
+function writeAiConfig(update) {
+  const file = path.join(CONFIG, "ai.json");
+  let cfg = {};
+  try { cfg = JSON.parse(fs.readFileSync(file, "utf8")); } catch (_) {}
+  if (!cfg || typeof cfg !== "object" || Array.isArray(cfg)) cfg = {};
+  update(cfg);
+  fs.writeFileSync(file, JSON.stringify(cfg));
+}
+function clearAcpProfiles() {
+  writeAiConfig((cfg) => { delete cfg.acp; });
+}
+
 const A = "a.md";
 const B = "b.md";
 const TARGET = "target.md";
@@ -275,8 +290,8 @@ async function main() {
       }],
       default: "stubai",
     }));
-    // Phase A uses the OpenAI stub; ACP is absent.
-    try { fs.unlinkSync(path.join(CONFIG, "acp.json")); } catch (_) {}
+    // Phase A uses the OpenAI stub; no ACP profile is stored.
+    clearAcpProfiles();
 
     await startServer();
 
@@ -993,16 +1008,21 @@ async function main() {
      * Phase B: ACP provider
      * ================================================================ */
     await stopServer();
-    // ACP-only boot: no ai.json server list, no agent key (command form).
-    try { fs.unlinkSync(path.join(CONFIG, "ai.json")); } catch (_) {}
-    fs.writeFileSync(path.join(CONFIG, "acp.json"), JSON.stringify({
-      name: "acpstub",
-      command: PY,
-      args: [ACP_STUB, "--mode", "trace"],
-      cwd: DATA,
-      default: true,
-      timeout: 30,
-    }));
+    // ACP-only boot: no ai.json server list, one hand-written profile. Its
+    // "command"/"args" make it server-local (editable:false), which the
+    // settings editor shows but never posts back.
+    writeAiConfig((cfg) => {
+      cfg.servers = [];
+      cfg.default = "acpstub";
+      cfg.acp = [{
+        name: "acpstub",
+        command: PY,
+        args: [ACP_STUB, "--mode", "trace"],
+        cwd: DATA,
+        default: true,
+        timeout: 30,
+      }];
+    });
     await startServer();
 
     const ctx2 = await browser.newContext();

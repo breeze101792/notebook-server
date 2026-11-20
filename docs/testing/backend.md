@@ -1,16 +1,16 @@
 # Backend test suite
 
-`tests/test_app.py` is 8,116 lines of stdlib `unittest`. It drives the real
+`tests/test_app.py` is 8,573 lines of stdlib `unittest`. It drives the real
 Flask app through Flask's test client, so every test exercises the real
 routing, decorators, path resolution, and write path.
 
-The suite currently holds **556 test methods across 53 test-bearing classes**.
-The file has 56 `class` statements; four of them hold no tests: the shared
-bases `BaseTest` and `WorkspaceTestBase`, and the two loopback stubs
-`_StubOpenAIHandler` and `_StubWebHandler`. The first table below maps the core
-route/file classes; the second accounts for every other class, so the two tables
-sum to the 556 total. Workspace coverage has its own table in the
-multi-workspace section.
+The suite currently holds **597 test methods across 58 test-bearing classes**.
+The file has 63 `class` statements; five of them hold no tests: the shared
+bases `BaseTest` and `WorkspaceTestBase`, the two loopback stubs
+`_StubOpenAIHandler` and `_StubWebHandler`, and the stubbed-response helper
+`_FakeHttpResponse`. The first table below maps the core route/file classes; the
+second accounts for every other class, so the two tables sum to the 597 total.
+Workspace coverage has its own table in the multi-workspace section.
 
 Run it:
 
@@ -55,7 +55,7 @@ a low cost factor so tests stay fast.
 
 | # | Class | Tests | Covers |
 | --- | --- | --- | --- |
-| 1 | `TestIndexAndSeed` | 22 | `GET /` HTML, first-paint boot state (sanitizing hostile config, clamping pane widths, not leaking content, defaults until authenticated, painting the saved active view and falling back to explorer for a bad one), the active-view allowlist matching the registry and the DOM, SPA catch-all boot state, seeding `Welcome.md` + empty config, seeded tree, and `Cache-Control: no-store` (plus an empty 401 body) on gated reads |
+| 1 | `TestIndexAndSeed` | 23 | `GET /` HTML, first-paint boot state (sanitizing hostile config, clamping pane widths, not leaking content, defaults until authenticated, painting the saved active view and falling back to explorer for a bad one), the active-view allowlist matching the registry and the DOM, SPA catch-all boot state, seeding `Welcome.md` + empty config, seeded tree, and `Cache-Control: no-store` (plus an empty 401 body) on gated reads |
 | 2 | `TestSpaCatchAll` | 6 | Root, file-path, subfolder, and deep-link-with-fragment requests serve the SPA shell; `/api/*` and search routes are unaffected |
 | 3 | `TestWebAppManifest` | 4 | The iOS web-clip paths (`/apple-touch-icon.png`, `-precomposed`) and the v2 PNG icons are served as real PNGs, not the SPA shell; the shell links the v2 icon and theme colour; `manifest.json` declares `/` scope, standalone display, and the 192/512 v2 icons |
 | 4 | `TestFileRead` | 6 | `GET /api/file`: read, missing file, invalid path, returned `mtime`, conditional 304 when unchanged, and fall-through when changed |
@@ -82,12 +82,12 @@ a low cost factor so tests stay fast.
 | 25 | `TestAiChat` | 15 | `POST /api/ai/chat` SSE relay: relays frames and forwards the stored key/model, the message-part array (accepted, bad parts rejected, the eight-image cap, per-message extra keys stripped, an image send writes no file), the 32 MiB body cap returning JSON 413, unknown server, message validation, upstream HTTP error becomes an in-band SSE error event, probe unreachable/reachable/unknown-server, `/api/ai/config` readable while chat stays gated, and an ACP name collision routing to the OpenAI profile |
 | 26 | `TestPathHelpers` | 4 | `_same_file_ignoring_case` and `_is_within`: a symlink and its target are two entries, a hard-link pair with case-variant names is one file, `_is_within` ignores a shared path prefix, and it follows a symlinked source |
 
-The remaining 235 tests live in 19 classes that round out the suite:
+The remaining 314 tests live in 21 classes that round out the suite:
 
 | Class | Tests | Covers |
 | --- | --- | --- |
 | `TestScanTimeout` | 4 | The search and graph scans run under a wall-clock deadline: a timed-out scan is reported as such in every search mode, and `/api/graph` answers 504 |
-| `TestAcpConfig` | 25 | `config/acp.json`: the three accepted shapes, per-entry validation and drop rules, duplicate names keeping the first, an `ai.json` name collision dropping the ACP entry, masked `acps`/`acp` exposure, default resolution, a POST `default` naming an ACP profile and a colliding server name rejected, agent-key resolution and fail-closed unknowns, the agent/command exclusivity rules, model bounds, and the read-only agent detection |
+| `TestAcpConfig` | 26 | `config/ai.json`'s `acp` list: per-entry validation and drop rules, duplicate names keeping the first, an `ai.json` name collision dropping the ACP entry, masked `acps`/`acp` exposure, default resolution, a POST `default` naming an ACP profile and a colliding server name rejected, agent-key resolution and fail-closed unknowns, the agent/command exclusivity rules, model bounds, and the read-only agent detection |
 | `TestAcpChat` | 36 | `POST /api/ai/chat` through the ACP branch against a stub agent: streamed deltas, a tool-call trace frame, the flattened preamble, validation, model negotiation, environment inheritance, permission auto-allow, client-bound capabilities refused, reaping on EOF/timeout/crash, and the image path (block shape and order, tool follow-up, invalid/oversized images 400, the no-capability and null-capability cases, a 3 MiB image through stdio) |
 | `TestAcpClient` | 14 | Direct unit tests for `acp_client.run_turn` with no Flask app: exactly one terminal event per turn, dead agent, timeout, version mismatch, model negotiation, image blocks after the text block, null capabilities, and the elicitation override |
 | `TestSeedMigration` | 5 | `seed()`: the legacy `data/` migration (source dropped only when emptied), template/bootstrap branches, and idempotence when a config already exists |
@@ -95,6 +95,8 @@ The remaining 235 tests live in 19 classes that round out the suite:
 | `TestEditValidationBranches` | 2 | Every `_EditError` validation branch in the patch engine leaves the file untouched; `text_to_lines` drops a trailing empty part |
 | `TestConfigAndPasswordErrors` | 3 | A config write failure is a 500; the password endpoint rejects a missing field and a non-string current password |
 | `TestAuthLoginValidation` | 1 | Login body validation behind the auth-enabled check |
+| `TestAcpMigration` | 5 | `_migrate_acp_file`: a legacy `config/acp.json` folded into `ai.json`'s `acp` list as raw entries and renamed `.migrated`, both legacy shapes, an already-stored name not copied again, and an unparseable `ai.json` leaving both files alone |
+| `TestAcpWrite` | 15 | `POST /api/ai/config`'s `acp` field: add/edit/remove an allowlisted profile, `command`/`args`/`env`/`cwd`/`timeout` refused 400, a known-agent requirement, a carried-over `cwd`/`env` staying on its own entry, an unavailable profile listed but not selectable and still saved, a default naming an unavailable profile, the loopback rule with auth off (and a prefs-only save still allowed), an unknown-agent entry staying file-owned, and the view never carrying `command`/`env` |
 | `TestAcpConfigBranches` | 2 | The `load_acp_config()` compatibility wrapper: defaults for `args`/`cwd`, and an `env` that is not an object rejecting the entry |
 | `TestAiConfigErrorPaths` | 6 | The `/api/ai/config` validation table, save failure, the masked view, and `replaceSecret` across all stored servers |
 | `TestAiUpstreamErrorPaths` | 8 | Failure paths in probe / fetch / search / chat: bad base URLs, connection errors, non-JSON and mixed search results, and a chat connection failure as an in-band SSE error |
@@ -102,9 +104,10 @@ The remaining 235 tests live in 19 classes that round out the suite:
 | `TestRouteErrorPaths` | 14 | `OSError`/bad-input branches in the file, `ls`, search and graph routes, including entries that vanish mid-scan and unreadable notes |
 | `TestMoveCopyDeleteErrorPaths` | 10 | Conflict, race and `OSError` branches in move/copy/delete: lost races as 409, rename fallback without hardlinks, and partial-write cleanup |
 | `TestAcpClientExtra` | 8 | The remaining `acp_client` paths: session updates, permission preference, all capability overrides, queue overflow, and generator close cancelling the turn |
-| `TestCliUnit` | 5 | `parse_args`, `reachable_urls`, and `_lan_ipv4_addresses` without running the server |
+| `TestCliUnit` | 11 | `parse_args` (unset defaults, `--no-debug`, port bounds), `load_server_config` (missing/partial file, every rejected value), CLI-then-file-then-default precedence, `reachable_urls`, and `_lan_ipv4_addresses` without running the server |
 | `TestMainEntrypoint` | 1 | The `__main__` block with `Flask.run` stubbed out |
-| `TestWorkspace*` (8 classes) | 83 | Multi-workspace coverage; see the table in the multi-workspace section |
+| `TestConfigExamples` | 1 | The copyable `config.template/ai.json.example` loads through the real config route, its hand-written command entry stays file-owned with no `env` in the response, and a prefs-only save keeps the `_comment`/`_fields` prose keys and the profile list |
+| `TestWorkspace*` (11 classes) | 130 | Multi-workspace coverage; see the table in the multi-workspace section |
 
 ## Real loopback HTTP stubs for the AI tests
 
@@ -144,7 +147,7 @@ a session helper (`set_session_workspace`), a `file_stamp` no-write assertion
 three route tables the resolution and cache tests share (`DATA_ROUTE_CALLS`
 for the twelve gated data routes, `NON_DATA_ROUTE_CALLS` for the
 shell/auth/registry-level routes that must not 404 on an unknown id, and
-`PUBLIC_ROUTE_CALLS` for the routes that answer any caller). Ten classes
+`PUBLIC_ROUTE_CALLS` for the routes that answer any caller). Eleven classes
 cover the feature:
 
 | Class | Tests | Covers |
@@ -155,8 +158,9 @@ cover the feature:
 | `TestWorkspaceResolution` | 13 | `X-Notebook-Workspace` selects the tree and `/api/info` root and `active`; an unknown header or a stale session id 404s with `code: unknown_workspace` on the twelve gated data routes only and never on `/api/config`, `/api/info`, `/api/workspaces`, `/api/workspaces/active`, `/api/login`, `/api/auth`, `/api/ai/config` or the shell; unauthenticated callers get 401 for both a real and an unknown id (no id oracle); session switch; header beats session; bad switch ids; removing the active workspace clears the session; shell boot carries the active id and name; a folder deleted after registration is listed as `available: false` and serves an empty tree instead of failing |
 | `TestWorkspaceDataIsolation` | 2 | A file written through one root is absent from the default tree, and deleting a same-named file in workspace B leaves the default copy intact |
 | `TestWorkspacePathGuards` | 4 | Delete/move/copy of a non-default root refused; delete of the default root refused; `../` traversal refused for delete/move/copy, file write, file read and `ls` in a non-default root and in the default root |
-| `TestWorkspaceConfigState` | 17 | The legacy migration runs from `_migrate_config_at_startup`, moving the seven content keys into `workspaceState.default` (persisted, unrelated keys kept) and is idempotent by mtime; `GET /api/config` is read-only and returns the stored shape unchanged; workspace-state write keeps other entries and unrelated keys; non-object/missing/oversized bodies rejected (400 with `bad_body` / `state_too_large`), the exact cap accepted, and a failed config write is a 500 with `write_failed`. **Must change with sync §17.2:** the existing folding assertions (`tests/test_app.py:6853`, `:6876`) become assertions that `POST /api/config` strips `workspaceState`, `workspaceStateRev` and every scoped key and re-attaches the stored maps, and that a corrupt read refuses with 500 `write_failed`. The class asserts the *opposite* today, so the sync change cannot land without editing it. |
-| `TestWorkspaceStateSync` | 21 | Sync §17.2. `GET /api/workspace-state` returns `{ok, id, rev, state}`; **304 with an empty body** when `rev` equals the stored rev; `state: {}` and `rev: 0` for an entry never written; 400 `bad_body` without an `id`; 404 `unknown_workspace`; `POST` with `base` equal to the stored entry stores `state` verbatim and answers the **new** rev and the stored state; a stale `base` merges per session (both sides' changes survive, a same-session edit takes the client's copy, a delete applies only to an untouched session, an add from either side survives); a replay is idempotent but still bumps the rev; a missing `base` is 400 `bad_body` and writes nothing; the rev is monotonic across a `POST /api/config` (never regresses); deleting a workspace removes its state entry and rev; a viewer may GET and is refused POST; the 304 and the 200 both carry `no-store` and `Vary`; a `base` over `WORKSPACE_STATE_MAX_BYTES` is 400 `base_too_large` with nothing written, and that check runs **before** the workspace lookup (an unknown id with an oversized base is 400, not 404); a `state` under the cap whose merged result exceeds it is 400 `state_too_large` with nothing written, leaving the entry and the rev as they were. |
+| `TestWorkspaceConfigState` | 18 | The legacy fold under `workspaceState.default` (persisted, unrelated keys kept) and its idempotence by mtime; `GET /api/config` is read-only and returns the stored shape with empty state maps spliced in; `POST /api/config` strips `workspaceState`, `workspaceStateRev` and every scoped key, keeps the stored state, and never creates `state.json`; a corrupt preferences read refuses the POST with 500 `write_failed`; the startup split moves an existing `workspaceState`; an empty config is not rewritten; the state write merges and preserves other entries; non-object/missing/oversized bodies rejected (400 with `bad_body` / `state_too_large`), the exact cap accepted, and a failed state write is a 500 `write_failed`. |
+| `TestWorkspaceStateSync` | 21 | Sync §17.2 against `config/state.json`. `GET /api/workspace-state` returns `{ok, id, rev, state}`; **304 with an empty body** when `rev` equals the stored rev; `state: {}` and `rev: 0` for an entry never written; 400 `bad_body` without an `id`; 404 `unknown_workspace`; `POST` with `base` equal to the stored entry stores `state` verbatim and answers the **new** rev and the stored state; a stale `base` merges per session (both sides' changes survive, a same-session edit takes the client's copy, a delete applies only to an untouched session, an add from either side survives); a replay is idempotent but still bumps the rev; a missing `base` is 400 `bad_body` and writes nothing; the rev is monotonic across a `POST /api/config` (never regresses); deleting a workspace removes its state entry and rev; a viewer may GET and is refused POST; the 304 and the 200 both carry `no-store` and `Vary`; a `base` over `WORKSPACE_STATE_MAX_BYTES` is 400 `base_too_large` with nothing written, and that check runs **before** the workspace lookup (an unknown id with an oversized base is 400, not 404); a `state` under the cap whose merged result exceeds it is 400 `state_too_large` with nothing written, leaving the entry and the rev as they were. |
+| `TestWorkspaceStateFile` | 8 | `config/state.json`: the startup split keeps the higher rev per workspace (state file or config copy), writes the state file first and strips `config.json`, and is idempotent; a corrupt, wrongly shaped or future-version file is renamed `state.json.corrupt-<epoch>` and the readable `config.json` copy seeds the new file; a bad file makes state writes 500 `write_failed` with `Could not write workspace state: …` and reads answer the empty shape; `GET /api/config` splices the state and the poll 304s; the prefs POST cannot create the state file. |
 | `TestWorkspaceStateMerge` | 18 | The pure merge (no HTTP): `_session_key` ignores `activeFile` and a non-list `openFiles`; every three-way rule (add from either side, same-session edit, delete untouched, resurrect a server-changed delete, peer-only session, order); the list-field rule; replay idempotence; non-dict and malformed inputs (a non-list `sessions` never raises); unusable and duplicate entries; `_workspace_state_rev` for missing, non-int, negative, bool and non-dict maps. |
 | `TestWorkspaceCacheHeaders` | 4 | Every gated read carries `Vary: X-Notebook-Workspace` plus `Cache-Control: no-store`; the data-route unknown-workspace 404s vary too, as do the non-data routes that answer an unknown id; `POST /api/workspace-state` varies |
 
@@ -174,9 +178,10 @@ cross-device read/write pair ([`architecture/sessions.md`](../architecture/sessi
 no body, no route accepts a client-supplied `workspaceStateRev` (so a rev can
 never move backwards), and a stale write is **merged**, never rejected — a
 conflict status was designed out because it made the loser's own change vanish.
-The "fold stray legacy keys on POST" assertion now lives on
-`_migrate_config_at_startup`; `TestWorkspaceConfigState` asserts the inverted
-rule, that a whole-blob POST strips the state and re-attaches the stored maps.
+`TestWorkspaceStateFile` pins the ownership split: one file, one writer, the
+startup split keeping the higher rev per workspace, and a corrupt file
+quarantined instead of merged. `TestWorkspaceConfigState` asserts that a
+whole-blob POST strips the state keys and never opens `state.json`.
 
 Residual test gap: no auth-off case asserts the loopback refusal on
 `/api/workspace-state` (the refusal cases cover only the three registry

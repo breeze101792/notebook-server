@@ -1,0 +1,48 @@
+{
+  "_comment": "Copy to config/ai.json. If config/ai.json already exists, merge by hand: copying over it replaces your providers. Two provider kinds live here: OpenAI-compatible endpoints in \"servers\", and ACP agents (Claude Code, opencode, Codex, ...) in \"acp\". Settings -> AI can write \"servers\" and the browser-owned half of \"acp\" (name, agent, model); command, args, env, cwd and timeout are hand-edited only and are preserved across a save. This file holds API keys in cleartext: keep it out of version control.",
+  "_fields": {
+    "servers[].name": "required, 1-60 characters, unique across servers and ACP profiles. The picker label and the value Settings posts as a provider name.",
+    "servers[].base_url": "required, http(s) URL. A trailing slash and a trailing /v1 are stripped on save; /v1/chat/completions is appended for a chat request.",
+    "servers[].api_key": "optional. Sent as the Authorization bearer token to base_url and never echoed back (the API reports hasKey instead). Leave it blank on a save to keep the stored one.",
+    "servers[].model": "optional. Sent as the request's \"model\" field; empty means the provider's own default.",
+    "acp[].name": "required, 1-60 characters, unique across servers and ACP profiles. Shown as \"<name> \u00b7 <model>\" in the picker.",
+    "acp[].agent": "allowlist key, mutually exclusive with command. The executable and argv are resolved server-side from ACP_KNOWN_AGENTS; the browser may only name a key. Keys: opencode, claude, codex, gemini, goose, cursor, qwen, kimi, cline, openhands, auggie, copilot, kiro. An entry with a key this server does not know, or a key whose binary is missing, still loads but is listed as not available and is not selectable.",
+    "acp[].command": "escape hatch for an agent the table does not know: argv[0] only, no shell, so a wrapper executable belongs here and the agent goes in args. An entry with a command is file-owned: the browser cannot edit or delete it, a save preserves it verbatim, and a browser entry reusing its name is refused. A single string such as \"systemd-run --scope opencode acp\" silently fails.",
+    "acp[].args": "optional string array, at most 32 items of 1000 characters each. Used only with command.",
+    "acp[].cwd": "optional string. The agent's working directory; empty means the active workspace root, so a relative tool call resolves against that notebook.",
+    "acp[].env": "optional string-to-string map, overlaid on the server's own environment for the child process only (the profile wins on a key collision). This is where an agent credential belongs, for example {\"ANTHROPIC_MODEL\": \"sonnet\"}. It is never sent to the browser. A save keeps the stored env only while the entry's agent stays the same.",
+    "acp[].model": "optional, at most 200 characters. The agent's own model id, applied after session/new through the session's model config option. The agent chooses the accepted values: opencode wants \"ollama/qwen3.8:latest\"; the Claude adapter wants a family alias such as sonnet, opus, haiku or default. A full id that the adapter normalises onto an alias can be applied and still fail the server's echo check. Empty shows the label ACP.",
+    "acp[].default": "optional boolean. true nominates the profile as the fallback default when the top-level \"default\" names nothing usable. A default chosen in Settings wins; the server never rewrites this flag.",
+    "acp[].timeout": "optional number of seconds, positive and finite. Per-turn wall-clock cap; default 900.",
+    "default": "optional. Name of the server or ACP profile the picker selects first. \"\" falls back to the first profile flagged default:true, then to the first entry.",
+    "custom_prompt": "optional, at most 8000 characters. Global assistant instructions: appended to the notebook's system prompt and to the ACP preamble, for whichever provider is active.",
+    "searxng_url": "optional http(s) URL of a SearXNG instance the search tool queries. Empty, or unreachable, falls back to a keyless Yahoo results page fetched by the server."
+  },
+  "servers": [
+    {
+      "name": "local",
+      "base_url": "http://localhost:11434",
+      "api_key": "",
+      "model": "llama3"
+    }
+  ],
+  "acp": [
+    {
+      "name": "opencode",
+      "agent": "opencode",
+      "cwd": "",
+      "model": "ollama/qwen3.8:latest",
+      "default": true
+    },
+    {
+      "name": "my-wrapper",
+      "command": "/usr/local/bin/my-agent",
+      "args": ["--acp"],
+      "env": {"AGENT_API_KEY": "replace-me"},
+      "timeout": 900
+    }
+  ],
+  "default": "local",
+  "custom_prompt": "",
+  "searxng_url": ""
+}

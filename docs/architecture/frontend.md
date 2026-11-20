@@ -238,7 +238,7 @@ updating both files in the same change. See
 
 There is no IndexedDB and no `sessionStorage` anywhere in the frontend.
 
-### `config/config.json` — server-persisted UI state
+### `config/config.json` — server-persisted UI preferences
 
 The server stores this file verbatim with no validation. The authoritative
 schema is `DEFAULTS` in `app.js`:
@@ -276,9 +276,12 @@ schema is `DEFAULTS` in `app.js`:
 | `shortcuts` | `{}` | Per-action chord overrides; missing keys fall back to `shortcuts.js` defaults |
 
 The workspace-scoped keys (declared in `WORKSPACE_STATE_KEYS`,
-`app.js`) live under `workspaceState.<workspace id>` on a workspace
-page and are written through `POST /api/workspace-state`, not the whole-blob
-config POST:
+`app.js`) live in `config/state.json` under `states.<workspace id>` on a
+workspace page and are written through `POST /api/workspace-state`, not the
+whole-blob config POST. The boot payload still carries them under the
+historical `workspaceState` / `workspaceStateRev` keys: `GET /api/config`
+splices `states` and `revs` in from that file, always as objects (`{}` when
+nothing is saved), so `app.js` boots from one response. The scoped keys:
 
 | Key | Default | Notes |
 | --- | --- | --- |
@@ -295,7 +298,7 @@ config POST:
 `app.js` writes this through a debounced `persistConfig()`
 (`app.js`).
 
-**Cross-device sync (designed, not implemented).** The sync extension
+**Cross-device sync.** The sync extension
 ([`sessions.md`](sessions.md) §17) reads this state while the page is open, not
 only at boot. The split is:
 
@@ -308,8 +311,8 @@ only at boot. The split is:
 Two consequences for anyone touching this state:
 
 - `POST /api/config` no longer carries it. The server strips `workspaceState`,
-  `workspaceStateRev` and every scoped key from a whole-blob POST and re-attaches
-  its own copy, so `/api/workspace-state` is the only writer.
+  `workspaceStateRev` and every scoped key from a whole-blob POST and never
+  opens `state.json`, so `/api/workspace-state` is the only writer.
 - A poll that changes nothing in the shared projection must not touch `cfg`,
   emit `config:changed`, or write. `activeFile`-only traffic is the common case:
   every tab click on a peer changes it.
@@ -362,7 +365,7 @@ PNG). The phone Home Screen icon is `/static/icons/apple-touch-icon-v2.png`
 probes those paths. Without them the SPA catch-all answered with HTML and iOS
 cached a broken icon.
 
-`static/sw.js` uses cache version `notebook-v23` (`sw.js`) with three
+`static/sw.js` uses cache version `notebook-v33` (`sw.js`) with three
 strategies:
 
 - **Pages and static assets**: network-first. A successful response is
@@ -535,8 +538,11 @@ Shortcuts, Security, AI, About. The Workspaces tab is rendered only when
   its own per-section Save/Remove buttons and a page reload on success.
 - AI edits provider profiles against `GET/POST /api/ai/config`. Editing
   an existing profile never re-sends its key; a blank `apiKey` with
-  `replaceSecret: true` carries the stored key over server-side. The Web
-  search field sets the SearXNG URL and has its own Save button.
+  `replaceSecret: true` carries the stored key over server-side. The same
+  tab edits the ACP profiles (add a detected agent, edit its model, remove
+  it, set the default); they travel as the `acp` field of the same POST,
+  and a file-owned `command` entry is read-only there. The Web search field
+  sets the SearXNG URL and has its own Save button.
 - About shows version and project information.
 
 ### Hybrid mode

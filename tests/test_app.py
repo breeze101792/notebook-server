@@ -49,6 +49,35 @@ class BaseTest(unittest.TestCase):
         nb.seed()  # creates notebook/Welcome.md and config/config.json (={})
         self.client = nb.app.test_client()
 
+    # --- AI config fixtures ---------------------------------------------
+    def read_ai(self):
+        """The stored ai.json document, {} when the file does not exist."""
+        try:
+            with open(nb.AI_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (FileNotFoundError, ValueError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def write_ai(self, data):
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+
+    def write_acp(self, obj):
+        """Store the ACP profiles in config/ai.json, keeping other AI keys.
+
+        A dict becomes a one-entry list (the legacy single-profile shape the
+        fixtures were written for); a list is stored as given. Any other
+        value is stored verbatim, so a malformed field can be exercised.
+        """
+        data = self.read_ai()
+        data["acp"] = [obj] if isinstance(obj, dict) else obj
+        self.write_ai(data)
+
+    def read_acp(self):
+        """The raw "acp" value from config/ai.json (any type)."""
+        return self.read_ai().get("acp")
+
     # --- helpers --------------------------------------------------------
     def post(self, path, body):
         return self.client.post(path, json=body)
@@ -2095,7 +2124,10 @@ class TestConfig(BaseTest):
     def test_default_empty(self):
         code, data = self.jget("/api/config")
         self.assertEqual(code, 200)
-        self.assertEqual(data, {})
+        # An empty prefs file still answers with the two state keys, so the
+        # response shape never depends on what is stored.
+        self.assertEqual(data, {"workspaceState": {},
+                                "workspaceStateRev": {}})
 
     def test_roundtrip(self):
         r = self.post("/api/config", {"theme": "light", "lastFile": "a.md",
@@ -3825,14 +3857,13 @@ class TestAiChat(BaseTest):
                              ).status_code, 401)
 
     def test_acp_name_collision_routes_to_openai_profile(self):
-        # With an ai.json profile and a config/acp.json profile sharing a name,
-        # the collision disables ACP, so POST /api/ai/chat must resolve the
+        # With an ai.json server and an ACP profile sharing a name, the
+        # collision disables ACP, so POST /api/ai/chat must resolve the
         # OpenAI profile and relay it -- never hand the turn to the ACP runner.
         # The ACP command is deliberately unrunnable: were it reached, the
         # response would be an in-band ACP error frame instead of the stream.
-        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-            json.dump({"name": "stub", "command": "/nonexistent/acp-agent",
-                       "args": [], "timeout": 5}, f)
+        self.write_acp({"name": "stub", "command": "/nonexistent/acp-agent",
+                        "args": [], "timeout": 5})
         r = self._chat({"server": "stub",
                         "messages": [{"role": "user", "content": "hi"}]})
         self.assertEqual(r.status_code, 200)
@@ -3865,7 +3896,7 @@ def _pid_reaped(pid, deadline=5.0):
 
 
 class TestAcpConfig(BaseTest):
-    """config/acp.json: a hand-edited, server-local ACP profile.
+    """config/ai.json's "acp" list: the stored ACP profiles.
 
     GET /api/ai/config exposes a masked view under "acp" (name + fixed type
     label + selected agent key + default flag only). Anything malformed turns
@@ -3876,8 +3907,7 @@ class TestAcpConfig(BaseTest):
     """
 
     def _write_acp(self, obj):
-        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-            json.dump(obj, f)
+        self.write_acp(obj)
 
     def _write_ai(self, obj):
         with open(nb.AI_FILE, "w", encoding="utf-8") as f:
@@ -3900,12 +3930,14 @@ class TestAcpConfig(BaseTest):
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
         self.assertEqual(data["acp"], {"name": "opencode", "model": "ACP",
-                                       "hasModel": False,
-                                       "agent": "", "default": True})
+                                       "hasModel": False, "agent": "",
+                                       "default": True, "available": True,
+                                       "editable": False})
         # Only name/model/agent/default reach the browser; the command line and
         # its cwd/env/timeout stay server-side.
         self.assertEqual(set(data["acp"]),
-                         {"name", "model", "hasModel", "agent", "default"})
+                         {"name", "model", "hasModel", "agent", "default",
+                          "available", "editable"})
         self.assertNotIn("command", data["acp"])
         self.assertNotIn("args", data["acp"])
 
@@ -3914,11 +3946,12 @@ class TestAcpConfig(BaseTest):
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
         self.assertEqual(data["acp"], {"name": "opencode", "model": "ACP",
-                                       "hasModel": False,
-                                       "agent": "", "default": False})
+                                       "hasModel": False, "agent": "",
+                                       "default": False, "available": True,
+                                       "editable": False})
 
     def test_missing_file_is_none(self):
-        self.assertFalse(os.path.isfile(nb.ACP_FILE))
+        self.assertEqual(nb.load_acp_configs(), [])
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
         self.assertIsNone(data["acp"])
@@ -3947,46 +3980,50 @@ class TestAcpConfig(BaseTest):
             [1, 2, 3],
         ):
             with self.subTest(bad=bad):
-                if isinstance(bad, str):
-                    with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-                        f.write(bad)          # valid JSON string scalar
-                elif isinstance(bad, list):
-                    with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-                        f.write(json.dumps(bad))
-                else:
-                    self._write_acp(bad)
+                self.write_acp(bad)
                 code, data = self.jget("/api/ai/config")
                 self.assertEqual(code, 200)
                 self.assertIsNone(data["acp"], "expected None for %r" % (bad,))
 
     def test_invalid_json_is_none(self):
-        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
             f.write("{ this is not json")
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
         self.assertIsNone(data["acp"])
 
-    def test_config_post_never_touches_acp_file(self):
-        # A hand-edited ACP profile must survive any number of config saves
-        # byte-for-byte, and no save may ever create the file.
+    def test_config_post_preserves_hand_edited_profiles(self):
+        # A hand-edited "command" entry survives any number of config saves
+        # unchanged, is never dropped by a browser edit of another profile,
+        # and cannot be taken over by a body that reuses its name.
         payload = {"name": "acpstub", "command": "python", "args": ["agent.py"],
                    "cwd": "/tmp", "env": {"A": "b"}, "default": True,
                    "timeout": 12}
-        self._write_acp(payload)
-        with open(nb.ACP_FILE, "rb") as f:
-            before = f.read()
+        self.write_acp(payload)
+        before = self.read_acp()[0]
         r = self.post("/api/ai/config", {"servers": [{
             "name": "openai", "baseUrl": "https://api.openai.com",
             "apiKey": "sk-secret", "model": "gpt-4o-mini",
         }], "default": "openai", "customPrompt": "hi"})
         self.assertEqual(r.status_code, 200)
-        with open(nb.ACP_FILE, "rb") as f:
-            self.assertEqual(f.read(), before)
-        # And starting with no file, a save must not create one.
-        os.remove(nb.ACP_FILE)
+        self.assertEqual(self.read_acp(), [before])
+        # A save that omits "acp" leaves the list exactly as it was.
         r = self.post("/api/ai/config", {"servers": [], "default": ""})
         self.assertEqual(r.status_code, 200)
-        self.assertFalse(os.path.isfile(nb.ACP_FILE))
+        self.assertEqual(self.read_acp(), [before])
+        # Editing a browser-owned profile keeps the hand-edited one too.
+        r = self.post("/api/ai/config", {
+            "servers": [], "acp": [{"name": "oc", "agent": "opencode"}]})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        entries = self.read_acp()
+        self.assertEqual([e["name"] for e in entries], ["oc", "acpstub"])
+        self.assertEqual(entries[1], before)
+        # Reusing the hand-edited name is refused, not merged: otherwise a
+        # POST could attach this entry's env/cwd to a spawnable profile.
+        r = self.post("/api/ai/config", {
+            "servers": [], "acp": [{"name": "acpstub", "agent": "opencode"}]})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("hand-edited", r.get_json()["error"])
 
     def test_name_collision_with_ai_profile_disables_acp(self):
         # A name shared with an ai.json profile would be a dead picker entry:
@@ -4006,38 +4043,30 @@ class TestAcpConfig(BaseTest):
                          "args": ["acp"]})
         code, data = self.jget("/api/ai/config")
         self.assertEqual(data["acp"], {"name": "other", "model": "ACP",
-                                       "hasModel": False,
-                                       "agent": "", "default": False})
+                                       "hasModel": False, "agent": "",
+                                       "default": False, "available": True,
+                                       "editable": False})
         # ...and removing the colliding profile re-enables the entry.
         self._write_acp({"name": "shared", "command": "opencode",
                          "args": ["acp"]})
         self.post("/api/ai/config", {"servers": [], "default": ""})
         code, data = self.jget("/api/ai/config")
         self.assertEqual(data["acp"], {"name": "shared", "model": "ACP",
-                                       "hasModel": False,
-                                       "agent": "", "default": False})
+                                       "hasModel": False, "agent": "",
+                                       "default": False, "available": True,
+                                       "editable": False})
 
-    # --- multiple profiles (config/acp.json shapes) -----------------------
+    # --- multiple profiles (stored list shape) -----------------------------
     def test_all_config_shapes_load(self):
-        # A lone legacy object, the canonical {"profiles": [...]} shape and a
-        # bare array all name the same profile list, in file order.
-        self._write_acp({"name": "legacy", "command": "echo"})
+        # The stored list is always a list in file order; the legacy
+        # acp.json shapes are covered by TestAcpMigration.
+        self.write_acp([{"name": "one", "command": "echo"},
+                        {"name": "two", "command": "echo"}])
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
-        self.assertEqual([p["name"] for p in data["acps"]], ["legacy"])
-        self.assertEqual(data["acp"], data["acps"][0])
-
-        two = [{"name": "one", "command": "echo"},
-               {"name": "two", "command": "echo"}]
-        for shape, payload in (("profiles", {"profiles": two}),
-                               ("bare", two)):
-            with self.subTest(shape=shape):
-                self._write_acp(payload)
-                code, data = self.jget("/api/ai/config")
-                self.assertEqual(code, 200)
-                self.assertEqual([p["name"] for p in data["acps"]],
-                                 ["one", "two"])
-                self.assertEqual(data["acp"], data["acps"][0])
+        self.assertEqual([p["name"] for p in data["acps"]], ["one", "two"])
+        # The legacy scalar is the first entry that can actually launch.
+        self.assertEqual(data["acp"]["name"], "one")
 
     def test_one_invalid_entry_is_dropped_not_the_rest(self):
         # Validation is per entry: a typo in one profile must not disable its
@@ -4078,7 +4107,9 @@ class TestAcpConfig(BaseTest):
         ])
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
-        self.assertEqual([p["name"] for p in data["acps"]], ["free"])
+        self.assertEqual([(p["name"], p["available"]) for p in data["acps"]],
+                         [("shared", False), ("free", True)])
+        self.assertEqual(data["acp"]["name"], "free")
 
     def test_model_validation(self):
         long_ok = "m" * nb.ACP_MAX_MODEL_LEN
@@ -4105,23 +4136,26 @@ class TestAcpConfig(BaseTest):
                     self.assertEqual(data["acps"][0]["hasModel"],
                                      expected != nb.ACP_LABEL)
                 else:
-                    self.assertEqual(data["acps"], [])
+                    self.assertEqual([(p["available"], p["model"])
+                                      for p in data["acps"]],
+                                     [(False, nb.ACP_LABEL)])
                     self.assertIsNone(data["acp"])
 
     def test_public_profile_exposes_only_safe_keys(self):
         # command/args/env/cwd/timeout stay server-side for every profile, and
         # the legacy "acp" key is exactly the first one.
-        self._write_acp({"profiles": [
+        self._write_acp([
             {"name": "one", "command": "x", "cwd": "/tmp",
              "env": {"A": "b"}, "timeout": 9},
             {"name": "two", "command": "y"},
-        ]})
+        ])
         code, data = self.jget("/api/ai/config")
         self.assertEqual(code, 200)
         self.assertEqual([p["name"] for p in data["acps"]], ["one", "two"])
         for profile in data["acps"]:
             self.assertEqual(set(profile),
-                             {"name", "model", "hasModel", "agent", "default"})
+                             {"name", "model", "hasModel", "agent", "default",
+                              "available", "editable"})
             for forbidden in ("command", "args", "env", "cwd", "timeout"):
                 self.assertNotIn(forbidden, profile)
         self.assertEqual(data["acp"], data["acps"][0])
@@ -4173,11 +4207,15 @@ class TestAcpConfig(BaseTest):
             self.assertEqual(json.load(f)["default"], "p1")
 
     def test_post_rejects_server_colliding_with_acp_profile(self):
+        # A hand-edited command profile cannot be dropped by a save, so the
+        # collision is refused; a keyed profile under the same name is dead
+        # and the next save removes it instead (see TestAcpWrite).
         self._write_acp({"name": "p1", "command": "x"})
         r = self.post("/api/ai/config", {"servers": [{
             "name": "p1", "baseUrl": "http://x"}]})
         self.assertEqual(r.status_code, 400)
-        self.assertIn("collides with an ACP profile", r.get_json()["error"])
+        self.assertIn("collides with a hand-edited ACP profile",
+                      r.get_json()["error"])
 
     def test_post_rejects_default_naming_nothing(self):
         self._write_acp({"name": "p1", "command": "x"})
@@ -4290,7 +4328,7 @@ class TestAcpConfig(BaseTest):
 
 
 class TestAcpChat(BaseTest):
-    """POST /api/ai/chat driven through the ACP branch (config/acp.json).
+    """POST /api/ai/chat driven through the ACP branch (ai.json "acp").
 
     Every turn spawns one stub agent subprocess (tests/fixtures/
     stub_acp_agent.py -- stdlib-only, newline-delimited JSON-RPC on stdio).
@@ -4325,15 +4363,13 @@ class TestAcpChat(BaseTest):
                "timeout": timeout}
         if model is not None:
             cfg["model"] = model
-        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f)
+        self.write_acp(cfg)
 
     def _configure_acp_agent(self, key, timeout=15, name=None):
-        """Write config/acp.json in the key-based form (no command/args)."""
+        """Store the key-based form (no command/args) in config/ai.json."""
         cfg = {"name": name or self.SERVER, "agent": key,
                "cwd": nb.DATA_DIR, "timeout": timeout}
-        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f)
+        self.write_acp(cfg)
 
     def _chat(self, body):
         return self.client.post("/api/ai/chat", json=body)
@@ -4344,9 +4380,11 @@ class TestAcpChat(BaseTest):
             json.dump(obj, f)
 
     def _write_ai_custom_prompt(self, text):
-        """Write config/ai.json carrying the global custom prompt."""
-        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
-            json.dump({"servers": [], "default": "", "custom_prompt": text}, f)
+        """Set the global custom prompt in config/ai.json, keeping the rest."""
+        data = self.read_ai()
+        data["custom_prompt"] = text
+        data.setdefault("servers", [])
+        self.write_ai(data)
 
     def _user_turn(self, text="hello"):
         return {"server": self.SERVER,
@@ -5242,7 +5280,8 @@ class TestBackendHelperBranches(BaseTest):
         self.assertEqual(nb._read_public_config(), {})
         # GET /api/config and the SPA shell both degrade to defaults.
         code, data = self.jget("/api/config")
-        self.assertEqual((code, data), (200, {}))
+        self.assertEqual(code, 200)
+        self.assertEqual(data["workspaceState"], {})
         self.assertEqual(self.client.get("/").status_code, 200)
 
     def test_chat_url_strips_trailing_v1(self):
@@ -5397,13 +5436,280 @@ class TestAuthLoginValidation(BaseTest):
                       r.get_json()["error"])
 
 
+class TestAcpMigration(BaseTest):
+    """config/acp.json is folded into config/ai.json once, raw entries kept."""
+
+    def write_legacy(self, obj):
+        with open(nb.ACP_LEGACY_FILE, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+
+    def test_a_legacy_file_is_folded_in_and_renamed(self):
+        self.write_ai({"servers": [], "default": ""})
+        self.write_legacy({"name": "opencode", "agent": "opencode",
+                           "cwd": "/notes", "timeout": 30})
+        self.assertTrue(nb._migrate_acp_file())
+        self.assertEqual(self.read_acp(), [{"name": "opencode",
+                                            "agent": "opencode",
+                                            "cwd": "/notes", "timeout": 30}])
+        self.assertFalse(os.path.isfile(nb.ACP_LEGACY_FILE))
+        self.assertTrue(os.path.isfile(nb.ACP_LEGACY_FILE + ".migrated"))
+        # The raw entry is stored, not the loader's resolved command: writing
+        # that back would add a "command" the next read rejects.
+        self.assertNotIn("command", self.read_acp()[0])
+        # Idempotent: the legacy file is gone, so nothing is folded twice.
+        self.assertFalse(nb._migrate_acp_file())
+
+    def test_both_legacy_shapes_are_folded_in(self):
+        for shape, payload in (
+                ("profiles", {"profiles": [{"name": "one", "command": "echo"},
+                                           {"name": "two", "command": "echo"}]}),
+                ("bare", [{"name": "one", "command": "echo"},
+                          {"name": "two", "command": "echo"}])):
+            with self.subTest(shape=shape):
+                self.setUp()
+                self.write_legacy(payload)
+                self.assertTrue(nb._migrate_acp_file())
+                self.assertEqual([e["name"] for e in self.read_acp()],
+                                 ["one", "two"])
+
+    def test_names_already_stored_are_not_copied_again(self):
+        self.write_ai({"servers": [], "acp": [
+            {"name": "opencode", "agent": "opencode", "model": "m"}]})
+        self.write_legacy([{"name": "opencode", "agent": "opencode"},
+                           {"name": "extra", "agent": "opencode"}])
+        self.assertTrue(nb._migrate_acp_file())
+        self.assertEqual([e["name"] for e in self.read_acp()],
+                         ["opencode", "extra"])
+        self.assertEqual(self.read_acp()[0]["model"], "m")
+
+    def test_an_existing_archive_is_not_clobbered(self):
+        earlier = nb.ACP_LEGACY_FILE + nb.ACP_LEGACY_SUFFIX
+        with open(earlier, "w", encoding="utf-8") as f:
+            f.write("{}")
+        self.write_legacy({"name": "opencode", "agent": "opencode"})
+        self.assertTrue(nb._migrate_acp_file())
+        self.assertTrue(os.path.isfile(earlier))
+        self.assertTrue(os.path.isfile(earlier + ".1"))
+
+    def test_an_unparseable_ai_json_leaves_the_legacy_file_alone(self):
+        with open(nb.AI_FILE, "w", encoding="utf-8") as f:
+            f.write("{ not json")
+        self.write_legacy({"name": "opencode", "agent": "opencode"})
+        self.assertFalse(nb._migrate_acp_file())
+        self.assertTrue(os.path.isfile(nb.ACP_LEGACY_FILE))
+        with open(nb.AI_FILE, "r", encoding="utf-8") as f:
+            self.assertEqual(f.read(), "{ not json")
+
+
+class TestAcpWrite(BaseTest):
+    """POST /api/ai/config: the browser-editable half of the ACP list."""
+
+    def save(self, acp=None, **extra):
+        body = {"servers": [], "default": ""}
+        if acp is not None:
+            body["acp"] = acp
+        body.update(extra)
+        return self.post("/api/ai/config", body)
+
+    def test_add_edit_and_remove_an_allowlisted_profile(self):
+        r = self.save([{"name": "oc", "agent": "opencode",
+                        "model": "ollama/x", "default": False}])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        stored = self.read_acp()[0]
+        self.assertEqual(stored, {"name": "oc", "agent": "opencode",
+                                  "model": "ollama/x", "default": False})
+        # Edit the model: the entry is replaced in place, no duplicates.
+        r = self.save([{"name": "oc", "agent": "opencode",
+                        "model": "ollama/y"}])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.read_acp(),
+                         [{"name": "oc", "agent": "opencode",
+                           "model": "ollama/y", "default": False}])
+        # Removing it from the body removes it from the file.
+        r = self.save([])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.read_acp(), [])
+
+    def test_a_body_cannot_supply_command_args_env_cwd_or_timeout(self):
+        for field, value in (("command", "/bin/sh"), ("args", ["x"]),
+                             ("env", {"LD_PRELOAD": "/tmp/x.so"}),
+                             ("cwd", "/etc"), ("timeout", 1)):
+            with self.subTest(field=field):
+                r = self.save([{"name": "oc", "agent": "opencode",
+                                field: value}])
+                self.assertEqual(r.status_code, 400)
+                self.assertIn("may not set " + field, r.get_json()["error"])
+
+    def test_a_profile_needs_a_known_agent(self):
+        r = self.save([{"name": "x", "agent": "not-an-agent"}])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("not a known agent", r.get_json()["error"])
+        r = self.save([{"name": "x"}])
+        self.assertEqual(r.status_code, 400)
+
+    def test_a_carried_over_env_stays_on_its_own_entry(self):
+        # A hand-edited allowlist entry may carry cwd/env; an edit keeps
+        # them, and they never move to an entry the body creates.
+        self.write_acp([{"name": "oc", "agent": "opencode",
+                         "env": {"AGENT_KEY": "s"}, "cwd": "/work"}])
+        r = self.save([{"name": "oc", "agent": "opencode", "model": "m"},
+                       {"name": "fresh", "agent": "opencode"}])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        entries = {e["name"]: e for e in self.read_acp()}
+        self.assertEqual(entries["oc"]["env"], {"AGENT_KEY": "s"})
+        self.assertEqual(entries["oc"]["cwd"], "/work")
+        self.assertNotIn("env", entries["fresh"])
+        self.assertNotIn("cwd", entries["fresh"])
+
+    def test_an_unavailable_profile_is_listed_but_not_selectable(self):
+        self.write_acp([{"name": "oc", "agent": "opencode"}])
+        with mock.patch.object(nb, "_acp_agent_command", return_value=None):
+            code, data = self.jget("/api/ai/config")
+            self.assertIsNone(data["acp"])
+            self.assertEqual([(p["name"], p["available"]) for p in data["acps"]],
+                             [("oc", False)])
+            self.assertTrue(data["acps"][0]["editable"])
+            # It is still listed and still saved back, so uninstalling an
+            # agent does not delete the profile on the next save.
+            r = self.save([{"name": "oc", "agent": "opencode"}])
+            self.assertEqual(r.status_code, 200)
+            self.assertEqual(len(self.read_acp()), 1)
+
+    def test_the_default_may_name_an_unavailable_profile(self):
+        self.write_acp([{"name": "oc", "agent": "opencode"}])
+        r = self.save(default="oc")
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(r.get_json()["default"], "oc")
+        self.assertEqual(self.read_ai()["default"], "oc")
+
+    def test_editing_acp_requires_loopback_while_auth_is_off(self):
+        remote = {"environ_base": {"REMOTE_ADDR": "10.20.30.40"}}
+        r = self.client.post("/api/ai/config", json={
+            "servers": [], "acp": [{"name": "oc", "agent": "opencode"}]},
+            **remote)
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.get_json()["code"], "loopback_required")
+        # A prefs-only save from the same peer is still allowed.
+        r = self.client.post("/api/ai/config",
+                             json={"servers": [], "default": ""}, **remote)
+        self.assertEqual(r.status_code, 200)
+
+    def test_an_entry_with_an_unknown_agent_is_file_owned(self):
+        # The browser could not name that agent in a body, so offering an
+        # edit would delete the profile on the next save.
+        self.write_acp([{"name": "legacy", "agent": "retired-agent",
+                         "env": {"KEY": "s"}}])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([(p["name"], p["available"], p["editable"])
+                          for p in data["acps"]],
+                         [("legacy", False, False)])
+        r = self.save([])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(len(self.read_acp()), 1)
+        r = self.save([{"name": "legacy", "agent": "opencode"}])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("hand-edited", r.get_json()["error"])
+
+    def test_changing_the_agent_drops_its_hand_edited_context(self):
+        # A credential provisioned for one binary must not follow the name
+        # onto another.
+        self.write_acp([{"name": "op", "agent": "opencode",
+                         "env": {"ANTHROPIC_API_KEY": "s"}, "cwd": "/w",
+                         "timeout": 12}])
+        r = self.save([{"name": "op", "agent": "codex", "model": ""}])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        stored = self.read_acp()[0]
+        self.assertEqual(stored["agent"], "codex")
+        for gone in ("env", "cwd", "timeout"):
+            self.assertNotIn(gone, stored)
+
+    def test_the_profile_default_flag_survives_a_save_that_omits_it(self):
+        self.write_acp([{"name": "oc", "agent": "opencode", "default": True}])
+        r = self.save([{"name": "oc", "agent": "opencode", "model": "m"}])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertTrue(self.read_acp()[0]["default"])
+        r = self.save([{"name": "oc", "agent": "opencode", "default": False}])
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(self.read_acp()[0]["default"])
+
+    def test_a_duplicate_hand_owned_name_is_never_taken_over(self):
+        # A hand-edited file may repeat a name. A body naming it must be
+        # refused even when the first entry of that name is browser-owned,
+        # or the preserve loop would drop the other one silently.
+        self.write_legacy_free_stored = None
+        self.write_acp([{"name": "x", "agent": "opencode"},
+                        {"name": "x", "command": "/bin/echo"}])
+        r = self.save([{"name": "x", "agent": "opencode"}])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("hand-edited", r.get_json()["error"])
+        self.assertEqual(len(self.read_acp()), 2)
+
+    def test_the_list_is_bounded(self):
+        entries = [{"name": "p%d" % i, "agent": "opencode"}
+                   for i in range(nb.ACP_MAX_PROFILES + 1)]
+        r = self.save(entries)
+        self.assertEqual(r.status_code, 400)
+        self.assertIn(str(nb.ACP_MAX_PROFILES), r.get_json()["error"])
+
+    def test_a_name_that_collides_with_a_server_stays_file_owned(self):
+        # The route refuses a body that reuses a server name, so the row must
+        # not be offered as editable -- otherwise every save would 400.
+        self.write_ai({"servers": [{"name": "shared", "base_url": "http://x",
+                                    "api_key": "", "model": ""}],
+                       "default": "shared",
+                       "acp": [{"name": "shared", "agent": "opencode"}]})
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        self.assertEqual([(p["name"], p["editable"]) for p in data["acps"]],
+                         [("shared", False)])
+        # A save that keeps the server (and omits "acp") leaves the profile
+        # alone; it is only deletable by dropping the server name first.
+        r = self.post("/api/ai/config", {
+            "servers": [{"name": "shared", "baseUrl": "http://x",
+                         "model": ""}],
+            "default": "shared"})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(len(self.read_acp()), 1)
+        # The dead entry disappears as soon as a save carries the ACP list;
+        # a hand-owned collision is refused instead, because nothing can drop
+        # it automatically.
+        r = self.save([])
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        self.assertEqual(self.read_acp(), [])
+        self.write_acp([{"name": "shared", "command": "/bin/echo"}])
+        r = self.post("/api/ai/config", {
+            "servers": [{"name": "shared", "baseUrl": "http://x"}],
+            "default": "shared"})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("hand-edited ACP profile", r.get_json()["error"])
+
+    def test_an_empty_forwarding_header_still_marks_a_proxy(self):
+        r = self.client.post(
+            "/api/ai/config",
+            json={"servers": [], "acp": [{"name": "oc", "agent": "opencode"}]},
+            headers={"X-Forwarded-For": ""})
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.get_json()["code"], "loopback_required")
+
+    def test_the_view_never_carries_command_or_env(self):
+        self.write_acp([{"name": "oc", "agent": "opencode",
+                         "env": {"SECRET": "s"}, "cwd": "/w", "timeout": 9,
+                         "command": ""}])
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200)
+        for profile in data["acps"]:
+            self.assertEqual(set(profile),
+                             {"name", "model", "hasModel", "agent", "default",
+                              "available", "editable"})
+
+
 class TestAcpConfigBranches(BaseTest):
     """load_acp_config() defaults for args/cwd/env that the malformed-file
     table does not cover."""
 
     def _write(self, obj):
-        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-            json.dump(obj, f)
+        self.write_acp(obj)
 
     def test_args_none_and_cwd_none_default(self):
         self._write({"name": "x", "command": "/bin/true",
@@ -5638,10 +5944,9 @@ class TestAcpChatErrorPaths(BaseTest):
 
     def setUp(self):
         super().setUp()
-        with open(nb.ACP_FILE, "w", encoding="utf-8") as f:
-            json.dump({"name": self.NAME, "command": sys.executable,
-                       "args": ["-c", "raise SystemExit(0)"],
-                       "timeout": 5}, f)
+        self.write_acp({"name": self.NAME, "command": sys.executable,
+                        "args": ["-c", "raise SystemExit(0)"],
+                        "timeout": 5})
 
     def _chat(self, body):
         return self.client.post("/api/ai/chat", json=body)
@@ -6065,15 +6370,88 @@ class TestCliUnit(unittest.TestCase):
     """parse_args / reachable_urls / _lan_ipv4_addresses, without running
     a server."""
 
-    def test_parse_args_defaults_and_flags(self):
+    def test_parse_args_flags_and_unset_defaults(self):
+        # Unset flags stay None: that is what lets config/server.json fill
+        # them and what lets --no-debug beat a "debug": true in the file.
         args = nb.parse_args([])
-        self.assertEqual(args.host, "0.0.0.0")
-        self.assertEqual(args.port, 5000)
-        self.assertFalse(args.debug)
+        self.assertIsNone(args.host)
+        self.assertIsNone(args.port)
+        self.assertIsNone(args.debug)
         args = nb.parse_args(["--host", "127.0.0.1", "--port", "8080",
                               "--debug"])
         self.assertEqual((args.host, args.port, args.debug),
                          ("127.0.0.1", 8080, True))
+        self.assertFalse(nb.parse_args(["--no-debug"]).debug)
+
+    def test_startup_precedence_cli_then_file_then_default(self):
+        self.assertEqual(nb.resolve_startup(nb.parse_args([]), {}),
+                         (nb.DEFAULT_HOST, nb.DEFAULT_PORT,
+                          nb.DEFAULT_DEBUG))
+        stored = {"host": "10.0.0.5", "port": 8080, "debug": True}
+        self.assertEqual(nb.resolve_startup(nb.parse_args([]), stored),
+                         ("10.0.0.5", 8080, True))
+        args = nb.parse_args(["--host", "127.0.0.1", "--port", "9000",
+                              "--no-debug"])
+        self.assertEqual(nb.resolve_startup(args, stored),
+                         ("127.0.0.1", 9000, False))
+
+    def test_load_server_config_partial_and_missing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "server.json")
+            self.assertEqual(nb.load_server_config(path), {})
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump({"port": 8080, "unknown": "ignored"}, f)
+            self.assertEqual(nb.load_server_config(path), {"port": 8080})
+
+    def test_load_server_config_rejects_bad_values(self):
+        bad_bodies = [
+            {"host": ""},
+            {"host": 7},
+            {"port": "8080"},
+            {"port": True},
+            {"port": 0},
+            {"port": nb.SERVER_PORT_MAX + 1},
+            {"debug": "yes"},
+            [],
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "server.json")
+            for body in bad_bodies:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(body, f)
+                with self.assertRaises(ValueError, msg=repr(body)):
+                    nb.load_server_config(path)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("{not json")
+            with self.assertRaises(ValueError):
+                nb.load_server_config(path)
+
+    def test_parse_args_accepts_port_bounds(self):
+        self.assertEqual(nb.parse_args(["-p", str(nb.SERVER_PORT_MIN)]).port,
+                         nb.SERVER_PORT_MIN)
+        self.assertEqual(nb.parse_args(["-p", str(nb.SERVER_PORT_MAX)]).port,
+                         nb.SERVER_PORT_MAX)
+
+    def test_parse_args_refuses_out_of_range_ports(self):
+        # The flag obeys the same bounds as the file, so a bad value is a
+        # usage error (exit 2) instead of a bind traceback or port 0.
+        for text in ("0", str(nb.SERVER_PORT_MAX + 1), "not-a-port"):
+            with self.subTest(port=text):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    with self.assertRaises(SystemExit) as caught:
+                        nb.parse_args(["-p", text])
+                self.assertEqual(caught.exception.code, 2)
+
+    # --- the copyable examples in config.template/ -----------------------
+    EXAMPLES = os.path.join(ROOT, "config.template")
+
+    def test_server_example_loads_and_ignores_its_doc_keys(self):
+        # The example documents itself inside _comment/_fields; the loader
+        # must take the values and ignore the prose, so a copy works as-is.
+        cfg = nb.load_server_config(
+            os.path.join(self.EXAMPLES, "server.json.example"))
+        self.assertEqual(cfg, {"host": "0.0.0.0", "port": 5000,
+                               "debug": False})
 
     def test_reachable_urls_adds_localhost_and_lan_ips(self):
         with mock.patch.object(nb, "_lan_ipv4_addresses",
@@ -6259,6 +6637,32 @@ class WorkspaceTestBase(BaseTest):
     def read_config_file(self):
         with open(nb.CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
+
+    def write_state(self, states=None, revs=None):
+        """Write config/state.json directly, bypassing the API."""
+        with open(nb.STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"version": nb.STATE_VERSION,
+                       "states": states or {}, "revs": revs or {}}, f)
+
+    def read_state_file(self):
+        """Parsed config/state.json; {} when the file does not exist yet."""
+        try:
+            with open(nb.STATE_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+
+    def stored_states(self):
+        return self.read_state_file().get("states") or {}
+
+    def stored_revs(self):
+        return self.read_state_file().get("revs") or {}
+
+    def run_startup_maintenance(self):
+        """The startup sequence app.py runs at import: fold, quarantine, split."""
+        nb._migrate_config_at_startup()
+        nb._quarantine_bad_state_file()
+        nb._migrate_state_out_of_config()
 
     def set_session_workspace(self, wid):
         with self.client.session_transaction() as sess:
@@ -7146,7 +7550,8 @@ class TestWorkspacePathGuards(WorkspaceTestBase):
 
 
 class TestWorkspaceConfigState(WorkspaceTestBase):
-    """config.json: the startup migration, the scoped-key strip, and the state."""
+    """config.json + state.json: the startup split, the scoped-key strip, and
+    the state itself."""
 
     LEGACY = {
         "lastFile": "a.md",
@@ -7171,54 +7576,65 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
                     "shortcuts": {"x": "y"}})
         self.write_config(cfg)
         self.assertNotIn("workspaceState", self.read_config_file())
-        nb._migrate_config_at_startup()
-        # Persisted under the default workspace, other keys untouched.
+        self.run_startup_maintenance()
+        # The fold puts the legacy keys under the default workspace, the
+        # split carries that entry into state.json, and the prefs file keeps
+        # nothing scoped.
         disk = self.read_config_file()
-        self.assertEqual(disk["workspaceState"],
+        self.assertEqual(self.stored_states(),
                          {nb.WORKSPACE_DEFAULT_ID: self.LEGACY})
         for key in self.LEGACY:
+            self.assertNotIn(key, disk)
+        for key in nb._CONFIG_STATE_KEYS:
             self.assertNotIn(key, disk)
         self.assertEqual(disk["theme"], "light")
         self.assertEqual(disk["sidebarWidth"], 300)
         self.assertEqual(disk["shortcuts"], {"x": "y"})
         code, data = self.jget("/api/config")
         self.assertEqual(code, 200)
-        self.assertEqual(data, disk)
+        self.assertEqual(data["workspaceState"],
+                         {nb.WORKSPACE_DEFAULT_ID: self.LEGACY})
+        for key, value in disk.items():
+            self.assertEqual(data[key], value)
 
     def test_startup_migration_is_idempotent(self):
         self.write_config(dict(self.LEGACY))
-        nb._migrate_config_at_startup()
-        first_stamp = self.file_stamp(nb.CONFIG_FILE)
-        nb._migrate_config_at_startup()
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), first_stamp)
+        self.run_startup_maintenance()
+        first_config = self.file_stamp(nb.CONFIG_FILE)
+        first_state = self.file_stamp(nb.STATE_FILE)
+        self.run_startup_maintenance()
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), first_config)
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), first_state)
         first = self.jget("/api/config")[1]
         self.assertEqual(first["workspaceState"],
                          {nb.WORKSPACE_DEFAULT_ID: self.LEGACY})
         second = self.jget("/api/config")[1]
         self.assertEqual(first, second)
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), first_stamp)
+        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), first_config)
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), first_state)
 
     def test_get_config_is_read_only(self):
         self.write_config(dict(self.LEGACY))
         before = self.file_stamp(nb.CONFIG_FILE)
         code, data = self.jget("/api/config")
         self.assertEqual(code, 200)
-        # The legacy shape is returned as stored; a GET never migrates.
+        # The prefs are returned as stored, with empty state maps spliced in:
+        # a GET never migrates and never creates state.json.
         self.assertEqual(data["lastFile"], "a.md")
-        self.assertNotIn("workspaceState", data)
+        self.assertEqual(data["workspaceState"], {})
+        self.assertEqual(data["workspaceStateRev"], {})
         self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertFalse(os.path.isfile(nb.STATE_FILE))
 
     def test_post_config_strips_scoped_keys_and_keeps_the_stored_state(self):
-        # docs/architecture/sessions.md §17.2: the whole-blob route is no
-        # longer a state writer. A body carrying scoped keys loses them and
-        # the stored maps are re-attached, so no page can fold, clobber or
-        # reorder another device's sessions, bookmarks or pins.
-        self.write_config({
-            "workspaceState": {nb.WORKSPACE_DEFAULT_ID: {
+        # docs/architecture/sessions.md §17.2: the whole-blob route is not a
+        # state writer. It cannot even reach the state now: the keys are
+        # stripped from the body and state.json is never opened.
+        self.write_state({
+            nb.WORKSPACE_DEFAULT_ID: {
                 "lastFile": "stored.md", "openFiles": ["stored.md"],
-            }},
-            "workspaceStateRev": {nb.WORKSPACE_DEFAULT_ID: 4},
-        })
+            }}, {nb.WORKSPACE_DEFAULT_ID: 4})
+        before = self.file_stamp(nb.STATE_FILE)
         r = self.post("/api/config", {
             "theme": "light",
             "lastFile": "a.md",
@@ -7229,16 +7645,13 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         disk = self.read_config_file()
         self.assertEqual(disk["theme"], "light")
-        # The stored maps win; the body's copies are gone, not folded.
-        self.assertEqual(disk["workspaceState"], {
+        self.assertEqual(self.stored_states(), {
             nb.WORKSPACE_DEFAULT_ID: {"lastFile": "stored.md",
                                       "openFiles": ["stored.md"]},
         })
-        self.assertEqual(disk["workspaceStateRev"],
-                         {nb.WORKSPACE_DEFAULT_ID: 4})
-        for key in ("lastFile", "openFiles", "activeFile", "pinnedFiles",
-                    "recentFiles", "bookmarks", "pinnedFolders",
-                    "sessions", "activeSessionId"):
+        self.assertEqual(self.stored_revs(), {nb.WORKSPACE_DEFAULT_ID: 4})
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), before)
+        for key in nb._WORKSPACE_SCOPED_CONFIG_KEYS + nb._CONFIG_STATE_KEYS:
             self.assertNotIn(key, disk)
 
     SESSIONS = [
@@ -7252,13 +7665,11 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
     def test_post_config_keeps_the_stored_sessions_and_ignores_body_ones(self):
         # A page loaded before the sync change cannot create, delete or
         # reorder a session through the whole-blob route (§17.2).
-        self.write_config({
-            "workspaceState": {nb.WORKSPACE_DEFAULT_ID: {
+        self.write_state({
+            nb.WORKSPACE_DEFAULT_ID: {
                 "sessions": self.SESSIONS,
                 "activeSessionId": "main",
-            }},
-            "workspaceStateRev": {nb.WORKSPACE_DEFAULT_ID: 2},
-        })
+            }}, {nb.WORKSPACE_DEFAULT_ID: 2})
         r = self.post("/api/config", {
             "theme": "light",
             "lastFile": "notes/b.md",
@@ -7268,14 +7679,13 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         })
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         disk = self.read_config_file()
-        self.assertEqual(disk["workspaceState"], {
+        self.assertEqual(self.stored_states(), {
             nb.WORKSPACE_DEFAULT_ID: {
                 "sessions": self.SESSIONS,
                 "activeSessionId": "main",
             },
         })
-        self.assertEqual(disk["workspaceStateRev"],
-                         {nb.WORKSPACE_DEFAULT_ID: 2})
+        self.assertEqual(self.stored_revs(), {nb.WORKSPACE_DEFAULT_ID: 2})
         for key in ("sessions", "activeSessionId", "lastFile"):
             self.assertNotIn(key, disk)
         self.assertEqual(disk["theme"], "light")
@@ -7300,7 +7710,7 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.assertEqual(body["id"], "default")
         self.assertEqual(body["rev"], 1)
         self.assertEqual(body["state"], state)
-        stored = self.read_config_file()["workspaceState"]["default"]
+        stored = self.stored_states()["default"]
         self.assertEqual(stored["sessions"], self.SESSIONS)
         self.assertEqual(stored["activeSessionId"], "main")
         # A current client sends the state it holds as `base`, so the same
@@ -7309,40 +7719,37 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertEqual(r.get_json()["rev"], 2)
         self.assertEqual(r.get_json()["state"], state)
-        self.assertEqual(
-            self.read_config_file()["workspaceState"]["default"], state)
+        self.assertEqual(self.stored_states()["default"], state)
 
     def test_workspace_state_refuses_an_old_client_write_without_a_base(self):
         # A tab loaded before sync posts the old body (no base). It is
         # refused, which is what stops it from dropping the sessions it
         # never saw; the stored entry is left untouched.
-        self.write_config({
-            "workspaceState": {"default": {
-                "sessions": self.SESSIONS,
-                "activeSessionId": "main",
-                "lastFile": "notes/a.md",
-            }},
-        })
-        before = self.file_stamp(nb.CONFIG_FILE)
+        self.write_state({"default": {
+            "sessions": self.SESSIONS,
+            "activeSessionId": "main",
+            "lastFile": "notes/a.md",
+        }})
+        before = self.file_stamp(nb.STATE_FILE)
         r = self.post("/api/workspace-state",
                       {"id": "default", "state": {"lastFile": "notes/b.md"}})
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.get_json()["code"], "bad_body")
         self.assertIn("base", r.get_json()["error"])
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), before)
 
     def test_workspace_state_accepts_a_new_sessions_array(self):
         # A current client may replace the sessions (including deleting
         # one); matching its base to the stored entry stores it verbatim.
         stored = {"sessions": self.SESSIONS, "activeSessionId": "main"}
-        self.write_config({"workspaceState": {"default": dict(stored)}})
+        self.write_state({"default": dict(stored)})
         new = [{"id": "only", "name": "Only", "openFiles": [],
                 "activeFile": None}]
         state = {"sessions": new, "activeSessionId": "only"}
         r = self.post_state("default", state, stored)
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertEqual(r.get_json()["state"], state)
-        entry = self.read_config_file()["workspaceState"]["default"]
+        entry = self.stored_states()["default"]
         self.assertEqual(entry["sessions"], new)
         self.assertEqual(entry["activeSessionId"], "only")
 
@@ -7350,21 +7757,18 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         # A verbatim write must not gain empty session keys the client never
         # sent: an entry written before sessions existed stays free of them.
         stored = {"lastFile": "notes/a.md"}
-        self.write_config({"workspaceState": {"default": dict(stored)}})
+        self.write_state({"default": dict(stored)})
         r = self.post_state("default", {"lastFile": "notes/b.md"}, stored)
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
-        entry = self.read_config_file()["workspaceState"]["default"]
+        entry = self.stored_states()["default"]
         self.assertEqual(entry, {"lastFile": "notes/b.md"})
 
     def test_post_config_keeps_other_workspace_state(self):
         # The body's copy of another workspace's entry is dropped: only that
         # workspace's own state write may change it.
-        self.write_config({
-            "workspaceState": {
-                "b-0001": {"lastFile": "b.md", "openFiles": ["b.md"]},
-            },
-            "workspaceStateRev": {"b-0001": 7},
-        })
+        self.write_state({
+            "b-0001": {"lastFile": "b.md", "openFiles": ["b.md"]},
+        }, {"b-0001": 7})
         r = self.post("/api/config", {
             "theme": "dark",
             "lastFile": "a.md",
@@ -7375,17 +7779,17 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         })
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         cfg = self.read_config_file()
-        self.assertEqual(cfg["workspaceState"], {
+        self.assertEqual(self.stored_states(), {
             "b-0001": {"lastFile": "b.md", "openFiles": ["b.md"]},
         })
-        self.assertEqual(cfg["workspaceStateRev"], {"b-0001": 7})
+        self.assertEqual(self.stored_revs(), {"b-0001": 7})
         self.assertNotIn("lastFile", cfg)
 
     def test_post_config_refuses_a_corrupt_config_read(self):
-        # Re-attaching the state needs a readable file: an unparseable or
-        # non-object blob refuses the POST instead of dropping every
-        # workspace's state (§17.9).
-        for corrupt in ('{"workspaceState": [', "[]", '"text"'):
+        # A POST still refuses to replace a prefs file it cannot parse, even
+        # though the state now lives elsewhere: the file may hold a
+        # hand-edited setting worth more than the one being saved.
+        for corrupt in ('{"theme": [', "[]", '"text"'):
             with self.subTest(corrupt=corrupt):
                 with open(nb.CONFIG_FILE, "w", encoding="utf-8") as f:
                     f.write(corrupt)
@@ -7398,61 +7802,61 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
                               r.get_json()["error"])
                 self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
 
-    def test_existing_workspace_state_is_left_alone(self):
+    def test_existing_workspace_state_is_moved_by_the_split(self):
         cfg = dict(self.LEGACY)
         cfg["workspaceState"] = {"b-0001": {"lastFile": "b.md"}}
         self.write_config(cfg)
-        before = self.file_stamp(nb.CONFIG_FILE)
-        nb._migrate_config_at_startup()
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.run_startup_maintenance()
+        self.assertEqual(self.stored_states(),
+                         {"b-0001": {"lastFile": "b.md"}})
+        self.assertNotIn("workspaceState", self.read_config_file())
         code, data = self.jget("/api/config")
         self.assertEqual(code, 200)
         self.assertEqual(data["workspaceState"],
                          {"b-0001": {"lastFile": "b.md"}})
-        # The legacy top-level key is not touched either: presence of
-        # workspaceState means an aware client already wrote the file.
+        # A present workspaceState means an aware client already wrote the
+        # file, so the fold leaves the legacy top-level key alone; the split
+        # then leaves that key in the prefs file, where the ACP preamble still
+        # reads it as the pre-workspace fallback.
         self.assertEqual(data["lastFile"], "a.md")
+        self.assertEqual(self.read_config_file()["lastFile"], "a.md")
 
     def test_empty_config_is_not_rewritten_by_migration(self):
         self.write_config({"theme": "dark"})
         before = self.file_stamp(nb.CONFIG_FILE)
-        nb._migrate_config_at_startup()
+        self.run_startup_maintenance()
         self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertFalse(os.path.isfile(nb.STATE_FILE))
         code, data = self.jget("/api/config")
         self.assertEqual(code, 200)
-        self.assertEqual(data, {"theme": "dark"})
-        self.assertNotIn("workspaceState", self.read_config_file())
+        self.assertEqual(data["theme"], "dark")
+        self.assertEqual(data["workspaceState"], {})
 
     def test_workspace_state_merges_and_preserves_other_entries(self):
-        self.write_config({
-            "theme": "dark",
-            "workspaceState": {"b-0001": {"lastFile": "b.md"}},
-            "workspaceStateRev": {"b-0001": 3},
-        })
+        self.write_config({"theme": "dark"})
+        self.write_state({"b-0001": {"lastFile": "b.md"}}, {"b-0001": 3})
         r = self.post_state("default", {"lastFile": "a.md"}, {})
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertEqual(r.get_json(), {
             "ok": True, "id": "default", "rev": 1,
             "state": {"lastFile": "a.md"},
         })
-        disk = self.read_config_file()
-        self.assertEqual(disk["theme"], "dark")
-        self.assertEqual(disk["workspaceState"]["b-0001"],
+        self.assertEqual(self.read_config_file()["theme"], "dark")
+        self.assertEqual(self.stored_states()["b-0001"],
                          {"lastFile": "b.md"})
-        self.assertEqual(disk["workspaceState"]["default"],
+        self.assertEqual(self.stored_states()["default"],
                          {"lastFile": "a.md"})
-        self.assertEqual(disk["workspaceStateRev"],
+        self.assertEqual(self.stored_revs(),
                          {"b-0001": 3, "default": 1})
         # A second write replaces only its own entry and bumps only its own
         # rev.
         self.post_state("default", {"lastFile": "c.md"},
                         {"lastFile": "a.md"})
-        disk = self.read_config_file()
-        self.assertEqual(disk["workspaceState"]["default"],
+        self.assertEqual(self.stored_states()["default"],
                          {"lastFile": "c.md"})
-        self.assertEqual(disk["workspaceState"]["b-0001"],
+        self.assertEqual(self.stored_states()["b-0001"],
                          {"lastFile": "b.md"})
-        self.assertEqual(disk["workspaceStateRev"], {"b-0001": 3, "default": 2})
+        self.assertEqual(self.stored_revs(), {"b-0001": 3, "default": 2})
 
     def test_workspace_state_rejects_bad_bodies(self):
         r = self.post("/api/workspace-state", {"id": "default", "base": {}})
@@ -7488,8 +7892,7 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.assertEqual(r.get_json()["error"], "Unknown workspace")
         self.assertEqual(r.get_json()["code"], "unknown_workspace")
         # No refused body wrote anything.
-        self.assertFalse(os.path.isfile(nb.CONFIG_FILE) and
-                         "workspaceState" in self.read_config_file())
+        self.assertFalse(os.path.isfile(nb.STATE_FILE))
 
     def test_workspace_state_rejects_a_body_over_the_cap(self):
         big = "a" * (nb.WORKSPACE_STATE_MAX_BYTES + 1)
@@ -7498,7 +7901,7 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         self.assertIn("state exceeds %d bytes" % nb.WORKSPACE_STATE_MAX_BYTES,
                       r.get_json()["error"])
         self.assertEqual(r.get_json()["code"], "state_too_large")
-        self.assertNotIn("workspaceState", self.read_config_file())
+        self.assertFalse(os.path.isfile(nb.STATE_FILE))
 
     def test_workspace_state_accepts_a_body_at_the_cap(self):
         # The cap is on the encoded state alone; land just under it.
@@ -7510,8 +7913,152 @@ class TestWorkspaceConfigState(WorkspaceTestBase):
         with mock.patch.object(nb, "atomic_write", side_effect=OSError("full")):
             r = self.post_state("default", {"a": 1}, {})
         self.assertEqual(r.status_code, 500)
-        self.assertIn("Could not write config", r.get_json()["error"])
+        self.assertIn("Could not write workspace state",
+                      r.get_json()["error"])
         self.assertEqual(r.get_json()["code"], "write_failed")
+
+
+class TestConfigExamples(BaseTest):
+    """config.template/: the copyable examples must load as they ship."""
+
+    EXAMPLES = os.path.join(ROOT, "config.template")
+
+    def test_ai_example_loads_and_keeps_its_doc_keys_across_a_save(self):
+        shutil.copyfile(os.path.join(self.EXAMPLES, "ai.json.example"),
+                        nb.AI_FILE)
+        code, data = self.jget("/api/ai/config")
+        self.assertEqual(code, 200, data)
+        self.assertEqual([s["name"] for s in data["servers"]], ["local"])
+        self.assertEqual([p["name"] for p in data["acps"]],
+                         ["opencode", "my-wrapper"])
+        # The hand-written command entry is file-owned, so its env never
+        # reaches the browser even though the example documents it.
+        self.assertFalse(data["acps"][1]["editable"])
+        for profile in data["acps"]:
+            self.assertNotIn("env", profile)
+        # A prefs-only save keeps the prose keys, because the file is
+        # rewritten from the stored document and not from the response.
+        before = self.read_acp()
+        r = self.post("/api/ai/config", {"servers": [], "default": ""})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        disk = self.read_ai()
+        self.assertIn("_comment", disk)
+        self.assertIn("_fields", disk)
+        self.assertEqual(disk["acp"], before)
+
+
+class TestWorkspaceStateFile(WorkspaceTestBase):
+    """config/state.json: the split, the quarantine, and the GET splice."""
+
+    def config_with_state(self, states, revs):
+        cfg = {"theme": "dark", "workspaceState": states,
+               "workspaceStateRev": revs}
+        self.write_config(cfg)
+
+    def test_split_keeps_the_higher_rev_per_workspace(self):
+        # A rollback build and a restored backup both write the maps into
+        # config.json, so the split must not simply prefer the state file.
+        self.config_with_state(
+            {"default": {"lastFile": "old.md"},
+             "b-0001": {"lastFile": "new.md"}},
+            {"default": 2, "b-0001": 9})
+        self.write_state({"default": {"lastFile": "state.md"}}, {"default": 5})
+        self.run_startup_maintenance()
+        self.assertEqual(self.stored_states(), {
+            "default": {"lastFile": "state.md"},      # 5 > 2: state wins
+            "b-0001": {"lastFile": "new.md"},         # 9 > 0: config wins
+        })
+        self.assertEqual(self.stored_revs(), {"default": 5, "b-0001": 9})
+        self.assertNotIn("workspaceState", self.read_config_file())
+
+    def test_split_is_idempotent_when_only_config_json_changed(self):
+        self.config_with_state({"default": {"lastFile": "a.md"}}, {"default": 3})
+        self.run_startup_maintenance()
+        self.assertEqual(self.stored_states(),
+                         {"default": {"lastFile": "a.md"}})
+        state_stamp = self.file_stamp(nb.STATE_FILE)
+        self.run_startup_maintenance()
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), state_stamp)
+        self.assertNotIn("workspaceState", self.read_config_file())
+
+    def test_a_corrupt_state_file_is_moved_aside_not_merged(self):
+        self.config_with_state({"default": {"lastFile": "a.md"}}, {"default": 3})
+        with open(nb.STATE_FILE, "w", encoding="utf-8") as f:
+            f.write('{"version": 1, "states": [')
+        self.run_startup_maintenance()
+        aside = [name for name in os.listdir(nb.CONFIG_DIR)
+                 if name.startswith("state.json.corrupt-")]
+        self.assertEqual(len(aside), 1)
+        with open(os.path.join(nb.CONFIG_DIR, aside[0]),
+                  encoding="utf-8") as f:
+            self.assertIn('"states": [', f.read())
+        # The readable copy in config.json seeds the new file.
+        self.assertEqual(self.stored_states(),
+                         {"default": {"lastFile": "a.md"}})
+        self.assertEqual(self.stored_revs(), {"default": 3})
+
+    def test_a_rev_without_a_state_entry_is_dropped(self):
+        # A hand-edited state.json can carry a rev for a workspace with no
+        # entry; keeping it would let a client adopt an empty state at a
+        # revision it never saw.
+        self.write_state({"other": {"lastFile": "b.md"}},
+                         {"other": 2, "ghost": 9})
+        # The reader drops the orphan without writing: a GET must not fix a
+        # hand-edited file, and a client must not see the phantom revision.
+        self.assertEqual(nb._read_public_state()["revs"], {"other": 2})
+        code, data = self.jget("/api/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["workspaceStateRev"], {"other": 2})
+        self.assertEqual(self.stored_revs(), {"other": 2, "ghost": 9})
+
+    def test_a_future_version_is_quarantined_too(self):
+        self.write_state({"default": {"lastFile": "a.md"}})
+        data = self.read_state_file()
+        data["version"] = nb.STATE_VERSION + 1
+        with open(nb.STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        self.assertTrue(nb._quarantine_bad_state_file())
+        # The old file is preserved for a downgrade and the server starts empty.
+        self.assertEqual(self.stored_states(), {})
+
+    def test_a_bad_state_file_makes_writes_refuse_and_reads_degrade(self):
+        self.write_state()
+        with open(nb.STATE_FILE, "w", encoding="utf-8") as f:
+            f.write("[]")
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": {"a": 1}, "base": {}})
+        self.assertEqual(r.status_code, 500)
+        self.assertEqual(r.get_json()["code"], "write_failed")
+        self.assertIn("Could not write workspace state",
+                      r.get_json()["error"])
+        # Reads answer the documented empty shape instead of 500.
+        code, data = self.jget("/api/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["workspaceState"], {})
+        r = self.client.get("/api/workspace-state?id=default")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {"ok": True, "id": "default", "rev": 0,
+                                        "state": {}})
+
+    def test_get_config_splices_the_state_file_and_the_poll_304s(self):
+        # The page boots from one response and polls the state route; the
+        # splice is what lets app.js keep its single-payload boot.
+        state = {"lastFile": "a.md", "openFiles": ["a.md"]}
+        r = self.post("/api/workspace-state",
+                      {"id": "default", "state": state, "base": {}})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        code, data = self.jget("/api/config")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["workspaceState"], {"default": state})
+        self.assertEqual(data["workspaceStateRev"], {"default": 1})
+        r = self.client.get("/api/workspace-state?id=default&rev=1")
+        self.assertEqual(r.status_code, 304)
+
+    def test_the_prefs_post_cannot_create_the_state_file(self):
+        self.post("/api/config", {"theme": "dark",
+                                  "workspaceState": {"default": {"x": 1}},
+                                  "workspaceStateRev": {"default": 9}})
+        self.assertFalse(os.path.isfile(nb.STATE_FILE))
 
 
 class TestWorkspaceStateMerge(BaseTest):
@@ -7732,24 +8279,21 @@ class TestWorkspaceStateMerge(BaseTest):
         self.assertEqual(out["sessions"][0]["name"], "Second")
 
     def test_workspace_state_rev_reads_a_valid_entry(self):
-        cfg = {"workspaceStateRev": {"default": 7, "other": 0}}
-        self.assertEqual(nb._workspace_state_rev(cfg, "default"), 7)
-        self.assertEqual(nb._workspace_state_rev(cfg, "other"), 0)
-        self.assertEqual(nb._workspace_state_rev(cfg, "missing"), 0)
+        revs = {"default": 7, "other": 0}
+        self.assertEqual(nb._workspace_state_rev(revs, "default"), 7)
+        self.assertEqual(nb._workspace_state_rev(revs, "other"), 0)
+        self.assertEqual(nb._workspace_state_rev(revs, "missing"), 0)
 
     def test_workspace_state_rev_defaults_to_zero_for_unusable_values(self):
         for revs in (None, [], "x",
                      {"default": None}, {"default": "3"}, {"default": -1},
                      {"default": True}, {"default": 1.5}, {}):
             self.assertEqual(
-                nb._workspace_state_rev({"workspaceStateRev": revs},
-                                        "default"),
-                0, revs)
-        for cfg in (None, [], "x", {}):
-            self.assertEqual(nb._workspace_state_rev(cfg, "default"), 0)
-        self.assertEqual(
-            nb._workspace_state_rev({"workspaceStateRev": {"default": 2}}, 5),
-            0)
+                nb._workspace_state_rev(revs, "default"), 0, revs)
+        for wid in (None, 5):
+            self.assertEqual(
+                nb._workspace_state_rev({"default": 2}, wid), 0)
+        self.assertEqual(nb._workspace_state_rev({"default": 2}, "default"), 2)
 
 
 class TestWorkspaceStateSync(WorkspaceTestBase):
@@ -7779,24 +8323,19 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
         return self.client.get(url)
 
     def stored(self, wid=None):
-        entry = self.read_config_file().get("workspaceState") or {}
+        entry = self.stored_states()
         return entry.get(wid or self.wid) or {}
 
     def stored_rev(self, wid=None):
-        revs = self.read_config_file().get("workspaceStateRev") or {}
-        return revs.get(wid or self.wid)
+        return self.stored_revs().get(wid or self.wid)
 
     def seed(self, state, rev=1):
-        cfg = self.read_config_file()
-        states = cfg.get("workspaceState")
-        states = dict(states) if isinstance(states, dict) else {}
+        """Write one workspace's state + rev into config/state.json."""
+        states = self.stored_states()
         states[self.wid] = state
-        cfg["workspaceState"] = states
-        revs = cfg.get("workspaceStateRev")
-        revs = dict(revs) if isinstance(revs, dict) else {}
+        revs = self.stored_revs()
         revs[self.wid] = rev
-        cfg["workspaceStateRev"] = revs
-        self.write_config(cfg)
+        self.write_state(states, revs)
 
     def test_get_round_trips_the_state_and_its_rev(self):
         state = {"sessions": [self.session("main", "Main", ["a.md"])],
@@ -7815,15 +8354,15 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
             "ok": True, "id": self.wid, "rev": 0, "state": {},
         })
         # A registered workspace with no state answers the same way, and the
-        # read wrote nothing.
+        # read wrote nothing (state.json is never created by a GET).
         ws = self.register("B", self.make_root())
-        before = self.file_stamp(nb.CONFIG_FILE)
+        self.assertFalse(os.path.isfile(nb.STATE_FILE))
         r = self.get_state(ws["id"])
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json(), {
             "ok": True, "id": ws["id"], "rev": 0, "state": {},
         })
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertFalse(os.path.isfile(nb.STATE_FILE))
 
     def test_get_with_an_equal_rev_is_a_304_with_no_body(self):
         self.post_state({"lastFile": "a.md"}, {})
@@ -7983,7 +8522,7 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
 
     def test_post_without_a_base_is_400_and_writes_nothing(self):
         self.seed({"lastFile": "a.md"}, rev=2)
-        before = self.file_stamp(nb.CONFIG_FILE)
+        before = self.file_stamp(nb.STATE_FILE)
         for body in ({"id": self.wid, "state": {"lastFile": "b.md"}},
                      {"id": self.wid, "state": {"lastFile": "b.md"},
                       "base": None},
@@ -7992,7 +8531,7 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
             r = self.post("/api/workspace-state", body)
             self.assertEqual(r.status_code, 400, body)
             self.assertEqual(r.get_json()["code"], "bad_body")
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), before)
         self.assertEqual(self.stored(), {"lastFile": "a.md"})
         self.assertEqual(self.stored_rev(), 2)
 
@@ -8039,9 +8578,8 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
         self.assertEqual(self.stored_rev(ws["id"]), 1)
         r = self.client.delete("/api/workspaces/" + ws["id"])
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
-        cfg = self.read_config_file()
-        self.assertNotIn(ws["id"], cfg.get("workspaceState") or {})
-        self.assertNotIn(ws["id"], cfg.get("workspaceStateRev") or {})
+        self.assertNotIn(ws["id"], self.stored_states())
+        self.assertNotIn(ws["id"], self.stored_revs())
         # The other workspace is untouched.
         self.assertEqual(self.stored(), {"lastFile": "default.md"})
         self.assertEqual(self.stored_rev(), 1)
@@ -8072,13 +8610,13 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
         r = viewer.get("/api/workspace-state?id=" + self.wid)
         self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
         self.assertEqual(r.get_json()["state"], {"lastFile": "a.md"})
-        before = self.file_stamp(nb.CONFIG_FILE)
+        before = self.file_stamp(nb.STATE_FILE)
         r = viewer.post("/api/workspace-state",
                         json={"id": self.wid, "base": {},
                               "state": {"lastFile": "b.md"}})
         self.assertEqual(r.status_code, 403)
         self.assertEqual(r.get_json()["code"], "not_admin")
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), before)
 
     def test_the_conditional_and_the_body_carry_no_store_and_vary(self):
         self.post_state({"lastFile": "a.md"}, {})
@@ -8096,7 +8634,7 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
         stored = {"lastFile": "stored.md"}
         self.seed(stored, rev=3)
         big = {"pad": "b" * (nb.WORKSPACE_STATE_MAX_BYTES + 1)}
-        before = self.file_stamp(nb.CONFIG_FILE)
+        before = self.file_stamp(nb.STATE_FILE)
         for wid in (self.wid, "ghost"):
             r = self.post_state({"lastFile": "sent.md"}, big, wid=wid)
             self.assertEqual(r.status_code, 400, wid)
@@ -8110,7 +8648,7 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
         self.assertEqual(r.status_code, 404)
         self.assertEqual(r.get_json()["code"], "unknown_workspace")
         # No refused body wrote anything.
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), before)
         self.assertEqual(self.stored(), stored)
         self.assertEqual(self.stored_rev(), 3)
 
@@ -8132,13 +8670,13 @@ class TestWorkspaceStateSync(WorkspaceTestBase):
             nb._json_size(nb._merge_workspace_state(stored, {}, state)),
             nb.WORKSPACE_STATE_MAX_BYTES)
         self.seed(stored, rev=7)
-        before = self.file_stamp(nb.CONFIG_FILE)
+        before = self.file_stamp(nb.STATE_FILE)
         r = self.post_state(state, {})
         self.assertEqual(r.status_code, 400, r.get_data(as_text=True))
         self.assertEqual(r.get_json()["code"], "state_too_large")
         self.assertIn("exceeds %d bytes" % nb.WORKSPACE_STATE_MAX_BYTES,
                       r.get_json()["error"])
-        self.assertEqual(self.file_stamp(nb.CONFIG_FILE), before)
+        self.assertEqual(self.file_stamp(nb.STATE_FILE), before)
         self.assertEqual(self.stored(), stored)
         self.assertEqual(self.stored_rev(), 7)
 

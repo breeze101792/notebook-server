@@ -1,0 +1,11 @@
+{
+  "_comment": "Copy to config/server.json. Every key is optional: an absent key uses the default shown. A command-line flag overrides the file. A malformed value stops startup with 'Cannot start: <path>: <reason>' and exit code 2, because a typo must never silently bind the wrong interface. The file is read once, at startup, and no HTTP route can write it.",
+  "_fields": {
+    "host": "string, non-empty, trimmed. Bind address. \"0.0.0.0\" listens on every interface and is reachable from the LAN; \"127.0.0.1\" is loopback only. Overridden by -H/--host. Default 0.0.0.0.",
+    "port": "integer 1-65535. Overridden by -p/--port, which is range-checked the same way. Port 5000 is the built-in default. Below 1024 needs privileges on most systems.",
+    "debug": "boolean. Flask debug mode plus auto-reload (the banner prints twice because the reloader starts a second process). Overridden by --debug / --no-debug. true with a non-loopback host exposes the interactive debugger to anyone who can reach the port, and the server prints a warning for it at startup. Default false."
+  },
+  "host": "0.0.0.0",
+  "port": 5000,
+  "debug": false
+}

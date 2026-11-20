@@ -29,7 +29,7 @@ Start here depending on the job:
 | Run the server | [`../README.md`](../README.md) quick start, then [`operations/build.md`](operations/build.md) |
 | Work on the code | [`operations/development.md`](operations/development.md), then the matching architecture guide |
 | Call the HTTP API | [`contracts/http-api.md`](contracts/http-api.md); an AI agent fetches [`../agent.md`](../agent.md) from a running server |
-| Change configuration | [`contracts/configuration.md`](contracts/configuration.md) |
+| Change configuration | [`contracts/config-guidelines.md`](contracts/config-guidelines.md) first, then [`contracts/configuration.md`](contracts/configuration.md) |
 | Write or run tests | [`testing/README.md`](testing/README.md) |
 | Change a feature's behavior | The matching [`requirements/`](requirements/README.md) or [`product/`](product/mobile.md) definition first |
 
@@ -53,7 +53,7 @@ Start here depending on the job:
 | --- | --- |
 | [`architecture/backend.md`](architecture/backend.md) | Import-time path resolution and seeding, `safe_path` and atomic writes, the auth layer, workspaces, the AI proxy, and the design trade-offs. |
 | [`architecture/frontend.md`](architecture/frontend.md) | Script load order, the boot sequence, the `static/js/` modules, the code-block renderer registry, persistence, the service worker, and the UI surfaces. |
-| [`architecture/sessions.md`](architecture/sessions.md) | Session tab groups: the live-view ownership model, config shape, normalisation and migration, the swap algorithm and its tokens, file operations across stored sessions, the empty state, and test seams. §17 is the designed cross-device sync (not implemented). |
+| [`architecture/sessions.md`](architecture/sessions.md) | Session tab groups: the live-view ownership model, config shape, normalisation and migration, the swap algorithm and its tokens, file operations across stored sessions, the empty state, and test seams. §17 is the cross-device sync. |
 | [`architecture/markdown.md`](architecture/markdown.md) | The Markdown pipeline, supported GFM syntax, the six special fenced blocks and their vendored versions, wikilinks, and the `html-live` sandbox. |
 | [`architecture/hybrid-editing.md`](architecture/hybrid-editing.md) | The construct-by-construct behavior spec for hybrid (WYSIWYG) editing: every syntax construct at every caret position, the decided behavior, the open questions, and §5.8 the Markdown debug pane's mechanism. |
 | [`architecture/context-menus.md`](architecture/context-menus.md) | The one shared `NB.menu` module: placement, keyboard, submenus, `onClose`, and the three pre-migration menus it replaced. |
@@ -74,7 +74,8 @@ Start here depending on the job:
 | Guide | Covers |
 | --- | --- |
 | [`contracts/http-api.md`](contracts/http-api.md) | The full HTTP endpoint reference: every route, parameter, status code, the `/api/edit` op schema, and worked `curl` examples. |
-| [`contracts/configuration.md`](contracts/configuration.md) | `start.sh` flags, environment variables, first-run seeding, and every key in `config/config.json`, `config/auth.json`, `config/ai.json`, and `config/acp.json`. |
+| [`contracts/config-guidelines.md`](contracts/config-guidelines.md) | The rulebook for config: which of the six files a new setting belongs in, naming, validation, locks, secrets, the loopback rule, migration rules, a checklist, and the anti-patterns. |
+| [`contracts/configuration.md`](contracts/configuration.md) | `start.sh` flags, `config/server.json`, environment variables, first-run seeding, and every key in `config/config.json`, `config/state.json`, `config/auth.json`, `config/ai.json` (including its ACP profiles), and `config/workspaces.json`. |
 
 ## Requirements
 

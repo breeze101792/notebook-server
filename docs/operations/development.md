@@ -19,11 +19,12 @@ changes. Test-suite detail lives in [`../testing/README.md`](../testing/README.m
 | `requirements.txt` | Python dependencies: `Flask==3.0.3`, `bcrypt==5.0.0`, `agent-client-protocol==0.12.1`. The last one requires Python 3.10 or newer |
 | `package.json` / `package-lock.json` | Frontend dev tooling and tests. Scripts: `test`, `test:browser`, `test:browser:firefox`, `test:browser:all`, `vendor:visimer`, and one `test:browser:<suite>` per browser suite. `package-lock.json` is gitignored but present in a working checkout |
 | `notebook.template/` | Starter notes copied into `notebook/` on a fresh install: `Welcome.md`, `README.md`, `Syntax.md` |
+| `config.template/` | Copyable examples of the two hand-edited config files (`server.json`, `ai.json`), each documenting every key; nothing is copied automatically |
 | `notebook/` | The notes folder. In this checkout, a symlink to `/mnt/projects/notebook` |
-| `config/` | Settings: `config.json`, `auth.json`, `ai.json`, `workspaces.json`, the hand-edited `acp.json`, and `acp.json.example` |
+| `config/` | Settings: `config.json` (preferences), `state.json` (per-workspace tab and session state), `auth.json`, `ai.json` (OpenAI servers and ACP profiles), optional `server.json` (host, port, debug), and `workspaces.json` |
 | `static/` | Frontend assets (see below) |
 | `templates/index.html` | The SPA shell (1953 lines); loads the vendor files and all 45 app modules as `<script defer>` tags |
-| `tests/` | `test_app.py` (backend, 6504 lines, 461 test methods), `dom/test_dom.js` (frontend), the 12 Playwright suites in `browser/`, the stub ACP agent in `fixtures/`, and the manual real-agent check in `manual/` |
+| `tests/` | `test_app.py` (backend, ~8.7k lines, 597 test methods), `dom/test_dom.js` (frontend), the 12 Playwright suites in `browser/`, the stub ACP agent in `fixtures/`, and the manual real-agent check in `manual/` |
 | `docs/` | This documentation set; the audit results are in `testing/browser-audit.md` |
 | `TODO.md` | Task-list stub (contains only `# TODO`) |
 
