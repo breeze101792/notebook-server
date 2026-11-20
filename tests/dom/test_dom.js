@@ -254,6 +254,11 @@ function mergeAcpProfiles(list, stored, agents) {
 }
 let aiChatStreams = [];           // queued responses for /api/ai/chat
 let aiChatLog = [];               // bodies POSTed to /api/ai/chat
+// The chat-title call that follows a fresh chat's first turn: its requests
+// are recorded apart from aiChatLog, and its reply is scripted here (a
+// string, null for an empty reply, or {text, gapMs} to land late).
+let aiTitleLog = [];
+let aiTitleResponse = null;
 let aiConfigLog = [];             // bodies POSTed to /api/ai/config
 // Simulates the server refusing the ACP half of a config POST: with auth off
 // a non-loopback client gets 403 loopback_required while a prefs-only body
@@ -2443,6 +2448,74 @@ window.fetch = async (url, opts) => {
     // {frames, gapMs}: the frames then arrive one per gapMs so a test can
     // observe the panel while the stream is still open.
     const d = JSON.parse(opts.body || "{}");
+    /* The chat-title call is a second POST after a fresh chat's first turn
+     * settles; its system prompt is the marker. Route it away from
+     * aiChatLog and the turn queue so existing checks keep counting only
+     * real turns, and answer it from aiTitleResponse. */
+    const titleRequest = Array.isArray(d.messages) && d.messages[0] &&
+      d.messages[0].role === "system" &&
+      /^You write chat titles\./.test(d.messages[0].content || "");
+    if (titleRequest) {
+      aiTitleLog.push(d);
+      const scripted = aiTitleResponse;
+      const titleText = typeof scripted === "string" ? scripted
+        : (scripted && typeof scripted === "object"
+          ? String(scripted.text || "") : "");
+      const titleGap = scripted && typeof scripted === "object"
+        ? (scripted.gapMs || 0) : 0;
+      // Frames are built inline: sseFrame is declared later in the file.
+      const titleFrames = [];
+      if (titleText) {
+        titleFrames.push('data: {"choices":[{"delta":{"content":' +
+          JSON.stringify(titleText) + '}}]}\n\n');
+      }
+      titleFrames.push("data: [DONE]\n\n");
+      /* Honour the caller's signal so the client's abort and cancel paths
+       * are observable: an already-aborted call fails at once, and an
+       * abort mid-stream errors the body so the late reply cannot land. A
+       * title request is cancelled by a new turn, Regenerate, Clear,
+       * Delete and the 15 s timeout. */
+      const titleSignal = opts && opts.signal;
+      if (titleSignal && titleSignal.aborted) {
+        const aborted = new Error("Aborted");
+        aborted.name = "AbortError";
+        throw aborted;
+      }
+      const titleEnc = new TextEncoder();
+      let titleSettled = false;
+      const titleStream = new ReadableStream({
+        start(controller) {
+          if (titleSignal) {
+            titleSignal.addEventListener("abort", () => {
+              if (titleSettled) return;   // already closed: nothing to error
+              titleSettled = true;
+              controller.error(new DOMException("Aborted", "AbortError"));
+            }, { once: true });
+          }
+          if (!titleGap) {
+            for (const frame of titleFrames) {
+              controller.enqueue(titleEnc.encode(frame));
+            }
+            titleSettled = true;
+            controller.close();
+            return;
+          }
+          let i = 0;
+          const step = () => {
+            if (titleSettled) return;   // aborted while a frame was pending
+            if (i >= titleFrames.length) {
+              titleSettled = true;
+              controller.close();
+              return;
+            }
+            controller.enqueue(titleEnc.encode(titleFrames[i++]));
+            setTimeout(step, titleGap);
+          };
+          step();
+        },
+      });
+      return { ok: true, status: 200, body: titleStream };
+    }
     aiChatLog.push(d);
     const queued = aiChatStreams.shift();
     if (!queued) {
@@ -2453,16 +2526,41 @@ window.fetch = async (url, opts) => {
     const frames = Array.isArray(queued) ? queued : queued.frames;
     const gapMs = Array.isArray(queued) ? 0 : (queued.gapMs || 0);
     const enc = new TextEncoder();
+    /* The turn's abort signal ends the body, as a real fetch does: Stop,
+     * Clear, a chat reset and Delete all abort it. Without this the
+     * streaming stub would ignore an abort, so a stopped turn would look
+     * complete and its post-turn work would run. Nothing changes for a
+     * call that is never aborted. */
+    const turnSignal = opts && opts.signal;
+    if (turnSignal && turnSignal.aborted) {
+      const aborted = new Error("Aborted");
+      aborted.name = "AbortError";
+      throw aborted;
+    }
+    let turnSettled = false;
     const stream = new ReadableStream({
       start(controller) {
+        if (turnSignal) {
+          turnSignal.addEventListener("abort", () => {
+            if (turnSettled) return;   // already closed: nothing to error
+            turnSettled = true;
+            controller.error(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        }
         if (!gapMs) {
           for (const frame of frames) controller.enqueue(enc.encode(frame));
+          turnSettled = true;
           controller.close();
           return;
         }
         let i = 0;
         const step = () => {
-          if (i >= frames.length) { controller.close(); return; }
+          if (turnSettled) return;   // aborted while a frame was pending
+          if (i >= frames.length) {
+            turnSettled = true;
+            controller.close();
+            return;
+          }
           controller.enqueue(enc.encode(frames[i++]));
           setTimeout(step, gapMs);
         };
@@ -37133,6 +37231,8 @@ function check(label, cond, extra) {
       window.NB.ai._resetForTests();
       aiChatLog = [];
       aiChatStreams = [];
+      aiTitleLog = [];
+      aiTitleResponse = null;
       await tick(10);
     };
     const pickChat = (id) => {
@@ -37759,6 +37859,240 @@ function check(label, cond, extra) {
       window.NB.viewer.getPath() === "notes/a.md",
       "file=" + chatById("cmovefile").file +
       " path=" + window.NB.viewer.getPath());
+
+    // (C19) the model title: after the first turn of a fresh chat settles
+    // one extra request writes a shorter title, sanitized before it lands.
+    // Its reply is scripted per test; a null reply leaves the derived
+    // title alone. The request is recorded apart from aiChatLog so the
+    // turn counts above keep their meaning.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiTitleResponse = '**"Fix the UART overrun."**';
+    aiChatStreams.push([sseFrame("Here is the answer.")]);
+    const turnsBeforeTitle = aiChatLog.length;
+    newBtn().click();
+    await tick(20);
+    fire("Explain the UART overrun on STM32\nand the fix");
+    await tick(150);
+    const titleChat = chatById(store().activeId);
+    check("ai chats: the model title replaces the derived title, sanitized",
+      !!titleChat && titleChat.title === "Fix the UART overrun" &&
+      titleChat.custom === false,
+      "title=" + (titleChat && titleChat.title));
+    check("ai chats: the bar's select shows the model title",
+      !!titleChat && pick().value === titleChat.id &&
+      !!pick().selectedOptions[0] &&
+      pick().selectedOptions[0].textContent === "Fix the UART overrun",
+      "opt=" + (pick().selectedOptions[0] &&
+        pick().selectedOptions[0].textContent));
+    check("ai chats: the title request carries the marker and the first prompt",
+      aiTitleLog.length === 1 &&
+      aiTitleLog[0].server === "stub" &&
+      Array.isArray(aiTitleLog[0].messages) &&
+      aiTitleLog[0].messages.length === 2 &&
+      aiTitleLog[0].messages[1].role === "user" &&
+      aiTitleLog[0].messages[1].content
+        .indexOf("Explain the UART overrun on STM32") >= 0,
+      "n=" + aiTitleLog.length + " server=" +
+        (aiTitleLog[0] && aiTitleLog[0].server) + " second=" +
+        (aiTitleLog[0] && JSON.stringify(aiTitleLog[0].messages[1])));
+    check("ai chats: the title request is not counted as a chat turn",
+      aiChatLog.length === turnsBeforeTitle + 1,
+      "n=" + aiChatLog.length + " want=" + (turnsBeforeTitle + 1));
+
+    // (C20) a manual rename beats a title reply that is still in flight.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiTitleResponse = { text: "Late model title", gapMs: 400 };
+    aiChatStreams.push([sseFrame("Answer before the title.")]);
+    newBtn().click();
+    await tick(20);
+    fire("Explain the UART overrun on STM32\nand the fix");
+    // Wait for the title request to go out, then rename while its
+    // [DONE] frame is still held back by the gap.
+    for (let i = 0; i < 40 && aiTitleLog.length === 0; i++) await tick(5);
+    const titleInflight = aiTitleLog.length === 1;
+    const inflightId = store().activeId;
+    window.NB.ai._renameChatForTests(inflightId, "Manual title");
+    await tick(500);
+    const renamedChat = chatById(inflightId);
+    check("ai chats: a manual rename beats a title reply still in flight",
+      titleInflight && !!renamedChat && renamedChat.title === "Manual title" &&
+      renamedChat.custom === true,
+      "inflight=" + titleInflight + " title=" +
+        (renamedChat && renamedChat.title) + " custom=" +
+        (renamedChat && renamedChat.custom));
+
+    // (C21) an empty title reply leaves the derived title in place.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiTitleResponse = null;
+    aiChatStreams.push([sseFrame("Answer with no title.")]);
+    newBtn().click();
+    await tick(20);
+    fire("Explain the intro\nand the rest");
+    await tick(150);
+    const emptyTitleChat = chatById(store().activeId);
+    check("ai chats: an empty title reply keeps the derived title",
+      aiTitleLog.length === 1 && !!emptyTitleChat &&
+      emptyTitleChat.title === "Explain the intro" &&
+      emptyTitleChat.custom === false,
+      "n=" + aiTitleLog.length + " title=" +
+        (emptyTitleChat && emptyTitleChat.title));
+
+    // (C22) an ACP profile is skipped: a second turn would spawn another
+    // agent process. The config is reloaded from the suite's stub after.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    window.NB.ai._setServersForTests(
+      [{ name: "acpstub", baseUrl: "", model: "ACP", acp: true }], "acpstub");
+    aiTitleResponse = "Should never be requested";
+    aiChatStreams.push([sseFrame("ACP answer.")]);
+    newBtn().click();
+    await tick(20);
+    fire("Summarize SPI mode 0 and 3");
+    await tick(150);
+    const acpChat = chatById(store().activeId);
+    check("ai chats: an ACP profile skips the title request",
+      aiTitleLog.length === 0 && !!acpChat &&
+      acpChat.title === "Summarize SPI mode 0 and 3",
+      "n=" + aiTitleLog.length + " title=" + (acpChat && acpChat.title));
+    aiTitleResponse = null;
+    await window.NB.ai.loadAiConfig();
+    await tick(10);
+    check("ai chats: the provider list is restored after the ACP block",
+      window.NB.ai._getCurrentServer() === "stub",
+      "server=" + window.NB.ai._getCurrentServer());
+
+    // (C23) the title input is capped at 4000 characters of the request.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiChatStreams.push([sseFrame("Answer.")]);
+    newBtn().click();
+    await tick(20);
+    fire("T" + "x".repeat(5000));
+    await tick(150);
+    check("ai chats: the title request caps the prompt at 4000 characters",
+      aiTitleLog.length === 1 &&
+      aiTitleLog[0].messages[1].content.length === 4000,
+      "len=" + (aiTitleLog[0] &&
+        aiTitleLog[0].messages[1].content.length));
+
+    // (C24) Stop skips the title: the first turn of a fresh chat is held
+    // open, the panel's Stop aborts it, and no title request follows --
+    // the prompt is not re-sent to the provider after an abort.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiTitleResponse = "Should never be requested";
+    aiChatStreams.push({ frames: [sseFrame("Partial answer.")], gapMs: 100 });
+    newBtn().click();
+    await tick(20);
+    fire("Explain the UART overrun on STM32\nand the fix");
+    // Wait for the first frame so the stream is still open when Stop lands.
+    const partialSeen = () => /Partial answer/.test(chatsLog().textContent);
+    for (let i = 0; i < 40 && !partialSeen(); i++) await tick(5);
+    const stopBtn = window.document.querySelector("#ai-view .ai-stop");
+    const stopShown = !!stopBtn && stopBtn.hidden === false && partialSeen();
+    if (stopBtn) {
+      stopBtn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    }
+    await tick(150);
+    const stopChat = chatById(store().activeId);
+    const stopSend = window.document.querySelector("#ai-view .ai-send");
+    check("ai chats: Stop skips the title request",
+      stopShown && aiTitleLog.length === 0 && !!stopChat &&
+      stopChat.title === "Explain the UART overrun on STM32",
+      "stop=" + stopShown + " n=" + aiTitleLog.length + " title=" +
+      (stopChat && stopChat.title));
+    /* An abort is not a failure: the turn ends and no error bubble lands,
+     * which is what tells this check apart from the failed-turn one. */
+    check("ai chats: Stop ends the turn without an error bubble",
+      stopShown && !!stopSend && stopSend.hidden === false &&
+      !/AI request failed/.test(chatsLog().textContent),
+      "send=" + (stopSend ? "hidden=" + stopSend.hidden : "no send") +
+      " err=" + /AI request failed/.test(chatsLog().textContent));
+
+    // (C25) a failed turn skips the title: with no queued stream the stub
+    // answers 400, so the turn fails and no title is asked.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    newBtn().click();
+    await tick(20);
+    fire("Explain the UART overrun on STM32\nand the fix");
+    await tick(150);
+    const failedChat = chatById(store().activeId);
+    check("ai chats: a failed turn skips the title request",
+      aiTitleLog.length === 0 && !!failedChat &&
+      failedChat.title === "Explain the UART overrun on STM32" &&
+      /AI request failed/.test(chatsLog().textContent),
+      "n=" + aiTitleLog.length + " title=" + (failedChat && failedChat.title) +
+      " failed=" + /AI request failed/.test(chatsLog().textContent));
+
+    // (C26) a second turn cancels a title request left in flight: the late
+    // reply is aborted instead of landing on the chat the new turn owns.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiTitleResponse = { text: "Late title", gapMs: 400 };
+    aiChatStreams.push([sseFrame("First answer.")]);
+    newBtn().click();
+    await tick(20);
+    fire("Explain the UART overrun on STM32\nand the fix");
+    for (let i = 0; i < 40 && aiTitleLog.length === 0; i++) await tick(5);
+    const titleInFlight = aiTitleLog.length === 1;
+    const errorsBeforeSecondTurn = errors.length;
+    aiChatStreams.push([sseFrame("Second answer.")]);
+    fire("And the receive path?");
+    /* Outlast the late reply's gap (400 ms) so an un-cancelled title
+     * would have landed by the assertion. */
+    await tick(500);
+    const cancelledChat = chatById(store().activeId);
+    check("ai chats: a second turn cancels the pending title request",
+      titleInFlight && aiTitleLog.length === 1 && !!cancelledChat &&
+      cancelledChat.title === "Explain the UART overrun on STM32" &&
+      errors.length === errorsBeforeSecondTurn,
+      "inflight=" + titleInFlight + " n=" + aiTitleLog.length + " title=" +
+      (cancelledChat && cancelledChat.title) + " err=" +
+      errors.slice(errorsBeforeSecondTurn).join("; "));
+
+    // (C27) deleting a chat during a title flight drops it: the abort ends
+    // the reply, and no late write resurrects the record anywhere.
+    await chatsReset();
+    await window.NB.tabs.open("notes/a.md");
+    await tick(30);
+    aiTitleResponse = { text: "Late title", gapMs: 400 };
+    aiChatStreams.push([sseFrame("First answer.")]);
+    newBtn().click();
+    await tick(20);
+    fire("Explain the UART overrun on STM32\nand the fix");
+    for (let i = 0; i < 40 && aiTitleLog.length === 0; i++) await tick(5);
+    const doomedId = store().activeId;
+    const deleteInFlight = aiTitleLog.length === 1 && !!doomedId;
+    const errorsBeforeDelete = errors.length;
+    window.NB.ai._deleteChatForTests(doomedId);
+    await tick(500);
+    const afterDelete = store();
+    const rawAfterDelete = window.localStorage.getItem("nb:aiChats");
+    const storedAfterDelete = rawAfterDelete ? JSON.parse(rawAfterDelete) : null;
+    check("ai chats: deleting a chat during a title flight removes it",
+      deleteInFlight && !chatById(doomedId) && afterDelete.chats.length === 0 &&
+      afterDelete.activeId === "",
+      "inflight=" + deleteInFlight + " n=" + afterDelete.chats.length +
+      " active=" + afterDelete.activeId);
+    check("ai chats: a late title reply does not resurrect the deleted chat",
+      !afterDelete.chats.some((c) => c.id === doomedId) &&
+      (!storedAfterDelete ||
+        !storedAfterDelete.chats.some((c) => c.id === doomedId)) &&
+      errors.length === errorsBeforeDelete,
+      "raw=" + (rawAfterDelete || "none") + " err=" +
+      errors.slice(errorsBeforeDelete).join("; "));
 
     // Leave the panel idle and the storage clean for later blocks.
     await chatsReset();

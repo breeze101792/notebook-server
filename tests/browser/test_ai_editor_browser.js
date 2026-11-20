@@ -119,6 +119,26 @@ function startStubServer() {
       req.on("end", () => {
         let body = {};
         try { body = JSON.parse(raw); } catch (_) {}
+        /* The chat-title call follows the first turn of a fresh chat. The
+         * existing checks read the last stubRequests entry as "the turn",
+         * so answer it out of band instead of recording it. */
+        const titleMsgs = Array.isArray(body.messages) ? body.messages : [];
+        const titleRequest = !!titleMsgs[0] && titleMsgs[0].role === "system" &&
+          /^You write chat titles\./.test(titleMsgs[0].content || "");
+        if (titleRequest) {
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-store",
+            "Connection": "keep-alive",
+          });
+          for (const chunk of chunksOf("Stub Chat Title", 24)) {
+            res.write("data: " + JSON.stringify(
+              { choices: [{ delta: { content: chunk } }] }) + "\n\n");
+          }
+          res.write("data: [DONE]\n\n");
+          res.end();
+          return;
+        }
         stubRequests.push(body);
         const prompt = lastUserText(body);
         let reply = "ASSISTANT_PROSE_OK from the local stub.";

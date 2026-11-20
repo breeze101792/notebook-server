@@ -158,12 +158,25 @@ of the file:
   can observe the panel while the stream is still open.
 - `aiChatLog` records the JSON bodies POSTed to
   `/api/ai/chat`.
+- `aiTitleLog` records the model-title requests separately, and
+  `aiTitleResponse` scripts their reply: a string, `null`/empty for no
+  content (the derived title stays), or `{text, gapMs}` so the reply lands
+  after the test has renamed the chat.
 
 The `/api/ai/chat` branch of the fetch stub parses
-the request body, pushes it onto `aiChatLog`, shifts the next entry
+the request body and first checks the title marker: a first message with
+`role: "system"` whose content starts with `You write chat titles.` is a
+title request. Those go to `aiTitleLog`, answer from `aiTitleResponse`, and
+never touch `aiChatLog` or `aiChatStreams`, so a title request cannot shift
+a scripted turn. Every other request is pushed onto `aiChatLog`, shifts the next entry
 off `aiChatStreams`, encodes each frame, and returns it as a real
 `ReadableStream` body that `api.js` reads with `getReader()`. If the queue is
-empty it returns a 400. Tests build frames with a local `sseFrame(text)`
+empty it returns a 400. Both branches honour `opts.signal`: an already-aborted
+call rejects with an `AbortError` before any frame is sent, and an abort
+mid-stream errors the body the same way. That is what makes Stop, Clear,
+Regenerate, Delete and the title timeout observable — a stopped turn settles
+as aborted rather than complete, and a cancelled title reply cannot land.
+Tests build frames with a local `sseFrame(text)`
 helper (declared inside the AI section) that wraps text in an OpenAI-style
 `delta.content` frame. Because the stub pops one entry per chat request, a
 test can script a multi-round tool loop by pushing several entries, then

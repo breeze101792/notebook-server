@@ -172,6 +172,15 @@
   const AI_CHATS_IMPORTED_TITLE = "Imported chat";
   const AI_CHATS_UNFILED = "Unfiled";
   const AI_CHATS_TITLE_MAX = 48;
+  /* One short extra call after the first turn replaces the derived title.
+   * The system prompt's lead-in ("You write chat titles.") is the marker
+   * the provider stubs in the tests route on; keep the two in sync. */
+  const AI_CHAT_TITLE_PROMPT = "You write chat titles. Reply with only a " +
+    "3-6 word title for the user request. No quotes, no markdown, no " +
+    "trailing period. Match the request language.";
+  const AI_CHAT_TITLE_INPUT_MAX = 4000;    // chars of the request sent
+  const AI_CHAT_TITLE_REPLY_MAX = 400;     // chars of the reply kept
+  const AI_CHAT_TITLE_TIMEOUT_MS = 15000;
   /* The manager's per-file "delete all" control: the button label, the
    * confirm action and the announcement all carry the chat count. */
   const AI_CM_DELETE_ALL = "Delete all chats";
@@ -933,6 +942,13 @@
    * while writes still land. */
   let lastStoreBytes = 0;
   let activeChatSig = "";
+  /* At most one model-written title request is in flight. `aiTitleToken`
+   * discards a reply that a newer request superseded; `aiTitleDone`
+   * remembers the chats already asked, so a failed call is not retried on
+   * every later turn. Neither is persisted: a reload keeps the title. */
+  let aiTitleRequest = null;   // {chatId, token, controller, timer}
+  let aiTitleToken = 0;
+  const aiTitleDone = new Set();
   /* The mounted panel's chat DOM (null before mount) and its log reset. */
   let mountChatUi = null;
   let mountResetLog = null;
@@ -1462,6 +1478,92 @@
     if (text) chat.title = deriveChatTitle(text);
   }
 
+  /* The model's reply as a title: first non-empty line, control and bidi
+   * characters removed, no wrapping quotes/backticks/emphasis, no "Title:"
+   * prefix, no trailing period, then capped like a derived title. */
+  function sanitizeModelTitle(text) {
+    let line = "";
+    for (const raw of String(text || "").split("\n")) {
+      const trimmed = raw.trim();
+      if (trimmed) { line = trimmed; break; }
+    }
+    line = line.replace(/\p{Cc}/gu, " ")
+      .replace(/\p{Cf}/gu, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .replace(/^[`"'*_]+|[`"'*_]+$/g, "")
+      .trim()
+      .replace(/^(?:title|chat title)\s*:\s*/i, "")
+      .replace(/^[`"'*_]+|[`"'*_]+$/g, "")
+      .replace(/\.+$/, "")
+      .trim();
+    return deriveChatTitle(line);
+  }
+
+  function cancelAnyAiTitle() {
+    if (!aiTitleRequest) return;
+    window.clearTimeout(aiTitleRequest.timer);
+    aiTitleRequest.controller.abort();
+    aiTitleRequest = null;
+  }
+
+  function cancelAiTitle(chatId) {
+    if (!aiTitleRequest || aiTitleRequest.chatId !== chatId) return;
+    cancelAnyAiTitle();
+  }
+
+  /* Ask the provider for a short title from the first user turn. It runs
+   * after the turn's own request has settled; a new turn or Regenerate
+   * cancels it, so two generations never share a local provider. An ACP
+   * profile is skipped because a second title turn would spawn another
+   * agent process. A manual rename, a deleted chat and a changed first
+   * request all beat the late reply. */
+  function maybeRequestAiTitle(chat, server, derivedTitle) {
+    if (!chat || !server || !derivedTitle) return;
+    if (!historyVisible() || chat.custom) return;
+    if (chat.title !== derivedTitle) return;
+    if (aiTitleDone.has(chat.id)) return;
+    if (servers.some((s) => s && s.name === server && s.acp === true)) return;
+    const prompt = firstUserText(chat.conversation);
+    if (!prompt) return;
+    aiTitleDone.add(chat.id);
+    cancelAnyAiTitle();
+    const token = ++aiTitleToken;
+    const controller = new AbortController();
+    const timer = window.setTimeout(
+      () => controller.abort(), AI_CHAT_TITLE_TIMEOUT_MS);
+    aiTitleRequest = { chatId: chat.id, token, controller, timer };
+    let text = "";
+    NB.api.aiChat(
+      { server, messages: [
+          { role: "system", content: AI_CHAT_TITLE_PROMPT },
+          { role: "user",
+            content: prompt.slice(0, AI_CHAT_TITLE_INPUT_MAX) },
+        ] },
+      (delta) => {
+        if (text.length >= AI_CHAT_TITLE_REPLY_MAX) return;
+        text += delta.slice(0, AI_CHAT_TITLE_REPLY_MAX - text.length);
+      },
+      controller.signal).then(() => {
+        window.clearTimeout(timer);
+        if (!aiTitleRequest || aiTitleRequest.token !== token) return;
+        aiTitleRequest = null;
+        const live = findChat(chat.id);
+        if (!live || live.custom) return;
+        if (firstUserText(live.conversation) !== prompt) return;
+        const title = sanitizeModelTitle(text);
+        if (!title) return;
+        live.title = title;
+        if (live.id === chatStore.activeId) activeChatSig = chatSignature(live);
+        writeChatStore();
+      }).catch(() => {
+        window.clearTimeout(timer);
+        if (aiTitleRequest && aiTitleRequest.token === token) {
+          aiTitleRequest = null;
+        }
+      });
+  }
+
   /* Assign the live conversation from the active chat and reset every
    * per-chat piece of module state. The signature is left null: a switch
    * writes only activeId, and the next content persist bumps once and
@@ -1587,6 +1689,8 @@
   function deleteChat(id) {
     const idx = chatStore.chats.findIndex((c) => c.id === id);
     if (idx < 0) return false;
+    cancelAiTitle(id);
+    aiTitleDone.delete(id);
     const wasActive = chatStore.activeId === id;
     chatStore.chats.splice(idx, 1);
     if (wasActive) {
@@ -1610,6 +1714,10 @@
     if (!path) return [];
     const removed = chatStore.chats.filter((c) => c.file === path);
     if (!removed.length) return [];
+    for (const chat of removed) {
+      cancelAiTitle(chat.id);
+      aiTitleDone.delete(chat.id);
+    }
     const wasActive = removed.some((c) => c.id === chatStore.activeId);
     chatStore.chats = chatStore.chats.filter((c) => c.file !== path);
     if (wasActive) {
@@ -2333,6 +2441,8 @@
       ui.end();
       return;
     }
+    /* A title request still in flight would compete with this turn. */
+    cancelAnyAiTitle();
     /* Capture the turn for Edit. These live in module state only -- never
      * on the conversation entry, which serializes into the wire body (an
      * image entry's data URL would otherwise be duplicated). */
@@ -2340,11 +2450,22 @@
     lastSentFiles = sendFiles.slice();
     const userBubble = appendMessage(log, "user", userText);
     if (sendFiles.length) appendUserFiles(userBubble, sendFiles);
+    /* A fresh chat's derived title is written by the persist below; once
+     * the turn settles, ask the model for a shorter one. */
+    const titleChat = activeChat();
+    const titleServer = currentServer;
+    const freshChat = !!titleChat &&
+      titleChat.title === AI_CHATS_DEFAULT_TITLE;
     conversation.push({ role: "user", content: userContent });
     persistHistory();
     /* The turn now has content: Clear must be live (it is the abort). */
     if (mountChatUi) mountChatUi.syncSend();
-    await runToolLoop(log, ui);
+    const outcome = await runToolLoop(log, ui);
+    /* Stop and a failed turn must not re-send the prompt to the provider. */
+    if (freshChat && !outcome.aborted && !outcome.failed) {
+      maybeRequestAiTitle(titleChat, titleServer,
+        deriveChatTitle(firstUserText(titleChat.conversation)));
+    }
   }
 
   /* One assistant turn: request the model, stream the reply, execute any
@@ -2355,6 +2476,8 @@
   async function runToolLoop(log, ui) {
     removeTurnControls(log);
     let lastBubble = null;
+    let aborted = false;
+    let failed = false;
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       /* Re-check the wire cap before every round: a near-limit image turn
        * can exceed it once tool follow-ups are appended mid-turn. Refuse
@@ -2364,13 +2487,13 @@
         { server: currentServer, messages: built.messages }));
       if (size > AI_ATTACH_MAX_WIRE_BYTES) {
         showSendTooLarge(log, size);
+        failed = true;
         break;
       }
       const bubble = appendMessage(log, "assistant", "");
       lastBubble = bubble;
       const state = { lastShape: "" };
       let text = "";
-      let aborted = false;
       try {
         await NB.api.aiChat(
           { server: currentServer, messages: built.messages },
@@ -2390,6 +2513,7 @@
       } catch (e) {
         if (e && e.name === "AbortError") aborted = true;
         else {
+          failed = true;
           const errEl = document.createElement("div");
           errEl.className = "ai-error";
           errEl.textContent = "AI request failed: " + (e.message || e);
@@ -2463,6 +2587,7 @@
     ui.end();
     appendRegenerate(lastBubble);
     appendEditControl(log);
+    return { aborted, failed };
   }
 
   /* Re-run the model on the latest genuine user turn, replacing the prior
@@ -2483,6 +2608,7 @@
     removeTurnControls(log);
     conversation = conversation.slice(0, idx + 1);
     persistHistory();
+    cancelAnyAiTitle();
     ui.begin();
     regenerating = true;
     try {
@@ -3196,7 +3322,9 @@
       }
       refreshChatBar();
       refreshStorage();
-      if (!manager.hidden) renderManagerList();
+      /* An open rename field owns its row: rebuilding would discard the
+       * text the user is typing (a title reply can land mid-rename). */
+      if (!manager.hidden && !renamingId) renderManagerList();
     }
 
     function newChatFromBar() {
@@ -3214,6 +3342,8 @@
       conversation = [];
       const chat = activeChat();
       if (chat) {
+        cancelAiTitle(chat.id);   // a pending title must not land either
+        aiTitleDone.delete(chat.id);
         chat.conversation = conversation;
         chat.toolFlags = [];
         chat.lastPrompt = "";
@@ -4402,6 +4532,9 @@
       storeOverBudget = false;
       lastStoreBytes = 0;
       activeChatSig = "";
+      cancelAnyAiTitle();
+      aiTitleToken = 0;
+      aiTitleDone.clear();
       attachReset();
       if (mountLog) removeTurnControls(mountLog);
       regenBtn = null;
@@ -4422,6 +4555,9 @@
       storeOverBudget = false;
       lastStoreBytes = 0;
       activeChatSig = "";
+      cancelAnyAiTitle();
+      aiTitleToken = 0;
+      aiTitleDone.clear();
       attachReset();
       if (mountLog) {
         removeTurnControls(mountLog);

@@ -208,7 +208,9 @@ a write/patch permission card awaits Apply/Reject: the tool loop is stopped on t
 so the chat the card belongs to must not move either.
 
 **New chat** creates a chat for the open file, titled `New chat`, makes it active, and moves
-focus to the composer textarea. It never opens a file and never touches another chat.
+focus to the composer textarea. Its first prompt replaces that placeholder with the prompt's
+first line; when that first turn ends, the model may replace it again with a short title (§5.4).
+It never opens a file and never touches another chat.
 
 ### 2.4 What the bar does not do
 
@@ -472,7 +474,7 @@ the only Tab stop that opens the chat.
 | Cancel | `Esc`, or a commit whose trimmed value is empty: the previous title returns |
 | Focus after commit | the row's title button |
 | Focus after cancel | the control that started the rename (F2 → the title button, button → the Rename button) |
-| Effect on the auto title | a manual title overrides the derived one and is never re-derived |
+| Effect on the auto title | a manual title overrides the derived or model-written one and is never re-derived |
 
 ### 3.7 Delete, two steps
 
@@ -651,7 +653,8 @@ down. Counts use `1 chat` / `n chats`, `1 msg` / `n msgs`.
 |---|---|
 | Default title, before the first prompt | `New chat` |
 | Derived title | the first prompt's first line, trimmed, at most 48 characters, `…` appended when longer |
-| Manual title | replaces the derived one; never re-derived; at most 48 characters |
+| Model title | one extra provider call after the first turn completes: 3–6 words, first non-empty line, no control characters, `Title:` prefix, wrapping quotes/backticks/emphasis or trailing period, at most 48 characters; skipped for ACP profiles, after a manual rename, and after a stopped or failed turn; the derived title stays on failure or a 15 s timeout |
+| Manual title | replaces the derived or model-written one; never re-derived; at most 48 characters |
 | Ellipsis in the bar and the row | the CSS ellipsis; the full string stays in `title` |
 
 ---

@@ -450,7 +450,7 @@ The store is one `localStorage["nb:aiChats"]` key, version 1:
   "chats": [{
     "id": "c...",              // "c" + base36 Date.now() + random suffix
     "file": "notes/a.md",      // notebook path; "" = Unfiled
-    "title": "New chat",       // derived, or manual once renamed
+    "title": "New chat",       // derived, model-written, or manual
     "custom": false,           // true once the user renamed it
     "createdAt": 0,
     "updatedAt": 0,
@@ -474,9 +474,25 @@ The store is one `localStorage["nb:aiChats"]` key, version 1:
   store. It first syncs the active chat (`conversation` is reassigned by
   `.slice()` in regenerate and edit), derives `toolFlags` from the
   `toolMessages` WeakSet, and derives a title from the first genuine user
-  prompt while the chat is still `New chat` and not `custom`. `updatedAt`
-  moves only when the conversation or the title changed, so switching chats
-  (which persists `activeId`) never reorders the list.
+  prompt while the chat is still `New chat` and not `custom`. A write bumps
+  `updatedAt` only when that persist sees a new conversation or title
+  signature, so switching chats (which persists `activeId`) never reorders
+  the list.
+- **Model-written title.** Once a fresh chat's first turn completes, one
+  extra `/api/ai/chat` request asks the active OpenAI-compatible provider for
+  a 3–6 word title from the first user prompt (capped at 4000 characters).
+  The reply keeps its first non-empty line, loses control and bidi
+  characters, a `Title:` prefix, wrapping quotes/backticks/emphasis and
+  trailing periods, then caps at 48 characters. It replaces `title` only
+  when the chat still exists, is not `custom`, the first prompt is unchanged,
+  and the chat has not been asked before (one attempt per chat, in memory).
+  A manual rename beats a late reply; a new turn or Regenerate cancels an
+  in-flight request, so two generations never share a local provider. Clear
+  and Delete cancel one too. A stopped or failed turn asks for no title, and
+  a 15 s timeout or any provider failure keeps the derived one. The title
+  write does not bump `updatedAt`. ACP profiles are skipped: a title turn
+  would spawn a second agent process. The endpoint, the store shape and the
+  persisted title field are unchanged.
 - **Switching.** `activeChat()` is the chat with the store's `activeId`.
   Switching assigns `conversation = chat.conversation`,
   `lastSentPrompt = chat.lastPrompt`, clears `lastSentFiles`, and drops
