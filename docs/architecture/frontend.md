@@ -131,7 +131,7 @@ implemented today.
 | `lightbox.js` | 311 | `NB.lightbox` | Factory shared by mermaid/wavedrom/viz. Zoom/pan overlay, 0.25–5×, Esc and Ctrl+±. |
 | `blocks.js` | 1007 | `NB.blocks` | The one authoritative code-block renderer registry: `renderAll`, `restoreForMarkdown`, `pluginTypes`, `forLang`, `forElement`, `selectorFor`, `sourceOf`. |
 | `menu.js` | 233 | `NB.menu` | Shared right-click context-menu module. One singleton `#nb-menu` on `document.body`, descriptor-driven rendering, measured four-edge positioning, one close dispatcher (outside click, outside-scope right-click, Esc), an optional `onClose(reason)` callback, and keyboard nav. Surfaces decide *when* a menu opens and *what* its items are; the module owns *how*. |
-| `spellcheck.js` | 537 | `NB.spellcheck` | The app's en_US spelling: lazily loaded typo-js plus its dictionary, the word predicate, the `::highlight(nb-spelling)` underline, and the Spelling menu descriptors. Never writes prose; the correction write stays in hybrid. See [spellcheck.md](spellcheck.md). |
+| `spellcheck.js` | 626 | `NB.spellcheck` | The app's en_US spelling: lazily loaded typo-js plus its dictionary, the word predicate, the `::highlight(nb-spelling)` underline, and the Spelling menu descriptors. Never writes prose; the correction write stays in hybrid. See [spellcheck.md](spellcheck.md). |
 | `mermaid.js` | 361 | `NB.mermaid` | ` ```mermaid ` renderer, `securityLevel: "strict"`. |
 | `wavedrom.js` | 298 | `NB.wavedrom` | ` ```wavedrom ` renderer. Lenient JSON (unquoted keys). |
 | `katex.js` | 200 | `NB.katex` | ` ```math ` / ` ```katex ` renderer (KaTeX display mode). |

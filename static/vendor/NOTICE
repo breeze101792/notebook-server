@@ -78,10 +78,12 @@ Notes:    the elkjs source inside the bundle is unmodified, and no file in this
 MIT License
 -----------
 
-The text below covers the two Visimer packages and mermaid:
+The text below covers the two Visimer packages, mermaid, and the cspell
+software-terms list:
 
 Copyright (c) 2026 Inkeep
 Copyright (c) 2014 - 2022 Knut Sveidqvist
+Copyright (c) 2017-2025 Street Side Software <support@streetsidesoftware.nl>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -149,3 +151,16 @@ SCOWL notice
 
 The full copyright, source and credits list is in
 static/vendor/dictionaries/en_US/README.md.
+
+cspell software terms
+---------------------
+Version:  5.4.9 (@cspell/dict-software-terms)
+License:  MIT (the MIT text above covers this file too)
+Source:   https://github.com/streetsidesoftware/cspell-dicts
+          (dictionaries/software-terms)
+File:     static/vendor/dictionaries/softwareTerms.txt, copied byte-for-byte
+  size:    29896 bytes
+  sha256:  23b14305cd33be6205255cf22a6a6a335f91bc40eca4138ee344fd0304b4f6e8
+Notes:    a membership list only. It decides "known" for common software words;
+          it never produces suggestions. Read as UTF-8, one word per line, `#`
+          starts a comment.

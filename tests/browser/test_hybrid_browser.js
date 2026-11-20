@@ -2927,21 +2927,21 @@ async function main() {
 
       {
         const file = "notes/spell-shapes-personal.md";
-        const SRC = "Personal html and html-live here.\n";
+        const SRC = "Personal zqxj and zqxj-live here.\n";
         await enterSpellNote(file, SRC);
         const before = await paint();
-        check("T-SPELL-18: html-live is flagged before html is a personal word",
-          before.some((r) => r.text === "html-live"),
+        check("T-SPELL-18: zqxj-live is flagged before zqxj is a personal word",
+          before.some((r) => r.text === "zqxj-live"),
           JSON.stringify(before.map((r) => r.text)));
-        const wordsPost = waitConfigPost('"html"');
+        const wordsPost = waitConfigPost('"zqxj"');
         await page.evaluate(() => {
           window.NB.app.setSpellcheckWords(
-            window.NB.app.getSpellcheckWords().concat(["html"]));
+            window.NB.app.getSpellcheckWords().concat(["zqxj"]));
         });
         await wordsPost;
         await page.waitForTimeout(450);
         const after = await paint();
-        check("T-SPELL-18: a personal html accepts html-live",
+        check("T-SPELL-18: a personal zqxj accepts zqxj-live",
           after.length === 0, JSON.stringify(after.map((r) => r.text)));
         await leaveSpell();
         // Leave the list as the later cases expect it.

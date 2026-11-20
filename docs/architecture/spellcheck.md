@@ -153,11 +153,11 @@ token is declared by the UI doc).
 
 ### 2.6 RESOURCES
 
-Dictionary assets: the vendor script, `en_US.aff` 3,090 B and `en_US.dic`
-551,762 B (research Q3; the npm package totals 733,495 B unpacked and the exact
-vendored sizes go into `NOTICE`). Not precached (§9). Memory is proportional to
-the `.dic` stem map (≈ 50k stems) and stays resident after the first hybrid
-session.
+Dictionary assets: the vendor script, `en_US.aff` 3,090 B, `en_US.dic` 551,762 B
+and `softwareTerms.txt` 29,896 B (research Q3 for the first two; the exact
+vendored sizes and hashes are in `NOTICE`). Not precached (§9). Memory is
+proportional to the `.dic` stem map (≈ 50k stems) plus a ≈3,200-entry Set, and
+stays resident after the first hybrid session.
 
 ---
 
@@ -259,27 +259,36 @@ offset. It is the keyboard route (`Shift`+`F10` / the Menu key on prose) and ret
 ### 4.1 What counts as known
 
 A general dictionary flags a technical notebook's own vocabulary. The module
-therefore accepts four shapes before it asks the dictionary, in this order (one
-helper, `isKnownWord`, used by the underline pass and by `check`):
+therefore checks every source and shape in this table before it accepts a
+dictionary miss (one helper, `isKnownWord`, used by the underline pass and by
+`check`):
 
-| Shape | Rule | Example |
+| Source / shape | Rule | Example |
 |---|---|---|
 | personal or ignored word | present in `spellcheckWords` or `sessionIgnored` | `fsm` added by the user |
+| software terms | present in the vendored cspell software-terms list (≈3,200 entries) | `linter`, `bootloader`, `config` |
+| the note's code vocabulary | the token appears inside `code`, a fence or a rendered block in this note | `rankdir`, `const`, `svg` |
 | acronym | all letters upper-case, 2+ letters | `SCPI`, `MOSFET`, `README`, `GFM` |
 | identifier | an upper-case letter after the first character (camelCase, PascalCase, `WaveDrom`) | `getElementById`, `securityLevel`, `KaTeX` |
-| hyphen compound | split on `-`; every part of 2+ letters is known by the dictionary or the personal list | `html-live` (once `html` is personal), `box-shadow`, `re-entrant` |
+| hyphen compound | split on `-`; every part of 2+ letters is known by the sources above or the dictionary | `html-live`, `box-shadow`, `re-entrant` |
 | possessive | a trailing `'s` / `’s` is stripped and the stem checked | `MOSFET’s`, `Zephyr's` |
+| inflection | strip one or two of `-s`, `-es`, `-ies→y`, `-ed`, `-ied→y`, `-ing`, `-er`, `-est`, `-ly`, with the doubled-consonant forms, and check the base | `subfolders`, `flashed`, `APIs`, `renderers` |
 
 A token with digits, `_`, `/`, `@` or `.` never reaches this step (§4 refuses it),
 so `I2C`, `0x20` and `I2C_ADDR` are neither marked nor offered.
 
-The shapes are deliberately narrow: a real typo in lower case (`recieve`,
-`firmwar`) or a capitalised one (`Recieve`) is still flagged, because none of the
-four shapes matches it. The cost is accepted: an all-caps typo (`TEH`) is treated
-as an acronym and not marked.
+Measured on eight notes of a technical notebook: 58 flagged words before these
+sources, 34 with the software terms, 25 with the note's code vocabulary, 22 with
+inflections. The 22 that remain are CSS/embedded/LaTeX terms, product names, and
+one real typo — the personal list's job.
 
-The dictionary verdict, the shapes, and the personal list all come from one
-function, so the underline and the menu can never disagree about a word.
+The rules are deliberately narrow: a real typo in lower case (`recieve`,
+`firmwar`) or a capitalised one (`Recieve`) is still flagged, and an inflection of
+a typo (`recieved`) never resolves to a known base. The cost is accepted: an
+all-caps typo (`TEH`) is treated as an acronym and not marked.
+
+Every source and shape goes through one function, so the underline and the menu
+can never disagree about a word.
 
 ---
 
@@ -318,18 +327,21 @@ caller keeps its behaviour.
 
 ## 6. The underline pass
 
-1. `refresh` walks the text nodes under `root` with a `TreeWalker`.
-2. For each node: refuse if an ancestor is in the predicate's exclusion set; split
+1. `refresh` first collects the note's code vocabulary: one `TreeWalker` pass
+   over the text nodes under `root` that sit in an excluded subtree (`code`, a
+   fence, a rendered block), lower-cased into a session set.
+2. `refresh` walks the text nodes under `root` again for prose.
+3. For each prose node: refuse if an ancestor is in the predicate's exclusion set; split
    on the token rule; `check` each token that is not in `config.spellcheckWords`
    (lower-cased) and not in `sessionIgnored`.
-3. Build one `Range` per misspelled token and register
+4. Build one `Range` per misspelled token and register
    `CSS.highlights.set("nb-spelling", new Highlight(...ranges))` — replacing the
    previous entry. No ranges → `CSS.highlights.delete("nb-spelling")`.
-4. Debounce ≈ 200 ms, trailing, then a `requestIdleCallback` hop. `immediate`
+5. Debounce ≈ 200 ms, trailing, then a `requestIdleCallback` hop. `immediate`
    skips both, because a correction and a switch toggle must clear the mark
    before the next paint. It is not `HISTORY_COALESCE_MS` (400): paint
    granularity and undo granularity are different concerns.
-5. IME: no pass while composing; the pass relies on `onContentChange`, which already
+6. IME: no pass while composing; the pass relies on `onContentChange`, which already
    waits for `compositionend` (`hybrid-mode.md` §2.5).
 
 The pass is O(words) per change with memoized dictionary lookups. If a future note
@@ -406,10 +418,10 @@ other key in `config.json`.
 
 ## 9. Service worker and vendoring
 
-- `static/vendor/typo.js` and `static/vendor/dictionaries/en_US/{en_US.aff,en_US.dic}`
-  are vendored, not fetched from a CDN (the app makes no third-party requests at
-  runtime).
-- No `PRECACHE` entry for any of the three: `sw.js:69-75` states the policy for
+- `static/vendor/typo.js`, `static/vendor/dictionaries/en_US/{en_US.aff,en_US.dic}`
+  and `static/vendor/dictionaries/softwareTerms.txt` are vendored, not fetched
+  from a CDN (the app makes no third-party requests at runtime).
+- No `PRECACHE` entry for any of the four: `sw.js:69-75` states the policy for
   heavy on-demand bundles — install cost is deliberately kept down and the
   network-first handler mirrors them into the cache, so offline works after first
   use. `CACHE` (`sw.js:68`) is **not** bumped for this change.

@@ -60,7 +60,7 @@ node tests/browser/test_typography_browser.js  # computed type, port 5097
 node tests/browser/test_tabs_view_browser.js   # Tabs view, port 5079
 ```
 
-The backend (556 tests), the DOM suite (5,731 checks), and all fourteen browser
+The backend (556 tests), the DOM suite (5,748 checks), and all fourteen browser
 suites pass. The numbers are in
 [`browser-audit.md`](browser-audit.md) and the gate baseline in
 [`hybrid-regression-checklist.md`](hybrid-regression-checklist.md) §2. See
@@ -127,9 +127,10 @@ forever.
   half, `tests/browser/test_typography_browser.js`, is the only suite that
   asserts computed type; see [`typography.md`](typography.md).
 - **Static, `tests/static/test_spellcheck.js`** (shipped) — a jsdom-hosted
-  module test: the token predicate, the four accepted shapes (acronym,
-  identifier, hyphen compound, possessive), `check`/`suggest` against the
-  vendored en_US pair, and the personal-list normalisation. It needs no page
+  module test: the token predicate, the accepted shapes (acronym, identifier,
+  hyphen compound, possessive), the software-terms list, the note's code
+  vocabulary, the inflection matcher, `check`/`suggest` against the vendored
+  en_US pair, and the personal-list normalisation. It needs no page
   beyond jsdom, so it does not belong in the main DOM harness; the paint and
   the hit-test do, and live in the hybrid browser suite. See
   [`../architecture/spellcheck.md`](../architecture/spellcheck.md) §10.

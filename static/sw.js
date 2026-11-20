@@ -65,11 +65,11 @@
 /* Bumped v32 -> v33: ACP profiles are editable from Settings -> AI, so
  * settings.js and ai.js must reach already installed workers (api.js carries
  * the save call, style.css the row layout). */
-/* Bumped v33 -> v34: hybrid prose right-click opens the app menu with the
- * Spelling block, so the new spellcheck.js must be precached alongside
- * hybrid.js, menu.js, settings.js and style.css. typo.js and the dictionary
- * are fetched on demand (below). */
-const CACHE = "notebook-v34";
+/* Bumped v34 -> v35: spellcheck.js gained the note's code vocabulary, the
+ * inflection matcher and the software-terms list, so installed workers must
+ * refresh it. typo.js and the dictionaries/word list are fetched on demand
+ * (below). */
+const CACHE = "notebook-v35";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

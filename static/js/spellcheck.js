@@ -25,6 +25,7 @@
   const DICTIONARY_LANG = "en_US";
   const AFF_PATH = "/static/vendor/dictionaries/en_US/en_US.aff";
   const DIC_PATH = "/static/vendor/dictionaries/en_US/en_US.dic";
+  const SOFTWARE_TERMS_PATH = "/static/vendor/dictionaries/softwareTerms.txt";
   // ASCII-only en_US. An interior hyphen is part of the token
   // (mother-in-law); digits, "_", "/", "@" and "." are not, which is what
   // rejects I2C and 0x20.
@@ -55,6 +56,8 @@
 
   let lifecycle = "idle";   // "idle" | "loading" | "ready" | "failed"
   let dict = null;          // the Typo instance, cached across sessions
+  let softwareTerms = null; // Set of lower-case software words, or null
+  let codeVocab = new Set(); // lower-case tokens used in this note's code
   let root = null;          // the editing element, one hybrid session
   const sessionIgnored = new Set();
   let refreshTimer = null;
@@ -119,11 +122,41 @@
    * already folded by the caller or here. */
   const ACRONYM_RE = /^[A-Z]{2,}$/;
   const POSSESSIVE_RE = /['’]s$/i;
+  // Inflection suffixes, longest first; the base keeps the word's case so
+  // `APIs` can resolve to the acronym `API`.
+  const INFLECTIONS = [
+    ["ies", "y"], ["ied", "y"], ["ing", ""], ["est", ""], ["ed", ""],
+    ["es", ""], ["es", "e"], ["er", ""], ["er", "e"], ["ly", ""],
+    ["s", ""],
+  ];
 
-  function isKnownWord(word) {
+  function baseForms(word) {
+    const out = [];
+    const lower = word.toLowerCase();
+    for (const [suffix, tail] of INFLECTIONS) {
+      if (!lower.endsWith(suffix)) continue;
+      let base = word.slice(0, word.length - suffix.length) + tail;
+      // A doubled consonant before -ed/-ing/-er: mapped -> map.
+      if (/(?:ed|ing|er|est)$/.test(suffix) && base.length > 2 &&
+          base[base.length - 1].toLowerCase() ===
+            base[base.length - 2].toLowerCase()) {
+        out.push(base.slice(0, -1));
+      }
+      if (suffix === "s" && !lower.endsWith("ss")) out.push(base);
+      else if (suffix !== "s") out.push(base);
+    }
+    return out.filter((b) => b.length >= 2 && b !== word);
+  }
+
+  /* One known-word test, no inflection: the sources are the personal list,
+   * the note's code vocabulary, the software-terms list, the dictionary,
+   * and the accepted shapes. */
+  function isKnownDirect(word) {
     const w = fold(word).trim();
     if (!w || !TOKEN_FULL_RE.test(w)) return false;
     if (isExcludedWord(w)) return true;
+    if (codeVocab.has(w.toLowerCase())) return true;
+    if (softwareTerms && softwareTerms.has(w.toLowerCase())) return true;
     if (ACRONYM_RE.test(w)) return true;
     if (/[A-Z]/.test(w.slice(1))) return true;
     if (dict && dict.check(w)) return true;
@@ -139,8 +172,31 @@
     if (w.indexOf("-") !== -1) {
       const parts = w.split("-").filter((p) => /^[A-Za-z]{2,}$/.test(p));
       if (parts.length > 1 && parts.every((p) =>
-        isExcludedWord(p) || ACRONYM_RE.test(p) ||
-        (dict && dict.check(p)))) return true;
+        isExcludedWord(p) || (dict && dict.check(p)) ||
+        codeVocab.has(p.toLowerCase()) ||
+        (softwareTerms && softwareTerms.has(p.toLowerCase())))) return true;
+    }
+    return false;
+  }
+
+  /* Known, or an inflection of a known word (subfolders, flashed, APIs),
+   * two levels deep so `renderers` can reach `render`. */
+  function isKnownWord(word) {
+    const w = fold(word).trim();
+    if (isKnownDirect(w)) return true;
+    for (const base of baseForms(w)) {
+      if (isKnownDirect(base)) return true;
+      for (const deeper of baseForms(base)) {
+        if (isKnownDirect(deeper)) return true;
+      }
+    }
+    // A compound whose parts are inflected (sub-folders).
+    if (w.indexOf("-") !== -1) {
+      const parts = w.split("-").filter((p) => /^[A-Za-z]{2,}$/.test(p));
+      if (parts.length > 1 && parts.every((p) =>
+        isKnownDirect(p) || baseForms(p).some((b) => isKnownDirect(b)))) {
+        return true;
+      }
     }
     return false;
   }
@@ -251,6 +307,7 @@
       .then(() => Promise.all([
         fetchText(AFF_PATH),
         fetchText(DIC_PATH),
+        fetchText(SOFTWARE_TERMS_PATH),
       ]))
       .then((data) => {
         if (typeof window.Typo !== "function") {
@@ -261,6 +318,7 @@
           throw new Error("the dictionary did not parse");
         }
         dict = instance;
+        softwareTerms = parseTerms(data[2]);
         setLifecycle("ready");
       })
       .catch((err) => {
@@ -279,6 +337,35 @@
       }
       return res.text();
     });
+  }
+
+  /* One word per line, `#` comments; the list is a membership set, it never
+   * produces suggestions. */
+  function parseTerms(text) {
+    const set = new Set();
+    for (const line of String(text || "").split("\n")) {
+      const word = line.trim().toLowerCase();
+      if (!word || word.charAt(0) === "#") continue;
+      set.add(word);
+    }
+    return set;
+  }
+
+  /* Every token this note already uses as code is one of its terms. The
+   * walk is over the excluded subtrees only (code, fences, plugin cards). */
+  function collectCodeVocab() {
+    codeVocab = new Set();
+    if (!root) return;
+    const walker = document.createTreeWalker(root, SHOW_TEXT, null);
+    let node = walker.nextNode();
+    while (node) {
+      if (isExcluded(node) && typeof node.data === "string") {
+        for (const m of node.data.matchAll(TOKEN_RE)) {
+          codeVocab.add(m[0].toLowerCase());
+        }
+      }
+      node = walker.nextNode();
+    }
   }
 
   /* --- refresh and paint -------------------------------------------- */
@@ -325,6 +412,7 @@
     const registry = highlightRegistry();
     if (!registry || typeof window.Highlight !== "function") return;
     if (!enabled()) { clearHighlight(); return; }
+    collectCodeVocab();
     const skip = new Set(sessionIgnored);
     for (const w of personalWords()) skip.add(w);
     const ranges = [];
@@ -363,6 +451,7 @@
     root = el;
     sessionIgnored.clear();
     passWarned = false;
+    collectCodeVocab();
     // A browser without the highlight API loses the feature outright; the
     // browser's spellcheck stays on (§2.5).
     if (!hasHighlightApi()) {

@@ -109,6 +109,7 @@ async function main() {
   // The dictionary, read once from disk.
   const AFF = read("static/vendor/dictionaries/en_US/en_US.aff");
   const DIC = read("static/vendor/dictionaries/en_US/en_US.dic");
+  const TERMS = read("static/vendor/dictionaries/softwareTerms.txt");
 
   // NB stubs. `blocks` and `evt` must exist before spellcheck.js loads: the
   // exclusion list is built at module load from the renderer registry.
@@ -132,7 +133,8 @@ async function main() {
   window.fetch = async (url) => {
     fetched.push(String(url));
     const body = /\.aff(?:$|\?)/.test(url) ? AFF
-      : /\.dic(?:$|\?)/.test(url) ? DIC : null;
+      : /\.dic(?:$|\?)/.test(url) ? DIC
+      : /softwareTerms\.txt(?:$|\?)/.test(url) ? TERMS : null;
     if (body == null) {
       return { ok: false, status: 404, text: async () => "" };
     }
@@ -194,6 +196,27 @@ async function main() {
     sc.check("dog's") === true && sc.check("frobnicator's") === false);
   check("T-SPELL-18: a lower-case typo is still flagged",
     sc.check("recieve") === false && sc.check("firmwar") === false);
+  check("T-SPELL-18: a software term is accepted",
+    sc.check("linter") === true && sc.check("bootloader") === true);
+  check("T-SPELL-18: an inflection of a software term is accepted",
+    sc.check("subfolders") === true);
+  check("T-SPELL-18: an inflection of an acronym is accepted",
+    sc.check("APIs") === true && sc.check("MOSFETs") === true);
+  check("T-SPELL-18: two levels reach the dictionary stem",
+    sc.check("renderers") === true);
+  check("T-SPELL-18: a typo's inflection is still flagged",
+    sc.check("recieved") === false && sc.check("firmwars") === false);
+
+  // The note's own code vocabulary: a word used in a fence is a term.
+  const savedHTML = root.innerHTML;
+  root.innerHTML = "<p>rankdir</p><pre><code>rankdir</code></pre>";
+  sc.refresh({ immediate: true });
+  check("T-SPELL-18: a word used as code in the note is accepted",
+    sc.check("rankdir") === true);
+  root.innerHTML = savedHTML;
+  sc.refresh({ immediate: true });
+  check("T-SPELL-18: without the code use it is flagged again",
+    sc.check("rankdir") === false);
 
   const sug = sc.suggest("helo", 5);
   check("T-SPELL-02: suggest() ranks a real correction",
@@ -384,19 +407,21 @@ async function main() {
       "first=" + kept[0] + " last=" + kept[kept.length - 1]);
   }
 
-  app.setSpellcheckWords(["tpyo"]);
+  // A word that is neither in the fixture's code nor in the term list, so
+  // only the personal list can make it known.
+  app.setSpellcheckWords(["zqxj"]);
   check("T-SPELL-02: a personal word is correct by definition",
-    sc.check("tpyo") === true);
+    sc.check("zqxj") === true);
   app.setSpellcheckWords([]);
   check("T-SPELL-02: clearing the list restores the dictionary verdict",
-    sc.check("tpyo") === false);
+    sc.check("zqxj") === false);
 
-  app.setSpellcheckWords(["html"]);
+  app.setSpellcheckWords(["zqx"]);
   check("T-SPELL-18: a personal part accepts the compound",
-    sc.check("html-live") === true);
+    sc.check("zqx-live") === true);
   app.setSpellcheckWords([]);
   check("T-SPELL-18: without the part the compound is flagged",
-    sc.check("html-live") === false);
+    sc.check("zqx-live") === false);
 
   console.log("");
   if (fail) {

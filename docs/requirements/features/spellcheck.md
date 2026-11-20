@@ -42,7 +42,10 @@ Must have:
   devices through the existing config file, editable in Settings (one word per
   line) and grown by "Add to dictionary";
 - technical shapes are not marked: all-caps acronyms, camelCase identifiers,
-  hyphen compounds of known parts, and possessives of known words.
+  hyphen compounds of known parts, possessives of known words, and inflections
+  (`-s`, `-es`, `-ed`, `-ing`, `-er`, `-ly`) of any known word;
+- a word in the software-terms list, or one this note already uses as code, is
+  not marked.
 - failure degrades to the browser's spellcheck and native menu.
 
 Should have: none beyond the above.

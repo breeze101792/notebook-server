@@ -37,6 +37,9 @@ Paths: `style.css` is `static/css/style.css`; `index.html` is
 |---|---|---|
 | Prose text a token rule accepts (letters, interior apostrophe, interior hyphen) and the dictionary rejects | yes | the feature's only standing signal |
 | A correct word, a word in the personal list, a word just ignored | no | one verdict, one mark |
+| A word in the software-terms list (`linter`, `bootloader`, `config`) | no | common software vocabulary the 2020 dictionary lacks |
+| A word this note already uses as code (`rankdir`, `const`, `svg`) | no | the note's own terms; collected from its code and fences |
+| An inflection of a known word (`subfolders`, `flashed`, `APIs`) | no | one- and two-level suffix stripping to a known base |
 | Text inside `code`, a fence, a diagram card, the fence language chip, an image | never | literal content and rendered blocks are not prose |
 | Link text and table cell text | yes | prose that serializes to Markdown |
 | A word split across inline markup (`un**believ**able`) | never | one text node is required; guessing would corrupt the word |
