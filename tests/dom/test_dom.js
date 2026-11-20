@@ -31926,6 +31926,53 @@ function check(label, cond, extra) {
   await tick(20);
   check("vim: Esc in edit mode does NOT exit edit mode (VIM key)",
     !cmIsHidden());
+  // An Escape that no handler claims is a browser/OS command -- on macOS
+  // it exits window fullscreen. Vim claims insert/visual Esc itself
+  // (cm-bridge); normal-mode Esc must be claimed by the shell too, or
+  // the OS acts on it. The claim has to happen after CodeMirror ran, so
+  // it lives on the document's bubble phase.
+  {
+    const cmView = window.NB.cmEditor.view();
+    const cm5 = window.CM6.getCM(cmView);
+    const cmKeyEv = (k) => {
+      const ev = new window.KeyboardEvent("keydown",
+        { key: k, bubbles: true, cancelable: true });
+      cmView.contentDOM.dispatchEvent(ev);
+      return ev;
+    };
+    check("vim: pre-Esc CM is in normal mode (precondition)",
+      !cm5.state.vim.insertMode);
+    const escNormal = cmKeyEv("Escape");
+    await tick(10);
+    check("vim: normal-mode Esc claims the event (no OS fullscreen exit)",
+      escNormal.defaultPrevented === true,
+      "defaultPrevented=" + escNormal.defaultPrevented);
+    cmKeyEv("i");
+    await tick(10);
+    check("vim: 'i' enters insert mode (precondition)",
+      cm5.state.vim.insertMode === true);
+    const escInsert = cmKeyEv("Escape");
+    await tick(10);
+    check("vim: insert-mode Esc claims the event and returns to normal",
+      escInsert.defaultPrevented === true && cm5.state.vim.insertMode === false,
+      "defaultPrevented=" + escInsert.defaultPrevented +
+      " insertMode=" + cm5.state.vim.insertMode);
+    // During an IME composition the claim must stand down: canceling a
+    // composition keydown corrupts the insert (cm-bridge has the same
+    // guard).
+    const escIme = new window.KeyboardEvent("keydown", {
+      key: "Escape", isComposing: true, bubbles: true, cancelable: true,
+    });
+    cmView.contentDOM.dispatchEvent(escIme);
+    await tick(10);
+    check("vim: Esc during IME composition is left alone",
+      escIme.defaultPrevented === false);
+    // Clear the shell's Esc keyup state (pendingEscRestore) so the next
+    // blocks start clean.
+    window.document.dispatchEvent(new window.KeyboardEvent("keyup",
+      { key: "Escape", bubbles: true, cancelable: true }));
+    await tick(10);
+  }
   // The 'vim window' is the editor pane -- it should still be the
   // active vim window after Esc (the user wants to keep working in CM's
   // normal mode). CM keeps focus (CM6 is now in normal mode and still

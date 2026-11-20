@@ -17,8 +17,11 @@
  * module only handles the global modifier bindings (Ctrl+Shift+E exit
  * edit, Alt+H/L switch tabs, Ctrl+S save, Ctrl+/ disable VIM,
  * Ctrl+W cycle window). Esc and `/` are NOT intercepted while CM
- * has focus -- they belong to the VIM keymap. Otherwise (anywhere
- * else in the app), this module is the sole owner of the keymap.
+ * has focus -- they belong to the VIM keymap. Esc's *default* is
+ * still claimed whenever VIM mode is on (bubble phase, after CM runs
+ * its own handlers) so the OS cannot treat an unclaimed Escape as a
+ * command; see onKeyDownClaimEsc. Otherwise (anywhere else in the
+ * app), this module is the sole owner of the keymap.
  *
  * Activation: opt-in via Settings → "VIM mode" (off by default). The
  * same toggle also gates the editor's vim keymap (cm-bridge.js), so
@@ -477,6 +480,20 @@
   function isEnabled() { return enabled; }
 
   /* --- listener attachment ---------------------------------------- */
+  /* An Escape that no handler claimed is an OS/browser command -- on macOS
+   * it exits window fullscreen. Vim claims insert/visual Esc in cm-bridge;
+   * normal-mode Esc is claimed by nobody, so claim it here whenever VIM
+   * mode is on. Bubble phase: in the normal path CodeMirror has already
+   * acted on the key, and a capture-phase preventDefault would make CM's
+   * handler chain bail on event.defaultPrevented before vim sees it. */
+  function onKeyDownClaimEsc(e) {
+    if (!enabled) return;
+    if (e.key !== "Escape") return;
+    // Composition owns the keyboard; canceling its keydown corrupts the
+    // insert (same guard as cm-bridge).
+    if (e.isComposing) return;
+    e.preventDefault();
+  }
   function onKeyDown(e) { handleKey(e); }
   function onKeyUp(e) {
     if (!enabled) return;
@@ -515,10 +532,12 @@
   }
   function attach() {
     document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("keydown", onKeyDownClaimEsc);
     document.addEventListener("keyup", onKeyUp, true);
   }
   function detach() {
     document.removeEventListener("keydown", onKeyDown, true);
+    document.removeEventListener("keydown", onKeyDownClaimEsc);
     document.removeEventListener("keyup", onKeyUp, true);
   }
   // We attach the listener once on module load, and `enabled` gates
