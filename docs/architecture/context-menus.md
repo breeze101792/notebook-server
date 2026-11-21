@@ -417,6 +417,17 @@ then one call*:
   (`:4570-4636`), `hideMenu` (`:4638`), the four document listeners
   (`:5747-5782`), the `menuEl` lookup (`:45`).
 
+**Amendment 2026-11-21 — the list editor's entry.** `buildItems` gains one
+top-level descriptor, `{ label: "Edit list…", handler }`, placed immediately
+before the conditional `Edit table…` item. Its target is the pointer's item,
+`e.target.closest("li")`, falling back to the caret's item (`caretListItem()`,
+`hybrid.js:2708`) for the whitespace gap between items and for a keyboard
+`contextmenu`; the entry appears only when that target is inside
+`viewerContentEl`. It never opens another menu and adds no submenu, so §3.2's
+single-open policy and §2.3's rendering rules are unchanged. The handler is
+`NB.listEditor.open(li)`. Body design: [`../ui/list-editor.md`](../ui/list-editor.md);
+mechanism: [`list-editor.md`](list-editor.md).
+
 ### 4.4 Shared files
 
 - `templates/index.html`: add `<script src="/static/js/menu.js" defer></script>`

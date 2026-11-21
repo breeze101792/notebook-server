@@ -658,6 +658,13 @@ depth chooser, subtree carry, outdent, a variable-height recursive hit-test, a k
 submenu, and an `aria-live` region — plus a substantial Playwright suite. The estimate
 must not treat it as a small addition to `table-edit.js`.
 
+> **Amendment 2026-11-21.** The last sentence of the opening ("no popup window and no
+> separate list editor") no longer holds. Bulk list management now has a modal, opened
+> from the hybrid menu's **Edit list…** entry: [`../ui/list-editor.md`](../ui/list-editor.md)
+> and [`list-editor.md`](list-editor.md). §4.7.2 is unchanged — the in-place drag remains
+> the fast path for one item, and the modal is the bulk surface. The two share no code;
+> both commit through `moveListItem`.
+
 **Affordance (the grip).** One grip `<button>` is drawn for the list item under the
 pointer, or containing the caret, in the left gutter — the same hover-reveal model as
 the table row grip (`table-edit.js`). The grip, the drag ghost, and the drop line are

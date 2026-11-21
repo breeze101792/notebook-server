@@ -41,6 +41,8 @@ line. *Mockup* — the visual reference; the doc beside it is normative.
 | [`edit-window-mockup.html`](edit-window-mockup.html) | Mockup — **open this** | Twelve boards: the three windows, maximized, narrow, phone, applying, error, blocked. |
 | [`table-editor.md`](table-editor.md) | Current spec — pre-implementation | The table editor: grid, selection, clipboard, toolbar, blocked state, history, Apply, keyboard, phone. AC1–AC21. |
 | [`table-editor-mockup.html`](table-editor-mockup.html) | Mockup — **open this** | Grid, editing, selection, clipboard, sort, blocked, narrow and phone boards. |
+| [`list-editor.md`](list-editor.md) | Current spec — pre-implementation | The list editor: entry and scope, the treegrid and row anatomy, selection and roots, the five toolbar groups, sort and done-to-bottom rules, history, Apply, keyboard/ARIA, phone. AC1–AC22. |
+| [`list-editor-mockup.html`](list-editor-mockup.html) | Mockup — **open this** | Eleven boards: default open, collapsed parent, stale, empty, phone, row anatomy, a mixed-level selection with a locked descendant, 720, single item, failed restore and a 120-row list, dark and light. |
 | [`diagram-designers.md`](diagram-designers.md) | Current spec — pre-implementation | The Mermaid and Graphviz/WaveDrom designers: stage, sidebar, inspector, states, Apply, keyboard, phone. AC1–AC18. |
 | [`diagram-designers-mockup.html`](diagram-designers-mockup.html) | Mockup — **open this** | Eight boards across both designer families, including compact and phone. |
 | [`settings-modal.md`](settings-modal.md) | Current spec — pre-implementation | Settings and its seven tabs: nav, rows, forms, lists, the font-size preview tiles, auth states, keyboard, phone. AC1–AC28. |
@@ -81,6 +83,6 @@ session picker, the workspace picker, and their mockups) are frozen under
 | Build the app shell | [`shell-frame.md`](shell-frame.md): grid, topbar, rail, panel frame, outline, phone. Then [`tab-bar.md`](tab-bar.md) for the strip. |
 | Build or change a side-panel view | [`side-panel-views.md`](side-panel-views.md) for Explorer, Pinned, Bookmarks and Recent; [`tabs-view.md`](tabs-view.md) for Tabs; [`sessions.md`](sessions.md) for Sessions; [`search-view.md`](search-view.md) for Search; [`ai-panel.md`](ai-panel.md) for AI. |
 | Build or change a content-area page | [`graph-view.md`](graph-view.md) for the `§graph` pattern; [`sessions-page.md`](sessions-page.md) for the `§sessions` card grid and its drag. |
-| Build or extend an edit window | [`edit-window.md`](edit-window.md) for the shared chrome, then [`table-editor.md`](table-editor.md) or [`diagram-designers.md`](diagram-designers.md) for the body. |
+| Build or extend an edit window | [`edit-window.md`](edit-window.md) for the shared chrome, then [`table-editor.md`](table-editor.md), [`list-editor.md`](list-editor.md) or [`diagram-designers.md`](diagram-designers.md) for the body. |
 | Match a shipped surface that has no new spec | Use the frozen record under [`../archive/`](../archive/README.md) as source material, then write the new spec. |
 | Change a shipped surface | Write the new spec first, then implement. Do not revive an archived doc as current. |

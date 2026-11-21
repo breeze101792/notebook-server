@@ -69,7 +69,10 @@
  * inflection matcher and the software-terms list, so installed workers must
  * refresh it. typo.js and the dictionaries/word list are fetched on demand
  * (below). */
-const CACHE = "notebook-v35";
+/* Bumped v35 -> v36: the hybrid menu gained "Edit list…" and
+ * list-editor.js ships with its own overlay, so installed workers must
+ * refresh hybrid.js, list-editor.js, index.html and style.css. */
+const CACHE = "notebook-v36";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the
@@ -114,6 +117,7 @@ const PRECACHE = [
   "/static/js/table-select.js",
   "/static/js/edit-window.js",
   "/static/js/table-editor.js",
+  "/static/js/list-editor.js",
   "/static/js/watcher.js",
   "/static/js/outline.js",
   "/static/js/sidebar.js",

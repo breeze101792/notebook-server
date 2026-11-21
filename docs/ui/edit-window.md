@@ -1,4 +1,4 @@
-# Edit window — the shared chrome for the table editor, Mermaid and DOT/WaveDrom
+# Edit window — the shared chrome for the table editor, list editor, Mermaid and DOT/WaveDrom
 
 Status: Current spec — pre-implementation (codifies the shipped shell).
 
@@ -11,8 +11,9 @@ the shipped numbers except the two marked exceptions.
 box, the header, the action bar, the body slot, the footer, window geometry, and the
 keyboard contract. It reads [`foundations.md`](foundations.md) for tokens and
 [`controls.md`](controls.md) for control anatomy. It does not design a body: the table
-grid is [`table-editor.md`](table-editor.md); the designer sidebar, canvas and inspector
-are [`diagram-designers.md`](diagram-designers.md). Those two documents own every control
+grid is [`table-editor.md`](table-editor.md), the list tree is
+[`list-editor.md`](list-editor.md); the designer sidebar, canvas and inspector
+are [`diagram-designers.md`](diagram-designers.md). Those documents own every control
 inside the body and the per-window contents of the bar's actions slot. This document
 fixes the slot they fill.
 
@@ -35,7 +36,7 @@ Every claim about current code cites `file:line`.
 
 ## 1. Anatomy
 
-### 1.1 One shell, three bodies
+### 1.1 One shell, four bodies
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -65,12 +66,13 @@ inner body pane may have its own scroller. The header, bar and footer are
 | Modal box | `min(1320px, 96vw) × min(85vh, 92vh)` | `--surface-panel` | `style.css:1801-1840`, `:5812-5817`, `:6171-6176` | this document |
 | Header | 65 | `--surface-panel` | `style.css:8549-8586` | this document |
 | Action bar | 57 | `--surface-raised` | `style.css:8591-8674` | this document; contents per body doc |
-| Body slot | `1fr`, `min-height: 0` | per window | `style.css:1914-1927` | `table-editor.md`, `diagram-designers.md` |
+| Body slot | `1fr`, `min-height: 0` | per window | `style.css:1914-1927` | `table-editor.md`, `list-editor.md`, `diagram-designers.md` |
 | Footer | 69 | `--surface-panel` | `style.css:8726-8748` | this document |
 
-The three modal variants are `.table-editor-modal` (`style.css:5812`), `.designer-modal`
-for Mermaid (`:6171`), and the same `.designer-modal` for DOT/WaveDrom inside
-`#dw-designer-overlay` (`templates/index.html:1642`).
+The four modal variants are `.table-editor-modal` (`style.css:5812`), `.list-editor-modal`
+(it reuses the table's box metrics; only its body is new, `list-editor.md` §10),
+`.designer-modal` for Mermaid (`:6171`), and the same `.designer-modal` for DOT/WaveDrom
+inside `#dw-designer-overlay` (`templates/index.html:1642`).
 
 ### 1.2 DOM order and class map
 
@@ -103,8 +105,8 @@ The markup source is `templates/_edit_window.html:13-61`; the three calls are
 `templates/index.html:1324-1455` (table), `:1467-1631` (Mermaid), `:1644-1762`
 (DOT/WaveDrom).
 
-The prefixes are `table-editor`, `designer` and `dw` (`docs/archive/ui/edit-window-guide.md:75-81`).
-No new prefix may reuse one of them.
+The prefixes are `table-editor`, `list-editor`, `designer` and `dw`
+(`docs/archive/ui/edit-window-guide.md:75-81`). No new prefix may reuse one of them.
 
 ### 1.3 What the shell owns, and what it does not
 
@@ -275,6 +277,7 @@ The actions slot holds only window-scoped actions. A window supplies one
 | Window | Inner toolbar | Groups | Content owner |
 |---|---|---|---|
 | Table | `.te-toolbar` reparented into the slot | six: Rows, Columns, Clipboard, Alignment, Sort, Table | `table-editor.md` |
+| List | `.le-toolbar` | five: Move, Level, Sort, Select, State | `list-editor.md` |
 | Mermaid | `.edit-bar-toolbar` | Canvas mode; Add and chart | `diagram-designers.md` |
 | DOT / WaveDrom | `.edit-bar-toolbar` | Build: Add, Chart, Source | `diagram-designers.md` |
 
@@ -284,7 +287,7 @@ inside a group, 8 px between clusters, a 20 px separator, one line. The table's
 (`style.css:5846-5851`, `:8719-8722`); the shell uses the bar value. The sort select is
 32 px high in the bar (`:8723`). The one exception is the table's own phone toolbar:
 at ≤520 its tools and sort grow to 44 px (table-editor.md §10.5 E1, X2). The designers
-keep 32. The table's `.te-sep` keeps its 6 px side margin; the shell's
+keep 32. The list editor's tools also grow to 44 at ≤520 (`list-editor.md` E1). The table's `.te-sep` keeps its 6 px side margin; the shell's
 `.edit-bar-sep` uses 8 (`:5839-5845`, `:8635-8641`).
 
 Chips are 32 px high, transparent, `0 10px` padding, `.8rem`, radius 6; pressed is
@@ -404,6 +407,7 @@ second status region.
 | Window | Behaviour on Cancel |
 |---|---|
 | Table | Close without writing; no confirm (`table-editor.js:1994-1998`) |
+| List | Close without writing; no confirm. `list-editor.md` §7.2 |
 | Mermaid / DOT | If the body reports unsaved changes, `window.confirm` asks to discard; a cancel in the confirm keeps the window open (`designer-shell.js:493-498`) |
 
 Cancel is never disabled at rest. During applying the designers disable it
@@ -417,6 +421,7 @@ position and size; the body owns when it is enabled and what it commits.
 | Window | Enabled when | Click order |
 |---|---|---|
 | Table | Always, unless the table is blocked (then hidden **and** disabled) | rebuild → compare with the opening table → flush the editor's pending snapshot → replace the table on the note → rebind the overlay edit control → `onContentChange` → close → caret to the table (`table-editor.js:1967-1992`) |
+| List | Unless the window is stale (then visible **and** disabled, §4.5's designer rule) | plan (pure) → refuse a null plan with a status, never a close → compare the structural signature → validate the container is still connected → clear the text selection → flush the editor's pending snapshot → commit the plan in place → `onContentChange` → close → caret to the list; an identical signature writes nothing (`list-editor.md` §7.1) |
 | Mermaid / DOT | `stateName === "ready" && !applying && !blocked` | set applying → inert the sidebar and inspector → disable Apply and Cancel → sync history → status `Applying…` → serialize → render the candidate into a detached host → replace the fence → render the note card → `onContentChange` → close (`designer-shell.js:561-637`) |
 
 A clean open still shows Apply enabled. The designers' no-op branch sets
@@ -460,12 +465,13 @@ At ≤520 the table hint is hidden; the designers never had one. The footer stil
 
 ### 5.1 Default box
 
-All three windows are free-floating fixed-position boxes centred with `left/top: 50%`
+All four windows are free-floating fixed-position boxes centred with `left/top: 50%`
 and `translate(-50%, -50%)` (`style.css:1819-1822`).
 
 | Window | Width | Height | Max | Source |
 |---|---|---|---|---|
 | Table | `min(--designer-modal-w, 96vw)` = 1320 at ≥1375 | `min(--designer-modal-h, 92vh)` = 85vh | `min(96vw, viewport−24) × min(92vh, viewport−24)` | `style.css:5812-5817`; tokens `:67-68`, `:124-125` |
+| List | same as the table | same | same | `list-editor.md` §10 |
 | Mermaid / DOT | same | same | same | `style.css:6171-6176` |
 
 `--designer-modal-w: 1320px` and `--designer-modal-h: 85vh` are declared in both theme
@@ -474,9 +480,9 @@ tokens so the two families cannot drift; the archive's `--table-editor-*` names 
 shipped.
 
 The Settings width/height preference (`--settings-modal-width/height`, set on `:root` by
-`app.js:307-312`) does **not** resize these three windows: the later `.table-editor-modal`
-and `.designer-modal` rules win at equal specificity. Only Settings, Export, Auth and
-`:help` follow that preference.
+`app.js:307-312`) does **not** resize these four windows: the later `.table-editor-modal`,
+`.list-editor-modal` and `.designer-modal` rules win at equal specificity. Only Settings,
+Export, Auth and `:help` follow that preference.
 
 ### 5.2 Free drag
 
@@ -581,6 +587,7 @@ History lives only in the bar's pinned pair. A window attaches once through
 | Window | Mode | Controller | Why |
 |---|---|---|---|
 | Table | stack | `snapshot()` / `restore()` (`table-editor.js:2119-2129`) | Restore rebuilds the grid and the cell model |
+| List | stack | `capture()` / `restore()` over a JSON-string snapshot (`list-editor.md` §6) | Restore maps ids back to the live rows and repaints |
 | DOT / WaveDrom | stack | the language controller (`designer-shell.js:104-125`) | Restore repaints the preview |
 | Mermaid | delegate | Visimer `undo()` / `redo()` (`mermaid-designer.js:381-399`) | Visimer already owns a stack; a second would diverge |
 
@@ -656,6 +663,7 @@ the only place the chord is named (`_edit_window.html:27`, `:36-37`).
 | **Applying** (designers) | unchanged | history dead | `Applying…`; Apply + Cancel disabled | sidebar/inspector inert; body spinner or frozen preview |
 | **Error** (designers) | unchanged | history back | `.error` copy; Apply enabled | alert card; focus to first inspector field or canvas |
 | **Blocked** (table) | unchanged | tools `aria-disabled`; history dead | notice copy; Apply **hidden**; Cancel focused | notice strip + read-only grid |
+| **Stale** (list) | unchanged | every tool `aria-disabled`; history dead | notice strip; Apply visible **and disabled**; Cancel focused | notice strip + read-only treegrid |
 | **Read-only** (DW designer) | unchanged | actions that cannot write disabled | Apply disabled | `Read-only diagram` state |
 | **No selection** | unchanged | unchanged | unchanged | inspector `Nothing selected` |
 | **Empty** | badge collapsed | actions slot empty | status empty | body-owned |
@@ -736,8 +744,9 @@ before close and the header precedes the bar; the browser test's "first" edge is
 therefore not close (`tests/browser/test_table_editor_browser.js:295-298`).
 
 Initial focus is body-owned: the table's first cell (`table-editor.js:2048`), Cancel when
-blocked (`:2046`), and the designers' canvas (`designer-shell.js:463`, `:317-321`). The
-dialog container is the fallback target for the trap (`dialog.js:62-72`).
+blocked (`:2046`), the list editor's first row (`list-editor.md` §1.5), and the designers'
+canvas (`designer-shell.js:463`, `:317-321`). The dialog container is the fallback target
+for the trap (`dialog.js:62-72`).
 
 ### 8.3 Containment and return
 
@@ -750,6 +759,7 @@ invoker if it is still usable, else to the `fallbackFocus`
 | Window | Fallback / return |
 |---|---|
 | Table | The overlay entry button if it still exists; otherwise the first cell via a collapsed range. Apply always lands in the cell so `Ctrl+Z` reaches the hybrid dispatcher (`table-editor.js:2080-2092`, `:2063-2075`) |
+| List | A collapsed caret at the start of the list's first item, always — the context-menu row is hidden by the time the window closes. Apply lands the caret in the list so `Ctrl+Z` reaches the hybrid dispatcher (`list-editor.md` §7.1) |
 | Mermaid / DOT | The rendered block, not a context-menu row that close destroys (`designer-shell.js:478-483`, `:323-334`) |
 
 The close paths never intentionally leave focus on `<body>`. A closing animation does not
@@ -762,6 +772,7 @@ exist, so focus returns immediately.
 | Window | Order |
 |---|---|
 | Table | clear an in-progress fill → collapse a multi-selection → cancel the window (`table-editor.js:583-596`, `:506-514`) |
+| List | cancel the window on one press; there is no live range or fill to claim the first (`list-editor.md` §8.2) |
 | Mermaid / DOT | close the compact sheet → close the window; the dirty guard may keep it open (`designer-shell.js:665-674`, `:493-498`) |
 
 The backdrop does the same: clicking the overlay closes the window. The table calls
@@ -856,17 +867,18 @@ still gives either window the full viewport in one press.
 | All edit windows go full screen at ≤520 | Only the table does; the designers stay rounded at 96vw | `style.css:6122-6131`; no designer 520 rule |
 | The table slot needs 973 px and fits at 1280 | About 950–975 px; it fits at 1280 and fades at 1000 / 900 | `tests/browser/test_table_editor_browser.js:237-292`; table-editor.md §4.1 |
 
-### 9.5 The 520 cascade caveat
+### 9.5 The 520 rule and saved geometry
 
-Saved geometry is inline and wins over the non-important `100vw/100vh` rule. A table
-editor that has ever been dragged or resized opens at its saved pixel width (clamped to
-the viewport) on a phone, **not** full screen. The full-screen rule is effective only
-when no saved geometry exists. §12 P1 proposes the fix; the current document describes
-the condition rather than claiming unconditional full screen.
+The 520 block sets `width`, `height`, `left`, `top` and `transform` with `!important`
+(`style.css:7038-7047`), and `windows.js` writes saved geometry as plain inline style
+(`windows.js:60-75`). The media rule therefore wins: at ≤520 the window is full screen
+even when saved geometry exists. The saved box is not destroyed; it applies again on the
+next open above 520. Earlier revisions of this document claimed the opposite — the
+cascade says otherwise, and `tests/browser/test_table_editor_browser.js` should pin the
+phone case so this cannot drift again.
 
 A related detail: a header press that does not move still writes geometry on pointer up
-(`windows.js:175-182`), so a single click can create the saved box that defeats the 520
-rule.
+(`windows.js:175-182`), so a single click can create a saved box that reopens on desktop.
 
 ---
 
@@ -874,8 +886,8 @@ rule.
 
 ### 10.1 Tokens
 
-The shell already declares its component tokens on the three overlays
-(`style.css:8526-8545`). They are numbers, not aliases; no foundation token is
+The shell already declares its component tokens on the four overlays
+(`style.css:9805-9824`). They are numbers, not aliases; no foundation token is
 redefined.
 
 | Need | Token | Value | Reuse |
@@ -915,10 +927,11 @@ The shipped rules are the target. Keep this order; do not reorder the existing
 declarations. The only spelling change is the base tier to the semantic tier, which
 resolves to the same value in both themes (foundations §2.3).
 
-**1. Component tokens, on the three overlays** (`style.css:8526-8545`):
+**1. Component tokens, on the four overlays** (`style.css:9805-9824`):
 
 ```css
 #table-editor-overlay,
+#list-editor-overlay,
 #designer-overlay,
 #dw-designer-overlay {
   --edit-head-h: 65px;
@@ -1201,11 +1214,11 @@ future window that wants 44 px at ≤520 adds its own scoped rule, not a higher 
 | **AC8** | The default box is 1320 × 85vh, capped at 96vw × 92vh | `style.css` | At 1400 the window is 1320 wide; at 1000 it is 960; the designers are the same. |
 | **AC9** | Drag and resize persist | `windows.js` | Drag the header +60/+50: inline left/top move by that; resize +60/+50: width/height grow; `nb:windowGeometry[<overlay-id>]` holds `{left,top,w,h}`; min 320 × 240. `tests/dom/test_dom.js:27265-27303`. Off-screen clamping is P15, not today |
 | **AC10** | Maximize is transient and ignores gestures | `windows.js`, `style.css` | Click adds `.settings-modal--max`, label `Restore`, `aria-pressed="true"`, grip hidden; drag/resize do not change geometry; closing resets. `tests/dom/test_dom.js:27310-27560` |
-| **AC11** | History is dead on open, live after a change, and coalesces text | `edit-window.js`, the three controllers | Both buttons disabled at open; one change enables Undo; 350 ms of text edits is one step; structural edits never coalesce; apply clears on close. `tests/browser/test_designer_browser.js:264-300`; new table test for the coalescing boundary |
-| **AC12** | Apply commits once, or not at all | the three controllers | Designers: no-op reports `No changes to apply` and closes without writing; applying disables Apply and Cancel and writes `Applying…`; a failure keeps the window open with `.error`; success writes one note-level step. Table: unchanged table closes without writing. `tests/browser/test_designer_browser.js:205-215`; `tests/browser/test_table_editor_browser.js:408-466` |
-| **AC13** | Keyboard containment, Esc and Enter | `dialog.js`, the three controllers | Tab and Shift+Tab wrap at both ends; background is inert; Esc closes (after the body's layers); Enter never applies; focus returns to the overlay entry button when it survives, else the table cell, and to the block for the designers. `tests/browser/test_table_editor_browser.js:295-356`; `tests/browser/test_designer_browser.js:416` |
+| **AC11** | History is dead on open, live after a change, and coalesces text | `edit-window.js`, the four controllers | Both buttons disabled at open; one change enables Undo; 350 ms of text edits is one step; structural edits never coalesce; apply clears on close. `tests/browser/test_designer_browser.js:264-300`; new table and list tests for the coalescing boundary |
+| **AC12** | Apply commits once, or not at all | the four controllers | Designers: no-op reports `No changes to apply` and closes without writing; applying disables Apply and Cancel and writes `Applying…`; a failure keeps the window open with `.error`; success writes one note-level step. Table: unchanged table closes without writing. List: an equal structural signature closes without writing. `tests/browser/test_designer_browser.js:205-215`; `tests/browser/test_table_editor_browser.js:408-466` |
+| **AC13** | Keyboard containment, Esc and Enter | `dialog.js`, the four controllers | Tab and Shift+Tab wrap at both ends; background is inert; Esc closes (after any body layer that claims it — the table's two-stage Esc, the list's one-press Esc); Enter never applies; focus returns to the overlay entry button when it survives, else the table cell, else the list's caret, and to the block for the designers. `tests/browser/test_table_editor_browser.js:295-356`; `tests/browser/test_designer_browser.js:416` |
 | **AC14** | The two exceptions land | `style.css` | Header and footer controls show the 2 px accent ring on `:focus-visible`; at 390 the table's bar tools and sort measure 44 and the bar still measures 57; the designers' bar measures 32. New DOM/browser checks in `tests/dom/test_dom.js` and `tests/browser/test_table_editor_browser.js` |
-| **AC15** | Responsive truth | `style.css` | At 861 the table slot fades; at 720 the footer wraps; at 520 the table is full screen **only without saved inline geometry**, and the designers are 96vw × 85vh; at 390 the same, with the hint hidden and the table's 44 px tools (X2). New browser measurements |
+| **AC15** | Responsive truth | `style.css` | At 861 the table slot fades; at 720 the footer wraps; at 520 the table and the list are full screen (the media rule wins over saved inline geometry, `style.css:7038-7047`), and the designers are 96vw × 85vh; at 390 the same, with the hint hidden and the table's and list's 44 px tools (X2). New browser measurements |
 | **AC16** | The mockup is self-contained and covers the twelve boards, in dark and light | `docs/ui/edit-window-mockup.html` | Opening it offline makes zero network requests; the empty shell, the table, the designer, maximized, 720, the 390 pair, applying, error, blocked, the focus detail and the light board are present; the theme toggle re-scopes every board. |
 
 ---
@@ -1216,9 +1229,8 @@ Each row changes something visible or adds an interaction. None is part of this 
 
 | # | Proposal | Current | Why | Visual delta |
 |---|---|---|---|---|
-| **P16** | Disable the header ×, backdrop and Esc during applying, or allow cancel | They look live but `close()` returns early | Visible state only |
+| **P16** | Disable the header ×, backdrop and Esc during applying, or allow cancel | They look live but `close()` returns early | A cancel mid-apply would leave an inconsistent window | None (state only) |
 | **P15** | Clamp the restored `w/h` to the viewport and clamp every resize to the viewport, keeping a 12 px edge | `windows.js:60-75`, `:210-211` | A saved or resized window can open or grow with its close control off-screen | Behaviour only |
-| **P1** | Make the table's 520 full-screen rule win over saved geometry (clear inline size/position at the breakpoint, or add `!important` to the 100vw/vh rule) | Inline saved width/height wins; a previously dragged table stays a 12 px-margined box on a phone | The intended phone presentation is full screen; the cascade silently defeats it | Phone only, for windows with saved geometry |
 | **P2** | Decide the designers' phone presentation: full screen at ≤520 like the table, or keep the rounded 96vw × 85vh dialog and document it | Table full screen, designers rounded | The brief assumes one rule; the code has two | Phone only |
 | **P3** | Use `100dvh` instead of `100vh` for the maximize class and the table full-screen rule | `100vh` | Mobile browser chrome overlays the bottom of a `100vh` box | Phone only; the box follows the visible viewport |
 | **P4** | Error status uses `--danger` (`designer-status.error`) | `--warn` | Error is not a warning; both clear contrast. Colour is already paired with a full sentence | Amber → red on error only |

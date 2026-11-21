@@ -158,6 +158,7 @@ Rules:
 | Rendered blocks | [`content-blocks.md`](content-blocks.md) | reader |
 | Shared modal chrome | [`edit-window.md`](edit-window.md) | foundations, controls |
 | Table editor body | [`table-editor.md`](table-editor.md) | edit-window |
+| List editor body | [`list-editor.md`](list-editor.md) | edit-window |
 | Diagram designer bodies | [`diagram-designers.md`](diagram-designers.md) | edit-window |
 | Settings content | [`settings-modal.md`](settings-modal.md) | edit-window (chrome) |
 | Auth, workspace, session, export | [`dialogs.md`](dialogs.md) | edit-window (chrome) |
@@ -218,6 +219,7 @@ recording the decision.
 | Markdown edit bar | 26 px controls, +1 px focus offset | Dense formatting strip |
 | Auth / workspace / session / export | +1 px focus offset | The dialog body pads by 14–18 px; an outset 2 px ring would touch the seam |
 | Edit-window bar | 44 px line; 32 px tools | Modal chrome |
+| List editor | 44 px bar tools and 44 px rows at ≤520 | Coarse-pointer floor; the table editor's precedent (`list-editor.md` E1, E2) |
 | Table preview controls | 24 px toggle, ≈22 px buttons | Reader table chrome; 24 px floor is P17 in `content-blocks.md` |
 | Lightbox controls | 28 px, radius 5, white 2 px focus ring | They sit over an arbitrary image; a dark ring disappears |
 | Lightbox pill | `.55` face, full-white percentage, `.28` border | 4.74:1 over a white diagram |

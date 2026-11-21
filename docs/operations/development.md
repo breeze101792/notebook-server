@@ -24,7 +24,7 @@ changes. Test-suite detail lives in [`../testing/README.md`](../testing/README.m
 | `config/` | Settings: `config.json` (preferences), `state.json` (per-workspace tab and session state), `auth.json`, `ai.json` (OpenAI servers and ACP profiles), optional `server.json` (host, port, debug), and `workspaces.json` |
 | `static/` | Frontend assets (see below) |
 | `templates/index.html` | The SPA shell (1953 lines); loads the vendor files and all 45 app modules as `<script defer>` tags |
-| `tests/` | `test_app.py` (backend, ~8.7k lines, 597 test methods), `dom/test_dom.js` (frontend), the 12 Playwright suites in `browser/`, the stub ACP agent in `fixtures/`, and the manual real-agent check in `manual/` |
+| `tests/` | `test_app.py` (backend, ~8.7k lines, 597 test methods), `dom/test_dom.js` (frontend), the 16 Playwright suites in `browser/`, the stub ACP agent in `fixtures/`, and the manual real-agent check in `manual/` |
 | `docs/` | This documentation set; the audit results are in `testing/browser-audit.md` |
 | `TODO.md` | Task-list stub (contains only `# TODO`) |
 
@@ -61,7 +61,7 @@ node tests/browser/run_all.js --only=designer    # one suite by substring
 ```
 
 `npm run test:browser:all` and `node tests/browser/run_all.js` run the same
-`run_all.js` driver: it spawns each of the 12 suites sequentially, each against
+`run_all.js` driver: it spawns each of the 16 suites sequentially, each against
 its own Flask server on an explicit port. Every suite also has its own script
 (`npm run test:browser:core`, `:auth`, `:ai`, `:ai-blocks`, `:blocks`,
 `:figure-sizing`, `:hybrid-blocks`, `:mobile`, `:designer`, `:table-editor`,

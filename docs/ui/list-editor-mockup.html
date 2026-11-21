@@ -1,0 +1,2095 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>List editor — reference mockup</title>
+<style>
+/* ==================================================================
+   Foundations. Every value is a literal; no token aliases another
+   except the two documented aliases the app itself has.
+   Dark is the root theme; html[data-theme="light"] overrides it.
+   Mirrors docs/ui/foundations.md Appendix A.
+   ================================================================== */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+  --stroke-3: 3px;
+
+  --dur-1: 120ms;
+  --ease-out: ease-out;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-body: 32px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-lg: 17px;
+
+  --tree-indent: 18px;
+  --opacity-disabled: .45;
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  /* Dark palette. */
+  --bg-elev: #2a2b34;
+  --surface-page: #1a1b1f;
+  --surface-panel: #22232a;
+  --surface-raised: var(--bg-elev);
+  --surface-well: #14151a;
+  --text-primary: #e6e6ea;
+  --text-muted: #9799a4;
+  --text-on-accent: #14151a;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, .15);
+  --warn: #f3b454;
+  --focus-ring: 2px solid #7c9cff;
+  --overlay-scrim: rgba(0, 0, 0, .5);
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .5);
+
+  /* Shared edit-window chrome (style.css:9805-9824). Out of this
+     document's scope; drawn so the body sits in its real frame. */
+  --edit-head-h: 65px;
+  --edit-head-pad-x: 18px;
+  --edit-head-gap: 10px;
+  --edit-icon: 44px;
+  --edit-seam-h: 24px;
+  --edit-bar-h: 57px;
+  --edit-bar-pad-x: 12px;
+  --edit-bar-pad-y: 6px;
+  --edit-bar-gap: 8px;
+  --edit-bar-tool: 32px;
+  --edit-bar-sep-h: 20px;
+  --edit-foot-h: 69px;
+  --edit-foot-pad-x: 18px;
+  --edit-foot-gap: 8px;
+  --edit-badge-max: 120px;
+  --designer-modal-w: 1320px;
+  --designer-modal-h: 85vh;
+
+  /* List-editor component tokens (docs/ui/list-editor.md §10.1). */
+  --le-row-pad-block: 3px;
+  --le-row-pad-inline: 6px;
+  --le-hit: 18px;
+  --le-select-box: 14px;
+  --le-done-box: 16px;
+  --le-mark-w: 20px;
+
+  /* Mockup page chrome, not app tokens. */
+  --doc-canvas: #0f1014;
+  --doc-pad: 32px;
+}
+
+html[data-theme="light"] {
+  --bg-elev: #eceef2;
+  --surface-page: #ffffff;
+  --surface-panel: #f6f7f9;
+  --surface-raised: var(--bg-elev);
+  --surface-well: #f0f2f5;
+  --text-primary: #1f2330;
+  --text-muted: #5d6470;
+  --text-on-accent: #ffffff;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --danger: #c0392b;
+  --danger-soft: rgba(192, 57, 43, .12);
+  --warn: #8a5a0b;
+  --focus-ring: 2px solid #2f5fd0;
+  --shadow-modal: 0 20px 60px rgba(0, 0, 0, .22);
+  --doc-canvas: #eef1f5;
+}
+
+/* ==================================================================
+   Mockup page
+   ================================================================== */
+* { box-sizing: border-box; }
+html { font-size: 14px; }
+body {
+  margin: 0;
+  background: var(--doc-canvas);
+  color: var(--text-primary);
+  font: var(--text-body)/var(--lh-normal) var(--font-ui);
+}
+.page { max-width: 1400px; margin: 0 auto; padding: var(--doc-pad); }
+.page-head { padding: var(--space-5) 0 var(--space-7); }
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.page-head h1 { margin: 0 0 var(--space-3); font-size: 28px; line-height: var(--lh-tight); font-weight: var(--fw-heading); }
+.page-head .lede { margin: 0; max-width: 86ch; color: var(--text-muted); font-size: var(--text-ui-lg); line-height: 1.65; }
+.page-head code, .lede code, .callout code {
+  font-family: var(--font-mono); font-size: .9em;
+  background: var(--surface-raised); border: 1px solid var(--border);
+  border-radius: var(--radius-xs); padding: 1px 4px;
+}
+.doc-tools { display: flex; align-items: center; gap: var(--space-3); margin-top: var(--space-4); flex-wrap: wrap; }
+.doc-btn {
+  height: var(--control-h-md); padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-raised); color: var(--text-primary);
+  font: var(--fw-medium) var(--text-ui)/1 var(--font-ui); cursor: pointer;
+}
+.doc-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.doc-meta { font-size: var(--text-sm); color: var(--text-muted); }
+
+.sec { margin: 0 0 var(--space-8); }
+.sec > h2 { margin: 0 0 var(--space-2); font-size: 20px; line-height: var(--lh-tight); font-weight: var(--fw-semibold); }
+.sec > .lede { margin: 0 0 var(--space-4); max-width: 96ch; color: var(--text-muted); font-size: var(--text-ui); line-height: 1.65; }
+
+.board {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-page);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+}
+html[data-theme="light"] .board { box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
+.board + .board { margin-top: var(--space-4); }
+.board-scroll { overflow-x: auto; }
+.board-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm); color: var(--text-muted);
+}
+.board-head .dot { width: 6px; height: 6px; border-radius: var(--radius-circle); background: var(--accent); }
+.board-head .grow { flex: 1 1 auto; }
+.board-body { padding: var(--space-6); }
+.board--flush .board-body { padding: 0; }
+.callout { margin: var(--space-2) 0 0; max-width: 96ch; font-size: var(--text-sm); line-height: var(--lh-snug); color: var(--text-muted); }
+.callout b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+/* ==================================================================
+   The edit window: shared chrome, drawn for context only.
+   Widths are the shipped numbers of list-editor.md §9.1; the app's
+   height is min(85vh, 92vh), drawn here at a fixed px so a board fits
+   the page.
+   ================================================================== */
+.win {
+  display: flex; flex-direction: column;
+  height: 620px;
+  background: var(--surface-panel); color: var(--text-primary);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal); overflow: hidden;
+}
+.win--b1 { width: 1229px; }                    /* 1280 viewport */
+.win--b2 { width: 960px; height: 440px; }      /* 1000 viewport */
+.win--b3 { width: 960px; height: 470px; }      /* 1000 viewport */
+.win--b4 { width: 827px; height: 360px; }      /* 861 viewport */
+.win--b7 { width: 960px; height: 620px; }      /* 1000 viewport */
+.win--b8 { width: 691px; height: 480px; }      /* 720 viewport */
+.win--b9 { width: 827px; height: 340px; }      /* 861 viewport */
+.win--b10 { width: 827px; height: 340px; }     /* 861 viewport */
+.win--b11 { width: 1229px; height: 460px; }    /* 1280 viewport */
+.win--b8 .win-actions { mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); }
+.win--b8 .win-foot { flex-wrap: wrap; row-gap: 6px; }
+.win--b8 .win-foot > [role="status"] { flex: 1 1 100%; margin: 0; white-space: normal; }
+.win--phone { width: 390px; height: 740px; border-radius: 0; }
+
+/* Board 1 carries the real overlay → modal-box DOM. */
+.mock-overlay { display: block; }
+
+.win-head {
+  display: flex; align-items: center; gap: var(--edit-head-gap);
+  padding: 10px var(--edit-head-pad-x); min-height: var(--edit-head-h);
+  border-bottom: 1px solid var(--border); flex: 0 0 auto;
+}
+.win-heading { display: flex; align-items: baseline; gap: 10px; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+.win-title { margin: 0; font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: .3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.win-badge {
+  flex: 0 0 auto; max-width: var(--edit-badge-max);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 2px 9px; border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--surface-raised); color: var(--text-muted);
+  font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .6px;
+}
+.win-hacts { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.win-icon {
+  width: var(--edit-icon); height: var(--edit-icon);
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text-muted);
+  font: inherit; font-size: 1.35rem; line-height: 1; cursor: pointer;
+}
+.win-icon:hover { background: var(--accent-soft); color: var(--text-primary); }
+.win-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.win-icon:disabled { opacity: .4; cursor: not-allowed; }
+.win-icon svg { width: var(--icon-md); height: var(--icon-md); display: block; }
+
+.win-bar {
+  display: flex; align-items: center; gap: var(--edit-bar-gap);
+  min-height: var(--edit-bar-h); padding: var(--edit-bar-pad-y) var(--edit-bar-pad-x);
+  background: var(--bg-elev); border-bottom: 1px solid var(--border);
+  flex: 0 0 auto; min-width: 0;
+}
+.win-history { display: flex; align-items: center; gap: var(--edit-bar-gap); flex: 0 0 auto; }
+.win-history .win-icon { width: 44px; height: 44px; }
+.win-history .win-icon svg { width: var(--icon-lg); height: var(--icon-lg); }
+.seam { width: 1px; height: var(--edit-seam-h); background: var(--border); flex: 0 0 auto; }
+.win-actions {
+  flex: 1 1 auto; min-width: 0; display: flex; gap: var(--edit-bar-gap);
+  overflow-x: auto; overflow-y: hidden;
+  padding: 6px 3px; margin: -6px -3px; white-space: nowrap; scrollbar-width: none;
+}
+.win-actions::-webkit-scrollbar { display: none; }
+.win-actions > * { flex: 0 0 auto; }
+
+.win-foot {
+  display: flex; justify-content: flex-end; align-items: center;
+  gap: var(--edit-foot-gap); min-height: var(--edit-foot-h);
+  padding: 12px var(--edit-foot-pad-x);
+  background: var(--surface-panel); border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.win-foot > [role="status"] {
+  margin-right: auto; flex: 0 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: .82rem; line-height: 1.3; color: var(--text-muted);
+}
+.btn {
+  min-height: 44px; padding: 0 16px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-raised); color: var(--text-primary);
+  font: var(--fw-medium) var(--text-ui)/1 var(--font-ui); cursor: pointer; flex: 0 0 auto;
+}
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn--primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); font-weight: var(--fw-semibold); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: var(--opacity-disabled); cursor: not-allowed; }
+.win-foot .te-hint { margin-left: var(--space-2); flex: 0 0 auto; font-size: var(--text-sm); color: var(--text-muted); white-space: nowrap; }
+
+/* ==================================================================
+   The body — docs/ui/list-editor.md §10.2
+   ================================================================== */
+.le-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; min-width: 0; }
+
+.le-notice-strip {
+  display: flex; align-items: flex-start; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.le-notice-glyph { flex: 0 0 auto; color: var(--warn); }
+.le-notice-glyph svg { width: var(--icon-md); height: var(--icon-md); display: block; }
+.le-notice-strip p { margin: 0; font-size: var(--text-ui); color: var(--text-primary); }
+.le-notice-strip p + p { margin-top: var(--space-hair); font-size: var(--text-sm); color: var(--text-muted); }
+
+.le-scroll {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-panel);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+}
+.le-tree[hidden] { display: none; }
+
+/* The row is the line box plus 3 px padding: 27 px at the 1.0 root.
+   Nothing inside it is taller than the line box; the selection cell
+   and the done cell are 18, so neither can grow the row. */
+.le-row { display: flex; border-radius: var(--radius-xs); }
+.le-row:hover, .le-row.is-selected { background: var(--accent-soft); }
+.le-cell {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: var(--space-1);
+  padding: var(--le-row-pad-block) var(--le-row-pad-inline);
+  border-radius: inherit;
+  font-size: var(--text-body); line-height: var(--lh-normal);
+  font-weight: var(--fw-regular); color: var(--text-primary);
+  cursor: pointer;
+}
+.le-cell:focus { outline: none; }
+.le-cell:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+/* Drawn focus, because a static board cannot hold real focus. */
+.le-cell.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+.le-select {
+  position: relative;
+  flex: 0 0 auto; width: var(--le-hit); height: var(--le-hit);
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.le-select::before {
+  content: ""; width: var(--le-select-box); height: var(--le-select-box);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs); background: transparent;
+}
+.le-row.is-selected .le-select::before { background: var(--accent); border-color: var(--accent); }
+.le-row.is-selected .le-select::after {
+  content: ""; position: absolute; inset: 0; margin: auto;
+  width: 4px; height: 8px;
+  border: solid var(--text-on-accent); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.le-row.is-locked .le-select { cursor: default; }
+
+.le-mark, .le-done {
+  flex: 0 0 auto; min-width: var(--le-mark-w); height: var(--le-hit);
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; background: none;
+  font-size: var(--text-sm); color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.le-mark {
+  max-width: calc(3ch + var(--space-hair));
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.le-done { position: relative; cursor: pointer; }
+.le-done::before {
+  content: ""; width: var(--le-done-box); height: var(--le-done-box);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-circle); background: transparent;
+}
+.le-done:hover::before { border-color: var(--accent); }
+.le-done[aria-checked="true"]::before { background: var(--accent); border-color: var(--accent); }
+.le-done[aria-checked="true"]::after {
+  content: ""; position: absolute; inset: 0; margin: auto;
+  width: 4px; height: 8px;
+  border: solid var(--text-on-accent); border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.le-done:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.le-indent { flex: 0 0 auto; display: inline-flex; align-items: center; align-self: stretch; }
+.le-guide { position: relative; width: var(--tree-indent); align-self: stretch; }
+.le-guide::before {
+  content: ""; position: absolute; top: 0; bottom: 0;
+  left: calc((var(--tree-indent) - 1px) / 2);
+  width: 1px; background: var(--border);
+}
+.le-chev, .le-chev-slot { flex: 0 0 auto; width: var(--icon-md); height: var(--icon-md); }
+.le-chev {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; background: none; color: var(--text-muted);
+  border-radius: var(--radius-xs); cursor: pointer;
+}
+.le-chev:hover { color: var(--text-primary); background: var(--accent-soft); }
+.le-chev:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.le-chev svg { width: var(--icon-sm); height: var(--icon-sm); transition: transform var(--dur-1) var(--ease-out); }
+.le-chev[aria-expanded="true"] svg { transform: rotate(90deg); }
+.le-chev-slot { visibility: hidden; }
+
+.le-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.le-text.is-empty { color: var(--text-muted); }
+.le-meta { flex: 0 0 auto; font-size: var(--text-sm); color: var(--text-muted); }
+
+.le-empty { margin: 0; padding: var(--space-6) var(--space-4); text-align: center; font-size: var(--text-ui); color: var(--text-muted); }
+.le-empty[hidden] { display: none; }
+
+.le-tree[aria-readonly="true"] .le-cell { cursor: default; }
+.le-tree[aria-readonly="true"] .le-select,
+.le-tree[aria-readonly="true"] .le-done,
+.le-tree[aria-readonly="true"] .le-chev { cursor: default; }
+.le-tree[aria-readonly="true"] .le-row:hover { background: transparent; }
+.le-tree[aria-readonly="true"] .le-row.is-selected { background: var(--accent-soft); }
+
+@media (prefers-reduced-motion: reduce) { .le-chev svg { transition: none; } }
+
+/* ==================================================================
+   Bar tools — docs/ui/list-editor.md §4.2, §10.2 step 8
+   ================================================================== */
+.edit-bar-toolbar { display: flex; align-items: center; gap: var(--edit-bar-gap); min-width: 0; }
+.edit-bar-group { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.edit-bar-sep { flex: 0 0 auto; width: 1px; height: var(--edit-bar-sep-h); background: var(--border); margin: 0 var(--edit-bar-gap); }
+.le-tool {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--control-h-body); height: var(--control-h-body);
+  padding: 0; border: 1px solid transparent; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-muted);
+  font: inherit; cursor: pointer; flex: 0 0 auto;
+}
+.le-tool:hover { background: var(--accent-soft); color: var(--text-primary); }
+.le-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.le-tool.is-danger:hover { background: var(--danger-soft); color: var(--danger); }
+.le-tool[aria-disabled="true"] { opacity: var(--opacity-disabled); cursor: default; }
+.le-tool[aria-disabled="true"]:hover { background: transparent; color: var(--text-muted); }
+.le-tool svg { width: var(--icon-md); height: var(--icon-md); display: block; }
+
+/* ==================================================================
+   Phone board
+   ================================================================== */
+.win--phone .le-cell { min-height: var(--control-h-touch); padding-block: 0; }
+.win--phone .le-select,
+.win--phone .le-done { height: var(--control-h-touch); }
+.win--phone .edit-bar .le-tool,
+.win--phone .win-bar .le-tool { width: var(--control-h-touch); height: var(--control-h-touch); }
+.win--phone .win-actions { mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); }
+.win--phone .win-foot { flex-wrap: wrap; row-gap: 6px; }
+.win--phone .win-foot > [role="status"] { flex: 1 1 100%; margin: 0; white-space: normal; }
+.win--phone .te-hint { display: none; }
+
+/* ==================================================================
+   Anatomy diagram (board 6)
+   ================================================================== */
+.anat { background: var(--surface-panel); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: var(--space-5); }
+.anat-strip { display: flex; align-items: stretch; gap: var(--space-1); }
+.anat-part {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 27px;
+  border: 1px dashed var(--border-strong); border-radius: var(--radius-xs);
+  font-size: var(--text-xs); color: var(--text-muted); text-align: center; padding: 2px;
+}
+.anat-part--text { flex: 1 1 auto; }
+.anat-part--rail { width: var(--tree-indent); }
+.anat-row { display: flex; align-items: center; gap: var(--space-3); margin-bottom: var(--space-3); }
+.anat-bracket {
+  width: 26px; align-self: stretch; border-left: 1px solid var(--border-strong);
+  border-top: 1px solid var(--border-strong); border-bottom: 1px solid var(--border-strong);
+  border-radius: var(--radius-xs) 0 0 var(--radius-xs);
+  display: flex; align-items: center; justify-content: center;
+  font-size: var(--text-xs); color: var(--text-muted);
+}
+.anat-legend { width: 100%; border-collapse: collapse; margin-top: var(--space-4); font-size: var(--text-sm); }
+.anat-legend th, .anat-legend td { text-align: left; padding: 6px var(--space-2); border-bottom: 1px solid var(--border); vertical-align: top; }
+.anat-legend th { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-label); color: var(--text-muted); font-weight: var(--fw-regular); }
+.anat-legend td:first-child { color: var(--text-primary); white-space: nowrap; }
+.anat-legend td { color: var(--text-muted); }
+.anat-legend code { font-family: var(--font-mono); font-size: .92em; color: var(--text-primary); }
+
+.sample {
+  background: var(--surface-panel); border: 1px solid var(--border);
+  border-radius: var(--radius-md); padding: var(--space-2);
+}
+.sample + .sample { margin-top: var(--space-3); }
+.sample-label { margin: 0 0 var(--space-1); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: var(--tracking-label); color: var(--text-muted); }
+</style>
+</head>
+<body>
+<main class="page">
+
+  <header class="page-head">
+    <p class="eyebrow">docs/ui/list-editor.md — reference mockup</p>
+    <h1>List editor — the <code>Edit list</code> window</h1>
+    <p class="lede">
+      One list container, as a flat document-order treegrid in the shared edit-window chrome.
+      Every number is the spec's: header 65, bar 57, footer 69, row 27, indent 18, selection and
+      done cells 18, selection box 14, done ring 16, marker slot 20, targets 32 / 44. Boards are
+      drawn at the shipped width for their viewport (§9.1); the app's height is
+      <code>min(85vh, 92vh)</code>, drawn here at a fixed height so a board fits a page. The chrome
+      is drawn for context; the body is the part this document owns. Toggle the theme to check
+      both palettes.
+    </p>
+    <div class="doc-tools">
+      <button id="theme-btn" class="doc-btn" type="button" aria-pressed="false">Light theme</button>
+      <span class="doc-meta">Eleven boards. No network assets, no web font. Markup is complete with scripting off; the only script is the theme switch. Board 1 carries the contracted ids.</span>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       1 · Default open — exactly §1.3: 14 items, 0 selected, 2 done
+       ============================================================ -->
+  <section class="sec">
+    <h2>1 · Open — 14 items, nothing selected, 2 done</h2>
+    <p class="lede">
+      The badge reports the container type only. Nothing is selected: the first row has focus and
+      the anchor, and the status is the opening counts with no result phrase. Focus on a first row
+      also means Up, To top, Outdent, Indent, Select none and Mark open are disabled — each carries
+      its cause (§4.3). This board is the contracted DOM: the overlay, every footer and header id,
+      <code>#le-toolbar</code>, the fourteen <code>le-*</code> controls and the hidden notice strip.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — default open</span><span class="grow"></span><span>1280 viewport · window 1229 wide</span></div>
+      <div class="board-body board-scroll">
+        <div id="list-editor-overlay" class="mock-overlay">
+          <div class="settings-modal list-editor-modal win win--b1" role="dialog" aria-modal="true" aria-labelledby="list-editor-title" tabindex="-1">
+            <div class="win-head">
+              <div class="win-heading"><h2 class="win-title" id="list-editor-title">Edit list</h2><span class="win-badge" id="list-editor-type">Task list</span></div>
+              <div class="win-hacts">
+                <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+                <button class="win-icon" id="list-editor-close" type="button" aria-label="Close" title="Close">×</button>
+              </div>
+            </div>
+            <div class="win-bar">
+              <div class="win-history" role="group" aria-label="History">
+                <button class="win-icon" id="list-editor-undo" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                <button class="win-icon" id="list-editor-redo" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                <span class="seam" aria-hidden="true"></span>
+              </div>
+              <div class="win-actions">
+                <div class="edit-bar-toolbar" id="le-toolbar" role="toolbar" aria-label="List tools">
+                  <div class="edit-bar-group" role="group" aria-label="Move">
+                    <button class="le-tool" id="le-move-up" type="button" aria-disabled="true" aria-label="Move up. Every selected item is already first." title="Move up (Alt+↑) — Every selected item is already first." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                    <button class="le-tool" id="le-move-down" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                    <button class="le-tool" id="le-move-top" type="button" aria-disabled="true" aria-label="To top. The selected items are already at the top." title="To top (Alt+Shift+↑) — The selected items are already at the top." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                    <button class="le-tool" id="le-move-bottom" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Level">
+                    <button class="le-tool" id="le-outdent" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                    <button class="le-tool" id="le-indent" type="button" aria-disabled="true" aria-label="Indent. The first item in a group cannot indent." title="Indent (Tab) — The first item in a group cannot indent." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Sort">
+                    <button class="le-tool" id="le-sort-asc" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                    <button class="le-tool" id="le-sort-desc" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                    <button class="le-tool" id="le-sort-done" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Select">
+                    <button class="le-tool" id="le-select-all" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" id="le-select-none" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="State">
+                    <button class="le-tool" id="le-mark-done" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" id="le-mark-open" type="button" aria-disabled="true" aria-label="Mark open. No task item is done." title="Mark open (Alt+Shift+O) — No task item is done." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                    <button class="le-tool is-danger" id="le-delete" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="le-body">
+              <div class="le-notice-strip" id="list-editor-notice" hidden>
+                <span class="le-notice-glyph" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 14.5 13.5H1.5z"/><path d="M8 6.5v3.2M8 11.6v.4"/></svg></span>
+                <div>
+                  <p>This list changed outside the window.</p>
+                  <p>Nothing was applied. Cancel closes the window.</p>
+                </div>
+              </div>
+              <div class="le-scroll">
+                <div class="le-tree" id="list-editor-grid" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="14">
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                    <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Update the CHANGELOG">Update the CHANGELOG</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="3" aria-selected="false" aria-expanded="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="4" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="5" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="6" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Archive the binaries">Archive the binaries</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="7" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="8" aria-selected="false" aria-expanded="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Review open errata" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Review open errata">Review open errata</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="9" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="nRF52 anomaly 198">nRF52 anomaly 198</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="10" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="STM32 double-word flash write">STM32 double-word flash write</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="11" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Sign the release notes">Sign the release notes</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="12" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Publish the image">Publish the image</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="13" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Close the milestone">Close the milestone</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="14" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Send the hand-off mail">Send the hand-off mail</span>
+                    </div>
+                  </div>
+
+                </div>
+                <p class="le-empty" hidden>No items left. Apply removes the list.</p>
+              </div>
+            </div>
+            <div class="win-foot">
+              <span id="list-editor-status" role="status" aria-live="polite" aria-atomic="true">14 items · 0 selected · 2 done</span>
+              <span class="te-hint" aria-hidden="true">Esc cancels</span>
+              <button class="btn" id="list-editor-cancel" type="button" aria-keyshortcuts="Escape">Cancel</button>
+              <button class="btn btn--primary" id="list-editor-apply" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout"><b>Nothing is selected</b> — no row carries <code>is-selected</code>, and the
+      notice strip is in the DOM but <code>hidden</code>, exactly as the app ships it. Row 1 has the
+      focus ring (the grid's one tab stop). The six disabled tools are the §4.3 outcome for a
+      focused first row, not a separate state.</p>
+  </section>
+
+  <!-- ============================================================
+       2 · Collapsed parent
+       ============================================================ -->
+  <section class="sec">
+    <h2>2 · Collapsed parent — a view filter, not a model change</h2>
+    <p class="lede">
+      A 9-item model with one parent collapsed: three rows are not rendered, the parent carries
+      <code>aria-expanded="false"</code>, and the counts still say 9. Collapse is not a history step
+      and is not persisted.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — collapsed parent</span><span class="grow"></span><span>1000 viewport · window 960 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b2">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Task list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move up. Every selected item is already first." title="Move up (Alt+↑) — Every selected item is already first." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. The selected items are already at the top." title="To top (Alt+Shift+↑) — The selected items are already at the top." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Indent. The first item in a group cannot indent." title="Indent (Tab) — The first item in a group cannot indent." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. No task item is done." title="Mark open (Alt+Shift+O) — No task item is done." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="6">
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                  <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Update the CHANGELOG">Update the CHANGELOG</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="3" aria-selected="false" aria-expanded="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><button class="le-chev" type="button" aria-expanded="false" aria-label="Expand: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                    <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                    <span class="le-meta">3 hidden</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="4" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="5" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Sign the release notes">Sign the release notes</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="6" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Publish the image">Publish the image</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">9 items · 0 selected · 2 done</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout"><b>3 hidden</b> is trailing meta at <code>--text-sm</code> / <code>--text-muted</code>,
+      not a pill: §2.1 of the guidelines fixes the trailing-meta look, and a pill would read as a control.
+      The model has 9 items and 6 rendered rows, which is why the counts say 9 and
+      <code>aria-rowcount</code> says 6.</p>
+  </section>
+
+  <!-- ============================================================
+       3 · Stale
+       ============================================================ -->
+  <section class="sec">
+    <h2>3 · Stale — read-only, one live region</h2>
+    <p class="lede">
+      The note re-rendered while the window was open, so the container the window holds is no longer
+      in the document. The strip is static text; the footer status is the only live region and
+      speaks the sentence once. Every tool is disabled with the cause in its accessible name, Apply
+      is disabled but still visible, Cancel keeps focus.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — stale</span><span class="grow"></span><span>1000 viewport · window 960 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b3">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Numbered list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move up. This list changed outside the window." title="Move up (Alt+↑) — This list changed outside the window." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move down. This list changed outside the window." title="Move down (Alt+↓) — This list changed outside the window." aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. This list changed outside the window." title="To top (Alt+Shift+↑) — This list changed outside the window." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To bottom. This list changed outside the window." title="To bottom (Alt+Shift+↓) — This list changed outside the window." aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. This list changed outside the window." title="Outdent (Shift+Tab) — This list changed outside the window." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Indent. This list changed outside the window." title="Indent (Tab) — This list changed outside the window." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Sort A to Z. This list changed outside the window." title="Sort A to Z (Alt+Shift+A) — This list changed outside the window." aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Sort Z to A. This list changed outside the window." title="Sort Z to A (Alt+Shift+Z) — This list changed outside the window." aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Done to bottom. This list changed outside the window." title="Done to bottom (Alt+Shift+B) — This list changed outside the window." aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select all. This list changed outside the window." title="Select all (Ctrl/Cmd+A) — This list changed outside the window." aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. This list changed outside the window." title="Select none (Ctrl/Cmd+Shift+A) — This list changed outside the window." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark done. This list changed outside the window." title="Mark done (Alt+Shift+D) — This list changed outside the window." aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. This list changed outside the window." title="Mark open (Alt+Shift+O) — This list changed outside the window." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-disabled="true" aria-label="Delete. This list changed outside the window." title="Delete (Delete) — This list changed outside the window." aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-notice-strip">
+              <span class="le-notice-glyph" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 14.5 13.5H1.5z"/><path d="M8 6.5v3.2M8 11.6v.4"/></svg></span>
+              <div>
+                <p>This list changed outside the window.</p>
+                <p>Nothing was applied. Cancel closes the window.</p>
+              </div>
+            </div>
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="6" aria-readonly="true">
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">1.</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">2.</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Update the CHANGELOG">Update the CHANGELOG</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="3" aria-selected="false" aria-expanded="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">3.</span>
+                    <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                    <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="2" aria-rowindex="4" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">1.</span>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="2" aria-rowindex="5" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">2.</span>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="6" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">4.</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">This list changed outside the window. Nothing was applied.</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape" style="outline: 2px solid var(--accent); outline-offset: 1px;">Cancel</button>
+            <button class="btn btn--primary" type="button" aria-disabled="true" disabled>Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout"><b>Numbered rows</b> show the rendered ordinal in the marker slot — here an
+      <code>&lt;ol&gt;</code> whose nested list restarts at 1. Apply keeps <code>start</code> through the
+      round-trip; <code>reversed</code> and <code>type</code> stay in the DOM only.</p>
+  </section>
+
+  <!-- ============================================================
+       4 · Empty
+       ============================================================ -->
+  <section class="sec">
+    <h2>4 · Empty — every row deleted</h2>
+    <p class="lede">
+      Zero rows: the treegrid is hidden, every tool has lost its target, Apply stays enabled because
+      it now removes the list, and focus sits on Apply (no cell is left to hold the tab stop).
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — empty after deletes</span><span class="grow"></span><span>861 viewport · window 827 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b4">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Bulleted list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move up. Every selected item is already first." title="Move up (Alt+↑) — Every selected item is already first." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move down. Every selected item is already last." title="Move down (Alt+↓) — Every selected item is already last." aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. The selected items are already at the top." title="To top (Alt+Shift+↑) — The selected items are already at the top." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To bottom. The selected items are already at the bottom." title="To bottom (Alt+Shift+↓) — The selected items are already at the bottom." aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Indent. The first item in a group cannot indent." title="Indent (Tab) — The first item in a group cannot indent." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Sort A to Z. Nothing to sort in this level." title="Sort A to Z (Alt+Shift+A) — Nothing to sort in this level." aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Sort Z to A. Nothing to sort in this level." title="Sort Z to A (Alt+Shift+Z) — Nothing to sort in this level." aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Done to bottom. No done items to move." title="Done to bottom (Alt+Shift+B) — No done items to move." aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select all. Nothing to select." title="Select all (Ctrl/Cmd+A) — Nothing to select." aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark done. Only task items have a done state." title="Mark done (Alt+Shift+D) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. Only task items have a done state." title="Mark open (Alt+Shift+O) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-disabled="true" aria-label="Delete. Nothing to delete." title="Delete (Delete) — Nothing to delete." aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="0" hidden></div>
+              <p class="le-empty">No items left. Apply removes the list.</p>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">0 items · 0 selected · 0 done — Deleted 2 items. The list is empty.</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button" style="outline: 2px solid var(--accent); outline-offset: 1px;">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout"><b>The treegrid is hidden</b>, not empty-but-visible: §2.6 says the tree is
+      replaced by the one line. Undo is still live, so a delete-all is recoverable before the window
+      closes. The header still reports the container type, which is still true.</p>
+  </section>
+
+  <!-- ============================================================
+       5 · Phone
+       ============================================================ -->
+  <section class="sec">
+    <h2>5 · Phone — 390, full screen</h2>
+    <p class="lede">
+      The 520 rule wins over saved geometry: full viewport, square corners, 44 px bar tools,
+      44 px rows, the bar scrolling behind its mask, the footer wrapped, the hint gone. Rows 2–4 are
+      one selected group: the parent is the root, its two children are locked.
+    </p>
+    <div class="board board--flush" style="width: 392px;">
+      <div class="board-head"><span class="dot"></span><span>Edit list — 390 phone</span><span class="grow"></span><span>390 viewport · full screen</span></div>
+      <div class="board-body">
+        <div class="win win--phone">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Task list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-label="Move up" title="Move up (Alt+↑)" aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="To top" title="To top (Alt+Shift+↑)" aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Indent" title="Indent (Tab)" aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Select none" title="Select none (Ctrl/Cmd+Shift+A)" aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Mark open" title="Mark open (Alt+Shift+O)" aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="6">
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                  <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected" role="row" aria-level="1" aria-rowindex="2" aria-selected="true" aria-expanded="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                    <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected is-locked" role="row" aria-level="2" aria-rowindex="3" aria-selected="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected is-locked" role="row" aria-level="2" aria-rowindex="4" aria-selected="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="5" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="6" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Publish the image">Publish the image</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">6 items · 3 selected · 1 done</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout"><b>The marks keep their widths</b> and take the row's 44 px height (E2). Eight
+      44 × 44 marks would eat most of the measure; the row is the touch target.</p>
+  </section>
+
+  <!-- ============================================================
+       6 · Row anatomy
+       ============================================================ -->
+  <section class="sec">
+    <h2>6 · Row anatomy — labelled geometry</h2>
+    <p class="lede">
+      The anatomy strip is the row's left-to-right order at its real widths; a task parent, a plain
+      bullet row, a numbered row and an empty item follow, then the value table. The bracket is the
+      measured row: 27 px, line box plus 3 px padding.
+    </p>
+
+    <div class="anat">
+      <div class="anat-row">
+        <div class="anat-bracket">27</div>
+        <div class="anat-strip" style="flex: 1 1 auto;">
+          <span class="anat-part" style="width: var(--le-hit);">18</span>
+          <span class="anat-part" style="width: var(--le-mark-w);">20</span>
+          <span class="anat-part anat-part--rail">18</span>
+          <span class="anat-part anat-part--rail">18</span>
+          <span class="anat-part" style="width: var(--icon-md);">16</span>
+          <span class="anat-part anat-part--text">text — 1fr, ellipsis</span>
+          <span class="anat-part" style="width: 64px;">meta</span>
+        </div>
+      </div>
+      <p class="callout" style="margin-top: 0;">
+        <b>18</b> selection cell (14 box inside) · <b>20</b> marker / done slot · <b>18</b> one guide per
+        level · <b>16</b> chevron · text takes the rest · meta is <code>flex: 0 0 auto</code>. The whole
+        row is the click target.
+      </p>
+
+      <div class="sample" style="margin-top: var(--space-4);">
+        <p class="sample-label">Task parent, expanded</p>
+        <div class="le-row">
+          <div class="le-cell">
+            <span class="le-select" aria-hidden="true"></span>
+            <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+            <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+            <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sample">
+        <p class="sample-label">Plain bullet row — no done control; the slot holds the marker</p>
+        <div class="le-row">
+          <div class="le-cell">
+            <span class="le-select" aria-hidden="true"></span>
+            <span class="le-mark" aria-hidden="true">•</span>
+            <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+            <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sample">
+        <p class="sample-label">Numbered row from an &lt;ol start="7"&gt; — the rendered ordinal</p>
+        <div class="le-row">
+          <div class="le-cell">
+            <span class="le-select" aria-hidden="true"></span>
+            <span class="le-mark" aria-hidden="true">8.</span>
+            <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+            <span class="le-text" title="Archive the binaries">Archive the binaries</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sample">
+        <p class="sample-label">Empty item and long text</p>
+        <div class="le-row">
+          <div class="le-cell">
+            <span class="le-select" aria-hidden="true"></span>
+            <span class="le-mark" aria-hidden="true">•</span>
+            <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+            <span class="le-text is-empty" title="Empty item">Empty item</span>
+          </div>
+        </div>
+        <div class="le-row">
+          <div class="le-cell">
+            <span class="le-select" aria-hidden="true"></span>
+            <span class="le-mark" aria-hidden="true">•</span>
+            <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+            <span class="le-text" title="Flash and verify the production image on every devkit in the rack before the freeze">Flash and verify the production image on every devkit in the rack before the freeze</span>
+            <span class="le-meta">+2 nested</span>
+          </div>
+        </div>
+      </div>
+
+      <table class="anat-legend">
+        <thead>
+          <tr><th>Part</th><th>Value</th><th>Rule</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Row</td><td><code>27</code> at M, <code>30</code> at L, <code>44</code> at ≤520</td><td>line box + 6 px padding; no in-row mark is taller than the line box; never a fixed height (guidelines §2.1)</td></tr>
+          <tr><td>Padding</td><td><code>3px 6px</code></td><td><code>--le-row-pad-block</code> / <code>--le-row-pad-inline</code></td></tr>
+          <tr><td>Radius</td><td><code>4</code></td><td><code>--radius-xs</code>; a row, not a card</td></tr>
+          <tr><td>Selection box</td><td><code>14 × 14</code> in an <code>18 × 18</code> cell</td><td>square, <code>--radius-xs</code>, filled <code>--accent</code> when selected; <code>aria-hidden</code>, because the row is the target</td></tr>
+          <tr><td>Done ring</td><td><code>16 × 16</code> in an <code>18</code>-high slot</td><td>circle, <code>--radius-circle</code> — never a second square</td></tr>
+          <tr><td>Marker slot</td><td><code>20</code> wide</td><td>bullet or ordinal; measured once per render from the widest visible marker, capped at 3 glyphs, ellipsis beyond</td></tr>
+          <tr><td>Indent</td><td><code>18</code> per level</td><td><code>--tree-indent</code>; a 1 px <code>--border</code> guide at the cell's centre</td></tr>
+          <tr><td>Chevron</td><td><code>16</code> box, <code>14</code> glyph</td><td><code>--icon-md</code> / <code>--icon-sm</code>; hidden spacer on a leaf</td></tr>
+          <tr><td>Text</td><td><code>--text-body</code> / <code>--lh-normal</code>, 400</td><td>one line, ellipsis, <code>title</code> = full text; no inline formatting</td></tr>
+          <tr><td>Meta</td><td><code>--text-sm</code> / <code>--text-muted</code></td><td><code>+N nested</code>, <code>N hidden</code>; never a pill</td></tr>
+          <tr><td>Focus</td><td>inset ring, offset <code>−2</code></td><td><code>--focus-ring</code> on the cell; one tab stop per grid</td></tr>
+          <tr><td>Target</td><td>the whole row; <code>44</code> high on phone</td><td>row height (E2); bar tools 44 (E1)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       7 · Mixed-level selection, with a locked descendant
+       ============================================================ -->
+  <section class="sec">
+    <h2>7 · Selection and toolbar — a locked descendant, and two roots at two levels</h2>
+    <p class="lede">
+      Five rows are selected: <b>Freeze the Zephyr board</b> (a root, with its two open children and
+      its done child locked underneath it) and <b>STM32 double-word flash write</b> (a root one level
+      down, whose parent is not selected). That is two roots in two different parents, so
+      <b>To top</b> and <b>To bottom</b> are both disabled, each carrying the level reason. Every
+      other verb is live.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — mixed-level selection</span><span class="grow"></span><span>1000 viewport · window 960 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b7">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Task list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-label="Move up" title="Move up (Alt+↑)" aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. To top needs the selected items to share one level." title="To top (Alt+Shift+↑) — To top needs the selected items to share one level." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To bottom. To bottom needs the selected items to share one level." title="To bottom (Alt+Shift+↓) — To bottom needs the selected items to share one level." aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-label="Outdent" title="Outdent (Shift+Tab)" aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Indent" title="Indent (Tab)" aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Select none" title="Select none (Ctrl/Cmd+Shift+A)" aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Mark open" title="Mark open (Alt+Shift+O)" aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="14">
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Update the CHANGELOG">Update the CHANGELOG</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected" role="row" aria-level="1" aria-rowindex="3" aria-selected="true" aria-expanded="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                    <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected is-locked" role="row" aria-level="2" aria-rowindex="4" aria-selected="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected is-locked" role="row" aria-level="2" aria-rowindex="5" aria-selected="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected is-locked" role="row" aria-level="2" aria-rowindex="6" aria-selected="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Archive the binaries">Archive the binaries</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="7" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="8" aria-selected="false" aria-expanded="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Review open errata" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                    <span class="le-text" title="Review open errata">Review open errata</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="2" aria-rowindex="9" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="nRF52 anomaly 198">nRF52 anomaly 198</span>
+                  </div>
+                </div>
+
+                <div class="le-row is-selected" role="row" aria-level="2" aria-rowindex="10" aria-selected="true">
+                  <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="STM32 double-word flash write">STM32 double-word flash write</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="11" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Sign the release notes">Sign the release notes</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="12" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Publish the image">Publish the image</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="13" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Close the milestone">Close the milestone</span>
+                  </div>
+                </div>
+
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="14" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Send the hand-off mail">Send the hand-off mail</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">14 items · 5 selected · 2 done — To top needs the selected items to share one level.</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">
+      Groups: <b>Move</b> (Up, Down, To top, To bottom) · <b>Level</b> (Outdent, Indent) ·
+      <b>Sort</b> (A→Z, Z→A, Done to bottom) · <b>Select</b> (All, None) · <b>State</b>
+      (Mark done, Mark open, Delete). <b>Two controls are disabled here</b>, not one: To top and
+      To bottom share a cause. Rows 4–6 are the locked descendants of row 3 — they paint selected
+      and their own box ignores a <code>Ctrl/Cmd</code>+click. Row 10 has the focus ring and is the
+      sort target: sort moves row 10's level, whichever rows are selected.
+    </p>
+  </section>
+
+  <!-- ============================================================
+       8 · 720
+       ============================================================ -->
+  <section class="sec">
+    <h2>8 · 720 — the footer wraps, the bar scrolls</h2>
+    <p class="lede">
+      The window is 691 wide. The bar keeps the history pair and scrolls the tools behind the 22 px
+      mask; the footer gives the counts a full row, then the hint, Cancel and Apply below it.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — 720</span><span class="grow"></span><span>720 viewport · window 691 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b8">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Task list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move up. Every selected item is already first." title="Move up (Alt+↑) — Every selected item is already first." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. The selected items are already at the top." title="To top (Alt+Shift+↑) — The selected items are already at the top." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Indent. The first item in a group cannot indent." title="Indent (Tab) — The first item in a group cannot indent." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. No task item is done." title="Mark open (Alt+Shift+O) — No task item is done." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="5">
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                  <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false" aria-expanded="true">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                    <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="2" aria-rowindex="3" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="2" aria-rowindex="4" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="5" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">5 items · 0 selected · 1 done</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       9 · Single item
+       ============================================================ -->
+  <section class="sec">
+    <h2>9 · Single-item list — every verb but Select all and Delete is disabled</h2>
+    <p class="lede">
+      One row is a legal list. Each disabled tool still carries its cause, so a reader who lands on
+      it hears why it cannot act. The two edge verbs now have their own sentence: the item shares
+      its own level, so <b>To top</b> says it is already at the top rather than claiming a level
+      mismatch.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — one item</span><span class="grow"></span><span>861 viewport · window 827 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b9">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Bulleted list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move up. Every selected item is already first." title="Move up (Alt+↑) — Every selected item is already first." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move down. Every selected item is already last." title="Move down (Alt+↓) — Every selected item is already last." aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. The selected items are already at the top." title="To top (Alt+Shift+↑) — The selected items are already at the top." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To bottom. The selected items are already at the bottom." title="To bottom (Alt+Shift+↓) — The selected items are already at the bottom." aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Indent. The first item in a group cannot indent." title="Indent (Tab) — The first item in a group cannot indent." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Sort A to Z. Nothing to sort in this level." title="Sort A to Z (Alt+Shift+A) — Nothing to sort in this level." aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Sort Z to A. Nothing to sort in this level." title="Sort Z to A (Alt+Shift+Z) — Nothing to sort in this level." aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Done to bottom. No done items to move." title="Done to bottom (Alt+Shift+B) — No done items to move." aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark done. Only task items have a done state." title="Mark done (Alt+Shift+D) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. Only task items have a done state." title="Mark open (Alt+Shift+O) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="1">
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                  <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">1 item · 0 selected · 0 done</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">Singular nouns throughout: <b>1 item</b>, not <b>1 items</b>. Twelve tools are
+      disabled and two are live — Select all and Delete, the only two verbs that still have something
+      to do on a one-row list.</p>
+  </section>
+
+  <!-- ============================================================
+       10 · Error
+       ============================================================ -->
+  <section class="sec">
+    <h2>10 · Error — a restore that could not run</h2>
+    <p class="lede">
+      The only reachable failure. The model and the focus are unchanged; the status carries the
+      sentence and looks like a position message. No alert, no colour, no second live region.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — restore failed</span><span class="grow"></span><span>861 viewport · window 827 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b10">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Numbered list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Move up. Every selected item is already first." title="Move up (Alt+↑) — Every selected item is already first." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. The selected items are already at the top." title="To top (Alt+Shift+↑) — The selected items are already at the top." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Indent. The first item in a group cannot indent." title="Indent (Tab) — The first item in a group cannot indent." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Done to bottom. No done items to move." title="Done to bottom (Alt+Shift+B) — No done items to move." aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark done. Only task items have a done state." title="Mark done (Alt+Shift+D) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. Only task items have a done state." title="Mark open (Alt+Shift+O) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="3">
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                  <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">1.</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">2.</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="3" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">3.</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Publish the image">Publish the image</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">The saved state could not be restored</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       11 · Long list, scrolled
+       ============================================================ -->
+  <section class="sec">
+    <h2>11 · Long list — 120 rows, scrolled to the middle</h2>
+    <p class="lede">
+      A 120-row model, nothing collapsed: every row renders and the body scrolls. The board draws the
+      visible excerpt at the scroll position — rows 1–54 are above it, 71–120 below. The marker column
+      was measured once, from the widest visible marker, and is capped at three glyphs.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — 120 rows, scrolled</span><span class="grow"></span><span>1280 viewport · window 1229 wide · 120 rows</span></div>
+      <div class="board-body board-scroll">
+        <div class="win win--b11">
+          <div class="win-head">
+            <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Bulleted list</span></div>
+            <div class="win-hacts">
+              <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+            </div>
+          </div>
+          <div class="win-bar">
+            <div class="win-history" role="group" aria-label="History">
+              <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+              <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+              <span class="seam" aria-hidden="true"></span>
+            </div>
+            <div class="win-actions">
+              <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                <div class="edit-bar-group" role="group" aria-label="Move">
+                  <button class="le-tool" type="button" aria-label="Move up" title="Move up (Alt+↑)" aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="To top" title="To top (Alt+Shift+↑)" aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Level">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Indent" title="Indent (Tab)" aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Sort">
+                  <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Done to bottom. No done items to move." title="Done to bottom (Alt+Shift+B) — No done items to move." aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="Select">
+                  <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                </div>
+                <span class="edit-bar-sep" aria-hidden="true"></span>
+                <div class="edit-bar-group" role="group" aria-label="State">
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark done. Only task items have a done state." title="Mark done (Alt+Shift+D) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                  <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. Only task items have a done state." title="Mark open (Alt+Shift+O) — Only task items have a done state." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                  <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="le-body">
+            <div class="le-scroll" style="overflow-y: scroll;">
+              <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="120">
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="55" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 55 — UART loopback on port A">Burn-in check 55 — UART loopback on port A</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="56" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 56 — UART loopback on port B">Burn-in check 56 — UART loopback on port B</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="57" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 57 — SPI flash erase timing">Burn-in check 57 — SPI flash erase timing</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="58" aria-selected="false">
+                  <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 58 — SPI flash write endurance">Burn-in check 58 — SPI flash write endurance</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="59" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 59 — I2C bus recovery">Burn-in check 59 — I2C bus recovery</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="60" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 60 — I2C clock stretching under load">Burn-in check 60 — I2C clock stretching under load</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="61" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 61 — CAN error frame storm">Burn-in check 61 — CAN error frame storm</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="62" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 62 — CAN bus-off recovery">Burn-in check 62 — CAN bus-off recovery</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="63" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 63 — watchdog reset window">Burn-in check 63 — watchdog reset window</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="64" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 64 — brown-out at 2.7 V">Burn-in check 64 — brown-out at 2.7 V</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="65" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 65 — deep-sleep current floor">Burn-in check 65 — deep-sleep current floor</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="66" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 66 — wake latency from STOP">Burn-in check 66 — wake latency from STOP</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="67" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 67 — ADC reference drift">Burn-in check 67 — ADC reference drift</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="68" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 68 — ADC noise over temperature">Burn-in check 68 — ADC noise over temperature</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="69" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 69 — PWM dead-time margin">Burn-in check 69 — PWM dead-time margin</span>
+                  </div>
+                </div>
+                <div class="le-row" role="row" aria-level="1" aria-rowindex="70" aria-selected="false">
+                  <div class="le-cell" role="gridcell" tabindex="-1">
+                    <span class="le-select" aria-hidden="true"></span>
+                    <span class="le-mark" aria-hidden="true">•</span>
+                    <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                    <span class="le-text" title="Burn-in check 70 — PWM jitter at 20 kHz">Burn-in check 70 — PWM jitter at 20 kHz</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="win-foot">
+            <span role="status" aria-live="polite" aria-atomic="true">120 items · 0 selected · 0 done</span>
+            <span class="te-hint" aria-hidden="true">Esc cancels</span>
+            <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+            <button class="btn btn--primary" type="button">Apply</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout"><b>100 rows is the comfortable budget</b>; 1000 is not supported and there is no
+      hard cap — a longer list still opens and this window simply stops promising speed. Nothing is
+      virtualised: all 120 rows are in the DOM, one repaint per verb, and the marker column was
+      measured once from the widest visible marker.</p>
+  </section>
+
+  <p class="callout" style="margin-bottom: var(--space-8);">
+    The mockup is illustrative; <a href="list-editor.md">list-editor.md</a> is normative. Boards draw
+    only states the spec names: no applying board (Apply is synchronous), no drag board (v1 has no
+    drag inside the window), no blocked board (an unopenable target opens nothing). Every toolbar is
+    static markup, so the boards render with scripting off; the only script is the theme switch.
+  </p>
+</main>
+<script>
+/* Theme switch: one attribute re-scopes every board's tokens. */
+(function () {
+  var btn = document.getElementById("theme-btn");
+  btn.addEventListener("click", function () {
+    var light = document.documentElement.getAttribute("data-theme") === "light";
+    document.documentElement.setAttribute("data-theme", light ? "dark" : "light");
+    btn.setAttribute("aria-pressed", light ? "false" : "true");
+    btn.textContent = light ? "Light theme" : "Dark theme";
+  });
+})();
+</script>
+</body>
+</html>

@@ -42,8 +42,8 @@ registered already.
 ```
 cm-bridge → lightbox → blocks → menu → spellcheck → mermaid → wavedrom → katex →
 viz → htmlpreview → svg → copy-image → viewer → editbar → hybrid → table-edit →
-list-edit → table-view → table-select → table-editor → watcher → outline →
-sidebar →
+list-edit → table-view → table-select → edit-window → table-editor → list-editor →
+watcher → outline → sidebar →
 graph-2d → graph-3d → graph → tabs → windows → settings → export → mermaid-designer →
 designer-shell → dot-designer → wavedrom-designer → vimnav → ai → activity →
 bookmarks → sessions → shortcuts → mobile → workspaces → app
@@ -119,7 +119,7 @@ only control `/static/`, so it could never serve the app shell offline
 
 ## 3. Module inventory
 
-All 46 modules, in script load order. Namespace and purpose are as
+All 47 modules, in script load order. Namespace and purpose are as
 implemented today.
 
 | File | Lines | Namespace | Purpose |
@@ -146,8 +146,9 @@ implemented today.
 | `list-edit.js` | 649 | `NB.listEdit` | Hybrid-mode list-item drag handles and reorder overlay (Pointer Events, outside the contentEditable subtree). |
 | `table-view.js` | 1639 | `NB.tableView` | Preview-only table controls: hide rows/columns, single-column sort, Copy, and Copy image. The hover icon in the left gutter opens a vertical toolbar (`Copy`, `Copy image`, `Rows`, `Columns`, `Reset`) that floats under the icon without moving it; it opens above the icon near the bottom of the pane. A title click toggles the sort; the per-header menu icon opens the column menu. Copy writes the visible table as TSV plus an HTML `<table>`; Copy image rasterizes it to a PNG through `copy-image.js`; the clone keeps the header menu slots as invisible spacers so the image keeps the live column widths, and its height is measured rather than derived from the live table. Persisted in `localStorage` under `nb:tableView` (schema v2). An entry applies only when header, full-cell hash and same-header ordinal all match; otherwise it is ignored. Tears down before hybrid edit. |
 | `table-select.js` | 433 | `NB.tableSelect` | Ctrl+drag (Cmd on macOS) over table cells paints a rectangle; Ctrl+C copies it as TSV (`text/plain`) plus an HTML `<table>` (`text/html`). One engine for preview and hybrid edit. The selection classes are transient chrome, stripped before serialization and undo snapshots. |
-| `edit-window.js` | 334 | `NB.editWindow` | Shared history controller for the three hybrid edit windows. Stack mode (`snapshot`/`restore`) for the table and the Graphviz/WaveDrom windows, delegate mode for Mermaid/Visimer. 100-snapshot and 4 M-character caps, 350 ms text coalescing, snapshot dedupe, redo truncation, async restore with index rollback; binds the bar's Undo/Redo pair and the Ctrl/Cmd+Z / Shift+Z / Y chords with a per-window `ownsKey`; toggles the bar overflow fade. |
+| `edit-window.js` | 334 | `NB.editWindow` | Shared history controller for the four hybrid edit windows. Stack mode (`snapshot`/`restore`) for the table, the list and the Graphviz/WaveDrom windows, delegate mode for Mermaid/Visimer. 100-snapshot and 4 M-character caps, 350 ms text coalescing, snapshot dedupe, redo truncation, async restore with index rollback; binds the bar's Undo/Redo pair and the Ctrl/Cmd+Z / Shift+Z / Y chords with a per-window `ownsKey`; toggles the bar overflow fade. |
 | `table-editor.js` | 2234 | `NB.tableEditor` | Hybrid-only "Edit table" modal (`#table-editor-overlay`, a static `.settings-overlay`): spreadsheet grid over a snapshot of the table's cell HTML and per-cell alignment. Uses the shared edit-window shell (header, action bar, commit footer); the bar's Undo/Redo run a modal-local stack (deduplicated snapshots, coalesced text steps, 100-snapshot and 4 M-character caps). Apply rebuilds one GFM table, flushes the pending undo snapshot first, replaces the source node, and calls `onContentChange()`; an unchanged table closes without a write. Merged-cell tables open read-only with a notice. |
+| `list-editor.js` | — (new) | `NB.listEditor` | Hybrid-only "Edit list" modal (`#list-editor-overlay`, a static `.settings-overlay`): a treegrid over one list container, holding the live `<li>` nodes plus depth and done state. Multi-select, block move, indent/outdent, one-level sort, done-to-bottom, mark done/open and delete. Apply flushes the pending snapshot, moves the live rows into the reassembled wrappers (the original `<ul>/<ol>` nodes are reused, so `start`/`reversed`/`type` survive), calls `onContentChange()`, and closes; the same structural signature writes nothing. A `hybrid:rerendered` invalidation turns the window read-only instead of writing to detached nodes. See [list-editor.md](list-editor.md). |
 | `watcher.js` | 337 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s poll that re-checks the tree via `/api/tree` (refresh on a JSON diff) and open files via `/api/file?ifModifiedSince=`. Pauses when the tab is hidden; a window `focus` event forces an immediate tree check. The first tick runs on a macrotask so `NB.sidebar` exists (deferred load order puts watcher.js before sidebar.js). |
 | `outline.js` | 176 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
 | `sidebar.js` | 1739 | `NB.sidebar` | File tree, pinned folders, bookmarks, and the item sets for the tree-row, folder, bookmark, and root menus (new, rename/move, copy, delete, Export…, copy path/link). Ctrl/Cmd+click toggles a row and Shift+click selects the visible range; a multi-selection moves together via the row menu's "Move N items to…" or a multi-item drag (the Pinned section has no multi-select). The Explorer header carries a ↻ button that re-fetches `/api/tree` on demand (bypassing the watcher's JSON-diff short-circuit) with a one-shot spin animation. |
@@ -366,7 +367,7 @@ PNG). The phone Home Screen icon is `/static/icons/apple-touch-icon-v2.png`
 probes those paths. Without them the SPA catch-all answered with HTML and iOS
 cached a broken icon.
 
-`static/sw.js` uses cache version `notebook-v33` (`sw.js`) with three
+`static/sw.js` uses cache version `notebook-v36` (`sw.js:72`) with three
 strategies:
 
 - **Pages and static assets**: network-first. A successful response is
@@ -393,9 +394,10 @@ Change any precached asset and bump `CACHE` in `sw.js`. Bumping the
 name makes every installed worker re-run install and activate, refreshing
 the assets and deleting the old cache. Without the bump, a network-first
 asset still updates, but the install-time copy stays stale. The DOM suite
-asserts the literal cache name twice (`test_dom.js` and
-`test_dom.js`), so a bump must update those two assertions in the
-same change.
+asserts a **floor** on the cache number at three places — `>= notebook-v26`
+(`test_dom.js:12405-12406`), `>= notebook-v23` (`:22779`), `>= notebook-v23`
+(`:42387`) — so a bump never breaks them; only a new assertion that pins the
+current number would, and none does.
 
 ## 7. UI surfaces
 

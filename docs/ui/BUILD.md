@@ -16,7 +16,7 @@ without re-reading every surface doc.
 | Shell | `shell-frame.md`, `tab-bar.md` |
 | Side panels | `side-panel-views.md`, `sessions.md`, `search-view.md`, `ai-panel.md` |
 | Reading | `reader.md`, `content-blocks.md` |
-| Edit windows | `edit-window.md`, `table-editor.md`, `diagram-designers.md` |
+| Edit windows | `edit-window.md`, `table-editor.md`, `list-editor.md`, `diagram-designers.md` |
 | Overlays | `settings-modal.md`, `dialogs.md`, `lightboxes.md` |
 | Editing | `source-editor.md`, `hybrid-mode.md` |
 | Special | `graph-view.md`, `sessions-page.md`, `mobile-shell.md`, `welcome.md` |
@@ -41,7 +41,7 @@ Each phase is shippable and testable alone. Do not start a phase before its prer
 | 7 | Search | field, clear, Advanced, listbox states | `test_dom`, `:core` |
 | 8 | AI | provider, messages, trace, cards, composer | `test_dom`, `:ai*` |
 | 9 | Reader + blocks | prose a11y, code chip, tables, figures, math, cards | `test_dom`, `:blocks` |
-| 10 | Edit windows | shared chrome, table editor, designers | `test_dom`, `:table-editor`, `:designer`, `:dw` |
+| 10 | Edit windows | shared chrome, table editor, list editor, designers | `test_dom`, `:table-editor`, `:list-editor`, `:designer`, `:dw` |
 | 11 | Overlays | Settings, dialogs, lightboxes | `test_dom`, `:auth`, `:core` |
 | 12 | Editing surfaces | source bar/CM, hybrid chrome | `test_dom`, `:hybrid*` |
 | 13 | Special | graph chrome, the sessions page, phone shell, welcome | `test_dom`, `:core`, `:mobile`, `:sessions-page` |

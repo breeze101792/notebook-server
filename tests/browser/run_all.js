@@ -19,6 +19,7 @@ const SUITES = [
   { name: "AI blocks", file: "test_ai_blocks_browser.js", port: 5092 },
   { name: "hybrid", file: "test_hybrid_browser.js", port: 5099 },
   { name: "table editor", file: "test_table_editor_browser.js", port: 5094 },
+  { name: "list editor", file: "test_list_editor_browser.js", port: 5093 },
   { name: "hybrid blocks", file: "test_hybrid_blocks_browser.js", port: 5082 },
   { name: "fence editor", file: "test_block_edit_browser.js", port: 5091 },
   { name: "figure sizing", file: "test_figure_sizing_browser.js", port: 5083 },

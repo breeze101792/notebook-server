@@ -29,17 +29,19 @@ maximize button, arms header drag, and applies persisted geometry:
 | Settings `#settings-overlay` | static, `index.html` | `<h2>` + close `icon-btn` | boot scan |
 | Export `#export-overlay` | static, `index.html` | `<h2>` + close `icon-btn`; footer separate | boot scan |
 | Table editor `#table-editor-overlay` | static, `index.html` | `<h2>` + close `icon-btn` | boot scan |
+| List editor `#list-editor-overlay` | static, `index.html` | `<h2>` + close `icon-btn` | boot scan |
 | Designer `#designer-overlay` | static, `index.html` | `.designer-heading` + `.designer-header-actions` (`#designer-close`) | boot scan |
 | Dot/WaveDrom designer `#dw-designer-overlay` | static, `index.html` | `.designer-heading` + `.designer-header-actions` (`#dw-close`) | boot scan |
 | VIM `:help` `#vimnav-help` | dynamic, `static/js/vimnav.js` | `<h2>` + close `icon-btn` | MutationObserver (`windows.js`) |
 
-Seven overlay modals are always present — login, Settings, Export, the
-table editor, the Mermaid designer, the dot/WaveDrom designer, and the
-dynamically created `:help` — and the two workspace dialogs join them
-whenever `boot.workspace_id` renders them. A `role="dialog"` grep over
-`index.html` counts eleven nodes: the eight static modal dialogs above
-plus the phone capture sheet, the phone settings sheet, and the designer's
-compact build sheet, which carry the role without being floating windows.
+Eight overlay modals are always present — login, Settings, Export, the
+table editor, the list editor, the Mermaid designer, the dot/WaveDrom
+designer, and the dynamically created `:help` — and the two workspace
+dialogs join them whenever `boot.workspace_id` renders them. A
+`role="dialog"` grep over `index.html` counts twelve nodes: the nine static
+modal dialogs above plus the phone capture sheet, the phone settings sheet,
+and the designer's compact build sheet, which carry the role without being
+floating windows.
 The context menus are not modals. Geometry persistence is also centralized
 (`nb:windowGeometry`, keyed by overlay id — every overlay has one,
 including `vimnav-help`).

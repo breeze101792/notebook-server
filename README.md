@@ -32,6 +32,10 @@ are plain `.md` files on disk — no database, no build step.
   "hybrid" edit mode that round-trips rendered DOM back to Markdown.
 - Preview table controls: hide rows/columns and sort a column without
   touching the note's source.
+- **Edit list** window in hybrid mode: right-click any list item to open a
+  window over that one list, then multi-select items, move them as a block,
+  indent/outdent, sort a level A→Z / Z→A, move done task items to the bottom,
+  mark done/open, or delete — applied as a single undo step.
 - Heading outline (right-side minimap) with scroll-spy and click-to-jump.
 - In-page search across all `.md` files with safe snippet highlighting
   (the server returns `<<…>>` markers; the client rewraps them as `<mark>`

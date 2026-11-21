@@ -1729,6 +1729,131 @@
     </div>
   </div>
 
+  <!-- List editor: one list container of the note, managed as a
+       multi-select treegrid. Opened from the hybrid right-click menu's
+       "Edit list…" item. Same shell as the table editor: overlay ->
+       .settings-modal -> header -> bar -> body -> footer, with the
+       "list-editor" prefix. The grid itself is built per open by
+       static/js/list-editor.js. -->
+  <div id="list-editor-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal list-editor-modal" role="dialog" aria-modal="true"
+         aria-labelledby="list-editor-title" tabindex="-1">
+      {{ edit_header("list-editor", "Edit list", badge_id="list-editor-type") }}
+      {% call edit_bar("list-editor") %}
+        <div id="le-toolbar" class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+          <div class="edit-bar-group" role="group" aria-label="Move">
+            <button id="le-move-up" class="le-tool" type="button"
+                    aria-label="Move up" title="Move up (Alt+↑)"
+                    aria-keyshortcuts="Alt+ArrowUp">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg>
+            </button>
+            <button id="le-move-down" class="le-tool" type="button"
+                    aria-label="Move down" title="Move down (Alt+↓)"
+                    aria-keyshortcuts="Alt+ArrowDown">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg>
+            </button>
+            <button id="le-move-top" class="le-tool" type="button"
+                    aria-label="To top" title="To top (Alt+Shift+↑)"
+                    aria-keyshortcuts="Alt+Shift+ArrowUp">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg>
+            </button>
+            <button id="le-move-bottom" class="le-tool" type="button"
+                    aria-label="To bottom" title="To bottom (Alt+Shift+↓)"
+                    aria-keyshortcuts="Alt+Shift+ArrowDown">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg>
+            </button>
+          </div>
+
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+
+          <div class="edit-bar-group" role="group" aria-label="Level">
+            <button id="le-outdent" class="le-tool" type="button"
+                    aria-label="Outdent" title="Outdent (Shift+Tab)"
+                    aria-keyshortcuts="Shift+Tab">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg>
+            </button>
+            <button id="le-indent" class="le-tool" type="button"
+                    aria-label="Indent" title="Indent (Tab)"
+                    aria-keyshortcuts="Tab">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg>
+            </button>
+          </div>
+
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+
+          <div class="edit-bar-group" role="group" aria-label="Sort">
+            <button id="le-sort-asc" class="le-tool" type="button"
+                    aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)"
+                    aria-keyshortcuts="Alt+Shift+A">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg>
+            </button>
+            <button id="le-sort-desc" class="le-tool" type="button"
+                    aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)"
+                    aria-keyshortcuts="Alt+Shift+Z">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg>
+            </button>
+            <button id="le-sort-done" class="le-tool" type="button"
+                    aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)"
+                    aria-keyshortcuts="Alt+Shift+B">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg>
+            </button>
+          </div>
+
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+
+          <div class="edit-bar-group" role="group" aria-label="Select">
+            <button id="le-select-all" class="le-tool" type="button"
+                    aria-label="Select all" title="Select all (Ctrl/Cmd+A)"
+                    aria-keyshortcuts="Control+A Meta+A">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg>
+            </button>
+            <button id="le-select-none" class="le-tool" type="button"
+                    aria-label="Select none" title="Select none (Ctrl/Cmd+Shift+A)"
+                    aria-keyshortcuts="Control+Shift+A Meta+Shift+A">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg>
+            </button>
+          </div>
+
+          <span class="edit-bar-sep" aria-hidden="true"></span>
+
+          <div class="edit-bar-group" role="group" aria-label="State">
+            <button id="le-mark-done" class="le-tool" type="button"
+                    aria-label="Mark done" title="Mark done (Alt+Shift+D)"
+                    aria-keyshortcuts="Alt+Shift+D">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg>
+            </button>
+            <button id="le-mark-open" class="le-tool" type="button"
+                    aria-label="Mark open" title="Mark open (Alt+Shift+O)"
+                    aria-keyshortcuts="Alt+Shift+O">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg>
+            </button>
+            <button id="le-delete" class="le-tool is-danger" type="button"
+                    aria-label="Delete" title="Delete (Delete)"
+                    aria-keyshortcuts="Delete">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg>
+            </button>
+          </div>
+        </div>
+      {% endcall %}
+      <div class="le-body">
+        <div id="list-editor-notice" class="le-notice-strip" hidden>
+          <span class="le-notice-glyph" aria-hidden="true"><svg class="icon"><use href="#nb-icon-warning"/></svg></span>
+          <div>
+            <p>This list changed outside the window.</p>
+            <p>Nothing was applied. Cancel closes the window.</p>
+          </div>
+        </div>
+        <div class="le-scroll">
+          <div id="list-editor-grid" class="le-tree" role="treegrid"
+               aria-label="List items" aria-multiselectable="true"
+               aria-colcount="1"></div>
+          <p class="le-empty" hidden>No items left. Apply removes the list.</p>
+        </div>
+      </div>
+      {{ edit_footer("list-editor", "le-footer", "le-status", hint="Esc cancels") }}
+    </div>
+  </div>
+
   <!-- Mermaid visual designer. Opened from the hybrid right-click menu's
        "Design diagram…" item. Carries class="settings-overlay" so the app's
        keyboard-modal guards (shortcuts.js / vimnav.js / table-select.js)
@@ -2117,6 +2242,7 @@
   <script src="/static/js/table-select.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/edit-window.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/table-editor.js?v={{ asset_v }}" defer></script>
+  <script src="/static/js/list-editor.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/watcher.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/outline.js?v={{ asset_v }}" defer></script>
   <script src="/static/js/sidebar.js?v={{ asset_v }}" defer></script>

@@ -1213,6 +1213,159 @@ const html = `<!DOCTYPE html><html><head>
       </div>
     </div>
   </div>
+  <!-- List editor modal (hybrid mode only). Mirrors templates/index.html's
+       overlay, macros expanded: header (close last) -> bar (history pair +
+       seam + the #le-toolbar caller slot) -> .le-body (notice + treegrid) ->
+       footer (status / hint / Cancel / Apply). -->
+  <div id="list-editor-overlay" class="settings-overlay" hidden>
+    <div class="settings-modal list-editor-modal" role="dialog" aria-modal="true"
+         aria-labelledby="list-editor-title" tabindex="-1">
+      <div class="settings-header edit-header">
+        <div class="designer-heading edit-heading">
+          <h2 id="list-editor-title">Edit list</h2>
+          <span class="designer-type edit-badge" id="list-editor-type"></span>
+        </div>
+        <button id="list-editor-close" class="icon-btn" type="button"
+                title="Close" aria-label="Close">×</button>
+      </div>
+      <div class="edit-bar">
+        <div class="edit-bar-history" role="group" aria-label="History">
+          <button id="list-editor-undo" class="edit-bar-btn" type="button"
+                  title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 6h5a4 4 0 0 1 4 4v2"/>
+              <path d="M6.4 3.6 4 6l2.4 2.4"/>
+            </svg>
+          </button>
+          <button id="list-editor-redo" class="edit-bar-btn" type="button"
+                  title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
+                  aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled>
+            <svg viewBox="0 0 16 16" width="17" height="17" aria-hidden="true"
+                 fill="none" stroke="currentColor" stroke-width="1.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 6H7a4 4 0 0 0-4 4v2"/>
+              <path d="M9.6 3.6 12 6l-2.4 2.4"/>
+            </svg>
+          </button>
+          <span class="edit-bar-seam" aria-hidden="true"></span>
+        </div>
+        <div class="edit-bar-actions">
+          <div id="le-toolbar" class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+            <div class="edit-bar-group" role="group" aria-label="Move">
+              <button id="le-move-up" class="le-tool" type="button"
+                      aria-label="Move up" title="Move up (Alt+↑)"
+                      aria-keyshortcuts="Alt+ArrowUp">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h10"/></svg>
+              </button>
+              <button id="le-move-down" class="le-tool" type="button"
+                      aria-label="Move down" title="Move down (Alt+↓)"
+                      aria-keyshortcuts="Alt+ArrowDown">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14h10"/></svg>
+              </button>
+              <button id="le-move-top" class="le-tool" type="button"
+                      aria-label="To top" title="To top (Alt+Shift+↑)"
+                      aria-keyshortcuts="Alt+Shift+ArrowUp">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2h10"/></svg>
+              </button>
+              <button id="le-move-bottom" class="le-tool" type="button"
+                      aria-label="To bottom" title="To bottom (Alt+Shift+↓)"
+                      aria-keyshortcuts="Alt+Shift+ArrowDown">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 14h10"/></svg>
+              </button>
+            </div>
+            <span class="edit-bar-sep" aria-hidden="true"></span>
+            <div class="edit-bar-group" role="group" aria-label="Level">
+              <button id="le-outdent" class="le-tool" type="button"
+                      aria-label="Outdent" title="Outdent (Shift+Tab)"
+                      aria-keyshortcuts="Shift+Tab">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M14 3v10"/></svg>
+              </button>
+              <button id="le-indent" class="le-tool" type="button"
+                      aria-label="Indent" title="Indent (Tab)"
+                      aria-keyshortcuts="Tab">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3v10"/></svg>
+              </button>
+            </div>
+            <span class="edit-bar-sep" aria-hidden="true"></span>
+            <div class="edit-bar-group" role="group" aria-label="Sort">
+              <button id="le-sort-asc" class="le-tool" type="button"
+                      aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)"
+                      aria-keyshortcuts="Alt+Shift+A">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12h4"/></svg>
+              </button>
+              <button id="le-sort-desc" class="le-tool" type="button"
+                      aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)"
+                      aria-keyshortcuts="Alt+Shift+Z">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 12h8"/></svg>
+              </button>
+              <button id="le-sort-done" class="le-tool" type="button"
+                      aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)"
+                      aria-keyshortcuts="Alt+Shift+B">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5 3.8 5.3"/></svg>
+              </button>
+            </div>
+            <span class="edit-bar-sep" aria-hidden="true"></span>
+            <div class="edit-bar-group" role="group" aria-label="Select">
+              <button id="le-select-all" class="le-tool" type="button"
+                      aria-label="Select all" title="Select all (Ctrl/Cmd+A)"
+                      aria-keyshortcuts="Control+A Meta+A">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/></svg>
+              </button>
+              <button id="le-select-none" class="le-tool" type="button"
+                      aria-label="Select none" title="Select none (Ctrl/Cmd+Shift+A)"
+                      aria-keyshortcuts="Control+Shift+A Meta+Shift+A">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11"/></svg>
+              </button>
+            </div>
+            <span class="edit-bar-sep" aria-hidden="true"></span>
+            <div class="edit-bar-group" role="group" aria-label="State">
+              <button id="le-mark-done" class="le-tool" type="button"
+                      aria-label="Mark done" title="Mark done (Alt+Shift+D)"
+                      aria-keyshortcuts="Alt+Shift+D">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg>
+              </button>
+              <button id="le-mark-open" class="le-tool" type="button"
+                      aria-label="Mark open" title="Mark open (Alt+Shift+O)"
+                      aria-keyshortcuts="Alt+Shift+O">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg>
+              </button>
+              <button id="le-delete" class="le-tool is-danger" type="button"
+                      aria-label="Delete" title="Delete (Delete)"
+                      aria-keyshortcuts="Delete">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4h10"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="le-body">
+        <div id="list-editor-notice" class="le-notice-strip" hidden>
+          <span class="le-notice-glyph" aria-hidden="true">⚠</span>
+          <div>
+            <p>This list changed outside the window.</p>
+            <p>Nothing was applied. Cancel closes the window.</p>
+          </div>
+        </div>
+        <div class="le-scroll">
+          <div id="list-editor-grid" class="le-tree" role="treegrid"
+               aria-label="List items" aria-multiselectable="true"
+               aria-colcount="1"></div>
+          <p class="le-empty" hidden>No items left. Apply removes the list.</p>
+        </div>
+      </div>
+      <div class="settings-footer edit-footer le-footer">
+        <span id="list-editor-status" class="le-status" role="status"
+              aria-live="polite" aria-atomic="true"></span>
+        <span class="te-hint" aria-hidden="true">Esc cancels</span>
+        <button id="list-editor-cancel" class="settings-action" type="button"
+                aria-keyshortcuts="Escape">Cancel</button>
+        <button id="list-editor-apply"
+                class="settings-action settings-action--primary" type="button">Apply</button>
+      </div>
+    </div>
+  </div>
   <!-- Mermaid visual designer. Opened from the hybrid right-click menu's
        "Design diagram…" item. Carries class="settings-overlay" so the app's
        keyboard-modal guards (shortcuts.js / vimnav.js / table-select.js)
@@ -2762,11 +2915,12 @@ evalIn(read("static/vendor/purify.min.js"));
   evalIn(read("static/js/table-select.js"));
   evalIn(read("static/js/edit-window.js"));
   evalIn(read("static/js/table-editor.js"));
-evalIn(read("static/js/watcher.js"));
-evalIn(read("static/js/outline.js"));
-evalIn(read("static/js/sidebar.js"));
-evalIn(read("static/js/graph-2d.js"));
-evalIn(read("static/js/graph-3d.js"));
+  evalIn(read("static/js/list-editor.js"));
+  evalIn(read("static/js/watcher.js"));
+  evalIn(read("static/js/outline.js"));
+  evalIn(read("static/js/sidebar.js"));
+  evalIn(read("static/js/graph-2d.js"));
+  evalIn(read("static/js/graph-3d.js"));
 evalIn(read("static/js/graph.js"));
 evalIn(read("static/js/tabs.js"));
 evalIn(read("static/js/windows.js"));
@@ -20752,6 +20906,514 @@ function check(label, cond, extra) {
     if (window.NB.tabs.isOpen("notes/a.md")) {
       await window.NB.tabs.activate("notes/a.md");
       await tick(20);
+    }
+  }
+
+  console.log("== list editor ==");
+  // The hybrid "Edit list" window (docs/ui/list-editor.md AC1-AC22;
+  // docs/architecture/list-editor.md). jsdom drives the exported model
+  // verbs and the same click/key handlers the toolbar uses. Verbs change
+  // the WINDOW's model only; the note's DOM is not touched until Apply,
+  // so every verb assertion reads #list-editor-grid or getState(). Real
+  // layout (row heights, toolbar fit, phone geometry, focus ring) is the
+  // Chromium suite's job.
+  {
+    const LE_PATH = "notes/listedit.md";
+    const vcEl = () => $("viewer-content");
+    const leEnter = async (source) => {
+      FILES[LE_PATH] = source;
+      if (window.NB.tabs.isOpen(LE_PATH)) window.NB.viewer.close(LE_PATH);
+      await window.NB.tabs.open(LE_PATH);
+      await tick(20);
+      await window.NB.hybrid.enter();
+      await tick(20);
+      return vcEl();
+    };
+    const leLeave = async () => {
+      if (window.NB.hybrid.isActive()) await window.NB.hybrid.exit(false);
+      await tick(20);
+    };
+    const postFile = () =>
+      fetchLog.filter((x) => x.startsWith("POST /api/file")).length;
+    const le = () => window.NB.listEditor;
+    const grid = () => $("list-editor-grid");
+    const rows = () => Array.from(grid().querySelectorAll(".le-row"));
+    const rowTexts = () =>
+      rows().map((r) => r.querySelector(".le-text").textContent);
+    const levels = () => rows().map((r) => Number(r.getAttribute("aria-level")));
+    const rowEl = (id) => grid().querySelector('[data-row-id="' + id + '"]');
+    const cellOf = (id) => rowEl(id).querySelector(".le-cell");
+    const clickRow = (id, opts) =>
+      cellOf(id).dispatchEvent(new window.MouseEvent("click",
+        Object.assign({ bubbles: true }, opts || {})));
+    const status = () => $("list-editor-status").textContent;
+    const items = (list) => Array.from(list.children).filter((n) => n.tagName === "LI");
+    const ownText = (li) => {
+      const copy = li.cloneNode(true);
+      copy.querySelectorAll("ul,ol,input,[contenteditable=\"false\"]")
+        .forEach((n) => n.remove());
+      return copy.textContent.replace(/\u200B/g, "").trim();
+    };
+    const texts = (list) => items(list).map(ownText);
+    const caretInside = (node) => {
+      const sel = window.getSelection();
+      if (!sel || !sel.anchorNode) return false;
+      const n = sel.anchorNode;
+      return (node && (node === n || node.contains(n))) ||
+        (n.parentElement && (n.parentElement === node || node.contains(n.parentElement)));
+    };
+    const menuLabels = () => Array.from($("nb-menu").querySelectorAll("button"))
+      .map((b) => b.textContent.trim());
+
+    check("list editor: module loaded", !!window.NB.listEditor);
+    check("list editor: index loads it after table-editor.js",
+      /table-editor\.js[\s\S]*list-editor\.js/.test(read("templates/index.html")));
+    check("list editor: sw.js precaches it",
+      read("static/sw.js").includes('"/static/js/list-editor.js"'));
+    check("list editor: 14 tools in 5 groups with 4 separators",
+      $("le-toolbar").querySelectorAll(".le-tool").length === 14 &&
+      $("le-toolbar").querySelectorAll(".edit-bar-group").length === 5 &&
+      $("le-toolbar").querySelectorAll(".edit-bar-sep").length === 4,
+      $("le-toolbar").querySelectorAll(".edit-bar-group").length + "/" +
+      $("le-toolbar").querySelectorAll(".edit-bar-sep").length);
+    check("list editor: contracted ids exist",
+      ["list-editor-overlay", "list-editor-title", "list-editor-type",
+       "list-editor-close", "list-editor-undo", "list-editor-redo",
+       "list-editor-notice", "list-editor-grid", "list-editor-status",
+       "list-editor-cancel", "list-editor-apply", "le-toolbar"]
+        .every((id) => !!$(id)));
+    check("list editor: the notice is not a second live region",
+      !$("list-editor-notice").hasAttribute("role"));
+
+    // --- AC1: the entry point ------------------------------------------
+    {
+      const vc = await leEnter("- a\n- b\n");
+      const li = vc.querySelector("li");
+      li.dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 10, clientY: 10, button: 2 }));
+      await tick(5);
+      check("list editor AC1: a list right-click offers Edit list…",
+        menuLabels().indexOf("Edit list…") !== -1);
+      check("list editor AC1: a list right-click does not offer Edit table…",
+        menuLabels().indexOf("Edit table…") === -1);
+      window.NB.menu.close();
+      const plain = window.document.createElement("p");
+      plain.textContent = "plain";
+      vc.appendChild(plain);
+      plain.dispatchEvent(new window.MouseEvent("contextmenu",
+        { bubbles: true, cancelable: true, clientX: 10, clientY: 10, button: 2 }));
+      await tick(5);
+      check("list editor AC1: a paragraph right-click offers no Edit list…",
+        menuLabels().indexOf("Edit list…") === -1);
+      window.NB.menu.close();
+      await leLeave();
+    }
+
+    // --- AC3/AC4: scope, rows and levels -------------------------------
+    {
+      const vc = await leEnter("- a\n    - a1\n    - a2\n- b\n");
+      const ul = vc.querySelector("ul");
+      const first = items(ul)[0];
+      check("list editor AC3: open resolves the outer container",
+        le().open(first.querySelector("li")) === true &&
+        le().getState().container === ul);
+      check("list editor AC4: one row per item in document order",
+        JSON.stringify(rowTexts()) === '["a","a1","a2","b"]',
+        JSON.stringify(rowTexts()));
+      check("list editor AC4: aria-level follows listItemDepth + 1",
+        levels().join(",") === "1,2,2,1", levels().join(","));
+      check("list editor AC4: a parent is expanded, a leaf has no aria-expanded",
+        rowEl(0).getAttribute("aria-expanded") === "true" &&
+        !rowEl(1).hasAttribute("aria-expanded"));
+      check("list editor AC4: one tab stop, on the first row",
+        rows().filter((r) => r.querySelector(".le-cell").tabIndex === 0).length === 1 &&
+        cellOf(0).tabIndex === 0);
+      check("list editor: the badge names the list type",
+        $("list-editor-type").textContent === "Bulleted list");
+      check("list editor: the opening counts are exact",
+        status() === "4 items · 0 selected · 0 done", JSON.stringify(status()));
+      check("list editor: nothing is selected at open",
+        rows().every((r) => r.getAttribute("aria-selected") === "false"));
+
+      // --- AC6: selection and the lock --------------------------------
+      clickRow(0);
+      check("list editor AC6: a click selects the row and its subtree",
+        rowEl(0).getAttribute("aria-selected") === "true" &&
+        rowEl(1).getAttribute("aria-selected") === "true" &&
+        rowEl(2).getAttribute("aria-selected") === "true" &&
+        rowEl(3).getAttribute("aria-selected") === "false",
+        rows().map((r) => r.getAttribute("aria-selected")).join(","));
+      check("list editor AC6: a selected parent locks its descendants",
+        rowEl(1).classList.contains("is-locked") &&
+        !le().getState().selected.has(1));
+      clickRow(1, { ctrlKey: true });
+      check("list editor AC6: a locked descendant ignores Ctrl-click",
+        le().getState().selected.size === 1);
+      clickRow(3, { ctrlKey: true });
+      check("list editor AC6: Ctrl-click adds a root",
+        le().getState().selected.size === 2);
+      clickRow(3, { ctrlKey: true });
+      check("list editor AC6: Ctrl-click removes a root",
+        le().getState().selected.size === 1);
+      le()._select([0, 1, 2, 3]);
+      check("list editor AC6: Select all counts every row, locked included",
+        status() === "4 items · 4 selected · 0 done", JSON.stringify(status()));
+      check("list editor AC6: Select all stores only the roots",
+        le().getState().selected.size === 2,
+        "" + le().getState().selected.size);
+      await leLeave();
+    }
+
+    // --- AC7: moves within each own parent -----------------------------
+    {
+      const vc = await leEnter("- a\n    - a1\n    - a2\n- b\n    - b1\n    - b2\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      le()._select([2, 5]);
+      check("list editor AC7: Up moves each root inside its own parent",
+        le().moveRows("up") === true &&
+        JSON.stringify(rowTexts()) === '["a","a2","a1","b","b2","b1"]',
+        JSON.stringify(rowTexts()));
+      check("list editor AC7: no re-parenting happened",
+        le().getState().rows.filter((r) => r.id === 2 || r.id === 5)
+          .every((r) => r.depth === 1 && r.parentId !== null));
+      le()._select([2, 4]);
+      check("list editor AC7: a root already first is skipped and counted",
+        le().moveRows("up") === true &&
+        status().indexOf("Moved 1 item up · 1 item could not move") !== -1,
+        JSON.stringify(status()));
+      le()._select([1, 4]);
+      check("list editor AC7: To top refuses roots in two parents",
+        le().moveRowsToEdge("top") === false &&
+        status().indexOf("To top needs the selected items to share one level.") !== -1,
+        JSON.stringify(status()));
+      await leLeave();
+    }
+
+    // --- AC7: every root already first; to bottom inside one level -----
+    {
+      const vc = await leEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      le()._select([0, 1]);
+      check("list editor AC7: every root already first is refused",
+        le().moveRows("up") === false &&
+        status().indexOf("Every selected item is already first.") !== -1,
+        JSON.stringify(status()));
+      check("list editor AC7: To bottom moves the run to the end, in order",
+        le().moveRowsToEdge("bottom") === true &&
+        JSON.stringify(rowTexts()) === '["c","a","b"]',
+        JSON.stringify(rowTexts()));
+      await leLeave();
+    }
+
+    // --- AC8/AC22: the edge refusals -----------------------------------
+    {
+      const vc = await leEnter("- only\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      le()._select([0]);
+      check("list editor AC22: To top refuses on a single item with its own sentence",
+        le().moveRowsToEdge("top") === false &&
+        status().indexOf("The selected items are already at the top.") !== -1,
+        JSON.stringify(status()));
+      check("list editor AC22: To bottom refuses on a single item with its own sentence",
+        le().moveRowsToEdge("bottom") === false &&
+        status().indexOf("The selected items are already at the bottom.") !== -1,
+        JSON.stringify(status()));
+      check("list editor AC22: a refused verb leaves the note clean",
+        !window.NB.hybrid.isDirty());
+      await leLeave();
+    }
+
+    // --- AC9: sort, one level, stable, numeric, empty last --------------
+    {
+      const vc = await leEnter("- Row 10\n    - z1\n    - z2\n- Row 2\n- \n- row 1\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      clickRow(0);
+      check("list editor AC9: A→Z sorts the focused level numerically",
+        le().sortRows("asc") === true &&
+        JSON.stringify(rowTexts()) ===
+          '["row 1","Row 2","Row 10","z1","z2","Empty item"]',
+        JSON.stringify(rowTexts()));
+      check("list editor AC9: the empty label sorts last at its level",
+        le().getState().rows[5].ownText === "" &&
+        rowTexts()[5] === "Empty item",
+        JSON.stringify(rowTexts()));
+      check("list editor AC9: children travel with their parent and keep order",
+        JSON.stringify(rowTexts().slice(2, 5)) === '["Row 10","z1","z2"]',
+        JSON.stringify(rowTexts()));
+      check("list editor AC9: Z→A reverses and keeps the empty last",
+        le().sortRows("desc") === true &&
+        JSON.stringify(rowTexts()) ===
+          '["Row 10","z1","z2","Row 2","row 1","Empty item"]',
+        JSON.stringify(rowTexts()));
+      check("list editor AC9: the status names the level",
+        /Sorted 4 items at level 1/.test(status()), JSON.stringify(status()));
+      await leLeave();
+    }
+
+    // --- AC10: done to bottom, recursively -----------------------------
+    {
+      const vc = await leEnter(
+        "- [x] one\n- [ ] two\n    - [x] two-a\n    - [ ] two-b\n- [x] three\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      check("list editor: a task list badges as Task list",
+        $("list-editor-type").textContent === "Task list");
+      check("list editor AC10: done rows move to the end of every group",
+        le().doneToBottom() === true &&
+        JSON.stringify(rowTexts()) ===
+          '["two","two-b","two-a","one","three"]',
+        JSON.stringify(rowTexts()));
+      check("list editor AC10: the result sentence is exact",
+        status().indexOf("Moved 3 done items to the bottom") !== -1,
+        JSON.stringify(status()));
+      check("list editor AC10: subtrees stay attached",
+        le().getState().rows[1].parentId === le().getState().rows[0].id &&
+        le().getState().rows[2].parentId === le().getState().rows[0].id);
+      await leLeave();
+    }
+
+    // --- AC10: a quoted list inside the container is never touched -----
+    {
+      const vc = await leEnter(
+        "- [x] one\n- [ ] two\n    > - [x] q1\n    > - [ ] q2\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      const quoted = ul.querySelector("blockquote ul");
+      const quotedBefore = quoted.innerHTML;
+      le().doneToBottom();
+      check("list editor AC10: a quoted sub-list is not a row and stays untouched",
+        quoted.innerHTML === quotedBefore &&
+        le().getState().rows.length === 2,
+        JSON.stringify(rowTexts()));
+      await leLeave();
+    }
+
+    // --- AC11: indent / outdent over a run ------------------------------
+    {
+      const vc = await leEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      le()._select([0]);
+      check("list editor AC11: the first sibling cannot indent",
+        le().indentRows() === false &&
+        status().indexOf("The first item in a group cannot indent.") !== -1,
+        JSON.stringify(status()));
+      le()._select([1, 2]);
+      check("list editor AC11: a run indents under the preceding sibling",
+        le().indentRows() === true &&
+        JSON.stringify(rowTexts()) === '["a","b","c"]' &&
+        levels().join(",") === "1,2,2",
+        JSON.stringify(rowTexts()) + " / " + levels().join(","));
+      check("list editor AC11: outdent returns the run to the parent level",
+        le().outdentRows() === true && levels().join(",") === "1,1,1",
+        levels().join(","));
+      le()._select([0]);
+      check("list editor AC11: depth 0 cannot outdent",
+        le().outdentRows() === false &&
+        status().indexOf("Top-level items cannot outdent.") !== -1,
+        JSON.stringify(status()));
+      await leLeave();
+    }
+
+    // --- AC12: mark done writes the property AND the attribute ---------
+    {
+      const vc = await leEnter("- [ ] one\n- [ ] two\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      le()._select([0]);
+      check("list editor AC12: Mark done changes the model",
+        le().markDone(true) === true &&
+        le().getState().rows[0].done === true);
+      le()._select([1]);
+      le().markDone(true);
+      le().apply();
+      await tick(20);
+      const boxes = Array.from(vc.querySelectorAll('input[type="checkbox"]'));
+      check("list editor AC12: Apply sets the checkbox property and attribute",
+        boxes.length === 2 && boxes.every((b) => b.checked && b.hasAttribute("checked")),
+        boxes.map((b) => b.checked + "/" + b.hasAttribute("checked")).join(","));
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("list editor AC12: the file carries both task markers",
+        /\[x\]\s+one/.test(FILES[LE_PATH]) && /\[x\]\s+two/.test(FILES[LE_PATH]),
+        JSON.stringify(FILES[LE_PATH]));
+      await leLeave();
+    }
+
+    // --- AC15: Apply keeps identity, `start` and one undo step ---------
+    {
+      const vc = await leEnter("5. five\n6. six\n7. seven\n");
+      const ol = vc.querySelector("ol");
+      le().open(items(ol)[0]);
+      const seven = items(ol)[2];
+      le()._select([2]);
+      le().moveRowsToEdge("top");
+      const beforePosts = postFile();
+      le().apply();
+      await tick(20);
+      check("list editor AC15: Apply moves the live rows, not a copy",
+        items(ol)[0] === seven && vc.querySelector("ol") === ol);
+      check("list editor AC15: <ol start> survives the commit",
+        ol.getAttribute("start") === "5", String(ol.getAttribute("start")));
+      check("list editor AC15: the window closes after Apply",
+        !le().isOpen());
+      check("list editor AC15: the note is dirty and the caret is in the list",
+        window.NB.hybrid.isDirty() && caretInside(ol));
+      await window.NB.hybrid.save();
+      await tick(60);
+      check("list editor AC15: the reordered numbered list keeps its start",
+        /^5\.\s+seven/m.test(FILES[LE_PATH]) &&
+        /6\.\s+five/.test(FILES[LE_PATH]) &&
+        /7\.\s+six/.test(FILES[LE_PATH]),
+        JSON.stringify(FILES[LE_PATH]));
+      check("list editor AC15: one Apply is one POST",
+        postFile() - beforePosts === 1, "" + (postFile() - beforePosts));
+      await leLeave();
+    }
+
+    // --- AC15: the no-op writes nothing --------------------------------
+    {
+      const vc = await leEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      const before = ul.innerHTML;
+      const posts = postFile();
+      le()._select([1]);
+      le().moveRows("down");
+      le().moveRows("up");
+      const sig = le()._signature();
+      check("list editor AC15: a move and its reverse produce equal signatures",
+        JSON.stringify(sig.open) === JSON.stringify(sig.current));
+      le().apply();
+      await tick(20);
+      check("list editor AC15: the no-op closes without a write",
+        !le().isOpen() && postFile() === posts && !window.NB.hybrid.isDirty());
+      check("list editor AC15: the no-op leaves the DOM untouched",
+        ul.innerHTML === before);
+      await leLeave();
+    }
+
+    // --- AC16: Cancel writes nothing ------------------------------------
+    {
+      const vc = await leEnter("- a\n- b\n");
+      const ul = vc.querySelector("ul");
+      const before = ul.innerHTML;
+      const posts = postFile();
+      le().open(items(ul)[0]);
+      le()._select([0]);
+      le().moveRows("down");
+      le().cancel();
+      check("list editor AC16: Cancel closes and discards",
+        !le().isOpen() && ul.innerHTML === before &&
+        !window.NB.hybrid.isDirty() && postFile() === posts);
+      check("list editor AC16: Cancel lands the caret in the list",
+        caretInside(ul));
+      await leLeave();
+    }
+
+    // --- AC17: stale is read-only ---------------------------------------
+    {
+      const vc = await leEnter("- a\n- b\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      // A re-render replaces every node: node identity, not content, is the
+      // test.
+      vc.innerHTML = "<ul><li>a</li><li>b</li></ul>";
+      window.NB.evt.emit("hybrid:rerendered");
+      await tick(5);
+      check("list editor AC17: a re-render makes the window stale",
+        le().isStale());
+      check("list editor AC17: the notice copy is exact",
+        !$("list-editor-notice").hidden &&
+        /This list changed outside the window\./.test($("list-editor-notice").textContent) &&
+        /Nothing was applied\. Cancel closes the window\./.test(
+          $("list-editor-notice").textContent));
+      check("list editor AC17: Apply is visible and disabled",
+        !$("list-editor-apply").hidden && $("list-editor-apply").disabled);
+      check("list editor AC17: every tool is aria-disabled",
+        Array.from($("le-toolbar").querySelectorAll(".le-tool"))
+          .every((b) => b.getAttribute("aria-disabled") === "true"));
+      check("list editor AC17: a verb refuses in the stale state",
+        le().moveRows("down") === false &&
+        status() === "This list changed outside the window. Nothing was applied.",
+        JSON.stringify(status()));
+      le().apply();
+      await tick(5);
+      check("list editor AC17: Apply writes nothing and stays open",
+        le().isOpen() && !window.NB.hybrid.isDirty());
+      le().cancel();
+      await leLeave();
+    }
+
+    // --- AC18: the empty model ------------------------------------------
+    {
+      const vc = await leEnter("- a\n\ntail\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      le()._select([0]);
+      le().deleteRows();
+      const emptyEl = $("list-editor-overlay").querySelector(".le-empty");
+      check("list editor AC18: the empty body says what Apply will do",
+        !emptyEl.hidden &&
+        /No items left\. Apply removes the list\./.test(emptyEl.textContent),
+        JSON.stringify(emptyEl.textContent));
+      le().apply();
+      await tick(20);
+      check("list editor AC18: Apply removes the container",
+        !vc.querySelector("ul") && !le().isOpen());
+      check("list editor AC18: the caret falls inside the note",
+        caretInside(vc));
+      await leLeave();
+    }
+
+    // --- AC14: the in-window history ------------------------------------
+    {
+      const vc = await leEnter("- a\n- b\n- c\n");
+      const ul = vc.querySelector("ul");
+      le().open(items(ul)[0]);
+      const start = le()._history();
+      check("list editor AC14: history is dead at open",
+        start.canUndo === false && start.canRedo === false);
+      le()._select([0]);
+      le().moveRows("down");
+      check("list editor AC14: one verb is one history step",
+        le()._history().depth === start.depth + 1 &&
+        le()._history().canUndo === true,
+        JSON.stringify(le()._history()));
+      le()._select([0]);
+      le().moveRows("down");
+      await le()._undo();
+      check("list editor AC14: undo restores the order and the selection",
+        JSON.stringify(rowTexts()) === '["b","a","c"]' &&
+        le().getState().selected.size === 1 &&
+        le().getState().selected.has(0),
+        JSON.stringify(rowTexts()) + " / " +
+        JSON.stringify(Array.from(le().getState().selected)));
+      await le()._redo();
+      check("list editor AC14: redo re-applies it",
+        JSON.stringify(rowTexts()) === '["b","c","a"]',
+        JSON.stringify(rowTexts()));
+      check("list editor AC14: the note is never touched by window history",
+        !window.NB.hybrid.isDirty());
+      await leLeave();
+    }
+
+    // --- AC16: Esc closes ------------------------------------------------
+    {
+      const vc = await leEnter("- a\n- b\n");
+      const ul = vc.querySelector("ul");
+      const before = ul.innerHTML;
+      le().open(items(ul)[0]);
+      $("list-editor-overlay").dispatchEvent(new window.KeyboardEvent("keydown",
+        { key: "Escape", bubbles: true, cancelable: true }));
+      await tick(5);
+      check("list editor AC16: Esc cancels on one press",
+        !le().isOpen() && !window.NB.hybrid.isDirty() && ul.innerHTML === before);
+      await leLeave();
     }
   }
 
@@ -39010,12 +39672,12 @@ function check(label, cond, extra) {
         const headers = count(/\{\{\s*edit_header\(/g);
         const bars = count(/\{%\s*call\s+edit_bar\(/g);
         const footers = count(/\{\{\s*edit_footer\(/g);
-        check("designer: index.html calls each edit-window macro three times",
-          headers === 3 && bars === 3 && footers === 3,
+        check("designer: index.html calls each edit-window macro once per window",
+          headers === 4 && bars === 4 && footers === 4,
           "header=" + headers + " bar=" + bars + " footer=" + footers);
         check("designer: each edit_bar is a {% call %} so the caller content is used",
           !/\{\{\s*edit_bar\s*\(/.test(idxHtml) &&
-          ["table-editor", "designer", "dw"].every(
+          ["table-editor", "designer", "dw", "list-editor"].every(
             (p) => idxHtml.indexOf('{% call edit_bar("' + p + '") %}') !== -1),
           "bare=" + (idxHtml.match(/\{\{\s*edit_bar\s*\(/g) || []).length);
       }
@@ -39067,7 +39729,7 @@ function check(label, cond, extra) {
       // mirror that order or they test a bar the browser never renders.
       {
         const bars = ["#table-editor-overlay", "#designer-overlay",
-          "#dw-designer-overlay"].map((sel) => {
+          "#dw-designer-overlay", "#list-editor-overlay"].map((sel) => {
           const bar = window.document.querySelector(sel + " .edit-bar");
           if (!bar) return null;
           const history = bar.querySelector(".edit-bar-history");

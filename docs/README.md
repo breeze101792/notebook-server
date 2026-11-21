@@ -63,6 +63,7 @@ Start here depending on the job:
 | [`architecture/acp-provider-review.md`](architecture/acp-provider-review.md) | Superseded design review of the ACP provider; read `ai-assistant.md` for the as-built contract. |
 | [`architecture/table-select.md`](architecture/table-select.md) | Rectangular table-cell selection and TSV/HTML clipboard copy. |
 | [`architecture/table-editor.md`](architecture/table-editor.md) | The hybrid "Edit table" modal: model, modal containment, grid, in-modal undo/redo, Apply ordering, sort/transpose, the merged-cell refusal, and the test seams. |
+| [`architecture/list-editor.md`](architecture/list-editor.md) | The hybrid "Edit list" modal: the live-row model, the treegrid, selection roots, the rebuild algorithm (live `<li>` nodes, reused wrappers, `start` preserved), Apply ordering and staleness, in-window history, and the test seams. |
 | [`architecture/dot-wavedrom-designer.md`](architecture/dot-wavedrom-designer.md) | The Graphviz and WaveDrom design windows: parsing subsets, preview, and Apply order. |
 | [`architecture/mermaid-designer.md`](architecture/mermaid-designer.md) | The visual Mermaid editor: the Visimer decision, the modal, parse/serialize boundaries, history keys, and Apply. |
 | [`architecture/mermaid-designer-coverage.md`](architecture/mermaid-designer-coverage.md) | The add-sidebar coverage per Mermaid diagram type. |
@@ -130,6 +131,7 @@ directly in a browser.
 | [`ui/content-blocks.md`](ui/content-blocks.md) | Code fences, tables, figures, math, diagram cards and html-live: anatomy, states, actions, tokens and proposals. Mockup: [`ui/content-blocks-mockup.html`](ui/content-blocks-mockup.html). |
 | [`ui/edit-window.md`](ui/edit-window.md) | The shared edit-window chrome: header, action bar, footer, geometry, maximize, history, focus and responsive. Mockup: [`ui/edit-window-mockup.html`](ui/edit-window-mockup.html). |
 | [`ui/table-editor.md`](ui/table-editor.md) | The table editor: grid, selection, clipboard, toolbar, blocked state, history, Apply and phone. Mockup: [`ui/table-editor-mockup.html`](ui/table-editor-mockup.html). |
+| [`ui/list-editor.md`](ui/list-editor.md) | The list editor: entry and scope, the treegrid and row anatomy, selection with locked descendants, the five toolbar groups, sort and done-to-bottom, in-window history, Apply and phone. Mockup: [`ui/list-editor-mockup.html`](ui/list-editor-mockup.html). |
 | [`ui/diagram-designers.md`](ui/diagram-designers.md) | The Mermaid and Graphviz/WaveDrom designers: stage, sidebar, inspector, states, Apply and phone. Mockup: [`ui/diagram-designers-mockup.html`](ui/diagram-designers-mockup.html). |
 | [`ui/settings-modal.md`](ui/settings-modal.md) | Settings and its seven tabs: nav, rows, forms, lists, auth states, keyboard and phone. Mockup: [`ui/settings-modal-mockup.html`](ui/settings-modal-mockup.html). |
 | [`ui/dialogs.md`](ui/dialogs.md) | Auth, workspace, session, export and the shared dialog frame: validation, states and phone. Mockup: [`ui/dialogs-mockup.html`](ui/dialogs-mockup.html). |

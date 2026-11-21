@@ -6,14 +6,14 @@ there is no lint or type-check step.
 
 ## Strategy
 
-The server has two host suites plus fourteen real-browser suites, one per
+The server has two host suites plus sixteen real-browser suites, one per
 surface:
 
 | Suite | File | Runs against | Framework |
 | --- | --- | --- | --- |
 | Backend | `tests/test_app.py` | The real Flask app through its test client | stdlib `unittest` |
 | Frontend DOM | `tests/dom/test_dom.js` | The real app modules in jsdom | Hand-rolled `check()` harness |
-| Frontend browser (hybrid) | `tests/browser/test_hybrid_browser.js` (plus the caret matrix below), `test_hybrid_blocks_browser.js`, `test_block_edit_browser.js`, `test_table_editor_browser.js` | The real editing engine, every construct at every caret position, block types, the fence editor, and the table-editor modal via Playwright | Hand-rolled `check()` harness |
+| Frontend browser (hybrid) | `tests/browser/test_hybrid_browser.js` (plus the caret matrix below), `test_hybrid_blocks_browser.js`, `test_block_edit_browser.js`, `test_table_editor_browser.js`, `test_list_editor_browser.js` | The real editing engine, every construct at every caret position, block types, the fence editor, and the table-editor and list-editor modals via Playwright | Hand-rolled `check()` harness |
 | Frontend browser (app) | `tests/browser/test_core_ui_browser.js`, `test_auth_export_browser.js`, `test_ai_editor_browser.js`, `test_ai_blocks_browser.js` | Tree, tabs, search, graph, bookmarks, auth, export, PWA, AI, ACP, CodeMirror, and the AI panel's rendered fences | Hand-rolled `check()` harness |
 | Frontend browser (figure sizing) | `tests/browser/test_figure_sizing_browser.js` | Rendered SVG sizing: font scale, layout matrix, engine units, page-growth behaviour (no nested scroller), no inner math/code/error scrollbars, lightbox, phone tokens, export, hybrid round-trip | Hand-rolled `check()` harness |
 | Frontend browser (design/windows) | `tests/browser/test_designer_browser.js`, `test_dw_designer_browser.js`, `test_mobile_browser.js` | Visimer canvas, Graphviz/WaveDrom windows, phone shell | Hand-rolled `check()` harness |
@@ -53,15 +53,16 @@ npm run test:browser:hybrid         # hybrid suite + the caret matrix
 npm run test:browser:core           # one suite by name; package.json has one
                                     # script per suite: :auth, :ai, :ai-blocks,
                                     # :blocks, :figure-sizing, :hybrid-blocks,
-                                    # :mobile, :designer, :table-editor, :dw
+                                    # :mobile, :designer, :table-editor,
+                                    # :list-editor, :dw
 node tests/browser/test_designer_browser.js   # mermaid designer canvas
 node tests/browser/run_all.js                  # every browser suite
 node tests/browser/test_typography_browser.js  # computed type, port 5097
 node tests/browser/test_tabs_view_browser.js   # Tabs view, port 5079
 ```
 
-The backend (556 tests), the DOM suite (5,748 checks), and all fourteen browser
-suites pass. The numbers are in
+The backend (556 tests), the DOM suite (5,748 checks), and every browser suite
+pass. The numbers are in
 [`browser-audit.md`](browser-audit.md) and the gate baseline in
 [`hybrid-regression-checklist.md`](hybrid-regression-checklist.md) §2. See
 [`backend.md`](backend.md) and [`frontend.md`](frontend.md) for the details

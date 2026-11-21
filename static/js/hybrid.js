@@ -2270,6 +2270,9 @@
     // doesn't park the caret on a rect-less element and fling the
     // viewport to the top/bottom (see markAtomicBlocks).
     markAtomicBlocks();
+    // The render replaced #viewer-content's children, so any window that
+    // owns a node from the previous render is now stale.
+    NB.evt.emit("hybrid:rerendered");
   }
 
   /* Apply the structural normalization renderMarkdown applies, in the same
@@ -10268,6 +10271,18 @@
     }
     items.push({ label: "List", submenu: listSub });
 
+    // Edit list -- one container at a time. The hit is the clicked item, or
+    // the caret's item when the press landed between rows (a Shift+F10 menu
+    // reports no coordinates). No container, or no write permission, means
+    // no entry.
+    const hitLi = (e && e.target && e.target.closest
+      ? e.target.closest("li") : null) || (ctx && ctx.li);
+    if (hitLi && viewerContentEl.contains(hitLi) && listContainer(hitLi) &&
+        (!NB.auth || !NB.auth.canWrite || NB.auth.canWrite())) {
+      items.push({ label: "Edit list…",
+        handler: () => NB.listEditor && NB.listEditor.open(hitLi) });
+    }
+
     // Edit table -- only shown when the click is inside a table. The
     // modal owns the structural operations (row/column move, insert,
     // delete, alignment, sort, transpose); hybrid edits cell text only.
@@ -10727,6 +10742,8 @@
     addMeasureLineBox,
     stripMeasureLineBox,
     taskCheckboxOf,
+    focusListItem,
+    clearSelection,
     onContentChange,
     flushPendingSnapshot,
     // Used by mermaid-designer.js: resolve a plugin block and fall back
