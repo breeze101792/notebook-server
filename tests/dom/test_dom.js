@@ -21415,6 +21415,703 @@ function check(label, cond, extra) {
         !le().isOpen() && !window.NB.hybrid.isDirty() && ul.innerHTML === before);
       await leLeave();
     }
+
+    // --- AC23-AC28: the drag's pure step, _moveBlock --------------------
+    // jsdom has no layout, so the pointer layer (slotAt, the line box,
+    // auto-scroll, capture) cannot run here; the Chromium suite drives the
+    // real pointer. This block proves the documented hook only: the splice
+    // rule, every refusal, and that it captures no history and repaints
+    // nothing. `position` is the row's 0-based index among its siblings
+    // after the call.
+    {
+      const modelTexts = () => le().getState().rows.map((r) => r.ownText);
+      const modelDepths = () => le().getState().rows.map((r) => r.depth);
+      const idOf = (text) => {
+        const row = le().getState().rows.find((r) => r.ownText === text);
+        return row ? row.id : -1;
+      };
+      const parentOf = (text) => {
+        const row = le().getState().rows.find((r) => r.ownText === text);
+        return row ? row.parentId : "missing";
+      };
+
+      // AC23: a parent travels with its whole subtree.
+      {
+        const vc = await leEnter("- a\n    - a1\n    - a2\n- b\n- c\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        const res = le()._moveBlock(0, 4);
+        check("list editor AC23: a parent moves with its whole subtree",
+          res.moved === true && res.position === 1 &&
+          JSON.stringify(modelTexts()) === '["b","a","a1","a2","c"]',
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC23: the block keeps its internal order and depths",
+          JSON.stringify(modelDepths()) === "[0,0,1,1,0]" &&
+          parentOf("a1") === idOf("a") && parentOf("a2") === idOf("a"),
+          JSON.stringify(modelDepths()));
+        check("list editor AC23: position is the 0-based sibling index",
+          res.position === le().getState().rows
+            .filter((r) => r.parentId === null).indexOf(le().getState().rows[1]));
+        await leLeave();
+      }
+
+      // AC23: a childless row travels alone.
+      {
+        const vc = await leEnter("- a\n    - a1\n    - a2\n- b\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        const res = le()._moveBlock(idOf("b"), idOf("a"));
+        check("list editor AC23: a childless row moves alone",
+          res.moved === true && res.position === 0 &&
+          JSON.stringify(modelTexts()) === '["b","a","a1","a2"]',
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC23: the rows it passed keep their parent",
+          parentOf("a1") === idOf("a") && parentOf("a2") === idOf("a") &&
+          parentOf("b") === null);
+        await leLeave();
+      }
+
+      // AC23: a collapsed parent carries the rows it hides.
+      {
+        const vc = await leEnter("- a\n    - a1\n    - a2\n- b\n- c\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        check("list editor AC23: collapse hides the subtree from the grid",
+          le().toggleCollapse(0) === true &&
+          JSON.stringify(rowTexts()) === '["a","b","c"]',
+          JSON.stringify(rowTexts()));
+        const res = le()._moveBlock(0, null);
+        check("list editor AC23: a collapsed parent's hidden rows travel with it",
+          res.moved === true && res.position === 2 &&
+          JSON.stringify(modelTexts()) === '["b","c","a","a1","a2"]',
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC23: the moved parent stays collapsed",
+          le().getState().byId[0].collapsed === true &&
+          JSON.stringify(rowTexts()) === '["a","b","c"]',
+          JSON.stringify(rowTexts()));
+        await leLeave();
+      }
+
+      // AC24: own level only, never a new parent.
+      {
+        const vc = await leEnter("- a\n    - a1\n    - a2\n- b\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        const before = JSON.stringify(modelTexts());
+        const inside = le()._moveBlock(idOf("a"), idOf("a1"));
+        check("list editor AC24: a target inside the row's own subtree is refused",
+          inside.moved === false && JSON.stringify(modelTexts()) === before,
+          JSON.stringify(inside) + " / " + JSON.stringify(modelTexts()));
+        const otherLevel = le()._moveBlock(idOf("a1"), idOf("b"));
+        check("list editor AC24: a target in another level is refused",
+          otherLevel.moved === false && JSON.stringify(modelTexts()) === before,
+          JSON.stringify(otherLevel) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC24: no refusal changes a depth",
+          JSON.stringify(modelDepths()) === "[0,1,1,0]",
+          JSON.stringify(modelDepths()));
+        await leLeave();
+      }
+
+      // AC25: every no-op drop changes nothing.
+      {
+        const vc = await leEnter("- a\n    - a1\n- b\n- c\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        const before = JSON.stringify(modelTexts());
+        const beforeStatus = status();
+        const beforeDepth = le()._history().depth;
+        const same = le()._moveBlock(idOf("b"), idOf("c"));
+        const self = le()._moveBlock(idOf("b"), idOf("b"));
+        const edge = le()._moveBlock(idOf("c"), null);
+        const subtree = le()._moveBlock(idOf("a"), idOf("a1"));
+        check("list editor AC25: a drop at the row's own position is a no-op",
+          same.moved === false && JSON.stringify(modelTexts()) === before,
+          JSON.stringify(same));
+        check("list editor AC25: a row before itself is refused",
+          self.moved === false && JSON.stringify(modelTexts()) === before);
+        check("list editor AC25: the last row dropped at its level's end is a no-op",
+          edge.moved === false && JSON.stringify(modelTexts()) === before);
+        check("list editor AC25: before its own subtree is refused",
+          subtree.moved === false && JSON.stringify(modelTexts()) === before);
+        check("list editor AC25: the no-ops write no status and no history step",
+          status() === beforeStatus && le()._history().depth === beforeDepth,
+          JSON.stringify(status()));
+        await leLeave();
+      }
+
+      // AC23/AC24: up, down, the end of the level, and a subtree at the end.
+      {
+        const vc = await leEnter("- a\n- b\n    - b1\n- c\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        const up = le()._moveBlock(idOf("b"), idOf("a"));
+        check("list editor AC23: a move up lands before the preceding sibling",
+          up.moved === true && up.position === 0 &&
+          JSON.stringify(modelTexts()) === '["b","b1","a","c"]',
+          JSON.stringify(up) + " / " + JSON.stringify(modelTexts()));
+        const down = le()._moveBlock(idOf("b"), idOf("c"));
+        check("list editor AC23: a move down lands after the following sibling",
+          down.moved === true && down.position === 1 &&
+          JSON.stringify(modelTexts()) === '["a","b","b1","c"]',
+          JSON.stringify(down) + " / " + JSON.stringify(modelTexts()));
+        const end = le()._moveBlock(idOf("b"), null);
+        check("list editor AC23: null is the end of the row's own level",
+          end.moved === true && end.position === 2 &&
+          JSON.stringify(modelTexts()) === '["a","c","b","b1"]',
+          JSON.stringify(end) + " / " + JSON.stringify(modelTexts()));
+        await leLeave();
+      }
+      {
+        const vc = await leEnter("- a\n    - a1\n    - a2\n        - a2x\n- b\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        const res = le()._moveBlock(idOf("a1"), null);
+        check("list editor AC23: the level's end lands after the last sibling's subtree",
+          res.moved === true &&
+          JSON.stringify(modelTexts()) === '["a","a2","a2x","a1","b"]' &&
+          parentOf("a2x") === idOf("a2"),
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC23: position counts siblings, not rows at the depth",
+          res.position === 1, JSON.stringify(res));
+        await leLeave();
+      }
+
+      // AC26 seam: the hook captures nothing and repaints nothing; a verb
+      // after it still works on the moved model.
+      {
+        const vc = await leEnter("- a\n- b\n- c\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        const start = le()._history();
+        const rendered = JSON.stringify(rowTexts());
+        const res = le()._moveBlock(idOf("a"), idOf("c"));
+        check("list editor AC26: a hook move adds no history step",
+          res.moved === true && res.position === 1 &&
+          le()._history().depth === start.depth && !le()._history().canUndo,
+          JSON.stringify(le()._history()));
+        check("list editor AC26: the hook repaints nothing",
+          JSON.stringify(rowTexts()) === rendered,
+          JSON.stringify(rowTexts()));
+        le()._select([idOf("c")]);
+        check("list editor AC26: a toolbar verb after the hook reads the moved model",
+          le().moveRows("up") === true &&
+          JSON.stringify(rowTexts()) === '["b","c","a"]' &&
+          le()._history().depth === start.depth + 1,
+          JSON.stringify(rowTexts()) + " / " + JSON.stringify(le()._history()));
+        await leLeave();
+      }
+
+      // AC28 (model part): the hook refuses a stale drop. The pointer layer
+      // -- no press candidate, no line -- is the Chromium suite's job.
+      {
+        const vc = await leEnter("- a\n- b\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        vc.innerHTML = "<ul><li>a</li><li>b</li></ul>";
+        window.NB.evt.emit("hybrid:rerendered");
+        await tick(5);
+        check("list editor AC28: the window is stale", le().isStale());
+        const res = le()._moveBlock(idOf("b"), idOf("a"));
+        check("list editor AC28: the hook refuses a stale drop",
+          res.moved === false && res.position === -1 &&
+          JSON.stringify(modelTexts()) === '["a","b"]' &&
+          le()._history().canUndo === false,
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC28: a stale verb is still refused",
+          le().moveRows("down") === false &&
+          JSON.stringify(modelTexts()) === '["a","b"]',
+          JSON.stringify(modelTexts()));
+        le().cancel();
+        await leLeave();
+      }
+    }
+
+    // --- AC31-AC34/AC39/AC40: the in-place edit, model level ------------
+    // jsdom has no PointerEvent and cannot type, so the field is opened
+    // through the model seam (_editRow / F2) and left through
+    // (_commitEdit, _abortEdit); the Chromium suite drives the real
+    // double-press, the real typing and the row geometry. Everything here
+    // is the one step the pointer layer calls.
+    {
+      const fieldOf = (id) => rowEl(id).querySelector(".le-text");
+      const editId = () => {
+        const live = le()._editing();
+        return live ? live.rowId : null;
+      };
+      const idOfNode = (li) => {
+        const row = le().getState().rows.find((r) => r.node === li);
+        return row ? row.id : -1;
+      };
+      const typeField = (html) => {
+        const id = editId();
+        if (id === null) return null;
+        const f = fieldOf(id);
+        f.innerHTML = html;
+        return f;
+      };
+      const keyOn = (id, key, extra) => cellOf(id).dispatchEvent(
+        new window.KeyboardEvent("keydown", Object.assign(
+          { key: key, bubbles: true, cancelable: true }, extra || {})));
+      const REFUSED = "Editing needs one piece of text the window can keep.";
+
+      // AC31/AC33/AC36: the entry, the prose it shows, and its textbox
+      // contract. One item carries every preserved member at once.
+      {
+        const vc = await leEnter(
+          "- Ship <strong>v1.4.0</strong> \u2014 <code>tag</code> " +
+          "<em>now</em> <a href=\"/x\">checklist</a> " +
+          "<img src=\"pic.png\" alt=\"p\"> and<br>more\n" +
+          "- plain\n");
+        const ul = vc.querySelector("ul");
+        const li0 = items(ul)[0];
+        le().open(li0);
+        check("list editor AC31: no field and no entry at open",
+          editId() === null && le().getState().edits.size === 0,
+          JSON.stringify(Array.from(le().getState().edits.keys())));
+        check("list editor AC33: the row at rest labels as the flat prose",
+          rowTexts()[0] === "Ship v1.4.0 \u2014 tag now checklist and more",
+          JSON.stringify(rowTexts()[0]));
+
+        const opened = le()._editRow(0);
+        const field = fieldOf(0);
+        check("list editor AC31: editRow opens the field on that row",
+          opened === true && editId() === 0 &&
+          field.getAttribute("contenteditable") === "true" &&
+          field.classList.contains("is-editing") &&
+          rowEl(0).classList.contains("is-editing"),
+          String(opened) + " / " + JSON.stringify(le()._editing()));
+        check("list editor AC36: the field is one labelled text box",
+          field.getAttribute("role") === "textbox" &&
+          field.getAttribute("aria-label") === "Item text" &&
+          field.getAttribute("aria-multiline") === "false" &&
+          field.getAttribute("tabindex") === "-1" && !field.hasAttribute("title"),
+          field.outerHTML.slice(0, 160));
+        check("list editor AC31: no other row changed",
+          grid().querySelectorAll(".le-text.is-editing").length === 1 &&
+          grid().querySelectorAll(".le-row.is-editing").length === 1 &&
+          !rowEl(1).classList.contains("is-editing"),
+          String(grid().querySelectorAll(".le-row.is-editing").length));
+        check("list editor AC33: the field shows the prose, never the source",
+          !!field.querySelector("strong") &&
+          field.querySelector("strong").textContent === "v1.4.0" &&
+          !!field.querySelector("code") &&
+          field.querySelector("code").textContent === "tag" &&
+          !!field.querySelector("em") &&
+          field.querySelector("em").textContent === "now" &&
+          !!field.querySelector("a") &&
+          field.querySelector("a").getAttribute("href") === "/x" &&
+          !!field.querySelector("img") &&
+          field.querySelector("img").getAttribute("src") === "pic.png" &&
+          field.querySelectorAll("br").length === 1 &&
+          /^Ship /.test(field.textContent) && /more$/.test(field.textContent),
+          field.innerHTML);
+        check("list editor AC33: the field holds no list, checkbox or card",
+          !field.querySelector("ul,ol,input,[contenteditable=\"false\"]"),
+          field.innerHTML);
+
+        // AC33/AC34: an untouched commit writes nothing, so the item's own
+        // break and image are still where they were.
+        const depth0 = le()._history().depth;
+        const img0 = li0.querySelector("img");
+        const br0 = li0.querySelector("br");
+        check("list editor AC34: an untouched commit changes nothing",
+          le()._commitEdit() === false && editId() === null &&
+          le().getState().edits.size === 0 &&
+          le()._history().depth === depth0,
+          String(le()._history().depth));
+        check("list editor AC33: a no-change commit leaves the img and br in place",
+          li0.querySelector("img") === img0 && li0.querySelector("br") === br0 &&
+          rowTexts()[0] === "Ship v1.4.0 \u2014 tag now checklist and more",
+          JSON.stringify(li0.innerHTML));
+
+        // AC34: one commit is one step and one label.
+        le()._editRow(0);
+        typeField("Shipped <em>v1.5.0</em> now");
+        const depth1 = le()._history().depth;
+        const committed = le()._commitEdit();
+        check("list editor AC34: a commit changes the label and adds one step",
+          committed === true &&
+          rowTexts()[0] === "Shipped v1.5.0 now" &&
+          le()._history().depth === depth1 + 1 &&
+          /Edited 1 item$/.test(status()),
+          JSON.stringify(rowTexts()[0]) + " / " + status());
+        check("list editor AC34: the entry is the sanitized run",
+          le().getState().edits.get(0) === "Shipped <em>v1.5.0</em> now",
+          JSON.stringify(le().getState().edits.get(0)));
+
+        // AC34: a second commit with no change is not a step.
+        le()._editRow(0);
+        const depth2 = le()._history().depth;
+        const status2 = status();
+        check("list editor AC34: a second no-change commit adds no step",
+          le()._commitEdit() === false &&
+          le()._history().depth === depth2 && status() === status2,
+          String(le()._history().depth));
+
+        // AC34: Esc discards the typing and writes nothing.
+        le()._editRow(0);
+        typeField("Scratch text");
+        const depth3 = le()._history().depth;
+        const status3 = status();
+        $("list-editor-overlay").dispatchEvent(new window.KeyboardEvent("keydown",
+          { key: "Escape", bubbles: true, cancelable: true }));
+        await tick(5);
+        check("list editor AC34: Esc restores the label and adds no step",
+          editId() === null && le().isOpen() &&
+          rowTexts()[0] === "Shipped v1.5.0 now" &&
+          le()._history().depth === depth3 && status() === status3,
+          JSON.stringify(rowTexts()[0]) + " / " + String(le()._history().depth));
+        check("list editor AC34: Esc left the entry alone",
+          le().getState().edits.get(0) === "Shipped <em>v1.5.0</em> now",
+          JSON.stringify(le().getState().edits.get(0)));
+
+        // AC34: _abortEdit is the same exit without a key.
+        le()._editRow(0);
+        typeField("Another scratch");
+        le()._abortEdit();
+        check("list editor AC31/AC34: _abortEdit restores and adds no step",
+          le()._abortEdit() === false && editId() === null &&
+          rowTexts()[0] === "Shipped v1.5.0 now" &&
+          le()._history().depth === depth3,
+          JSON.stringify(rowTexts()[0]));
+
+        // AC33: the choke point -- what the field may keep.
+        check("list editor AC33: _sanitizeRun drops script with its text",
+          le()._sanitizeRun("<script>alert(1)</script>keep") === "keep",
+          le()._sanitizeRun("<script>alert(1)</script>keep"));
+        check("list editor AC33: _sanitizeRun keeps authored inline markup",
+          le()._sanitizeRun("a<kbd data-hybrid-authored=\"1\" class=\"k\">Ctrl</kbd>b") ===
+            "a<kbd data-hybrid-authored=\"1\" class=\"k\">Ctrl</kbd>b",
+          le()._sanitizeRun("a<kbd data-hybrid-authored=\"1\" class=\"k\">Ctrl</kbd>b"));
+        check("list editor AC33: _sanitizeRun keeps img[src alt title] and br, drops the rest",
+          le()._sanitizeRun("a<img src=\"p.png\" alt=\"p\" title=\"t\" onerror=\"x\">b<br>c") ===
+            "a<img src=\"p.png\" alt=\"p\" title=\"t\">b<br>c",
+          le()._sanitizeRun("a<img src=\"p.png\" alt=\"p\" title=\"t\" onerror=\"x\">b<br>c"));
+        check("list editor AC33: _sanitizeRun unwraps an unsupported element",
+          le()._sanitizeRun("a<span>b</span>c") === "abc",
+          le()._sanitizeRun("a<span>b</span>c"));
+        check("list editor AC33: _sanitizeRun collapses a newline to one space",
+          le()._sanitizeRun("a\nb") === "a b", JSON.stringify(le()._sanitizeRun("a\nb")));
+
+        // AC33: a hostile innerHTML committed through the seam lands as
+        // its sanitized projection, never as markup the field cannot keep.
+        le()._editRow(1);
+        typeField("<img src=\"x\" onerror=\"alert(1)\">" +
+          "<script>alert(1)</script>ok");
+        le()._commitEdit();
+        check("list editor AC33: a hostile innerHTML is sanitized on commit",
+          le().getState().edits.get(1) === "<img src=\"x\">ok",
+          JSON.stringify(le().getState().edits.get(1)));
+        check("list editor AC33: the hostile commit leaves no handler or script",
+          !/onerror|script/i.test(le().getState().edits.get(1)),
+          JSON.stringify(le().getState().edits.get(1)));
+        le().cancel();
+        await leLeave();
+      }
+
+      // AC34: a revert to the live prose deletes the entry -- the field is
+      // the same words again, so the row is clean again.
+      {
+        const vcB = await leEnter("- alpha\n- beta\n");
+        le().open(items(vcB.querySelector("ul"))[0]);
+        le()._editRow(0);
+        typeField("Edited alpha");
+        le()._commitEdit();
+        check("list editor AC34: the dirty row labels as its entry",
+          rowTexts()[0] === "Edited alpha" &&
+          le().getState().edits.has(0));
+        le()._editRow(0);
+        typeField("alpha");
+        const depthR = le()._history().depth;
+        const reverted = le()._commitEdit();
+        check("list editor AC34: a revert-to-live commit deletes the entry",
+          reverted === true && !le().getState().edits.has(0) &&
+          rowTexts()[0] === "alpha" && le()._history().depth === depthR + 1,
+          JSON.stringify(rowTexts()[0]) + " / " +
+          JSON.stringify(Array.from(le().getState().edits.keys())));
+
+        // AC34/AC33: Apply writes the prose once, and only the run: the
+        // nested list, the checkbox and their nodes are the same nodes.
+        {
+          const vcC = await leEnter(
+            "- [ ] ship <strong>v1.4.0</strong>\n" +
+            "    - child <img src=\"c.png\" alt=\"c\">\n" +
+            "- [x] done\n");
+          const list = vcC.querySelector("ul");
+          const li = items(list)[0];
+          const box = li.querySelector("input");
+          const child = li.querySelector("ul");
+          const img = li.querySelector("img");
+          le().open(li);
+          le()._editRow(idOfNode(li));
+          typeField("ship <strong>v1.5.0</strong>");
+          le()._commitEdit();
+          const posts = postFile();
+          le().apply();
+          await tick(20);
+          const again = items(list)[0];
+          check("list editor AC34: Apply writes the prose once",
+            again === li && ownText(li) === "ship v1.5.0" &&
+            li.querySelectorAll("strong").length === 1 &&
+            li.querySelector("strong").textContent === "v1.5.0" &&
+            ownText(li).indexOf("ship") === ownText(li).lastIndexOf("ship"),
+            JSON.stringify(li.innerHTML));
+          check("list editor AC34: the nested list, checkbox and img keep identity",
+            li.querySelector("input") === box && box.checked === false &&
+            li.querySelector("ul") === child &&
+            li.querySelector("img") === img && child.contains(img),
+            JSON.stringify(li.innerHTML));
+          await window.NB.hybrid.save();
+          await tick(60);
+          check("list editor AC34: one Apply is one POST",
+            postFile() - posts === 1, "" + (postFile() - posts));
+          check("list editor AC34: the saved file carries the new prose and the child",
+            /v1\.5\.0/.test(FILES[LE_PATH]) && /child/.test(FILES[LE_PATH]) &&
+            !/v1\.4\.0/.test(FILES[LE_PATH]),
+            JSON.stringify(FILES[LE_PATH]));
+          await leLeave();
+        }
+      }
+
+      // AC32: F2 edits any row; Enter never edits.
+      {
+        const vc = await leEnter("- a\n    - a1\n- b\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        keyOn(0, "F2");
+        check("list editor AC32: F2 on a parent starts the field",
+          editId() === 0 && fieldOf(0).getAttribute("contenteditable") === "true",
+          JSON.stringify(le()._editing()));
+        le()._abortEdit();
+        keyOn(0, "Enter");
+        check("list editor AC32: Enter on a parent collapses it, no field",
+          rowEl(0).getAttribute("aria-expanded") === "false" &&
+          editId() === null,
+          String(rowEl(0).getAttribute("aria-expanded")));
+        keyOn(0, "Enter");   // expand again, so the leaf row is back on screen
+        le()._select({ focus: 2 });
+        keyOn(2, "F2");
+        check("list editor AC32: F2 on a leaf starts the field",
+          editId() === 2 && fieldOf(2).getAttribute("contenteditable") === "true",
+          JSON.stringify(le()._editing()));
+        le()._abortEdit();
+        keyOn(2, "Enter");
+        check("list editor AC32: Enter on a leaf starts no field",
+          editId() === null && rowEl(2).getAttribute("aria-expanded") === null,
+          JSON.stringify(le()._editing()));
+        await leLeave();
+      }
+
+      // AC40: one sentence, two causes, and the row keeps its label.
+      {
+        const vc = await leEnter("- placeholder\n");
+        vc.innerHTML =
+          "<ul>" +
+          "<li><p>one</p><p>two</p></li>" +
+          "<li>text<ul><li>kid</li></ul>tail</li>" +
+          "<li>words<div contenteditable=\"false\">card</div>tail</li>" +
+          "<li>a <span><input type=\"checkbox\"> pasted</span></li>" +
+          "<li><p>kept</p><ul><li>kid</li></ul></li>" +
+          "<li>pic <img src=\"q.png\" alt=\"q\"> words</li>" +
+          "</ul>";
+        const lis = Array.from(vc.querySelector("ul").children);
+        le().open(lis[0]);
+        const depth = le()._history().depth;
+        const refused = (li, what) => {
+          const id = idOfNode(li);
+          const label = le().getState().rows[id].ownText;
+          const ok = le()._editRow(id) === false;
+          check("list editor AC40: " + what + " refuses the field",
+            ok && editId() === null &&
+            le().getState().edits.size === 0 &&
+            status().endsWith("\u2014 " + REFUSED) &&
+            le().getState().rows[id].ownText === label &&
+            le()._history().depth === depth,
+            JSON.stringify(status()));
+        };
+        refused(lis[0], "two paragraphs");
+        refused(lis[1], "text after a nested list");
+        refused(lis[2], "text after a card");
+        refused(lis[3], "a wrapper around a pasted checkbox");
+        check("list editor AC40: a refusal keeps the row's label and its title",
+          rowTexts()[0] === le().getState().rows[0].ownText &&
+          fieldOf(0).title === le().getState().rows[0].ownText,
+          JSON.stringify(rowTexts()[0]) + " / " + JSON.stringify(fieldOf(0).title));
+
+        const looseId = idOfNode(lis[4]);
+        check("list editor AC40: text before a nested list still edits",
+          le()._editRow(looseId) === true && editId() === looseId &&
+          fieldOf(looseId).textContent === "kept",
+          JSON.stringify(le()._editing()));
+        le()._abortEdit();
+        const imgId = idOfNode(lis[5]);
+        check("list editor AC40: an image beside the text still edits",
+          le()._editRow(imgId) === true && editId() === imgId &&
+          !!fieldOf(imgId).querySelector("img"),
+          JSON.stringify(le()._editing()));
+        le()._abortEdit();
+        le().cancel();
+        await leLeave();
+      }
+
+      // AC31/AC39: a stale window offers no field, and a commit's step is
+      // what a verb seam then acts on.
+      {
+        const vc = await leEnter("- a\n- b\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        vc.innerHTML = "<ul><li>a</li><li>b</li></ul>";
+        window.NB.evt.emit("hybrid:rerendered");
+        await tick(5);
+        check("list editor AC31: a stale window opens no field",
+          le().isStale() && le()._editRow(0) === false && editId() === null &&
+          !grid().querySelector(".le-text.is-editing"),
+          JSON.stringify(le()._editing()));
+        le().cancel();
+        await leLeave();
+      }
+      {
+        const vc = await leEnter("- a\n- b\n- c\n");
+        le().open(items(vc.querySelector("ul"))[0]);
+        le()._editRow(0);
+        typeField("zulu");
+        le()._commitEdit();
+        const depth = le()._history().depth;
+        le()._select([0]);
+        check("list editor AC39: a verb after a commit reads the new text",
+          le().moveRows("down") === true &&
+          JSON.stringify(rowTexts()) === '["b","zulu","c"]' &&
+          le()._history().depth === depth + 1,
+          JSON.stringify(rowTexts()) + " / " + String(le()._history().depth));
+        await leLeave();
+      }
+    }
+
+    // --- AC41/AC43: the block step, _moveBlocks --------------------------
+    // The pointer layer maps a press and a Y to `rowIds` and a slot; the
+    // decision it calls is this function, so every rule is asserted here
+    // without layout. `count` is the number of roots and `position` the
+    // first root's 0-based index among its siblings after the call.
+    {
+      const modelTexts = () => le().getState().rows.map((r) => r.ownText);
+      const modelDepths = () => le().getState().rows.map((r) => r.depth);
+      const parentOf = (text) => {
+        const row = le().getState().rows.find((r) => r.ownText === text);
+        return row ? row.parentId : "missing";
+      };
+      const idOf = (text) => {
+        const row = le().getState().rows.find((r) => r.ownText === text);
+        return row ? row.id : -1;
+      };
+      const openFlat = async (source) => {
+        const vc = await leEnter(source);
+        le().open(items(vc.querySelector("ul"))[0]);
+      };
+
+      // AC41: [a, c] gathers the span, so the unselected b travels too.
+      {
+        await openFlat("- a\n- b\n- c\n- d\n- e\n");
+        const res = le()._moveBlocks([0, 2], 4);
+        check("list editor AC41: [a, c] moves the span with the rows between roots",
+          res.moved === true && res.count === 2 && res.position === 1 &&
+          JSON.stringify(modelTexts()) === '["d","a","b","c","e"]',
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC41: the span keeps every depth",
+          JSON.stringify(modelDepths()) === "[0,0,0,0,0]",
+          JSON.stringify(modelDepths()));
+        await leLeave();
+      }
+
+      // AC41: the argument order is the caller's, not the model's.
+      {
+        await openFlat("- a\n- b\n- c\n- d\n- e\n");
+        const res = le()._moveBlocks([2, 0], 4);
+        check("list editor AC41: [c, a] gives the same result",
+          res.moved === true && res.count === 2 &&
+          JSON.stringify(modelTexts()) === '["d","a","b","c","e"]',
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        await leLeave();
+      }
+
+      // AC41: a parent's block travels whole; the between-row keeps its
+      // parent when it crosses a level.
+      {
+        await openFlat("- a\n    - a1\n    - a2\n- b\n- c\n- d\n");
+        const res = le()._moveBlocks([idOf("a"), idOf("c")], null);
+        check("list editor AC41: a root's subtree travels inside the span",
+          res.moved === true && res.count === 2 && res.position === 1 &&
+          JSON.stringify(modelTexts()) === '["d","a","a1","a2","b","c"]',
+          JSON.stringify(res) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC41: the moved subtree keeps its parent links",
+          parentOf("a1") === idOf("a") && parentOf("a2") === idOf("a") &&
+          JSON.stringify(modelDepths()) === "[0,0,1,1,0,0]",
+          JSON.stringify(modelDepths()) + " / " + parentOf("a1"));
+        await leLeave();
+      }
+
+      // AC41/AC43: every refusal leaves the order, the depths and the
+      // history alone, and reports moved false.
+      {
+        await openFlat("- a\n    - a1\n    - a2\n- b\n- c\n");
+        const before = JSON.stringify(modelTexts());
+        const depths = JSON.stringify(modelDepths());
+        const depth = le()._history().depth;
+        const selected = JSON.stringify(Array.from(le().getState().selected));
+        const between = le()._moveBlocks([0, 4], 3);   // b sits between the roots
+        const mixed = le()._moveBlocks([2, 3], 4);     // a2 under a, b at the root
+        const dup = le()._moveBlocks([0, 0], 4);
+        const inside = le()._moveBlocks([0], 1);      // a descendant of a root
+        const crossLevel = le()._moveBlocks([1], 3);  // target in another level
+        check("list editor AC41: an unselected row between the roots is no slot",
+          between.moved === false && between.position === -1 &&
+          between.count === 0, JSON.stringify(between));
+        check("list editor AC43: roots in two parents refuse the whole call",
+          mixed.moved === false && mixed.position === -1 &&
+          JSON.stringify(modelTexts()) === before && depths === JSON.stringify(modelDepths()),
+          JSON.stringify(mixed) + " / " + JSON.stringify(modelTexts()));
+        check("list editor AC41: a duplicate root is refused",
+          dup.moved === false && JSON.stringify(modelTexts()) === before,
+          JSON.stringify(dup));
+        check("list editor AC41: a descendant of a root is refused",
+          inside.moved === false && JSON.stringify(modelTexts()) === before,
+          JSON.stringify(inside));
+        check("list editor AC43: a target in another level is refused",
+          crossLevel.moved === false && crossLevel.position === -1 &&
+          JSON.stringify(modelTexts()) === before,
+          JSON.stringify(crossLevel));
+        check("list editor AC41: no refusal adds a step, a selection or a depth",
+          le()._history().depth === depth && le()._history().canUndo === false &&
+          JSON.stringify(Array.from(le().getState().selected)) === selected &&
+          depths === JSON.stringify(modelDepths()),
+          String(le()._history().depth));
+        await leLeave();
+      }
+
+      // AC41: no-ops report the position they would have had, and never
+      // splice a dead step.
+      {
+        await openFlat("- a\n- b\n- c\n");
+        const depth = le()._history().depth;
+        const here = le()._moveBlocks([1], 2);      // b already before c
+        const whole = le()._moveBlocks([0, 1, 2], null);  // the whole level
+        check("list editor AC41: a block already at the slot is a no-op",
+          here.moved === false && here.position === 1 && here.count === 1 &&
+          JSON.stringify(modelTexts()) === '["a","b","c"]',
+          JSON.stringify(here));
+        check("list editor AC41: the whole level is a no-op with its count",
+          whole.moved === false && whole.position === 0 && whole.count === 3 &&
+          JSON.stringify(modelTexts()) === '["a","b","c"]',
+          JSON.stringify(whole));
+        check("list editor AC41: neither no-op adds a history step",
+          le()._history().depth === depth && !le()._history().canUndo,
+          String(le()._history().depth));
+        await leLeave();
+      }
+
+      // AC41: the shipped single-row wrapper keeps working and keeps its
+      // exact shape.
+      {
+        await openFlat("- a\n    - a1\n- b\n- c\n");
+        const res = le()._moveBlock(idOf("c"), idOf("a"));
+        check("list editor AC41: _moveBlock still returns the single-row result",
+          res.moved === true && res.position === 0 && !("count" in res),
+          JSON.stringify(res));
+        check("list editor AC41: the row is one of the block count's roots",
+          le().getState().rows.filter((r) => r.parentId === null)[0].ownText === "c" &&
+          JSON.stringify(modelTexts()) === '["c","a","a1","b"]',
+          JSON.stringify(modelTexts()));
+        await leLeave();
+      }
+    }
   }
 
   console.log("== hybrid: edit bar table + list actions, clipboard ==");

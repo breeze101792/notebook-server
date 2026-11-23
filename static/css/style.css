@@ -7108,8 +7108,10 @@ body > #nb-menu .submenu.open {
   color: var(--text-muted);
 }
 
-/* One scroller. */
+/* One scroller. `position: relative` anchors the drag's drop line, which
+ * is a child of this box so it scrolls with the rows. */
 .list-editor-modal .le-scroll {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -7294,6 +7296,43 @@ body > #nb-menu .submenu.open {
   color: var(--text-muted);
 }
 
+/* The in-place edit (docs/ui/list-editor.md §2.7, §10.2 step 11). The field
+ * is the text run: no fill, no border, no radius, no shadow. It keeps the
+ * row's line box and grows it by whole lines. */
+.list-editor-modal .le-text.is-editing {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  outline: none;
+  cursor: text;
+  caret-color: var(--accent);
+}
+/* A pseudo-element, never a text node: the placeholder cannot be committed.
+ * `is-blank` is set by the module when the field holds no run content and no
+ * image, so the caret host it plants does not defeat the test. */
+.list-editor-modal .le-text.is-editing.is-blank::before {
+  content: "Item text";
+  color: var(--text-muted);
+}
+/* Formatting is rendered, not authored. Mono is the smallest signal that
+ * keeps a code run from reading as plain words; a link keeps the row's own
+ * text colour and puts the accent in its underline. The link stays hit-
+ * testable so the caret can be placed on its words: a plain click inside
+ * contenteditable does not navigate. */
+.list-editor-modal .le-text.is-editing code { font-family: var(--font-mono); }
+.list-editor-modal .le-text.is-editing a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+}
+/* The ring stays where the rest state puts it: the cell is the row's focus
+ * holder and the field is not. */
+.list-editor-modal .le-row.is-editing .le-cell {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .list-editor-modal .le-chev svg { transition: none; }
 }
@@ -7316,6 +7355,22 @@ body > #nb-menu .submenu.open {
 }
 .list-editor-modal .le-tree[aria-readonly="true"] .le-row.is-selected {
   background: var(--accent-soft);
+}
+
+/* Drag to reorder: the note's `.nb-drop-line` bar, positioned inside this
+ * scroller so it travels with the rows; the dragged block dims. */
+.list-editor-modal .le-drop-line {
+  height: 2px;
+}
+.list-editor-modal .le-row.is-dragging {
+  opacity: var(--opacity-drag);
+}
+.list-editor-modal .le-body.is-dragging {
+  user-select: none;
+}
+body.nb-le-drag {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .list-editor-modal .le-footer { align-items: center; }
@@ -7389,13 +7444,27 @@ body > #nb-menu .submenu.open {
     width: var(--control-h-touch);
     height: var(--control-h-touch);
   }
+  /* `manipulation` is both the 44 px row and no double-tap zoom answering
+   * the edit gesture. */
   .list-editor-modal .le-cell {
     min-height: var(--control-h-touch);
     padding-block: 0;
+    touch-action: manipulation;
   }
   .list-editor-modal .le-select,
   .list-editor-modal .le-done { height: var(--control-h-touch); }
   .list-editor-modal .le-footer > .te-hint { display: none; }
+  /* E3: below 16 px iOS zooms the fixed window on focus. The root scale is
+   * the documented phone prose base, so the floor follows the reader. The
+   * field scrolls into view itself, so the keyboard inset is its own
+   * scroll-margin; the scroller reserves the same inset. */
+  .list-editor-modal .le-text.is-editing {
+    font-size: calc(16px * var(--font-scale));
+    scroll-margin-bottom: calc(var(--space-3) + var(--m-kb, 0px));
+  }
+  .list-editor-modal .le-body.is-editing .le-scroll {
+    padding-bottom: calc(var(--space-3) + var(--m-kb, 0px));
+  }
 }
 
 /* ------------------------------------------------------------------ */

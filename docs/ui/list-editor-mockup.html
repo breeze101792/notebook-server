@@ -66,6 +66,7 @@
 
   --tree-indent: 18px;
   --opacity-disabled: .45;
+  --opacity-drag: .4;
   --focus-offset: 2px;
   --focus-offset-inset: -2px;
 
@@ -230,6 +231,8 @@ html[data-theme="light"] .board { box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
 .win--b9 { width: 827px; height: 340px; }      /* 861 viewport */
 .win--b10 { width: 827px; height: 340px; }     /* 861 viewport */
 .win--b11 { width: 1229px; height: 460px; }    /* 1280 viewport */
+.win--b12 { width: 1229px; height: 620px; }        /* 1280 viewport */
+.win--b13, .win--b14 { width: 1229px; height: 620px; }   /* 1280 viewport */
 .win--b8 .win-actions { mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent); }
 .win--b8 .win-foot { flex-wrap: wrap; row-gap: 6px; }
 .win--b8 .win-foot > [role="status"] { flex: 1 1 100%; margin: 0; white-space: normal; }
@@ -323,8 +326,10 @@ html[data-theme="light"] .board { box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
 .le-notice-glyph svg { width: var(--icon-md); height: var(--icon-md); display: block; }
 .le-notice-strip p { margin: 0; font-size: var(--text-ui); color: var(--text-primary); }
 .le-notice-strip p + p { margin-top: var(--space-hair); font-size: var(--text-sm); color: var(--text-muted); }
+.le-notice-strip[hidden] { display: none; }
 
 .le-scroll {
+  position: relative;   /* the drop line's containing block (§3.2) */
   flex: 1 1 auto; min-height: 0; overflow: auto;
   overscroll-behavior: contain;
   background: var(--surface-panel);
@@ -418,7 +423,39 @@ html[data-theme="light"] .board { box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
 
 .le-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .le-text.is-empty { color: var(--text-muted); }
+/* §2.7 — the in-place edit. The field is the run: no fill, no border, no
+   radius. It keeps the row's line box and grows it by whole lines. */
+.le-text.is-editing {
+  overflow: visible; text-overflow: clip; white-space: normal;
+  overflow-wrap: anywhere; outline: none; cursor: text;
+  caret-color: var(--accent);
+}
+.le-text.is-editing code { font-family: var(--font-mono); }
+.le-text.is-editing a {
+  color: inherit; text-decoration: underline;
+  text-decoration-color: var(--accent); pointer-events: none;
+}
+.le-row.is-editing .le-cell {
+  outline: var(--focus-ring); outline-offset: var(--focus-offset-inset);
+}
+/* A drawn caret: a static board cannot hold a real one. */
+.le-caret {
+  display: inline-block; width: 1px; height: 1.05em; margin-left: 1px;
+  background: var(--accent); vertical-align: text-bottom;
+}
 .le-meta { flex: 0 0 auto; font-size: var(--text-sm); color: var(--text-muted); }
+
+/* §3.2 — the drag states. The dim is the moving span; the line is the
+   note's own .nb-drop-line bar with only the 2 px height as a delta. */
+.le-row.is-dragging { opacity: var(--opacity-drag); }
+.le-drop-line {
+  position: absolute; height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+  border-radius: 1px; pointer-events: none;
+}
+.le-drop-line--b13 { top: 61px; left: 68px; right: var(--space-4); }
+.le-drop-line--b14 { top: 34px; left: 68px; right: var(--space-4); }
 
 .le-empty { margin: 0; padding: var(--space-6) var(--space-4); text-align: center; font-size: var(--text-ui); color: var(--text-muted); }
 .le-empty[hidden] { display: none; }
@@ -518,7 +555,7 @@ html[data-theme="light"] .board { box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
     </p>
     <div class="doc-tools">
       <button id="theme-btn" class="doc-btn" type="button" aria-pressed="false">Light theme</button>
-      <span class="doc-meta">Eleven boards. No network assets, no web font. Markup is complete with scripting off; the only script is the theme switch. Board 1 carries the contracted ids.</span>
+      <span class="doc-meta">Fourteen boards. No network assets, no web font. Markup is complete with scripting off; the only script is the theme switch. Board 1 carries the contracted ids.</span>
     </div>
   </header>
 
@@ -1769,7 +1806,8 @@ html[data-theme="light"] .board { box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
   <section class="sec">
     <h2>10 · Error — a restore that could not run</h2>
     <p class="lede">
-      The only reachable failure. The model and the focus are unchanged; the status carries the
+      The restore failure — §5.4's other error, a commit that throws, ends the window read-only
+      and no board draws it. Here the model and the focus are unchanged; the status carries the
       sentence and looks like a position message. No alert, no colour, no second live region.
     </p>
     <div class="board">
@@ -2072,11 +2110,643 @@ html[data-theme="light"] .board { box-shadow: 0 8px 24px rgba(0, 0, 0, .06); }
       measured once from the widest visible marker.</p>
   </section>
 
+  <!-- ============================================================
+       12 · Editing one item
+       ============================================================ -->
+  <section class="sec">
+    <h2>12 · Editing one item — the prose, in place</h2>
+    <p class="lede">
+      Row 1 was entered with <code>F2</code>, so nothing is selected and nothing about the
+      toolbar or the status changes: entry is silent, and only the commit would speak. The row
+      keeps its face and its ring, its <code>title</code> is gone, and the prose shows bold,
+      italic, mono and a link instead of their Markdown. The field has no fill, no border and no
+      radius — it is the row's own line box, and it grows by a line where the prose wraps. The
+      checkbox, the marker and the nested rows are outside it and are not editable here.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — one row's text being edited</span><span class="grow"></span><span>1280 viewport · window 1229 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="mock-overlay">
+          <div class="settings-modal list-editor-modal win win--b12" role="dialog" aria-modal="true" tabindex="-1">
+            <div class="win-head">
+              <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Task list</span></div>
+              <div class="win-hacts">
+                <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+                <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+              </div>
+            </div>
+            <div class="win-bar">
+              <div class="win-history" role="group" aria-label="History">
+                <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                <span class="seam" aria-hidden="true"></span>
+              </div>
+              <div class="win-actions">
+                <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                  <div class="edit-bar-group" role="group" aria-label="Move">
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="Move up. Every selected item is already first." title="Move up (Alt+↑) — Every selected item is already first." aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="To top. The selected items are already at the top." title="To top (Alt+Shift+↑) — The selected items are already at the top." aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Level">
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="Indent. The first item in a group cannot indent." title="Indent (Tab) — The first item in a group cannot indent." aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Sort">
+                    <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Select">
+                    <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="Select none. Nothing is selected." title="Select none (Ctrl/Cmd+Shift+A) — Nothing is selected." aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="State">
+                    <button class="le-tool" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="Mark open. No task item is done." title="Mark open (Alt+Shift+O) — No task item is done." aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                    <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="le-body">
+              <div class="le-notice-strip" hidden>
+                <span class="le-notice-glyph" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 14.5 13.5H1.5z"/><path d="M8 6.5v3.2M8 11.6v.4"/></svg></span>
+                <div>
+                  <p>This list changed outside the window.</p>
+                  <p>Nothing was applied. Cancel closes the window.</p>
+                </div>
+              </div>
+              <div class="le-scroll">
+                <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="14">
+
+                  <div class="le-row is-editing" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                    <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text is-editing" role="textbox" aria-label="Item text"
+                            aria-multiline="false" contenteditable="true" tabindex="-1">Cut <strong>v1.4.0</strong> once the <a href="#">release checklist</a> is signed off — tag <em>firmware</em> first, then <code>docs</code>, push the SBOM against the same tag, re-run the smoke suite on the devkit, and only then close the milestone and announce the release in the weekly note<span class="le-caret" aria-hidden="true"></span></span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Update the CHANGELOG">Update the CHANGELOG</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="3" aria-selected="false" aria-expanded="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="4" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="5" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="6" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Archive the binaries">Archive the binaries</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="7" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="8" aria-selected="false" aria-expanded="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Review open errata" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Review open errata">Review open errata</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="9" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="nRF52 anomaly 198">nRF52 anomaly 198</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="10" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="STM32 double-word flash write">STM32 double-word flash write</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="11" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Sign the release notes">Sign the release notes</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="12" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Publish the image">Publish the image</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="13" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Close the milestone">Close the milestone</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="14" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Send the hand-off mail">Send the hand-off mail</span>
+                    </div>
+                  </div>
+
+                </div>
+                <p class="le-empty" hidden>No items left. Apply removes the list.</p>
+              </div>
+            </div>
+            <div class="win-foot">
+              <span role="status" aria-live="polite" aria-atomic="true">14 items · 0 selected · 2 done</span>
+              <span class="te-hint" aria-hidden="true">Esc cancels</span>
+              <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+              <button class="btn btn--primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">The one new mark is the caret, drawn in <code>--accent</code>. A link keeps
+      the row's own text colour and puts the accent in its underline, so the rule about text on
+      <code>--accent-soft</code> still holds when the row is selected. <b>Enter</b> would commit
+      and append <code>— Edited 1 item</code> to the status; <b>Esc</b> would put the old label
+      back and say nothing. No board draws either, because Apply is synchronous and a cancel
+      leaves nothing to see.</p>
+  </section>
+
+  <section class="sec">
+    <h2>13 · Dragging one row — the item and its subtree, with the line at the slot</h2>
+    <p class="lede">
+      Row 8 was pressed and moved 4 px. A plain press on an unselected row selects it alone, so its two children lock with it; the row and its subtree dim, and the 2 px accent line marks the slot above row 3. The counts do not change while the drag is live — the drop is the action. Release here and the window writes <code>Moved 1 item</code> as one history step; Apply alone decides the file.
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — dragging one row</span><span class="grow"></span><span>1280 viewport · window 1229 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="mock-overlay">
+          <div class="settings-modal list-editor-modal win win--b13" role="dialog" aria-modal="true" tabindex="-1">
+<div class="win-head">
+              <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Task list</span></div>
+              <div class="win-hacts">
+                <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+                <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+              </div>
+            </div>
+<div class="win-bar">
+              <div class="win-history" role="group" aria-label="History">
+                <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                <span class="seam" aria-hidden="true"></span>
+              </div>
+              <div class="win-actions">
+                <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                  <div class="edit-bar-group" role="group" aria-label="Move">
+                    <button class="le-tool" type="button" aria-label="Move up" title="Move up (Alt+↑)" aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="To top" title="To top (Alt+Shift+↑)" aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Level">
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Indent" title="Indent (Tab)" aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Sort">
+                    <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Select">
+                    <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Select none" title="Select none (Ctrl/Cmd+Shift+A)" aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="State">
+                    <button class="le-tool" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Mark open" title="Mark open (Alt+Shift+O)" aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                    <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="le-body">
+              <div class="le-notice-strip" hidden>
+                <span class="le-notice-glyph" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 14.5 13.5H1.5z"/><path d="M8 6.5v3.2M8 11.6v.4"/></svg></span>
+                <div>
+                  <p>This list changed outside the window.</p>
+                  <p>Nothing was applied. Cancel closes the window.</p>
+                </div>
+              </div>
+              <div class="le-scroll">
+                <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="12">
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Update the CHANGELOG">Update the CHANGELOG</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="3" aria-selected="false" aria-expanded="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="4" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="5" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="2" aria-rowindex="6" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Archive the binaries">Archive the binaries</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="7" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-dragging" role="row" aria-level="1" aria-rowindex="8" aria-selected="true" aria-expanded="true">
+                    <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Review open errata" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Review open errata">Review open errata</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-locked is-dragging" role="row" aria-level="2" aria-rowindex="9" aria-selected="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="nRF52 anomaly 198">nRF52 anomaly 198</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-locked is-dragging" role="row" aria-level="2" aria-rowindex="10" aria-selected="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="STM32 double-word flash write">STM32 double-word flash write</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="11" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Sign the release notes">Sign the release notes</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="12" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Publish the image">Publish the image</span>
+                    </div>
+                  </div>
+
+                </div>
+                <p class="le-empty" hidden>No items left. Apply removes the list.</p>
+                <div class="le-drop-line le-drop-line--b13" aria-hidden="true"></div>
+              </div>
+            </div>
+<div class="win-foot">
+              <span role="status" aria-live="polite" aria-atomic="true">12 items · 3 selected · 2 done</span>
+              <span class="te-hint" aria-hidden="true">Esc cancels</span>
+              <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+              <button class="btn btn--primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">The one new mark is the caret, drawn in <code>--accent</code>. A link keeps
+      the row's own text colour and puts the accent in its underline, so the rule about text on
+      <code>--accent-soft</code> still holds when the row is selected. <b>Enter</b> would commit
+      and append <code>— Edited 1 item</code> to the status; <b>Esc</b> would put the old label
+      back and say nothing. No board draws either, because Apply is synchronous and a cancel
+      leaves nothing to see.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">The dim is the span; the line is the slot. A release on the row’s own position, inside its subtree or outside its level draws no line and writes nothing. The line reuses the note’s <code>.nb-drop-line</code> bar with only a height delta — no new colour, no proxy row.</p>
+  </section>
+
+  <section class="sec">
+    <h2>14 · Dragging a selected block — one span, the rows between travelling inside it</h2>
+    <p class="lede">
+      Rows 3 and 8 were Ctrl-clicked, then row 3 was plain-pressed: a press on a selected root keeps the selection. The block is one span — both roots, their subtrees and <code>Bump the SBOM</code> between them — so the whole span dims, while only the roots and their locked descendants are selected. The drop line never appears inside the span. Release here and the window writes <code>Moved 2 items</code> as one step; roots in two parents would start no drag and report <code>Dragging needs the selected items to share one level.</code>
+    </p>
+    <div class="board">
+      <div class="board-head"><span class="dot"></span><span>Edit list — dragging a selected block</span><span class="grow"></span><span>1280 viewport · window 1229 wide</span></div>
+      <div class="board-body board-scroll">
+        <div class="mock-overlay">
+          <div class="settings-modal list-editor-modal win win--b14" role="dialog" aria-modal="true" tabindex="-1">
+<div class="win-head">
+              <div class="win-heading"><h2 class="win-title">Edit list</h2><span class="win-badge">Task list</span></div>
+              <div class="win-hacts">
+                <button class="win-icon" type="button" aria-label="Maximize" title="Maximize"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
+                <button class="win-icon" type="button" aria-label="Close" title="Close">×</button>
+              </div>
+            </div>
+<div class="win-bar">
+              <div class="win-history" role="group" aria-label="History">
+                <button class="win-icon" type="button" aria-label="Undo (Ctrl+Z)" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h5a4 4 0 0 1 4 4v2"/><path d="M6.4 3.6 4 6l2.4 2.4"/></svg></button>
+                <button class="win-icon" type="button" aria-label="Redo (Ctrl+Shift+Z or Ctrl+Y)" title="Redo (Ctrl+Shift+Z or Ctrl+Y)" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6H7a4 4 0 0 0-4 4v2"/><path d="M9.6 3.6 12 6l-2.4 2.4"/></svg></button>
+                <span class="seam" aria-hidden="true"></span>
+              </div>
+              <div class="win-actions">
+                <div class="edit-bar-toolbar" role="toolbar" aria-label="List tools">
+                  <div class="edit-bar-group" role="group" aria-label="Move">
+                    <button class="le-tool" type="button" aria-label="Move up" title="Move up (Alt+↑)" aria-keyshortcuts="Alt+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V5.5"/><path d="M5 8.5 8 5.5l3 3"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Move down" title="Move down (Alt+↓)" aria-keyshortcuts="Alt+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v8.5"/><path d="M5 7.5 8 10.5l3-3"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="To top" title="To top (Alt+Shift+↑)" aria-keyshortcuts="Alt+Shift+ArrowUp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2h10"/><path d="M8 14V7"/><path d="M5.5 9.5 8 7l2.5 2.5"/><path d="M5.5 13 8 10.5l2.5 2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="To bottom" title="To bottom (Alt+Shift+↓)" aria-keyshortcuts="Alt+Shift+ArrowDown"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h10"/><path d="M8 2v7"/><path d="M5.5 6.5 8 9l2.5-2.5"/><path d="M5.5 3 8 5.5 10.5 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Level">
+                    <button class="le-tool" type="button" aria-disabled="true" aria-label="Outdent. Top-level items cannot outdent." title="Outdent (Shift+Tab) — Top-level items cannot outdent." aria-keyshortcuts="Shift+Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v10"/><path d="M12 8H4"/><path d="M7 5 4 8l3 3"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Indent" title="Indent (Tab)" aria-keyshortcuts="Tab"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3v10"/><path d="M4 8h8"/><path d="M9 5l3 3-3 3"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Sort">
+                    <button class="le-tool" type="button" aria-label="Sort A to Z" title="Sort A to Z (Alt+Shift+A)" aria-keyshortcuts="Alt+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h4M2 8h6M2 4h8"/><path d="M12 13V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Sort Z to A" title="Sort Z to A (Alt+Shift+Z)" aria-keyshortcuts="Alt+Shift+Z"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12h8M2 8h6M2 4h4"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Done to bottom" title="Done to bottom (Alt+Shift+B)" aria-keyshortcuts="Alt+Shift+B"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 3.5 3.8 5.3 6.8 1.8"/><path d="M2 9h5"/><path d="M12 3v10"/><path d="M9.5 10.5 12 13l2.5-2.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="Select">
+                    <button class="le-tool" type="button" aria-label="Select all" title="Select all (Ctrl/Cmd+A)" aria-keyshortcuts="Control+A Meta+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Select none" title="Select none (Ctrl/Cmd+Shift+A)" aria-keyshortcuts="Control+Shift+A Meta+Shift+A"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1.5"/></svg></button>
+                  </div>
+                  <span class="edit-bar-sep" aria-hidden="true"></span>
+                  <div class="edit-bar-group" role="group" aria-label="State">
+                    <button class="le-tool" type="button" aria-label="Mark done" title="Mark done (Alt+Shift+D)" aria-keyshortcuts="Alt+Shift+D"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/><path d="M5.2 8.2 7.1 10.1 11 5.8"/></svg></button>
+                    <button class="le-tool" type="button" aria-label="Mark open" title="Mark open (Alt+Shift+O)" aria-keyshortcuts="Alt+Shift+O"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="6.2"/></svg></button>
+                    <button class="le-tool is-danger" type="button" aria-label="Delete" title="Delete (Delete)" aria-keyshortcuts="Delete"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h10M6 4V2.5h4V4"/><path d="M4.5 4l.6 9.5h5.8L11.5 4"/><path d="M6.5 6.5v5M9.5 6.5v5"/></svg></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="le-body">
+              <div class="le-notice-strip" hidden>
+                <span class="le-notice-glyph" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2 14.5 13.5H1.5z"/><path d="M8 6.5v3.2M8 11.6v.4"/></svg></span>
+                <div>
+                  <p>This list changed outside the window.</p>
+                  <p>Nothing was applied. Cancel closes the window.</p>
+                </div>
+              </div>
+              <div class="le-scroll">
+                <div class="le-tree" role="treegrid" aria-label="List items" aria-multiselectable="true" aria-colcount="1" aria-rowcount="12">
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="1" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Cut the 1.4.0 tag">Cut the 1.4.0 tag</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="2" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Update the CHANGELOG">Update the CHANGELOG</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-dragging" role="row" aria-level="1" aria-rowindex="3" aria-selected="true" aria-expanded="true">
+                    <div class="le-cell is-focus" role="gridcell" tabindex="0">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Freeze the Zephyr board" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Freeze the Zephyr board">Freeze the Zephyr board</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-locked is-dragging" role="row" aria-level="2" aria-rowindex="4" aria-selected="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Run the HIL suite on the devkit">Run the HIL suite on the devkit</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-locked is-dragging" role="row" aria-level="2" aria-rowindex="5" aria-selected="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Capture the serial logs">Capture the serial logs</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-locked is-dragging" role="row" aria-level="2" aria-rowindex="6" aria-selected="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="true" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Archive the binaries">Archive the binaries</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-dragging" role="row" aria-level="1" aria-rowindex="7" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Bump the SBOM">Bump the SBOM</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-dragging" role="row" aria-level="1" aria-rowindex="8" aria-selected="true" aria-expanded="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><button class="le-chev" type="button" aria-expanded="true" aria-label="Collapse: Review open errata" tabindex="-1"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></span>
+                      <span class="le-text" title="Review open errata">Review open errata</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-locked is-dragging" role="row" aria-level="2" aria-rowindex="9" aria-selected="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="nRF52 anomaly 198">nRF52 anomaly 198</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row is-selected is-locked is-dragging" role="row" aria-level="2" aria-rowindex="10" aria-selected="true">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-guide" aria-hidden="true"></span><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="STM32 double-word flash write">STM32 double-word flash write</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="11" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Sign the release notes">Sign the release notes</span>
+                    </div>
+                  </div>
+
+                  <div class="le-row" role="row" aria-level="1" aria-rowindex="12" aria-selected="false">
+                    <div class="le-cell" role="gridcell" tabindex="-1">
+                      <span class="le-select" aria-hidden="true"></span>
+                      <button class="le-done" type="button" role="checkbox" aria-checked="false" aria-label="Done" tabindex="-1"></button>
+                      <span class="le-indent"><span class="le-chev-slot" aria-hidden="true"></span></span>
+                      <span class="le-text" title="Publish the image">Publish the image</span>
+                    </div>
+                  </div>
+
+                </div>
+                <p class="le-empty" hidden>No items left. Apply removes the list.</p>
+                <div class="le-drop-line le-drop-line--b14" aria-hidden="true"></div>
+              </div>
+            </div>
+<div class="win-foot">
+              <span role="status" aria-live="polite" aria-atomic="true">12 items · 7 selected · 2 done</span>
+              <span class="te-hint" aria-hidden="true">Esc cancels</span>
+              <button class="btn" type="button" aria-keyshortcuts="Escape">Cancel</button>
+              <button class="btn btn--primary" type="button">Apply</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">The one new mark is the caret, drawn in <code>--accent</code>. A link keeps
+      the row's own text colour and puts the accent in its underline, so the rule about text on
+      <code>--accent-soft</code> still holds when the row is selected. <b>Enter</b> would commit
+      and append <code>— Edited 1 item</code> to the status; <b>Esc</b> would put the old label
+      back and say nothing. No board draws either, because Apply is synchronous and a cancel
+      leaves nothing to see.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="callout">Two roots, one span. <code>Bump the SBOM</code> is dimmed because it travels, and it is not selected: the wash and the box belong to the roots and their locked descendants. The mixed-level refusal is decided at the 4 px threshold, so no half-block state exists to draw.</p>
+  </section>
+
   <p class="callout" style="margin-bottom: var(--space-8);">
     The mockup is illustrative; <a href="list-editor.md">list-editor.md</a> is normative. Boards draw
-    only states the spec names: no applying board (Apply is synchronous), no drag board (v1 has no
-    drag inside the window), no blocked board (an unopenable target opens nothing). Every toolbar is
-    static markup, so the boards render with scripting off; the only script is the theme switch.
+    only states the spec names: no applying board (Apply is synchronous), no blocked board (an
+    unopenable target opens nothing). Boards 13 and 14 draw the two drag states — one row with its
+    subtree, and a selected block with its span — because the drop line and the dim are the one pair
+    of marks the pointer layer adds. Every toolbar is static markup, so the boards render with
+    scripting off; the only script is the theme switch.
   </p>
 </main>
 <script>

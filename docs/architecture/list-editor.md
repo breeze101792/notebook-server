@@ -117,21 +117,33 @@ inside handlers, so load order cannot break either side.
   complete commit-and-sign payload, §3 — never mutates), `_signature()` →
   `{open, current}` (§5), `_select(ids)` (set the selection directly) and
   `_select({anchor, focus, extend})` (anchor + focus, optionally extending
-  like Shift+click) — the two selection seams, §4 — `overlayEl()`, `_undo()`,
-  `_redo()`, `_history()` → `{mode:"stack", depth, index, canUndo, canRedo}`
-  (`table-editor.js:2206-2211`).
+  like Shift+click) — the two selection seams, §4 — `_moveBlocks(rowIds,
+  beforeRowId)` (the drag's model step, §4 Drag reordering: moves the span
+  from the first root to the last root's subtree inside its own level, returns
+  `{moved, position, count}`, refuses a stale window and a mixed level,
+  repaints nothing and captures no history) with `_moveBlock(rowId,
+  beforeRowId)` as its one-row wrapper, `overlayEl()`,
+  `_undo()`, `_redo()`, `_history()` → `{mode:"stack", depth, index, canUndo,
+  canRedo}` (`table-editor.js:2206-2211`), plus the text-edit seams
+  (§4 Item text editing): `editRow(id)` (start an edit, public like the
+  verbs), `_commitEdit()` → boolean (commit the live edit), `_editing()`
+  → `{rowId} | null`, `_sanitizeRun(html)` → string (the pure
+  sanitizer — the security boundary gets a direct seam).
 - History attaches once in `wire()` through `NB.editWindow.attach`
   (`edit-window.js:48-66`) in stack mode, prefix `"list-editor"`,
-  `ownsKey: () => true` (no text fields exist in this body, so the chord is
-  modal everywhere), `enabled: () => !!state && !stale`
-  (`table-editor.js:2119-2128`).
+  `ownsKey: () => !drag && !editing` (during a drag the engine must not
+  touch the model, and during a row's text edit the browser's native
+  span undo owns the chord — §4 Item text editing), `enabled: () =>
+  !!state && !stale` (`table-editor.js:2119-2128`).
 
 The module header comment states the ordering contract and the two invariants
 that surprise: a no-op Apply writes nothing (the structural signature, not a
 `changed` flag), and Apply mutates the live container in place — the
 `<ul>/<ol>` wrapper nodes are never rebuilt from scratch, so `start` (the one
 attribute turndown re-reads, `vendor/turndown.browser.js:152`) cannot be lost
-by the commit itself.
+by the commit itself. A third surprise rides the first: an item's edited text
+is part of that signature (§4 Item text editing), so a text-only change
+writes and an undone one does not.
 
 ## 2. Data model
 
@@ -185,8 +197,14 @@ wrapper = { node, id, parentId /* row id or null for the container */,
   would pollute every label and sort key. Empty → the muted "(empty item)"
   label (`list-edit.js:345` spelling). Inline markup inside the item (bold,
   code, links, **wikilinks**) contributes its text here and its nodes are
-  never touched by the verbs or the commit — a wikilink survives Apply
-  because its `<a>` travels inside the moved `<li>` (§8 pins it).
+  never touched by the verbs — a commit replaces only an edited row's run
+  (§4 Item text editing), so a wikilink survives Apply because its `<a>`
+  travels inside the moved `<li>` (§8 pins it), and survives a **text
+  commit** of its row because the sanitizer keeps the wikilink flags
+  (§4). The label shown — and the sort key, which reads it — is this
+  value, except while a row's text edit is dirty, when the label is the
+  strip of the edited HTML; `ownText` itself is captured at open, never
+  changes, and the live `<li>` it reads is untouched until the write.
 - **Session chrome is never part of the model, and never stripped by the
   modal.** The marked caret `<br>` (`data-hybrid-caret-br`, `hybrid.js:85`,
   added by `focusListItem`/`addMeasureLineBox` for empty items,
@@ -195,7 +213,10 @@ wrapper = { node, id, parentId /* row id or null for the container */,
   serialization (`hybrid.js:1479`, reached through `prepareTurndownClone`,
   `hybrid.js:833-835`), so they can never reach the note. The modal must
   leave both in place — an empty item keeps its line box and its rendered
-  marker through open, verbs and Apply; only `ownText` ignores them.
+  marker through open, verbs and Apply; only `ownText` ignores them. The
+  one exception is a **text commit** of the item: the chrome sits inside
+  the run extent, so the write replaces it, and it re-plants the ZWS
+  when the result is empty (§4 Item text editing).
 - **Ids.** A `WeakMap` `rowIdByNode` assigns `0, 1, 2…` in document order at
   open; wrappers get a second `WeakMap`. **Ids, never node refs, go in
   snapshots** because (a) the history engine compares `snap === stack[index]`
@@ -261,6 +282,9 @@ plan = {
   wrappers: [ { key, tag, wrapperId, attrs, rowIds } ],  // document order, see below
   rowOrder,        // every row id in target document order (flat, model order)
   done,           // { [rowId]: 0 | 1 | null }  — the model's done values
+  texts,          // { [rowId]: html } — the state.edits entries for rows in
+                  // rowOrder (§4 Item text editing); the write-back payload
+                  // and a signature input, never a change flag
   empty,          // rowOrder.length === 0
 }
 ```
@@ -337,13 +361,22 @@ shipped surface would — the commit preserves the session DOM, never a save.)
    removed — the shipped "a source list left empty is removed" rule
    (`hybrid.js:4671`, `:4684`, `moveListItem` `:9621`). Quoted/in-cell lists
    are not wrappers (§2) and are never touched.
-5. **P4 assertion.** Every row with a child wrapper has it as its **last
+5. **Text pass.** For every `plan.texts` entry, in `rowOrder` order:
+   `writeRun(row, html)` — recompute the run extent from the live `<li>`
+   with the same `runNodes` walk used at capture, remove those nodes,
+   and insert the parsed fragment at the first removed node's position
+   (§4 Item text editing). Deleted rows are absent from `texts`, so
+   their edits die with the delete; an empty result plants one ZWS (the
+   `addListPlaceholders` shape, `hybrid.js:204-207`).
+6. **P4 assertion.** Every row with a child wrapper has it as its **last
    element child**: claimed wrappers were last at open (P0), created wrappers
-   were just appended, nothing else is appended to a row. Turndown emits a
+   were just appended, nothing else is appended to a row — and the text
+   pass inserts only inline nodes before the first boundary child, so
+   it cannot displace a child list either. Turndown emits a
    block break instead of nesting when the child list is not last
    (`vendor/turndown.browser.js:133`); this is asserted in the commit, not
-   repaired.
-6. **Done flags.** For each row whose plan `done` differs from its open-time
+   repaired — after the text pass, so it validates the post-write shape.
+7. **Done flags.** For each row whose plan `done` differs from its open-time
    value: `cb = taskCheckboxOf(row.node)`; `cb.checked = v`; then mirror the
    **attribute** — `v ? cb.setAttribute("checked", "") :
    cb.removeAttribute("checked")` (the spelling matches marked's own
@@ -351,15 +384,18 @@ shipped surface would — the commit preserves the session DOM, never a save.)
    so the debounced snapshot captures it; the mirror matters because
    `pushSnapshot` stores `innerHTML` (`hybrid.js:7435`) — the attribute —
    while the live authority is the property (`hybrid.js:1614-1645`).
-7. **Empty model.** `plan.empty` → step 1 has removed every row node and
+8. **Empty model.** `plan.empty` → step 1 has removed every row node and
    step 4 every wrapper, so the commit is one line: `container.remove()`.
    The caret rule that follows is §5's; the removed container must
    not be reused as a focus target.
 
 Apply wraps the whole commit in try/catch with a pre-mutation copy of
-`viewerContentEl.innerHTML` as the rollback (restore it, report, leave the
+`viewerContentEl.innerHTML` as the rollback (restore it, leave the
 note clean — `onContentChange` not called; the mechanism is
-`restoreSnapshot`'s, `hybrid.js:7459`). See §5 for the exact order.
+`restoreSnapshot`'s, `hybrid.js:7459` — and the restore **replaces the
+container node**, so §5 follows it with `goStale()`: the window stays
+open read-only over the re-rendered note, never stranded editable
+over a dead container). See §5 for the exact order.
 
 ## 4. Operation semantics
 
@@ -447,10 +483,10 @@ plan at Apply (§5).
   rows are ignored. The UI's strings are normative: `Marked 4 items done`,
   `All 4 were already done`, `Only task items have a done state.` Adding
   checkboxes to plain items is out of scope (the §4.7.1 list-type model,
-  not this modal); the DOM checkbox is mutated only at commit (§3 step 6).
+  not this modal); the DOM checkbox is mutated only at commit (§3 step 7).
 - **Delete** — the roots plus their subtrees leave the model (records and,
   until commit, nodes stay, §2). No confirmation: it is one in-window undo
-  step until Apply. Deleting every row is the §3 step-7 empty case.
+  step until Apply. Deleting every row is the §3 step-8 empty case.
 
 Keyboard (the body's own, per `edit-window.md` §8): roving tabindex on rows
 (`paintActive` shape, `table-editor.js:259-267`), Up/Down skip hidden
@@ -458,9 +494,555 @@ Keyboard (the body's own, per `edit-window.md` §8): roving tabindex on rows
 first/last visible row, Ctrl+A / Ctrl+Shift+A as above, Space / Shift+Space
 toggle selection / done on the focused row, Left/Right and Enter
 collapse/expand, Delete the delete verb, Tab / Shift+Tab indent / outdent
-released at the grid's edges (`table-editor.md` §8.4's edge rule), Esc
+released at the grid's edges (`table-editor.md` §8.4's edge rule), F2
+starts the focused row's text edit, Esc
 cancels on one press (`docs/ui/list-editor.md` §8.2 — this window has no
-live range or fill to claim the first press).
+live range or fill to claim the first press; a live drag claims it, §4
+Drag reordering, and so does a live text edit, §4 Item text editing).
+
+### Drag reordering (pointer)
+
+The pointer form of Move. The note's own drag (`list-edit.js`) commits
+through `NB.hybrid.moveListItem`, which re-parents and emits per-item
+announcements, so this window cannot reuse it. The window's drag reorders its
+**model only**; nothing in the note moves until Apply, exactly like every
+other verb. The unit is one row with its subtree, or — when the press lands on
+a selected root — the span from the first selected root to the last root's
+subtree, holding every root, every descendant and the unselected siblings
+between them. A mixed-level selection starts no drag (§4's refusal rule); there
+is no partial block.
+
+**State machine.** Two module-level slots, `pending` and `drag`:
+
+| State | Set by | Cleared by |
+| --- | --- | --- |
+| idle | — | — |
+| `pending = {pointerId, rowId, x, y}` | a plain `pointerdown` on a `.le-cell`: no modifier, button 0, `pointerType !== "touch"`, target not `.le-chev` / `.le-done`, window not stale | the threshold is crossed (`beginDrag`), the grid's or the page's `pointerup` / `pointercancel`, `abortDrag()` |
+| `drag = {pointerId, rowIds, parentId, beforeRowId, line, raf, lastY}` | `pointermove` of at least 4 px from the press point (`DRAG_THRESHOLD`), with every root sharing `parentId` | `pointerup` (commit), `pointercancel`, `lostpointercapture`, Esc, `close()`, `goStale()` |
+| idle | `endDrag(commit)` | — |
+
+- **The press resolves the block.** A press on an **unselected** row replaces
+  the selection with it, then arms that one row. A press on a selected **root**
+  keeps the selection: it writes `focusId` and the anchor to the pressed row and
+  arms every selected root. A press on a **locked descendant** replaces the
+  selection with that row (the click rule, UI §3.1) and arms it alone. No
+  repaint happens between the press and the drop, and a press with no travel is
+  still the plain click whose handler collapses the selection — so the press
+  and the click can disagree without the model ever showing it.
+- **A mixed-level selection refuses at the threshold, not at the drop.** When
+  the selected roots do not all share the pressed row's `parentId`,
+  `beginDrag` clears `pending`, writes the UI's sentence to the status and
+  creates no `drag`: no capture, no line, no dim, no step. The refusal is
+  decided once, before the pointer is captured, so it can never become a
+  half-block drop.
+- **Events only, never touch.** `pointerType === "touch"` never sets
+  `pending`: touch keeps panning and the toolbar is the reorder path.
+- **Capture on the grid.** `#list-editor-grid` takes
+  `setPointerCapture(pointerId)` — it survives every render, a row does not,
+  and capture on a removed node is released by the engine.
+- **A press released off the grid cannot linger.** Before the threshold there
+  is no capture, so the page-level `pointerup` / `pointercancel` listeners
+  clear `pending`; without them a release outside the grid would leave the old
+  press point alive and a later hover could start a drag from it. A move with
+  `buttons === 0` also drops the candidate.
+- **No key acts mid-drag.** Three layers, in order: a capture-phase
+  `keydown` listener on `document` swallows every key but Esc while `drag` is
+  set; `onGridKeydown` returns while `drag` is set; and `ownsKey:
+  () => !drag` keeps the history engine's own document chord listener
+  (`edit-window.js:297`) out of the window. Esc is deliberately passed
+  through, because it must cancel the drag and nothing else.
+- **Esc is claimed first.** `onOverlayKeydown` ends a live drag and returns
+  before the window's Cancel, so Esc mid-drag never closes the window.
+- **Every end path is `endDrag()`**: it cancels the auto-scroll frame,
+  releases capture, removes the line, strips `.is-dragging` from every row of
+  the span and `nb-le-drag` from `<body>`, arms the click guard, and only then
+  commits.
+  `abortDrag()` is the same call with `commit: false`, invoked from
+  `close()` (before the `hidden` guard, so a line cannot survive into the
+  next open) and from `goStale()`.
+- **A drag whose capture failed still ends.** `setPointerCapture` can throw
+  on a pointer the platform already released; the window-level `pointerup`
+  then finishes the drag with `endDrag(true)` (and `pointercancel` with
+  `endDrag(false)`), because the grid's own handler never saw the release.
+  The grid's handler runs first, so a live `drag` at the window is exactly
+  the failed-capture case: no double commit.
+
+**The line.** It is `nb-drop-line le-drop-line`: the note's own bar class
+(`.nb-drop-line`, `style.css:995-1003`, absolute with `--accent` and the
+`--accent-soft` ring) plus this window's one delta, `height: 2px`. Its
+containing block is `.le-scroll`, which gains `position: relative`. The dim is
+`opacity: var(--opacity-drag)` on `.le-row.is-dragging`, and the cursor is
+`body.nb-le-drag` — the note's `body.nb-list-drag` pattern (`style.css:1114`),
+so the grabbing cursor survives the captured pointer leaving the body for the
+header or the footer. Text selection is off on `.le-body.is-dragging` (this
+window's own scope) and page-wide through the body class.
+
+**Two coordinate spaces.** The hit test is 1-D in **client Y**: the slot is
+the first visible row of the block's `parentId` level whose vertical midpoint
+is below the pointer and that lies **outside the moving span**, else the end
+of that level (`beforeRowId = null`). Descendants of other rows are never
+consulted, so the space over a nested child can never open that child's level;
+skipping the span is what makes it un-droppable, including the unselected
+siblings between non-contiguous roots and the gaps that cease to exist once
+the span gathers. The line is drawn in
+**`.le-scroll` content coordinates** — client rects converted by
+`scrollTop - scrollRect.top` — because the line is an absolutely positioned
+child of `.le-scroll` (hence `position: relative` there) and must travel with
+its rows: `left` is the level's indent start (the `.le-chev`/`.le-chev-slot`
+cell of a row at that depth, which sits past the guides), `right` is the
+tree's right edge, and the 2 px bar sits at `top - 1` of the target row; the
+end-of-level slot sits under the **last row of the level outside the span**,
+and when the span covers the whole level the line is hidden — there is no
+position to show, and the drop would reproduce the same order.
+Auto-scroll is a `requestAnimationFrame` loop started when the pointer is
+within 24 px of the scroll box's top or bottom edge, stepping the scroller
+8 px per frame and re-pointing the slot each frame; it stops when the drag
+ends or the scroller stops moving.
+
+**The pure decision — `moveBlocks(rowIds, beforeRowId)`.** Exported as
+`NB.listEditor._moveBlocks`; `_moveBlock(rowId, beforeRowId)` stays as the
+one-element wrapper, so the shipped single-row tests and their seam keep
+working. Model only: it splices `state.rows` and calls `deriveRows()`, and it
+returns `{moved, position, count}` — `position` is the first root's 0-based
+index among its siblings after the call, `count` is the number of roots, and a
+refused or no-op drop returns `moved: false` with the order untouched.
+Validation, in this order:
+
+0. the window must be live — `if (stale || !state) return {moved: false,
+   position: -1, count: 0}`, so the exported seam cannot splice a stale model;
+1. `rowIds` is non-empty, has no duplicates, and every id resolves to a row;
+   no root is a descendant of another (the pointer layer passes roots, the
+   model enforces it);
+2. every root shares one `parentId` — a mixed level refuses whole, the same
+   rule as To top/bottom (`docs/ui/list-editor.md` §4.3);
+3. `rec(beforeRowId)` resolves when it is not `null`, has that same
+   `parentId`, and lies **outside the moving span** (below). That one test
+   rejects a root, a descendant of a root, and — the case the single-row rule
+   never met — an **unselected sibling between two roots**, which travels
+   inside the span and is not a slot either.
+
+Then the **span rule**, which is `moveGroup`'s, reused. The run is one
+contiguous span: `from` is the first root's index, `to` is
+`blockEnd(lastRootIndex)` — so it holds every root, every descendant of a root
+(each root's block, in model order, collapsed parents included), and the
+unselected siblings between the roots. Building the span, not a union of the
+roots' own blocks, is what makes those between-rows travel rather than be
+stranded. `rest` is the model without `[from, to)`; `at` is computed **in
+`rest`**: `rest.indexOf(target)` for a "before" slot, else the end of the level
+(after the last same-level row's whole block, else just after the parent row).
+`state.rows` becomes `rest[0..at) + span + rest[at..)`. The no-op test is **the
+resulting id sequence compared with the current one**, not `at === from`:
+a drop just outside the span, or a re-gather that reproduces the same order,
+would otherwise capture a dead step. The single-row case is the span of one
+block and behaves exactly as shipped.
+
+**History and the no-op guard.** The commit path after a real drop is the
+verbs' own: `state.selected` = the roots, anchor and focus to the pressed
+root, `afterChange("Moved " + count(rowIds.length, "item"), true)`, which
+repaints and calls `hist.capture("structural")` once — one drag, one
+window-history step, and Apply alone decides whether a file is written. A no-op drop returns before
+that call, so it adds no step and writes no message. The guard is explicit
+because `capture()` dedupes on the **whole** snapshot string, selection
+included (`edit-window.js:145`): a drop that keeps the order but changes the
+selection would otherwise produce a different snapshot and a dead step.
+
+**The click after the drop.** A pointer-cancelled press may or may not earn a
+`click` from the browser (cancelling `pointerdown` suppresses the
+compatibility mouse events that normally produce it), so the guard is one
+shot with two consumers and no timer. `armClickGuard()` sets `swallowClick`
+and adds one capture-phase `click` listener on the overlay; both
+`onGuardedClick` and `onGridClick` consume the boolean and the listener with
+`stopImmediatePropagation`, so a click that does reach either surface neither
+replaces the selection nor reaches the overlay's Cancel. `endDrag` arms it on
+every end path — a drop, Esc, `pointercancel`, a close — and `close()`
+disarms it after `abortDrag()`, so an armed guard cannot reach into the next
+open. The next `pointerdown` also disarms it, because the click a drag owes
+the browser always lands before the next press: a guard left armed can never
+eat a later button.
+
+### Item text editing (one row, in place)
+
+The verb the window lacked: F2 on the focused row, or a double-press on
+its `.le-text` (two presses within 350 ms and 8 px, any pointer type),
+edits that row's prose **inside the grid**; the model is
+the only thing that changes until Apply, and the commit replaces exactly
+the run that was edited. The surface is the table's cell editing
+mirrored (`table-editor.js:326-367`, `docs/ui/table-editor.md:166-174`):
+the existing span (`list-editor.js:753-758`) gains
+`contenteditable="true"` in place — no overlay editor, no second box —
+and commits to the model on Tab/Enter/F2, on blur, and before anything
+else acts. Settled decisions, restated once: only the **prose run** is
+editable — the nested list, the checkbox and plugin cards are preserved in
+place, while the item's existing `img`s and hard breaks are run members:
+they sit inside the field and are written back with it; the edited prose
+keeps `strong`, `em`, `code`, `a`, text, `<br>` **and the note's authored
+inline elements** (`data-hybrid-authored`, `hybrid.js:144`); typed
+characters are text (no Markdown is parsed in the
+window); a text change counts in the signature, never in a flag. Every
+citation in this subsection was verified against the working tree
+(drag included).
+
+**The prose-run rule.** Three functions, one rule:
+
+- `runHost(row)` → the row's `<li>`, unless the item is
+  paragraph-wrapped: marked's loose shape puts the prose (and possibly
+  the checkbox) inside a `<p>`, so the host is the `<li>`'s **first
+  `<p>` element child when the row's checkbox is absent or inside that
+  `<p>`** (`taskCheckboxOf` already resolves through the p,
+  `hybrid.js:3486-3498`). In the wrapped case the child list is a
+  **sibling** of the host p; in the tight case it is the host li's last
+  element child (P0). A checkbox outside the first `<p>` means the host
+  falls back to the `<li>`, whose first child is then a `RUN_BOUNDARY`
+  match — an empty run, conservatively uneditable prose.
+- `runNodes(row)` → the ordered **maximal contiguous sequence of child
+  nodes of the host** that are all run nodes, starting at the first
+  child after a **leading checkbox** and ending before the first child
+  that matches `RUN_BOUNDARY` — a new module constant, sibling of
+  `CHROME_STRIP` (`list-editor.js:43`):
+  `ul,ol,blockquote,p,pre,table,div,hr,input,[contenteditable="false"]`.
+  A run node is any node that is not a `RUN_BOUNDARY` match: text,
+  `strong`/`em`/`code`/`a`/`img`/`br`, and any other inline element
+  authored raw HTML carries. The `<ul>` ends the run — and prose after
+  it **does occur** in engine output: marked's loose lists produce
+  `<li><p>a</p><ul>…</ul><p>c</p></li>` and
+  `<li><p><input> task</p><p>second</p><ul>…</ul></li>` (verified with
+  the project's own marked, gfm, `breaks: false`), so that later `<p>`
+  is real prose this window cannot reach — which is exactly why the
+  guard below refuses such items rather than offering a partial edit.
+  Text **after an `img`** is the same run:
+  `img` is inline content (`EMBEDDED_CONTENT_SELECTOR`,
+  `hybrid.js:216-221`), so the run spans it and the image travels
+  inside it.
+- `captureRun(row)` → the extent's serialization, **chrome filtered**:
+  the caret `<br data-hybrid-caret-br>` (`hybrid.js:85`, planted by
+  `focusListItem` for empty plain items, `:9664-9667`) and the ZWS
+  placeholder (`:207`, `taskCaretHost` `:3474-3483`) are **extent
+  members** — they sit between the checkbox and the first boundary, so
+  a replacement removes them — but the capture skips them (the
+  serializer's own chrome walker removes the br, `hybrid.js:1479`, and
+  the capture sweeps ZWS from text nodes).
+
+**The label rule stays as shipped.** `ownText` keeps its §2 definition
+and its capture — the whole `<li>`'s stripped text, from the detached
+clone walk with `CHROME_STRIP` — and is immutable. The label shown, and
+the sort key that reads it, is the item's whole stripped text; while a
+row's edit is **dirty** the label is the strip of the edited HTML
+(`labelOf` consults the `edits` map first, then falls back to
+`row.ownText`), otherwise `ownText` of the live `<li>` — which no verb,
+no capture and no write-back touches until the row's own commit, so the
+label it feeds can never go stale. `labelOf` is the single accessor,
+and its two direct-`ownText` consumers are converted with it, named:
+`buildRow` (the label and `title` at `list-editor.js:753-758`, and the
+`.is-empty` class currently keyed on `!row.ownText` at `:755`) and
+`sortRows`' sort key (`:1304`); the chevron's `aria-label`
+(`:740-743`) already reads `labelOf` and needs no edit.
+
+**The editability guard.** The field is offered only when the write
+would be a pure text edit, and that is **two tests on the capture
+string**, not one:
+
+- **(a) canonical** — `sanitizeRun(captureRun(row)) ===
+  captureRun(row)`: nothing in the extent would be unwrapped, dropped,
+  or lose an attribute. This test exists because the other one is
+  text-only: `ownText` strips `input` and cards at **any depth** while
+  `runNodes` bounds only direct children, so a pasted checkbox wrapper
+  — `<li><p><span><input type="checkbox"> x</span></p></li>` — passes
+  the text comparison, and the whitelist write would unwrap the
+  `span`, drop the `input`, and silently turn a task item into a
+  bullet. (a) refuses it before the field ever opens. It also refuses
+  a run whose only change would be the newline collapse (an authored
+  soft-wrapped item, a `\n` inside a text node, the shape
+  `hybrid.js:210-215` describes) — conservative, and the same rule:
+  the write is offered only where it is a no-op on structure.
+- **(b) whole prose** — `strip(captureRun(row)) === row.ownText`: the
+  run's stripped text equals the item's whole stripped label, so
+  nothing lies outside the run (a second paragraph, text after a block
+  or a card, text after a nested list). It holds for a run holding
+  existing hard breaks and images — the strip turns `br` into one
+  space and reads no text from an `img`.
+
+When either test fails, F2 and a double-press do nothing but write a
+refusal to the status
+line: no `edits` entry is created, nothing is captured, the selection
+is left exactly as the invoking gesture made it, and the window stays
+open — the same shape as every other refusal in this window. The exact copy is
+the UI doc owner's; the string's job is to say the item holds content
+this window cannot edit here. The refusal is the design, not a gap: a
+partial edit would leave unedited words behind, and a commit must
+never do that. Test (a) is what makes that claim true — the edit keeps
+the markdown inline subset **and** the note's authored inline elements,
+and anything else refuses the field rather than being flattened.
+
+**The model.** No per-row field. `state.edits` is a `Map<rowId, html>`
+holding **only rows whose text differs from the item's live prose** —
+empty at open, which is what keeps the open signature byte-identical
+and the row records untouched (`buildModel`, `list-editor.js:397-408`,
+is unchanged). The map is **never pruned**: `deleteRows` leaves a
+deleted row's entry in place and the plan (`texts`, the map's entries
+for rows in `rowOrder`) is the filter — which is what lets undo of a
+delete restore the row with its edited text (§6). The live edit sits
+in one module-level slot,
+`editing = { rowId, span, baseHtml } | null`, sibling of `drag` and
+`pending`. `baseHtml` is the sanitized run `startEdit` rendered into
+the span — the live capture for a clean row, the row's existing
+`edits` entry for a dirty one — so the commit compares against the
+model's current value, never against the live prose of a dirty row.
+The row's clean value, `sanitizeRun(captureRun(row))`, is recomputed
+on demand (one row, once per commit), never stored. `drag` and
+`editing` are mutually exclusive by construction (every drag starts
+with a press, and a press commits the edit — below). One invariant —
+**no repaint runs while `editing` is set** — cannot rest on blur:
+Safari does not focus a clicked button, so a toolbar or bar click can
+reach the model with the span still live, and `renderTree` is
+`gridEl.textContent = ""` (`list-editor.js:774-777`) — it would destroy
+the span mid-typing. Every acting path therefore calls `commitEdit()`
+itself, each call site named: at the top of `apply()` (§5 step 3a), of
+the tool dispatch (`onToolClick`/`dispatchTool`, after the stale
+guard), of the module's `_undo()`/`_redo()` seams (before
+`hist.undo()`/`hist.redo()`, so a mid-edit undo commits the typing
+into a step ahead of the index move), and of `restoreSnapshot` — the
+belt for the history bar's buttons, which the engine wires itself
+(`edit-window.js:282-283`) and the module cannot precede. The
+restore-path commit runs inside the engine's `restoring` window
+(`edit-window.js:250`; `capture()` returns early at `:129`), so it
+records no step and the restore governs: a mid-edit bar-click
+discards the typing and lands on the snapshot — a defined outcome,
+not a mid-air collision. Blur (`focusout`) stays the fallback for
+every path that leaves the span without acting.
+
+**The edit surface.** Entry is F2 on the focused row and a
+**double-press** — a second `pointerdown` on the same row's cell within
+`EDIT_TAP_MS` (350 ms) and `EDIT_TAP_PX` (8 px) of the first, detected
+by the pointer layer itself at every width and for every pointer type,
+**not** the native `dblclick`: `onGridPointerDown` calls
+`preventDefault()` (`list-editor.js:2001`) and the compatibility mouse
+events that carry `dblclick` are not reliable. The detector sits ahead
+of the drag-candidate path, and a detected double-press consumes the
+press. `startEdit(id, point)` changes neither the selection, the
+anchor nor `focusId` — a pointer press has already done its selection
+job, and F2 on the focused row leaves a multi-selection intact. It sets
+`editing`, makes the span contenteditable, focuses it, places the
+caret at the press point via `caretRangeFromPoint` /
+`caretPositionFromPoint` (falling back to the end of the run), and
+writes **`baseHtml`** into it — the model's current value, which the
+guard has already proved canonical (test (a) is what keeps the field
+from ever showing flattened text). An empty run gets one ZWS text node
+as the caret host (the `taskCaretHost` idiom). `commitEdit()` is the only
+capture point, with three outcomes: `sanitizeRun(readSpan()) ===
+baseHtml` → nothing happens — no entry, no step, no label change (the
+walk is a projection, so the compare is exact); the result equal to the
+row's clean value → the `edits` entry is **deleted** — a revert to live
+is a real change, so it is one step and the label returns to
+`ownText`; anything else → the entry is set. On a real change the
+verbs' own path runs — `afterChange("Edited 1 item", true)`
+(`list-editor.js:866-876`): refresh, footer, one
+`hist.capture("structural")`. Kind structural because the engine
+coalesces only `"text"` (`edit-window.js:146-147`) and one edit session
+must be exactly one step; the table's `breakCoalesce()` dance
+(`table-editor.js:337`) is not needed. A blur commit owns its focus:
+`afterChange` reads `hadFocus` at `list-editor.js:867`, by which time
+the span has already lost focus — so the flag is false, no cell is
+focused, and focus strands on `<body>`. `commitEdit` therefore records
+that the field held focus and routes it to the row's cell itself
+(`focusCell(rowId)`), except when the `focusout`'s `relatedTarget` is
+a real control inside the overlay — the tool the user clicked keeps
+its focus; programmatic commits leave the routing to their caller
+(Apply closes, a tool dispatch keeps the tool). `abortEdit()` restores
+the span
+from the model and strips contenteditable — Esc, stale, close. Keys
+while `editing` is set: Enter commits and focus returns to the row's
+cell; Tab and Shift+Tab commit and focus stays on the cell (the
+indent/outdent chords are unreachable while editing); F2 commits;
+arrows and typing are native; an IME confirm never commits — the guard
+is `e.isComposing || e.keyCode === 229` (Chrome reports 229 during
+composition; the table's own precedent, `table-editor.js:476-483`)
+**plus a one-shot latch armed on `compositionend`** that swallows the
+next Enter, because WebKit can deliver the confirm keydown after the
+composition has ended (the bug class: an Enter that confirms a
+composition would split it); Shift+Enter is swallowed — the field may
+contain the
+item's existing hard breaks and images, and the keyboard never creates
+new ones; and `onGridKeydown` returns early for everything else. The history chord is off during the edit —
+`ownsKey: () => !drag && !editing` (§1) — so Ctrl/Cmd+Z is the
+browser's native span undo; the bar's undo/redo buttons commit first
+(the restore-path belt, above). Esc is **claimed first**, like the drag's
+(`list-editor.js:1609-1616`): abort the edit, keep the window open; the
+next Esc cancels the window. This deliberately differs from the table,
+whose Esc goes straight to Cancel from either state
+(`table-editor.js:471-473`): this window had already established
+claim-first for its drag, and Esc keeps one meaning inside it — back
+out one level. Paste inside the edit is **plain text only**, the
+table's rule (`table-editor.js:917-928`) with the whitespace collapse;
+a native drop is routed the same way (`:952-958`); the window has no
+clipboard verbs of its own.
+
+**Signature, plan, snapshot.** `rebuildPlan()` gains `texts` — the
+`edits` entries for rows in `rowOrder`, so a deleted row's edit dies
+with the delete — and `signatureOf` (`list-editor.js:515-527`)
+appends a fourth field: each entry as `id + "=" + JSON.stringify(html)`,
+joined `\u0002`. `JSON.stringify` escapes separators and control
+characters, so typed `\u0001`/`\u0002` cannot forge a collision (the
+existing three fields are integer and plain-attribute joins, already
+injection-safe). At open the map is empty, so the open signature is
+byte-identical to before. The no-op proof extends one line: an edit
+adds an entry → `current !== open` → Apply writes; the window-undo of
+the edit restores the map → the token disappears → Apply closes
+without a write. No flag anywhere; the signature stays strictly
+stronger. The snapshot gains `e` (§6): the map as `[id, html]` pairs,
+present only when non-empty — omission is exact, not a cache.
+`restoreSnapshot` sets `state.edits` from `e` and the repaint derives
+every label (dirty rows from their entry, clean rows from `ownText`),
+so undo/redo restores text as one step. The `hist.capture` dedupe
+caveat extends: `capture()` compares whole snapshots
+(`edit-window.js:145`), the `e` pairs are part of the string, and the
+drag's rule is already the right one — the explicit compare **before**
+capture, never the engine's dedupe, keeps a typed-then-deleted change
+from becoming a dead step.
+
+**Write-back at Apply.** `commitPlan` gains one pass — **step 5, after
+the wrapper cleanup and before the P4 assertion** (which becomes step 6
+and now validates the post-write shape): for each `plan.texts` entry,
+in `rowOrder` order, `writeRun(row, html)` recomputes the extent from
+the live `<li>` with the same `runNodes` (the DOM is untouched since
+open, so this is the open-time extent; no boundary references are
+stored), records the first extent node and its `nextSibling` **before
+removing anything**, removes the extent, and inserts the parsed
+fragment before that recorded anchor — an empty extent inserts before
+the host's first `RUN_BOUNDARY` child, else at the host's end.
+Ordering is why the
+pass runs after the level moves: the edited, moved `<li>` is already
+where the plan put it, and the write lands wherever the row is.
+Identity: the `<li>`, every wrapper, the checkbox, the child list,
+`blockquote`/cell content and plugin cards keep their nodes (never
+extent members); an **untouched row is never in `texts`**, so its
+inline nodes keep theirs too — the per-row skip, not just the global
+no-op. The edited row's inline nodes are fresh parses — identity there
+is not load-bearing: serialization is attribute-based, and the
+sanitizer's whitelist is the serializer's own attribute set, so
+nothing readable is lost. An empty result writes **one ZWS text node**
+(the `addListPlaceholders` shape, `hybrid.js:204-207`), so the item
+keeps its line box; a non-empty result drops the ZWS, exactly as the
+engine's placeholder rule would. The edited-row's-`li`-was-deleted case
+cannot write: `texts` covers only `rowOrder`, the delete pass has
+already removed every other node, and `writeRun` resolves
+`rec(id).node` and skips a gone one. `title`, the chevron's
+`aria-label` and the empty-label class are label-derived and refresh in
+the post-commit repaint; the edit span itself is window chrome and
+never reaches the note.
+
+**Sanitization.** One choke point, `sanitizeRun(html) → string`
+(exported as `_sanitizeRun` — the security boundary gets a direct
+seam): it runs at `startEdit` (so `baseHtml` is canonical) and at
+`commitEdit` (so a model value is always clean); the write-back parses
+the stored entry and needs no second pass. The walk is the
+table's `cleanInline` shape (`table-editor.js:651-669`): text passes;
+`script`/`style`/`noscript`/`template` drop with their text; any other
+unsupported element unwraps to its children; `[\r\n]+` collapses to one
+space — in the list the collapse is load-bearing, not cosmetic (the
+round-trip lemma below). Two list rules the table does not have, both
+load-bearing:
+
+- **Authored elements are kept, with their attributes unchanged.** Any
+  element carrying `data-hybrid-authored` (`AUTHORED_ATTR`,
+  `hybrid.js:144`) survives the walk untouched — the engine's own
+  provenance contract: an authored element is content, keeps every
+  attribute (`hybrid.js:1459-1460`), and the serializer writes it back
+  as raw HTML; the `AUTHORED_ELEMENT_TAGS` set (`hybrid.js:173-185`) is
+  the engine's own list of what authored raw inline can be (`kbd`,
+  `mark`, `sup`, `sub`, `u`, …). Without this rule, editing a row next
+  to authored markup would flatten it — and the guard's test (a) would
+  then refuse every such row. `script`/`style`/`noscript`/`template`
+  still drop with their text, authored or not.
+- **Attributes are removed in place, never remove-all-then-re-add.**
+  The walk deletes only the attributes not kept, so a canonical run
+  re-serializes **byte-identically** — which is exactly what the
+  guard's test (a) compares. A re-adding walk would reorder attributes
+  and refuse every wikilink row.
+
+The allowed set and its differences from the
+table's `INLINE_TAGS` (`:642-644`):
+
+| | Table cell | List run | Why |
+|---|---|---|---|
+| `br` | one space (`:678`) | kept | a list item's hard break round-trips: `lineBreak` writes `'  \n'` (`vendor/turndown.browser.js:93-99`, `br: '  '` `:762`) and the item indent keeps the continuation inside the item (`:148`) |
+| `img` | unwrapped | kept, `src`/`alt`/`title` | the img-is-preserved rule; the attribute set is the serializer's own `MARKDOWN_IMG_ATTRS` (`hybrid.js:189`) |
+| `a` | `href` only (`:665-667`) | `href`, `title`, `data-wikilink`, `data-wikilink-raw` | without the flags an edited row's wikilinks degrade to plain links — the §8 wikilink pin and the serializer's own whitelist (`hybrid.js:190`, `:1463-1465`) |
+| authored inline | unwrapped | kept with all attributes | the engine's authored contract (`hybrid.js:144`, `:1459-1460`); the edit keeps the note's authored inline markup, and the guard's test (a) depends on it |
+
+`strong`/`b`, `em`/`i`, `code`, `a`, `br`, `img`, text, plus the
+authored set — that is the
+whole whitelist; an **unmarked** `del` or `span` still unwraps like any
+other unsupported element, but the guard's test (a) refuses such a row
+before the field opens — nothing is ever silently flattened. Pasted
+HTML therefore can never enter the
+model: the paste path inserts plain text, and the sanitizer is the
+second gate. The sanitizer is list-local rather than exported from the
+table: the sets and the br rule differ, the walk is twenty lines, and
+there is no third consumer — extract a shared `NB.inlineHtml` when one
+appears.
+
+**Markdown round-trip.** Turndown re-serializes the run at save, and
+`process` escapes **every text node** — `self.escape(node.nodeValue)`
+(`vendor/turndown.browser.js:889`), except inside `code` — so typed
+bytes meet the escape table (`:732-746`) wherever they sit:
+
+| Typed | Saved as | Rule |
+|---|---|---|
+| leading `-` | `\-` | `^-` (`:735`) |
+| leading `1. ` | `1\. ` | `^(\d+)\. ` (`:745`) |
+| leading `>` | `\>` | `^>` (`:743`) |
+| any backtick | `` \` `` | global (`:739`); typed text can never open a code span — an existing `<code>` serializes through its own rule, which lengthens the delimiter around embedded backticks (`:308-327`) |
+| `[x]` | `\[x\]` | `[`/`]` global (`:741-742`); literal text, and the task meaning lives on the preserved checkbox, which typing cannot create |
+| trailing `\` | `\\` | global (`:733`) |
+
+**Why the `^`-anchored rules are enough (the line-start lemma).** A
+saved line can start inside an item only at the run's serialization
+start or after a `<br>` — the only intra-run newline source is the
+`lineBreak` rule (`:93-99`), because the sanitizer's newline collapse
+removed the other (a `\n` inside a captured text node). A `<br>` is a
+node boundary, so the next text node *begins* the line; the run's first
+text node begins the first line; and `^` anchors at text-node starts.
+Line starts and node starts coincide, so a text node that begins a line
+and begins with `-`, `1. ` or `>` is always escaped. Residual gaps —
+mid-line `~~~`, `#` with no space, a `1. ` typed into the middle of an
+existing text node (the node does not start with it, and neither does
+the line) — are byte-identical to typing the same characters in the
+note body through the hybrid engine: same DOM shapes, same serializer,
+no new surface.
+
+**Interactions.**
+
+| Gesture / state | Rule |
+|---|---|
+| F2 / double-press (350 ms / 8 px) | the guard first: both tests pass → the edit opens with the caret at the press point; either fails → the refusal is written and nothing changes — selection, anchor and `focusId` untouched by `startEdit`; Enter never edits (it keeps collapse for a parent and is inert on a leaf) and Tab keeps indent/outdent — the table's Enter-to-edit is deliberately not copied, this grid already spends Enter and Tab on structure |
+| typing, arrows, composition | native in the span; `onGridKeydown`'s in-edit branch returns early; no commit on an IME confirm (`isComposing`/`keyCode 229`/the `compositionend` latch) |
+| Tab / Enter / F2 / blur / any press or tool elsewhere | `commitEdit()` — one step when the model changed; Enter and Tab return focus to the row's cell, and a blur commit routes focus there itself (the field held it; `afterChange`'s `hadFocus` at `list-editor.js:867` is already false), unless the focus moved to a real control inside the overlay |
+| Esc | claimed first, like the drag's: `abortEdit()`, window open; the next Esc cancels the window |
+| drag | a press inside the edited row moves the caret and never arms `pending` (`onGridPointerDown`, `list-editor.js:1988-2009`, gains the exception; `onGridMousedown` `:1620-1626` does not preventDefault there); a press on any other row **commits first**, then resolves the press as §4 Drag reordering says (the row alone, or the block when it is a selected root) and arms — by the drop the model is settled: one text step, then the drop's own |
+| toolbar verbs | the tool dispatch (`onToolClick`/`dispatchTool`) commits first — the blur is only the fallback, because Safari does not focus a clicked button — then the verb; an edited row moves/indents/sorts like any row, its text travelling with the record |
+| delete | the dispatch's commit (one step), the delete removes (its own step); Apply writes neither — the row is not in `rowOrder`, so not in `texts`; in-window undo of the delete brings row and edited text back (the snapshot's unfiltered `e` pairs) |
+| collapse | the chevron's press commits (same dispatch path); hidden rows are not addressable; Left/Right/Enter are inert while editing |
+| Apply | `apply()` commits **before `rebuildPlan()`** (§5 step 3a), so plan and signature see the text |
+| Cancel / × / backdrop / `close()` | `abortEdit()` after `abortDrag()`; uncommitted typing never entered the model |
+| stale | `goStale()` aborts, never commits — the model is dead and history is killed; the span loses contenteditable and re-renders from the model |
+| failed restore | the restore path itself commits (the bar-button belt, §4); after a failure the model is untouched and the engine restores its index |
+
+**Budget.** ~180 lines in `list-editor.js` (run rule, guard and edit
+state ~80, sanitizer ~40, keyboard/pointer deltas and seams ~45, plus
+the two `labelOf` consumer edits — `buildRow`'s label/`title`/
+`.is-empty` (`list-editor.js:753-758`, `:755`) and `sortRows`' key
+(`:1304`) — one line each), one
+`style.css` rule (the editing caret on `.le-text[contenteditable="true"]`,
+the table's own citation `docs/ui/table-editor.md:167-168`), no
+`index.html`, `sw.js` or toolbar change. The UI doc's chord list, the
+one-press Esc exception (§8.2 — the drag already has it) and the
+`Edited 1 item` string are its owner's to amend; this blueprint names
+no UI string as normative.
+
+The block drag is not a new subsystem: it adds roughly 50 lines to the
+shipped drag layer — block resolution at the press, the mixed-level refusal at
+the threshold, the slot's skip-the-block filter, and the gathered splice with
+the id-sequence no-op — and no CSS, no key, no toolbar control.
 
 ## 5. Apply, Cancel, invalidation
 
@@ -470,12 +1052,14 @@ apply():
   2  if (stale) return;                                       // Apply is disabled in stale; belt
   3  if (!container || !viewerContentEl.contains(container))
        { goStale(); return; }                                // a guard failure closes nothing
+  3a if (editing) commitEdit();                               // the plan and the signature see the
+                                                              // text (§4 Item text editing)
   4  plan = rebuildPlan();
      if (!plan) { setStatus("Could not apply — the list was not changed");
                   return; }                                  // stays open, note clean
      if (plan.empty) emptyFocus = { next: container.nextElementSibling,
                                    prev: container.previousElementSibling };
-                                                              // capture before any mutation (§3 step 7)
+                                                              // capture before any mutation (§3 step 8)
   5  if (_signature().current === openSignature)
        return close({ focusList: true });                    // no-op: nothing written
   6  NB.hybrid.clearSelection();                             // a live Range over nodes about to
@@ -486,9 +1070,8 @@ apply():
   7  NB.hybrid.flushPendingSnapshot();                       // pre-edit state = its own undo step
   8  savedHtml = viewerContentEl.innerHTML;                  // rollback buffer (§3)
   9  try { commitPlan(plan); }                               // §3: in-place, inside the live container
-       catch { viewerContentEl.innerHTML = savedHtml;
-               setStatus("Could not apply — the list was not changed");
-               return; }                                     // stays open, note clean
+       catch { viewerContentEl.innerHTML = savedHtml;         // the rollback REPLACES the container node
+               goStale(); return; }                           // stale: open, read-only, Cancel focused (below)
  10  NB.hybrid.onContentChange();                            // dirty + autosave + the debounced snapshot
  11  if (plan.empty) { close({ focusList: false }); focusAfterRemoval(emptyFocus); }
      else close({ focusList: true });
@@ -498,21 +1081,31 @@ apply():
   (9), `onContentChange` (10) strictly after — exactly
   `table-editor.js:1984-1991`. One Apply = one note undo step; the modal's
   in-window history never touches the note (`edit-window.js:13-14`).
-  **Refusals never close**: a null plan (step 4), a commit failure
-  (step 9) or a stale race (step 3) writes the status line and leaves the
-  window open; only a successful or a no-op Apply closes.
+  **Refusals never close**: a null plan (step 4) or a stale race (step 3)
+  writes the status line and leaves the window open; a **commit failure
+  (step 9) goes stale**: the `innerHTML` rollback is
+  `restoreSnapshot`'s mechanism (`hybrid.js:7459`) and it **replaces the
+  container node**, so after it `state.container` is detached — the
+  window cannot stay editable over a dead node. It stays open
+  read-only with the stale notice and Cancel focused (`goStale()`,
+  below), the note clean (`onContentChange` not called); only a
+  successful or a no-op Apply closes.
 - **No-op detection.** The structural signature is derived from the plan,
   never from a copy of the DOM: `sig(plan) = {rowIds in document order with
-  their depths, the wrappers' ids/tags/attrs in order, the done map}` — the
+  their depths, the wrappers' ids/tags/attrs in order, the done map, the
+  `edits` map's tokens (§4 Item text editing)}` — the
   done values read the live `checked` property, the one authority
   (`hybrid.js:1614-1645`). `openSignature` is captured at `open()` from the
   opening plan; because the opening plan describes the live container
   exactly (same rows, same wrapper ids), it equals the same walk taken over
   the live DOM at open — which is the sense in which the open-time signature
   is "computed from the container". `current` is derived at Apply from the
-  Apply-time plan, and `_signature()` returns both.
+  Apply-time plan, and `_signature()` returns both. At open the `edits` map
+  is empty, so the token field is empty and the open signature is
+  byte-identical to the pre-text-editing one.
   **Proof that move-down-then-up is a no-op:** `rebuildPlan()` is a pure
-  function of (a) the model — the flat order, depths, done values — (b) each
+  function of (a) the model — the flat order, depths, done values, the
+  `edits` map — (b) each
   row's open-time child wrapper (read from the DOM, which no verb touches)
   and (c) each row's `sourceTag`. Up/down moves a run one slot within its
   own parent and changes nothing else (§4), so down-then-up restores (a)
@@ -521,7 +1114,9 @@ apply():
   a write — even though an implementation keyed on a "something moved" flag
   would have written. The same argument covers a done-toggle cycle and an
   indent-then-outdent pair (§3: the transient level leaves no wrapper in the
-  final plan). There is **no `changed` flag**: the signature is strictly
+  final plan), and the text case needs one line more: an edit adds a map
+  entry, the window-undo of the edit restores the map and removes it (§4).
+  There is **no `changed` flag**: the signature is strictly
   stronger (the `sameTable(rebuildTable({canonicalAlign:false}),
   originalTable)` defence, `table-editor.js:1979-1982`, minus the flag's
   blind spot). `collapsed` and selection are not in the signature (UI
@@ -600,7 +1195,8 @@ apply():
   under the modal (`table-editor.js:1994-1998` rationale). **Not undoable**
   in-window: Apply, Cancel, Close, Esc, backdrop, maximize, drag, resize,
   focus and selection changes (`edit-window.md` §6.5); every verb is one
-  step. Note-level: one Apply is one step against the note's own history.
+  step, a text commit included (§4 Item text editing). Note-level: one
+  Apply is one step against the note's own history.
 
 ## 6. In-window history
 
@@ -612,6 +1208,8 @@ strings, `edit-window.js:112-114`):
 ```js
 JSON.stringify({
   rows: [{ i: id, p: parentId, d: 0|1|null, c: collapsed }],  // model order
+  e: [[id, html]],   // the state.edits map as pairs, model order; present
+                     // only when the map is non-empty (§4 Item text editing)
   sel: [ids],        // the selection set (§4), model order
   anchor: id,        // the anchor id, null when nothing is selected
 })
@@ -623,21 +1221,35 @@ JSON.stringify({
 - `d` = the done state as `0` (open task), `1` (done task) or `null`
   (**not a task item**). The previous `{i, d: depth, g: …, c}` encoding could
   not distinguish a non-task from an open task; this one can.
+- `e` = the `state.edits` map as `[id, html]` pairs — the **whole map,
+  unfiltered**: `deleteRows` prunes nothing (§4 Item text editing), so
+  an entry for a row a later snapshot deleted is still here, which is
+  what lets undo of a delete restore the row with its edited text.
+  **Present only when
+  the map is non-empty** — omission means empty, which is exact, not a
+  cache (§4 Item text editing). It rides edited rows only, so a snapshot
+  grows by the edited row's run, not the list's.
 - `sel`/`anchor` are stored because selection is part of the state a
   restore owes the user (§4).
 
 The `table-editor.js:1530-1538` pattern: serialize the model, resolve ids
 back to records on restore. `ownText`, `node` and wrapper identity are never
-in the snapshot — content is immutable in this modal and the plan re-derives
-wrappers (§3).
+in the snapshot — content reaches it only as the `e` pairs, and the plan
+re-derives wrappers (§3).
 
 - **No coalescing.** Every committed verb captures with kind `"structural"`;
   the engine coalesces only `"text"` (`edit-window.js:146-147`), so one verb
   = one entry. A verb whose snapshot equals the top of the stack is dropped
-  by the engine's own dedupe — a refused verb never reaches `capture` at all.
+  by the engine's own dedupe — a refused verb never reaches `capture` at
+  all. A text commit is the same kind with the same one-step rule: the
+  compare-before-capture is §4 Item text editing's, because the `e` pairs
+  are part of the snapshot string and the dedupe alone would leave a dead
+  step for a selection-only change.
 - **Restore.** Parse, validate every id resolves in `byId` (records outlive
   deletes; a deleted row's node is still in the live container, §2), rebuild
-  `rows` in snapshot order, restore done/collapsed, restore the selection
+  `rows` in snapshot order, restore done/collapsed, set `state.edits` from
+  the `e` pairs — the repaint then derives every label: dirty rows from
+  their entry, clean rows from `ownText` — restore the selection
   set and anchor — **clamped to ids that still exist** (a snapshot may name
   rows a later snapshot deleted; ids that no longer resolve drop out of
   `sel` and the anchor falls back to the focused row) — recompute derived
@@ -838,6 +1450,54 @@ the harness `ownText` at `:20222-20226` extended by the chrome-node strip
   mark done/open — task rows only, `Marked 4 items done` /
   `All 4 were already done` strings; delete — the subtree travels.
   Assert through `getState()` and the pure `rebuildPlan()`.
+- *Drag model* (`_moveBlocks(rowIds, beforeRowId)` and the one-row
+  `_moveBlock` wrapper, §4 Drag reordering — jsdom has no layout, so the
+  pointer path is the browser suite's): a parent moves with its whole
+  subtree, a childless row alone, a collapsed parent's hidden rows with it;
+  `[a, c]` in one parent moves the span from `a` to the end of `c`'s subtree,
+  so the unselected rows between the roots travel inside it; `[c, a]` gives the
+  same result; a root in another level refuses the whole call and leaves the
+  order and the depths identical; a non-contiguous block already at the slot
+  returns `{moved: false}`; a `beforeRowId` of another level, inside any
+  dragged subtree, on an unselected row between the roots, or one of the roots
+  is refused; `null` lands after the last remaining block of the level; the
+  `position` returned is the first root's 0-based sibling index after the call
+  and `count` the number of roots; and none of it adds a `_history()` entry or
+  changes the selection or the focus (the seam owns neither — the pointer layer
+  does).
+- *Item text editing* (§4 Item text editing, model level — jsdom cannot
+  type, so the span work is `_editRow(id)` + a forced `_commitEdit()`):
+  the `edits` map in `getState()` is empty at open; the run rule — a nested
+  list, a `blockquote`, a later `<p>` and a card each end the run, the
+  loose item's first `<p>` hosts it, an `img` inside the run is captured,
+  prose after an `img` is one run, and the caret `<br>`/ZWS are extent
+  members that never appear in the capture; the guard — the loose shapes
+  `<li><p>a</p><ul>…</ul><p>c</p></li>` and
+  `<li><p><input> task</p><p>second</p><ul>…</ul></li>` refuse
+  `_editRow` (no entry, a status refusal, selection and anchor
+  untouched), an equal-shape item — including one holding an `img` or a
+  hard break — edits; `_sanitizeRun()` keeps the allowed
+  set, the wikilink flags and `img[src alt title]`, unwraps unsupported
+  elements, drops `script` with its text, and collapses `\n` to space;
+  a hostile span innerHTML committed through the seam lands in the map
+  as the sanitized projection; a no-change `_commitEdit()` returns
+  `false`, repaints nothing and adds no `_history()` entry; a
+  revert-to-live commit deletes the entry and the label returns to
+  `ownText`; while dirty the label is the strip of the entry;
+  `_undo()`
+  after a real commit restores the map (the snapshot's `e` present when
+  non-empty, absent when restored); a delete after an edit leaves
+  the row gone with its edit, and `_undo()` brings both back.
+- *Text write-back*: edit one row of a task item with a nested list,
+  move it, Apply → the `<li>` is the same node, the checkbox and the
+  child list are the same nodes, the run (hard breaks and images
+  included) is replaced, the saved
+  round-trip keeps `strong`/`em`/`code`/`a` and the wikilink markup;
+  the signature — `_editRow` + a change → `_signature().current !==
+  _signature().open`; window-undo of the edit → the map restored →
+  equal → `_apply()` writes nothing; an edit emptied to `""` plants
+  one ZWS and labels `"(empty item)"`; a deleted row's edit never
+  reaches the note.
 - *Planner purity*: `rebuildPlan()` twice in a row returns equal values and
   leaves the DOM unchanged (node identity of every `li`/`ul`/`ol` before and
   after the call).
@@ -895,6 +1555,36 @@ the harness `ownText` at `:20222-20226` extended by the chrome-node strip
 - Roving keys: Up/Down/Home/End over collapsed rows, Shift+Up/Down extend,
   Ctrl+A (collapsed included), Ctrl+Shift+A, Space, Shift+Space,
   Left/Right collapse/expand, Delete, Esc cancels on one press.
+- Drag (§4 Drag reordering), real pointer: press the last row and drag it above the
+  first — the block dims, the 2 px line sits at the target row, the model
+  reorders on release, one `Moved 1 item` is written, and the row is left
+  selected and focused; a press released on its own position adds no history
+  entry and no message; Esc mid-drag keeps the window open and removes the
+  line; a `Ctrl` press and a touch press start no drag. **Block:** Ctrl-click
+  two roots in one parent so the rows between them travel too, plain-press one
+  of them — the selection survives the press — and drag; every root and its
+  subtree dims, no line appears over the block, the release gathers the run at
+  the slot with one `Moved 2 items` step, and the roots are the selection and
+  the anchor; a press-and-release without travel collapses the selection to
+  that row; roots in two parents start no drag and write the level sentence.
+- Item text editing (§4 Item text editing), real typing: double-press a row →
+  type with the row's formatting visible → Tab and Enter commit, focus
+  returns to the row's cell and the label refreshes
+  (`Edited 1 item`); a double-tap enters the edit on a touch screen;
+  Esc aborts the typing and keeps the
+  window open (a second Esc cancels); F2 on the focused row starts the
+  edit and leaves a multi-selection intact; Enter on a leaf row never
+  starts an edit; the guard — a multi-paragraph loose item refuses the
+  entry and writes the status refusal; a paste from a rich clipboard
+  inserts plain text only; an IME
+  composition confirms without committing (the row stays in edit);
+  the drag interplay — type in one row, press another (the edit
+  commits), release a drop (its own step after the text step); the
+  escape-table round-trip — edit an item to start with `-`,
+  `1.`, `>`, and contain a backtick, `[x]` and a trailing `\` → save →
+  read the file → each is escaped (`\-`, `1\.`, `\>`, `` \` ``,
+  `\[x\]`, `\\`); and one note-level Ctrl+Z after Apply restores the
+  original text as a single step.
 - Apply round-trip through save: right-click an item → "Edit list…" → move →
   Apply → the tab's save → read the file → the expected Markdown (list block
   only re-serialized, `Title\n=====` untouched — the `:20291-20305` shape);
@@ -940,12 +1630,12 @@ work.
    sandwich case (outdent P out of X, move P above X, indent X under P).
 5. **Undo snapshot / attribute mismatch on done** (MAJOR). `pushSnapshot`
    stores `innerHTML` (`hybrid.js:7435`) — attribute, not property.
-   Mitigated by the commit-time mirror (§3 step 6) and the recommended
+   Mitigated by the commit-time mirror (§3 step 7) and the recommended
    adjacent fix in `onCheckboxChange` (`hybrid.js:7790-7795`).
 6. **Turndown wrapper rules** (MAJOR). A child list not last emits a block
    break (`vendor/turndown.browser.js:133`); a non-`<li>` wrapper child
    shifts every number (`:153`). Mitigated by P0 validation (§3) and the P4
-   assertion (§3 step 5).
+   assertion (§3 step 6).
 7. **Undo correctness of the batch** (MAJOR). Flush-before-mutate is the
    whole contract (§5 steps 7 → 9); an extra `pushSnapshot` would
    double-step. The try/catch rollback keeps a half-applied plan from
@@ -966,7 +1656,26 @@ work.
     (`:661-664`); `frontend.md`'s two-literal-pins claim (`:396-398`) is
     stale and its `list-editor` row's "survive" wording needs the §7.8
     note. Both are recorded for the doc owner; this blueprint changes no
-    file but its own.
+    file but its own. Text editing adds one more: `docs/ui/list-editor.md`
+    §8.2's one-press Esc and its chord list gain the claim-first
+    exception the drag already has (§4 Item text editing).
+11. **Authored inline loss on an edited row** (MAJOR). A raw-HTML inline
+    element outside the allowed set (`del`, a styled `span`) unwraps to
+    its text when its row's text is committed — the table's own cell
+    containment (`table-editor.js:671-674`). Mitigated by the per-row
+    skip: only rows in the `edits` map are ever re-written, so untouched
+    rows keep their nodes and bytes; the loss is bounded to the row the
+    user chose to retype, and the sanitizer keeps the attributes the
+    serializer itself reads (the wikilink flags, `img`/`a` Markdown
+    attributes). Pinned by the jsdom identity and wikilink cases.
+12. **Round-trip residual gaps** (MINOR). Mid-line `~~~` and `#` with no
+    space are not escaped (`vendor/turndown.browser.js:732-746` anchors
+    them) — byte-identical exposure to typing the same characters in
+    the note body through the hybrid engine, which shares the
+    serializer; no new surface is opened. The sanitizer's newline
+    collapse is what keeps the `^`-anchored escapes total (the §4 line-
+    start lemma); removing it would open un-escaped line starts inside
+    text nodes. Pinned by the browser escape-table case.
 
 ## 10. Line and effort budget
 

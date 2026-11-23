@@ -33,9 +33,11 @@ are plain `.md` files on disk — no database, no build step.
 - Preview table controls: hide rows/columns and sort a column without
   touching the note's source.
 - **Edit list** window in hybrid mode: right-click any list item to open a
-  window over that one list, then multi-select items, move them as a block,
+  window over that one list, then multi-select items, drag a row or the
+  selection's block with its subtree to reorder it inside its own level,
   indent/outdent, sort a level A→Z / Z→A, move done task items to the bottom,
-  mark done/open, or delete — applied as a single undo step.
+  edit one item's words in place, mark done/open, or delete — applied as a
+  single undo step.
 - Heading outline (right-side minimap) with scroll-spy and click-to-jump.
 - In-page search across all `.md` files with safe snippet highlighting
   (the server returns `<<…>>` markers; the client rewraps them as `<mark>`
