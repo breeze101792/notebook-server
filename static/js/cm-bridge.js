@@ -123,6 +123,30 @@
     return ensureView();
   }
 
+  /* Backspace deletes one character, not one Markdown unit.
+   *
+   * @codemirror/lang-markdown binds Backspace at Prec.high to
+   * deleteMarkupBackward, which deletes a whole marker unit: at the end of
+   * "- [ ] " one press empties the line instead of removing the trailing
+   * space. Run the default character delete ahead of it. Vim's normal mode
+   * keeps its own Backspace (<BS> moves left, like h); insert mode falls
+   * through to the same character delete. */
+  function backspaceBinding(cm) {
+    const plain = cm.defaultKeymap.find((b) => b.key === "Backspace" && b.run);
+    return {
+      key: "Backspace",
+      run: (v) => {
+        const cm5 = cm.getCM(v);
+        const vim = cm5 && cm5.state && cm5.state.vim;
+        if (vim && !vim.insertMode) {
+          cm.Vim.handleKey(cm5, "h", "user");
+          return true;
+        }
+        return plain ? plain.run(v) : false;
+      },
+    };
+  }
+
   function ensureView() {
     if (view) return view;
     const cm = getCm();
@@ -165,6 +189,9 @@
           { key: "Mod-b", run: () => { if (NB.editbar && NB.editbar.actions) NB.editbar.actions.bold(); return true; } },
           { key: "Mod-i", run: () => { if (NB.editbar && NB.editbar.actions) NB.editbar.actions.italic(); return true; } },
         ])),
+        // Character Backspace wins over the markdown language keymap's
+        // Prec.high marker delete (see backspaceBinding).
+        cm.Prec.highest(cm.keymap.of([backspaceBinding(cm)])),
         // updateListener fires on every doc change; route to the
         // onChange handlers. viewer.js hooks this for dirty tracking
         // + live preview, just like the textarea's `input` event.

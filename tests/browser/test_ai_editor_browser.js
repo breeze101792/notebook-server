@@ -492,7 +492,25 @@ async function main() {
     check("vim mode: :w writes the insert to disk",
       waitForDisk(A, "VIM_INSERT_OK"), JSON.stringify(readNote(A)));
 
-    await page.click("#edit-toggle");
+    // Backspace deletes one character, not one Markdown marker unit.
+    // @codemirror/lang-markdown's deleteMarkupBackward would otherwise eat
+    // the whole "- [ ] " in a single press.
+    await page.evaluate(() =>
+      window.NB.cmEditor.setValue("intro\n\n- [ ] \n\nafter\n"));
+    await page.evaluate(() => {
+      const v = window.NB.cmEditor.view();
+      const line = v.state.doc.line(3);
+      window.NB.cmEditor.setSelection(line.to, line.to);
+      window.NB.cmEditor.focus();
+    });
+    await page.keyboard.press("i");
+    await page.keyboard.press("Backspace");
+    check("vim mode: Backspace removes one character from a list marker",
+      await page.evaluate(() =>
+        window.NB.cmEditor.getValue() === "intro\n\n- [ ]\n\nafter\n"));
+    await page.keyboard.press("Escape");
+
+    await page.evaluate(() => window.NB.viewer.forceCloseEdit());
     await page.waitForFunction(
       () => document.getElementById("cm-host").hidden, null, { timeout: 8000 });
 
