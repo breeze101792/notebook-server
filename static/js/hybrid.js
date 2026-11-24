@@ -213,6 +213,19 @@
   // never matched here. Code blocks keep their whitespace (see
   // canonicalSubtree's preserve flag).
   const COLLAPSIBLE_SPACE_RE = /[ \t\n\r\f]+/g;
+  // Turndown's block elements plus <br>: the serializer trims a space on
+  // either side of one of these. The change key must trim it the same way,
+  // or a block whose text ends (or starts) with a space reads as a
+  // divergence after an edit, rebuilds the view, and throws the caret to
+  // the top of the note. See canonicalSubtree.
+  const BLOCK_BOUNDARY_TAGS = new Set([
+    "ADDRESS", "ARTICLE", "ASIDE", "AUDIO", "BLOCKQUOTE", "BODY", "CANVAS",
+    "CENTER", "DD", "DIR", "DIV", "DL", "DT", "FIELDSET", "FIGCAPTION",
+    "FIGURE", "FOOTER", "FORM", "FRAMESET", "H1", "H2", "H3", "H4", "H5",
+    "H6", "HEADER", "HGROUP", "HR", "HTML", "ISINDEX", "LI", "MAIN", "MENU",
+    "NAV", "NOFRAMES", "NOSCRIPT", "OL", "OUTPUT", "P", "PRE", "SECTION",
+    "TABLE", "TBODY", "TD", "TFOOT", "TH", "THEAD", "TR", "UL", "BR",
+  ]);
   // Void/embedded content that makes an otherwise empty element real: an
   // image, rule, checkbox, canvas, svg, iframe, or embedded media. Shared
   // by the empty-block, empty-cell, and list-merge checks so they cannot
@@ -262,8 +275,12 @@
   // `language-*` class is content and stays; the token spans hljs builds
   // are unwrapped as chrome.
   const PLUGIN_EDITING_CLASS = "hybrid-plugin-editing";
-  const CHROME_CLASSES =
-    CHROME_CLASS_TOKENS.concat([HLJS_CLASS, PLUGIN_EDITING_CLASS]);
+  // The task-item marker hybrid adds when it repairs a native Enter split or
+  // converts an item with the Task button. marked does not render it, so it
+  // is editor state, never content: keying it made every newly created task
+  // item read as a divergence on the next save and rebuilt the view.
+  const CHROME_CLASSES = CHROME_CLASS_TOKENS.concat(
+    [HLJS_CLASS, PLUGIN_EDITING_CLASS, "task-list-item"]);
   // Attributes the viewer and the editing engine inject, never note content:
   // the editing flag, the captured fence language, the viewer's heading
   // slug, the authored id kept for serialization, and highlight.js state.
@@ -1540,6 +1557,14 @@
     return !node.nodeValue.trim();
   }
 
+  /* True for an element the serializer treats as a block boundary (turndown's
+   * block elements, plus <br>), where its whitespace collapse trims a space.
+   * Shared by the text-run edge trim in canonicalSubtree. */
+  function isBlockBoundaryNode(node) {
+    return node.nodeType === Node.ELEMENT_NODE &&
+      BLOCK_BOUNDARY_TAGS.has(node.tagName);
+  }
+
   /* A canonical, serialization-free string of a subtree for hashing:
    * element tags, non-chrome attributes, text and comment nodes. It must
    * be stable across the app's own DOM churn and sensitive to real edits:
@@ -1561,6 +1586,10 @@
    *     lines holds a newline in its text node, but the serializer writes
    *     that soft break as a space; keying the raw bytes would report every
    *     save of a wrapped paragraph as a divergence and rebuild the view.
+   *   - A space at either side of a block boundary is trimmed, mirroring
+   *     the serializer. Without this, a block whose text ends in a space
+   *     read as a divergence after every edit and the save rebuilt the
+   *     view, which throws the caret to the top of the note.
    *
    * This is a cheap deterministic walk, NOT a serialization comparison:
    * comparing emitted markdown would see every `*` bullet and setext
@@ -1571,28 +1600,67 @@
     let out = "";
     let text = "";
     let textPreserveSpace = false;
-    const flush = () => {
-      if (!text) return;
+    // The serializer trims a space at either side of a block boundary. The
+    // live key must do the same, or a block whose text ends with a space
+    // reads as a divergence after an edit and the save rebuilds the view
+    // (which throws the caret to the top of the note).
+    let stripLeading = false;
+    let edgeStart = true;
+    // True while the previous text run ended in a space. Turndown drops the
+    // leading space of the next run then, even across an inline element.
+    let prevSpace = false;
+    const flush = (trimTrailing) => {
+      if (!text) { stripLeading = false; return; }
       // A soft line break in a paragraph and the space the serializer
       // writes for it render identically; key them identically too, or
       // every save of a wrapped paragraph reads as a divergence. The run
       // is collapsed as a whole so a break that spans two adjacent text
       // nodes (around an inline element) still keys as one space.
-      const value = textPreserveSpace
+      let value = textPreserveSpace
         ? text
         : text.replace(COLLAPSIBLE_SPACE_RE, " ");
-      out += "\u0001t" + value;
+      if (!textPreserveSpace) {
+        if (stripLeading && value[0] === " ") value = value.slice(1);
+        if (trimTrailing) value = value.replace(/ $/, "");
+      }
       text = "";
+      stripLeading = false;
+      if (!value) { prevSpace = false; return; }
+      out += "\u0001t" + value;
+      prevSpace = !textPreserveSpace && value.endsWith(" ");
     };
-    (function walk(node, parent, preserveSpace) {
+    function walkChildren(node, preserveSpace, edgeAfter) {
+      const kids = node.childNodes;
+      // Resolve each child's following edge from the right, then walk left to
+      // right: the key is document-ordered.
+      const edges = new Array(kids.length);
+      let nextEdge = edgeAfter;
+      for (let i = kids.length - 1; i >= 0; i -= 1) {
+        const child = kids[i];
+        edges[i] = nextEdge;
+        // A layout space is ignored, so the next real node decides the edge
+        // for the sibling before it.
+        const layout = child.nodeType === Node.TEXT_NODE &&
+          isLayoutSpace(child, node);
+        if (!layout) nextEdge = isBlockBoundaryNode(child);
+      }
+      for (let i = 0; i < kids.length; i += 1) {
+        walk(kids[i], node, preserveSpace, edges[i]);
+      }
+    }
+    function walk(node, parent, preserveSpace, edgeAfter) {
       if (node.nodeType === Node.TEXT_NODE) {
         if (isLayoutSpace(node, parent)) return;
+        if (!text) {
+          stripLeading = edgeStart || prevSpace;
+          edgeStart = false;
+        }
         textPreserveSpace = preserveSpace;
         text += node.nodeValue.split(ZERO_WIDTH_SPACE).join("");
         return;
       }
       if (node.nodeType === Node.COMMENT_NODE) {
-        flush();
+        flush(false);
         out += "\u0001c" + node.nodeValue;
         return;
       }
@@ -1600,10 +1668,12 @@
       const chrome = chromeNodeKind(node);
       if (chrome === CHROME_REMOVE) return;
       if (chrome === CHROME_UNWRAP) {
-        for (const child of node.childNodes) walk(child, node, preserveSpace);
+        walkChildren(node, preserveSpace, edgeAfter);
         return;
       }
-      flush();
+      const boundary = isBlockBoundaryNode(node);
+      flush(boundary);
+      if (boundary) { edgeStart = true; prevSpace = false; }
       // An unmarked <div> is the browser's or a paste's block wrapper; the
       // paragraph rule writes it as <p> with no attributes, so the key
       // must see exactly that.
@@ -1640,16 +1710,14 @@
       if (node.tagName === "INPUT") {
         out += " checked=" + (node.checked ? "1" : "0");
       }
-      // A live checkbox property has no attribute to compare.
-      if (node.tagName === "INPUT") {
-        out += " checked=" + (node.checked ? "1" : "0");
-      }
       const keepSpace = preserveSpace || node.tagName === "PRE";
-      for (const child of node.childNodes) walk(child, node, keepSpace);
-      flush();
+      walkChildren(node, keepSpace, edgeAfter);
+      flush(edgeAfter);
       out += ">";
-    })(root, null, false);
-    flush();
+      if (boundary) { edgeStart = true; prevSpace = false; }
+    }
+    walk(root, null, false, true);
+    flush(true);
     return out;
   }
 

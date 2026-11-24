@@ -72,7 +72,10 @@
 /* Bumped v35 -> v36: the hybrid menu gained "Edit list…" and
  * list-editor.js ships with its own overlay, so installed workers must
  * refresh hybrid.js, list-editor.js, index.html and style.css. */
-const CACHE = "notebook-v36";
+/* Bumped v36 -> v37: hybrid.js changed the saved-render key so a block
+ * ending in a space no longer rebuilds the view on autosave, so installed
+ * workers must refresh hybrid.js. */
+const CACHE = "notebook-v37";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

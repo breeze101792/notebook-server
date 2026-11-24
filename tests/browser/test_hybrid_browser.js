@@ -731,6 +731,103 @@ async function main() {
       JSON.stringify(readNote(WRAP_NOTE)));
     await page.evaluate(() => NB.app.setAutosaveDelay(5));
 
+    // --- autosave keeps the caret in a block ending with a space --------
+    // The serializer trims a trailing space at a block edge. Keying it made
+    // every edited block that ended in one read as a divergence: the save
+    // rebuilt the view and threw the caret to the top of the note. Edit at
+    // the block start so the space stays at the edge.
+    const EDGE_NOTE = "notes/edge-space.md";
+    const EDGE_SOURCE = "# Edge\n\nThis line ends with a space \n\nTail.\n";
+    writeNote(EDGE_NOTE, EDGE_SOURCE);
+    await gotoNote(page, EDGE_NOTE);
+    await page.waitForSelector("#viewer-content p", { timeout: 15000 });
+    await page.evaluate(() => {
+      NB.app.setAutosave(true);
+      NB.app.setAutosaveDelay(1);
+    });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(() => NB.hybrid.isActive(), null, { timeout: 8000 });
+    await new Promise((r) => setTimeout(r, 450));
+    await caretInBlock(page, "#viewer-content p", 0);
+    await page.keyboard.press("Home");
+    await page.keyboard.type("Z");
+    await page.waitForFunction(() => !NB.hybrid.isDirty(), null, { timeout: 15000 });
+    await new Promise((r) => setTimeout(r, 250));
+    const edgeState = await page.evaluate(() => {
+      const sel = window.getSelection();
+      const anchor = sel.anchorNode;
+      const block = anchor && (anchor.nodeType === 3 ? anchor.parentElement : anchor);
+      return {
+        inViewer: !!block &&
+          document.getElementById("viewer-content").contains(block),
+        text: block ? block.textContent : "",
+        active: document.activeElement ? document.activeElement.id : "",
+        toast: (document.querySelector(".toast") || {}).textContent || "",
+      };
+    });
+    check("real browser autosave: a block ending in a space keeps the caret",
+      edgeState.active === "viewer-content" && edgeState.inViewer &&
+      /ZThis line ends with a space/.test(edgeState.text),
+      JSON.stringify(edgeState));
+    check("real browser autosave: a trailing space does not rebuild the view",
+      !/rebuilt from the file/.test(edgeState.toast), edgeState.toast);
+    check("real browser autosave: the trailing-space edit is written",
+      /ZThis line ends with a space\n/.test(readNote(EDGE_NOTE)),
+      JSON.stringify(readNote(EDGE_NOTE)));
+    await page.evaluate(() => NB.app.setAutosaveDelay(5));
+
+    // --- autosave keeps the caret in a task item created by Enter -------
+    // Hybrid adds class="task-list-item" when it repairs the native split.
+    // The key used to treat that class as content, so the next autosave saw a
+    // divergence and rebuilt the view, throwing the caret to the top of the
+    // note. Type into the new item and assert the caret survives.
+    const TASK_NOTE = "notes/enter-task.md";
+    const TASK_SOURCE = "# Tasks\n\n- [ ] first item\n\nTail.\n";
+    writeNote(TASK_NOTE, TASK_SOURCE);
+    await gotoNote(page, TASK_NOTE);
+    await page.waitForSelector("#viewer-content li", { timeout: 15000 });
+    await page.evaluate(() => {
+      NB.app.setAutosave(true);
+      NB.app.setAutosaveDelay(1);
+    });
+    await page.click("#hybrid-toggle");
+    await page.waitForFunction(() => NB.hybrid.isActive(), null, { timeout: 8000 });
+    await new Promise((r) => setTimeout(r, 450));
+    await caretInBlock(page, "#viewer-content li", 0);
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("second item");
+    await page.waitForFunction(() => !NB.hybrid.isDirty(), null, { timeout: 15000 });
+    await new Promise((r) => setTimeout(r, 250));
+    const taskState = await page.evaluate(() => {
+      const sel = window.getSelection();
+      const anchor = sel.anchorNode;
+      const block = anchor && (anchor.nodeType === 3 ? anchor.parentElement : anchor);
+      const li = block && block.closest ? block.closest("li") : null;
+      return {
+        inViewer: !!li &&
+          document.getElementById("viewer-content").contains(li),
+        text: li ? li.textContent : "",
+        active: document.activeElement ? document.activeElement.id : "",
+        toast: (document.querySelector(".toast") || {}).textContent || "",
+      };
+    });
+    check("real browser autosave: a new task item keeps the caret",
+      taskState.active === "viewer-content" && taskState.inViewer &&
+      /second item/.test(taskState.text), JSON.stringify(taskState));
+    check("real browser autosave: a new task item does not rebuild the view",
+      !/rebuilt from the file/.test(taskState.toast), taskState.toast);
+    check("real browser autosave: the new task item is written",
+      /- \[ \] second item/.test(readNote(TASK_NOTE)),
+      JSON.stringify(readNote(TASK_NOTE)));
+    const savedTaskBytes = readNote(TASK_NOTE);
+    const taskViewCheck = await page.evaluate((md) =>
+      NB.hybrid.renderCheck.verify(md,
+        NB.hybrid.renderCheck.liveSignature()), savedTaskBytes);
+    check("real browser autosave: the task item view still matches the saved bytes",
+      taskViewCheck.match, JSON.stringify(taskViewCheck));
+    await page.evaluate(() => NB.app.setAutosaveDelay(5));
+
     // Back to the shared fixture for the sections below.
     await gotoNote(page, NOTE);
     await page.waitForSelector("#viewer-content h2", { timeout: 15000 });

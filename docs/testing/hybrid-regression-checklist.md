@@ -119,6 +119,13 @@ is given once per area. The authority for "expected" is the linked spec.
 | A12 | Escapes are stable | Literal `#`, `*`, `_`, `[`, `<tag>`, `&entity`, and backtick stay literal | `AUTO-js` contract cases `escape: literal #`, `escape: literal <tag> text stays encoded`, `escape: literal entity text stays encoded`, `escape: an escaped backtick does not open a code span` |
 | A13 | Reference definitions and comments survive | Editing one block keeps `[id]: url` and `<!-- -->` | `AUTO-js` contract cases `refdef: editing a block keeps the definition and untouched bytes`, `comment: inline comment survives an edited paragraph` |
 | A14 | A save after undo writes nothing | Undo restores baseline, save is a no-op | `AUTO-js` `hybrid splice: saving after an undo writes nothing` |
+| A15 | Autosave never rebuilds the view for editor-added chrome or block-edge whitespace | The caret stays in the edited block, no rebuild notice, bytes written, the live view still matches the saved bytes | `AUTO-br` `real browser autosave: a new task item keeps the caret`, `real browser autosave: a new task item does not rebuild the view`, `real browser autosave: the new task item is written`, `real browser autosave: the task item view still matches the saved bytes`, `real browser autosave: a block ending in a space keeps the caret`, `real browser autosave: a trailing space does not rebuild the view`; `AUTO-js` `I10: an editor-added task-item class is chrome`, `I10: edited a paragraph ending in a space matches the bytes a save writes`, `I10: edited a list item ending in a space matches the bytes a save writes` |
+
+Any class hybrid adds to a live block is editor state, not content: put it in
+`CHROME_CLASSES` (see `static/js/hybrid.js`) or the saved-render check keys it,
+the next autosave sees a divergence, `rebuildFromSaved()` runs, and the caret
+jumps to the top. The task-item marker (`task-list-item`) and block-edge
+whitespace are the two that have escaped before; A15 is the guard.
 
 ### B. Enter/exit, tab switch, watcher, AI refresh
 

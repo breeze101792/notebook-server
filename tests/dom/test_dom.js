@@ -20117,6 +20117,68 @@ function check(label, cond, extra) {
       await viewLeave();
     }
 
+    // --- AC18: a block whose text ends in a space -----------------------
+    // The serializer trims a space at a block boundary. Keying it made every
+    // edited block that ended (or began) with one read as a divergence; the
+    // save then rebuilt the view, which throws the caret to the top of the
+    // note. Edit at the START so the trailing space stays at the block edge.
+    const EDGE_SOURCES = [
+      { name: "a paragraph ending in a space",
+        source: "para with trailing \n\nTail.\n",
+        edit: "p" },
+      { name: "a list item ending in a space",
+        source: "- item with trailing \n- second\n",
+        edit: "li" },
+      { name: "a list item before a nested list",
+        source: "- item with trailing \n  - nested\n",
+        edit: "li p, li" },
+      { name: "a paragraph beginning with a space",
+        source: " leading space\n\nTail.\n",
+        edit: "p" },
+    ];
+    for (const c of EDGE_SOURCES) {
+      const vc = await viewEnter(c.source);
+      const liveBefore = rc().liveSignature();
+      check("I10: untouched " + c.name + " matches the bytes on disk",
+        rc().verify(c.source, liveBefore).match,
+        describe(rc().verify(c.source, liveBefore)));
+      const target = vc.querySelector(c.edit);
+      if (!target) {
+        check("I10: edited " + c.name + " has an editable block", false);
+      } else {
+        target.insertBefore(window.document.createTextNode("Z"),
+          target.firstChild);
+        dirty(vc);
+        await tick(10);
+        const liveAfter = rc().liveSignature();
+        const would = window.NB.hybrid.domToMarkdown();
+        check("I10: edited " + c.name + " matches the bytes a save writes",
+          rc().verify(would, liveAfter).match, describe(would));
+      }
+      await viewLeave();
+    }
+
+    // An editor-added task marker class is chrome: hybrid adds
+    // class="task-list-item" when it repairs a native Enter split or converts
+    // an item with the Task button, and marked never renders it. Keying it
+    // made every newly created task item read as a divergence on the next
+    // save and rebuilt the view.
+    {
+      const source = "- [ ] open\n- [x] done\n";
+      const vc = await viewEnter(source);
+      const li = vc.querySelector("li");
+      li.classList.add("task-list-item");
+      dirty(vc);
+      await tick(10);
+      const live = rc().liveSignature();
+      const would = window.NB.hybrid.domToMarkdown();
+      check("I10: an editor-added task-item class is chrome",
+        rc().verify(would, live).match, describe(would));
+      check("I10: the task-item class is not written",
+        !/task-list-item/.test(would), would);
+      await viewLeave();
+    }
+
     // A plugin block keys by its fence source in BOTH shapes, so the
     // raw fence (what an edit leaves behind, or what a note looks like
     // before the renderer runs) keys like the rendered container.

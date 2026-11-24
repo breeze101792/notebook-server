@@ -1460,8 +1460,10 @@ check runs often and the rebuild runs only on a defect.
   id (`data-nb-id`, restored by `prepareTurndownClone` `:601-610`) stays in the
   key and in the output. The nodes are: `.code-copy-btn`, `.hybrid-lang-pill`,
   `<br data-hybrid-caret>`, `<p data-hybrid-caret>`, and an hljs `<span>` (its
-  children are kept). The values are: the zero-width placeholder and
-  `CHROME_CLASS_TOKENS` (the gesture classes). Both consumers read the same
+  children are kept). The values are: the zero-width placeholder,
+  `CHROME_CLASS_TOKENS` (the gesture classes), and `task-list-item` (the marker
+  hybrid adds when it repairs a native task-item split or converts an item with
+  the Task button, which marked never renders). Both consumers read the same
   constants, so the serializer, the hash, and the comparison cannot disagree
   about what chrome is.
 - **Collapsible whitespace is one space outside a `<pre>`.** A paragraph wrapped
@@ -1471,7 +1473,11 @@ check runs often and the rebuild runs only on a defect.
   space, so the change hash and both signature sides key the wrapped and the
   written form alike; `\u00A0` is not collapsible and is kept. Without this, every
   save of a wrapped paragraph read as a divergence, rebuilt the view, and threw
-  the caret to the top of the note. A `<pre>` subtree keeps its whitespace.
+  the caret to the top of the note. A `<pre>` subtree keeps its whitespace. A
+  space on either side of a block boundary (turndown's block elements and `<br>`)
+  is trimmed, mirroring the serializer's own collapse: otherwise a block whose
+  text ends in a space read as a divergence after an edit, with the same rebuild
+  and caret loss.
 - Only elements are compared, in order, and the count must match. Root-level
   text/comment nodes stay covered by `rootAuxCount`; blank-line runs are not
   representable in the DOM and are not compared — the written `md` is their
