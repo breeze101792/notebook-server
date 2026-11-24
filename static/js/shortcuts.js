@@ -14,7 +14,7 @@
  *   tabNext      Alt+L        -- next tab
  *   toggleEdit   Mod+Shift+E  -- enter / leave edit mode
  *   toggleHybrid Mod+E        -- enter / leave WYSIWYG mode
- *   windowCycle  Mod+W        -- cycle sidebar / editor / outline
+ *   windowCycle  Mod+W        -- cycle left panel / editor / right panel
  *   toggleTopbar Mod+Shift+T  -- hide / show the top bar
  *   toggleTabbar Mod+Shift+B  -- hide / show the file tab strip
  *   openSettings Mod+comma    -- open the Settings modal
@@ -78,7 +78,7 @@
     tabNext:      "Next tab",
     toggleEdit:   "Toggle edit mode",
     toggleHybrid: "Toggle hybrid (WYSIWYG) mode",
-    windowCycle:  "Cycle sidebar / editor / outline",
+    windowCycle:  "Cycle left panel / editor / right panel",
     toggleTopbar: "Toggle top bar",
     toggleTabbar: "Toggle tab bar",
     openSettings: "Open Settings",

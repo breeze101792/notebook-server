@@ -26,10 +26,8 @@
   pinEl.setAttribute("aria-label", "Pinned files");
   listEl.setAttribute("role", "tablist");
   listEl.setAttribute("aria-label", "Open files");
-  // The outline toggle (#outline-toggle) is a sibling of both regions, at the
-  // fixed right edge, so an overflowing tab can never overlap it. Drag/click
-  // events bubble from either region up to #tab-bar, where the delegated
-  // handlers live.
+  // Drag/click events bubble from either region up to #tab-bar, where the
+  // delegated handlers live.
   const ordered = [];          // [path] in display order (pinned tabs first)
   const openSet = new Set();   // path membership
   const pinned = new Set();    // pinned paths (always a contiguous prefix of `ordered`)

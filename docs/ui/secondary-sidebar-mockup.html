@@ -1,0 +1,2324 @@
+<!doctype html>
+<!-- Illustrative mockup: docs/ui/secondary-sidebar.md is normative, and where the two differ the doc wins. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secondary sidebar — mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A plus the shell values from
+      shell-frame.md §9.1. Nothing below is a new token; the right
+      panel reuses --side-panel-width and the right rail reuses
+      --activity-bar-width, because the two rails and the two panels
+      have the same geometry.
+   ================================================================== */
+:root {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --border: #383a45;
+  --border-strong: #7b8194;
+  --ok: #5fd49a;
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .45);
+  --m-scrim: rgba(0, 0, 0, .45);
+}
+
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --border: #d8dde4;
+  --border-strong: #78828f;
+  --ok: #16703f;
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --focus-ring-color: var(--accent);
+  --focus-ring: 2px solid var(--focus-ring-color);
+
+  --shadow-sheet: 0 12px 40px rgba(0, 0, 0, .2);
+  --m-scrim: rgba(0, 0, 0, .45);
+}
+
+/* ---- primitives (theme-independent) ---- */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+  --fw-bold: 700;
+
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+  --lh-flat: 1;
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+  --radius-circle: 50%;
+
+  --stroke-1: 1px;
+  --stroke-2: 2px;
+
+  --dur-1: 120ms;
+  --ease-out: ease-out;
+
+  --control-h-sm: 24px;
+  --control-h-md: 30px;
+  --control-h-lg: 36px;
+  --control-h-touch: 44px;
+  --icon-sm: 14px;
+  --icon-md: 16px;
+  --icon-xl: 22px;
+
+  --opacity-disabled: .45;
+  --focus-offset: 2px;
+  --focus-offset-inset: -2px;
+
+  /* shell-frame.md §1.2 and §9.1 */
+  --activity-bar-width: 48px;
+  --topbar-h: 46px;
+  --side-panel-width: 240px;
+  --aux-panel-width: 240px;
+  --aux-panel-max: 480px;
+  --tab-h: 34px;
+  --shell-pane-min: 140px;
+  --tree-indent: 18px;
+
+  /* phone */
+  --m-topbar-h: 52px;
+  --m-rail-h: 56px;
+
+  --z-chrome: 100;
+  --z-rail: 150;
+  --z-scrim: 400;
+  --z-drawer: 410;
+
+  --stg-nav-w: 180px;
+}
+
+/* ==================================================================
+   2. PAGE
+   ================================================================== */
+* { box-sizing: border-box; }
+html { background: var(--code-bg); }
+body {
+  margin: 0;
+  padding-bottom: var(--space-8);
+  background: var(--code-bg);
+  color: var(--text-primary);
+  font: var(--fw-regular) var(--text-body)/var(--lh-normal) var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+
+.page-head {
+  display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-7) var(--space-6) var(--space-5);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.page-head h1 { margin: 0; font-size: 28px; font-weight: var(--fw-semibold); letter-spacing: -.01em; line-height: 1.1; }
+.page-head .lede { margin: var(--space-2) 0 0; max-width: 78ch; color: var(--text-muted); font-size: var(--text-ui-lg); }
+.page-head .normative {
+  margin: var(--space-3) 0 0; padding: var(--space-2) var(--space-3);
+  border: var(--stroke-1) dashed var(--border-strong); border-radius: var(--radius-sm);
+  font: var(--fw-regular) var(--text-sm)/var(--lh-snug) var(--font-mono);
+  color: var(--text-muted); max-width: 78ch;
+}
+.page-head .normative b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.sec { max-width: 1360px; margin: 0 auto; padding: var(--space-6) var(--space-6) 0; }
+.sec > h2 {
+  margin: 0 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.sec > .lede { margin: 0 0 var(--space-5); max-width: 88ch; color: var(--text-muted); font-size: var(--text-ui); }
+.sec code, .notes code, .lede code {
+  font-family: var(--font-mono); font-size: .92em; color: var(--text-primary);
+  background: var(--surface-raised); border-radius: var(--radius-xs); padding: 1px 4px;
+}
+.scrollx { overflow-x: auto; padding-bottom: var(--space-2); }
+
+/* ---- board chrome ---- */
+.board {
+  border: var(--stroke-1) solid var(--border); border-radius: var(--radius-lg);
+  overflow: hidden; background: var(--surface-page); width: max-content;
+}
+.board + .board { margin-top: var(--space-4); }
+.board-head {
+  display: flex; align-items: center; gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-panel); border-bottom: var(--stroke-1) solid var(--border);
+  font: var(--fw-semibold) var(--text-2xs)/1 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.board-head .dot { width: 6px; height: 6px; border-radius: var(--radius-circle); background: var(--accent); flex: 0 0 6px; }
+.board-head .grow { flex: 1 1 auto; }
+.board-head .size { color: var(--text-muted); font-weight: var(--fw-regular); white-space: nowrap; }
+.notes { margin: var(--space-3) 0 0; padding-left: var(--space-5); color: var(--text-muted); font-size: var(--text-sm); max-width: 96ch; }
+.notes li { margin: var(--space-1) 0; }
+.notes strong { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+/* ==================================================================
+   3. THE APP
+   ================================================================== */
+.app {
+  display: flex; flex-direction: column;
+  background: var(--surface-page); color: var(--text-primary);
+  font-family: var(--font-ui); overflow: hidden; position: relative;
+}
+.app--1280 { width: 1280px; height: 800px; }
+.app--861 { width: 861px; height: 560px; }
+.app--phone { width: 390px; height: 760px; border-radius: var(--radius-lg); }
+
+/* ---- topbar (shell-frame §2) ---- */
+.tb {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: var(--space-3);
+  height: var(--topbar-h); padding: 0 var(--space-3);
+  background: var(--surface-panel); border-bottom: var(--stroke-1) solid var(--border);
+  min-width: 0;
+}
+.brand {
+  display: flex; align-items: center; gap: var(--space-1);
+  flex: 0 4 auto; min-width: 28px; max-width: 40%;
+  padding: var(--space-1); border: 0; border-radius: var(--radius-sm);
+  background: transparent; color: var(--text-primary);
+  font: var(--fw-bold) var(--text-ui-lg)/var(--lh-flat) var(--font-ui);
+  letter-spacing: .3px; cursor: pointer; text-align: left;
+}
+.brand .brand-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand svg { flex: 0 0 auto; color: var(--text-muted); }
+.brand:hover .brand-text { text-decoration: underline; text-decoration-color: var(--text-muted); text-underline-offset: 2px; }
+.brand:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.tb-div { flex: 0 0 var(--stroke-1); width: var(--stroke-1); height: var(--space-4); background: var(--border); }
+.tb-spacer { flex: 1 1 auto; }
+
+.chipwrap { display: flex; align-items: center; min-width: 0; flex: 0 1 auto; max-width: 240px; }
+.chip {
+  display: flex; align-items: center; gap: var(--space-1);
+  min-width: 0; max-width: 100%; height: var(--control-h-md);
+  padding: 0 var(--space-2);
+  border: var(--stroke-1) solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-raised); color: var(--text-primary);
+  font: var(--fw-semibold) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  cursor: pointer; text-align: left;
+}
+.chip .chip-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip svg { flex: 0 0 auto; color: var(--text-muted); }
+.chip .caret-down { transform: rotate(90deg); }
+.chip:hover { background: var(--accent-soft); border-color: var(--accent); }
+.chip:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+.tb-actions { display: flex; align-items: center; gap: var(--space-1); flex: 0 0 auto; }
+
+/* icon button — controls.md §2.2 */
+.ib {
+  display: grid; place-items: center;
+  width: var(--control-h-md); height: var(--control-h-md);
+  border: 0; border-radius: var(--radius-sm); background: transparent;
+  color: var(--text-muted); cursor: pointer; padding: 0;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.ib:hover { background: var(--accent-soft); color: var(--text-primary); }
+.ib:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.ib--sm { width: var(--control-h-sm); height: var(--control-h-sm); }
+
+/* ---- the five-column grid ---- */
+.shell {
+  flex: 1 1 auto; min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+}
+/* activity rail | left panel | editor | right panel | right rail */
+.shell--both {
+  grid-template-columns:
+    var(--activity-bar-width) var(--side-panel-width) minmax(0, 1fr)
+    var(--aux-panel-width) var(--activity-bar-width);
+}
+.shell--right-closed {
+  grid-template-columns:
+    var(--activity-bar-width) var(--side-panel-width) minmax(0, 1fr) 0
+    var(--activity-bar-width);
+}
+.shell--left-closed {
+  grid-template-columns:
+    var(--activity-bar-width) 0 minmax(0, 1fr)
+    var(--aux-panel-width) var(--activity-bar-width);
+}
+.shell--all-closed {
+  grid-template-columns:
+    var(--activity-bar-width) 0 minmax(0, 1fr) 0 var(--activity-bar-width);
+}
+.shell--floors {
+  grid-template-columns:
+    var(--activity-bar-width) var(--shell-pane-min) minmax(0, 1fr)
+    var(--shell-pane-min) var(--activity-bar-width);
+}
+.shell--no-right {
+  grid-template-columns:
+    var(--activity-bar-width) var(--side-panel-width) minmax(0, 1fr) 0 0;
+}
+
+/* ---- rails (shell-frame §3) ---- */
+.rail {
+  display: flex; flex-direction: column; align-items: center; gap: var(--space-hair);
+  padding: var(--space-2) 0;
+  background: var(--surface-panel);
+  overflow: hidden; min-width: 0;
+}
+.rail--left { border-right: var(--stroke-1) solid var(--border); }
+.rail--right { border-left: var(--stroke-1) solid var(--border); }
+.rbtn {
+  position: relative;
+  width: var(--control-h-lg); height: var(--control-h-lg);
+  display: grid; place-items: center; flex: 0 0 auto;
+  background: none; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-muted); cursor: pointer; padding: 0;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.rbtn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.rbtn.is-active { background: var(--accent-soft); color: var(--text-primary); }
+/* Indicator on the rail's outer edge: left edge of the left rail ... */
+.rail--left .rbtn.is-active::before {
+  content: ""; position: absolute;
+  left: calc(-1 * (var(--activity-bar-width) - var(--control-h-lg)) / 2);
+  top: var(--space-1); bottom: var(--space-1); width: var(--stroke-2);
+  border-radius: var(--stroke-1); background: var(--accent);
+}
+/* ... mirrored to the right edge of the right rail. */
+.rail--right .rbtn.is-active::before {
+  content: ""; position: absolute;
+  right: calc(-1 * (var(--activity-bar-width) - var(--control-h-lg)) / 2);
+  top: var(--space-1); bottom: var(--space-1); width: var(--stroke-2);
+  border-radius: var(--stroke-1); background: var(--accent);
+}
+.rbtn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.rail-views { display: flex; flex-direction: column; align-items: center; gap: var(--space-hair); }
+.rail-spacer { flex: 1 1 auto; }
+
+/* ---- panels ---- */
+.panel {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  background: var(--surface-panel); position: relative; overflow: hidden;
+}
+.panel--left { border-right: var(--stroke-1) solid var(--border); }
+.panel--right { border-left: var(--stroke-1) solid var(--border); }
+.panel.is-collapsed { border: 0; }
+.panel.is-collapsed > * { display: none; }
+
+/* panel header — shell-frame §4.2, same node on both sides */
+.phead {
+  flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between;
+  gap: var(--space-2); min-height: 34px; padding: 0 var(--space-3);
+  background: var(--surface-panel); border-bottom: var(--stroke-1) solid var(--border);
+  position: relative; z-index: 20;
+}
+.ptitle {
+  margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font: var(--fw-regular) var(--text-xs)/var(--lh-tight) var(--font-ui);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+.hact { display: flex; align-items: center; gap: var(--space-hair); flex: 0 0 auto; }
+.hbtn {
+  display: grid; place-items: center;
+  width: var(--control-h-sm); height: var(--control-h-sm);
+  border: 0; border-radius: var(--radius-sm); background: transparent;
+  color: var(--text-muted); cursor: pointer; padding: 0;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.hbtn:hover { background: var(--accent-soft); color: var(--text-primary); }
+.hbtn:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* ---- resize strip — 8 px on the inner edge (shell-frame §4.4) ---- */
+.rz {
+  position: absolute; top: 0; bottom: 0; width: var(--space-2);
+  display: flex; justify-content: center; z-index: 10;
+  cursor: col-resize; background: none; border: 0; padding: 0;
+}
+.rz--right { right: 0; }
+.rz--left { left: 0; }
+.rz span { width: var(--stroke-2); height: 100%; background: transparent; transition: background var(--dur-1) var(--ease-out); }
+.rz.is-hover span { background: var(--border-strong); }
+.rz:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+/* ---- file tree (shipped Explorer look) ---- */
+.tree {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  padding: var(--space-1);
+  margin-right: var(--space-2);
+}
+.trow {
+  display: flex; align-items: center; gap: var(--space-1);
+  min-height: 22px; padding: 0 6px; border-radius: var(--radius-xs);
+  font-size: var(--text-sm); color: var(--text-primary);
+  white-space: nowrap; cursor: pointer;
+}
+.trow:hover { background: var(--accent-soft); }
+.trow.is-current { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold); }
+.trow:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.ticon { width: var(--icon-md); height: var(--icon-md); flex: 0 0 var(--icon-md); }
+.tname { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.guide { display: inline-flex; align-self: stretch; flex: 0 0 auto; }
+.cell { position: relative; width: var(--tree-indent); height: 100%; flex: 0 0 auto; }
+.cell.vert::after,
+.cell.cnr::after,
+.cell.cnr-last::after {
+  content: ""; position: absolute; top: -3px; bottom: -3px; left: 8px;
+  width: var(--stroke-1); background: var(--border);
+}
+.cell.cnr::before,
+.cell.cnr-last::before {
+  content: ""; position: absolute; top: 50%; left: 8px; right: 0;
+  height: var(--stroke-1); background: var(--border);
+}
+.cell.cnr-last::after { bottom: 50%; }
+
+/* ---- outline view — same anatomy as the old pane (shell-frame §5.3) ---- */
+.olist {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  padding: var(--space-2) var(--space-1);
+  margin-left: var(--space-2);
+}
+.oitem {
+  display: block; padding: 3px 6px;
+  border-left: var(--stroke-2) solid transparent;
+  border-radius: 0 var(--radius-xs) var(--radius-xs) 0;
+  color: var(--text-muted); font-size: var(--text-body); line-height: var(--lh-normal);
+  text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.oitem:hover { color: var(--text-primary); background: var(--accent-soft); }
+.oitem.is-current {
+  color: var(--accent); background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.oitem:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.oitem.l2 { padding-left: calc(6px + var(--space-3)); }
+.oitem.l3 { padding-left: calc(6px + 2 * var(--space-3)); }
+
+/* ---- search view (internals owned by search-view.md) ---- */
+.searchbody {
+  flex: 1 1 auto; min-height: 0; overflow: auto;
+  display: flex; flex-direction: column; gap: var(--space-2);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-3);
+}
+.sfield {
+  display: flex; align-items: center; gap: var(--space-2);
+  height: var(--control-h-lg); padding: 0 var(--space-2);
+  border: var(--stroke-1) solid var(--border-strong); border-radius: var(--radius-sm);
+  background: var(--surface-well); color: var(--text-primary);
+  font: var(--fw-regular) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  min-width: 0;
+}
+.sfield .q { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sfield .ib { width: var(--control-h-sm); height: var(--control-h-sm); }
+.ssum { margin: 0; padding: 0 var(--space-1); font-size: var(--text-sm); color: var(--text-muted); }
+.snote { margin: 0; padding: 0 var(--space-1); font-size: var(--text-sm); color: var(--text-muted); }
+.srow {
+  display: block; padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-xs); cursor: pointer;
+}
+.srow:hover { background: var(--accent-soft); }
+.srow.is-current { background: var(--accent-soft); color: var(--text-primary); }
+.srow:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.srow-top { display: flex; align-items: baseline; gap: var(--space-2); }
+.srow-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-ui); color: inherit; }
+.srow-count { margin-left: auto; flex: 0 0 auto; font-size: var(--text-sm); color: var(--text-muted); }
+.srow-snip { margin: 2px 0 0; font-size: var(--text-sm); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow-snip mark { background: var(--accent-soft); color: var(--text-primary); border-radius: 2px; }
+
+/* ---- editor column ---- */
+.editor { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface-page); }
+/* The tab bar has no trailing control: the list runs to the editor's edge. */
+.tabs {
+  flex: 0 0 auto; display: flex; align-items: flex-end;
+  height: var(--tab-h); padding: 0 0 0 var(--space-1);
+  background: var(--surface-panel); border-bottom: var(--stroke-1) solid var(--border);
+  min-width: 0;
+}
+.tablist { flex: 1 1 auto; display: flex; align-items: flex-end; gap: var(--space-hair); min-width: 0; overflow: hidden; }
+.tab {
+  display: flex; align-items: center; gap: var(--space-2);
+  height: 28px; padding: 0 var(--space-3);
+  border: var(--stroke-1) solid var(--border); border-bottom: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: var(--surface-raised); color: var(--text-muted);
+  font-size: var(--text-ui); white-space: nowrap; max-width: 190px; flex: 0 0 auto;
+}
+.tab.is-current { background: var(--surface-page); color: var(--text-primary); border-color: var(--accent); }
+.tab:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+.reader {
+  flex: 1 1 auto; min-height: 0; overflow: hidden; position: relative;
+  padding: var(--space-5) var(--space-7);
+  background: var(--surface-page);
+}
+.doc-title { margin: 0 0 var(--space-1); font-size: 1.35rem; font-weight: var(--fw-heading); letter-spacing: -.01em; line-height: var(--lh-tight); }
+.doc-meta { margin: 0 0 var(--space-5); font: var(--fw-regular) var(--text-sm)/var(--lh-snug) var(--font-mono); color: var(--text-muted); }
+.doc-h2 { margin: var(--space-6) 0 var(--space-3); font-size: var(--text-lg); font-weight: var(--fw-heading); line-height: var(--lh-tight); }
+.rl { height: 10px; border-radius: var(--radius-xs); background: var(--border); margin: 0 0 var(--space-3); }
+.w96 { width: 96%; } .w94 { width: 94%; } .w92 { width: 92%; }
+.w88 { width: 88%; } .w84 { width: 84%; } .w70 { width: 70%; } .w60 { width: 60%; }
+.reader .cap {
+  position: absolute; right: var(--space-4); bottom: var(--space-3);
+  font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--text-muted);
+}
+
+/* ==================================================================
+   4. ANNOTATION CHROME — mockup only, never app chrome
+   ================================================================== */
+.anno {
+  display: inline-flex; align-items: center; gap: var(--space-1);
+  padding: 2px 6px;
+  border: var(--stroke-1) dashed var(--border-strong); border-radius: var(--radius-xs);
+  background: var(--surface-page); color: var(--text-muted);
+  font: var(--fw-semibold) var(--text-2xs)/1.4 var(--font-mono);
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  white-space: nowrap;
+}
+.anno--float { position: absolute; z-index: 30; }
+.anno b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+/* ---- column anatomy ---- */
+.anatomy {
+  border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md);
+  overflow: hidden; width: 1240px; max-width: 100%;
+}
+.an-top {
+  height: 34px; display: flex; align-items: center; padding: 0 var(--space-3);
+  background: var(--surface-panel); border-bottom: var(--stroke-1) solid var(--border);
+  font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-muted);
+}
+.an-cols {
+  display: grid;
+  grid-template-columns: var(--activity-bar-width) var(--side-panel-width) minmax(0, 1fr) var(--side-panel-width) var(--activity-bar-width);
+  height: 132px;
+}
+.an-seg {
+  position: relative; display: flex; flex-direction: column; gap: var(--space-1);
+  padding: var(--space-2) var(--space-2);
+  background: var(--surface-panel);
+  border-right: var(--stroke-1) solid var(--border);
+  min-width: 0; overflow: hidden;
+}
+.an-seg:last-child { border-right: 0; }
+.an-seg--editor { background: var(--surface-page); }
+.an-seg .n { font: var(--fw-semibold) var(--text-ui)/1 var(--font-mono); color: var(--text-primary); }
+.an-seg .m { font: var(--fw-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-muted); }
+.an-seg .minihead {
+  display: flex; align-items: center; height: 14px; padding: 0 4px;
+  border-bottom: var(--stroke-1) solid var(--border);
+  font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono); color: var(--text-muted);
+}
+.an-seg .minihead--tab { border-bottom-color: var(--border); }
+.an-seg .ind {
+  position: absolute; top: 18px; bottom: 18px; width: var(--stroke-2);
+  border-radius: 1px; background: var(--accent);
+}
+.an-seg .ind--left { left: 0; }
+.an-seg .ind--right { right: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: var(--space-4); margin: var(--space-3) 0 0; font-size: var(--text-sm); color: var(--text-muted); }
+.legend i { display: inline-block; width: 14px; height: 2px; margin-right: var(--space-1); vertical-align: middle; background: var(--accent); }
+.legend i.hair { background: var(--border); height: 1px; }
+
+/* ---- measure bar under a board (px per column) ---- */
+.measure {
+  display: grid; border-top: var(--stroke-1) solid var(--border);
+  background: var(--surface-panel);
+}
+.measure--floors {
+  width: 861px;
+  grid-template-columns: var(--activity-bar-width) var(--shell-pane-min) minmax(0, 1fr) var(--shell-pane-min) var(--activity-bar-width);
+}
+.measure span {
+  padding: var(--space-1) 0; text-align: center; min-width: 0;
+  border-right: var(--stroke-1) solid var(--border);
+  font: var(--fw-regular) var(--text-2xs)/1 var(--font-mono);
+  letter-spacing: var(--tracking-label); color: var(--text-muted);
+  white-space: nowrap; overflow: hidden;
+}
+.measure span:last-child { border-right: 0; }
+
+/* ---- phone pair: closed rail, then the drawer ---- */
+.phone-pair { display: flex; gap: var(--space-4); align-items: flex-start; }
+.phone-pair .board + .board { margin-top: 0; }
+.capbar {
+  padding: var(--space-2) var(--space-3); border-top: var(--stroke-1) solid var(--border);
+  background: var(--surface-panel);
+}
+
+/* ---- phone board (shell-frame §6) ---- */
+.p-tb {
+  position: relative; z-index: var(--z-chrome);
+  flex: 0 0 auto; display: flex; align-items: center; gap: var(--space-1);
+  height: var(--m-topbar-h); padding: 0 var(--space-1);
+  background: var(--surface-panel); border-bottom: var(--stroke-1) solid var(--border);
+}
+.p-tb .chip { width: var(--control-h-touch); height: var(--control-h-touch); padding: 0; justify-content: center; gap: 0; }
+.p-tb .chip svg { width: 20px; height: 20px; }
+.p-target {
+  width: var(--control-h-touch); height: var(--control-h-touch); flex: 0 0 var(--control-h-touch);
+  display: grid; place-items: center; border: 0; border-radius: var(--radius-md);
+  background: none; color: var(--text-primary); cursor: pointer; padding: 0;
+}
+.p-target svg { width: var(--icon-xl); height: var(--icon-xl); }
+.p-target[disabled] { color: var(--text-muted); opacity: var(--opacity-disabled); cursor: default; }
+.p-target:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.p-title {
+  flex: 1 1 auto; min-width: 0; height: var(--control-h-touch);
+  display: block; padding: 0 var(--space-1);
+  border: 0; border-radius: var(--radius-md); background: none;
+  color: var(--text-primary); font: var(--fw-semibold) 16px/1.25 var(--font-ui);
+  text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+}
+.p-reader { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: var(--space-4) var(--space-5) calc(var(--m-rail-h) + var(--space-6)); }
+.p-rail {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: var(--z-rail);
+  display: flex; height: var(--m-rail-h); align-items: stretch;
+  background: var(--surface-panel); border-top: var(--stroke-1) solid var(--border);
+}
+.p-rail .rbtn {
+  width: auto; height: var(--m-rail-h); flex: 1 1 0; min-width: var(--control-h-touch);
+  border-radius: 0;
+}
+.p-rail .rbtn svg { width: var(--icon-xl); height: var(--icon-xl); }
+.p-rail .rbtn:hover { background: none; }
+.p-rail .rbtn.is-active::before {
+  content: ""; position: absolute;
+  left: 24%; right: 24%; top: 0; bottom: auto; width: auto; height: var(--stroke-2);
+  background: var(--accent);
+}
+.p-scrim { position: absolute; inset: 0; z-index: var(--z-scrim); background: var(--m-scrim); }
+.p-drawer {
+  position: absolute; top: 0; bottom: 0; left: 0; width: 335px; z-index: var(--z-drawer);
+  display: flex; flex-direction: column; background: var(--surface-panel);
+  border-right: var(--stroke-1) solid var(--border); box-shadow: var(--shadow-sheet);
+}
+.p-drawer .phead { min-height: var(--m-topbar-h); padding: 0 var(--space-1) 0 var(--space-4); }
+.p-drawer .ptitle { font-size: 12px; }
+.p-status {
+  flex: 0 0 44px; display: flex; align-items: center; gap: var(--space-2);
+  padding: 0 var(--space-3); border-top: var(--stroke-1) solid var(--border);
+  font-size: 12px; color: var(--text-muted); white-space: nowrap; overflow: hidden;
+}
+.p-status .origin { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); }
+.p-dot { width: 8px; height: 8px; flex: 0 0 8px; border-radius: var(--radius-circle); background: var(--ok); }
+.p-status .word { margin-left: auto; }
+
+/* ==================================================================
+   5. SETTINGS — Appearance → Activity bar (settings-modal.md chrome,
+      rows per activity-bar-order.md §2, plus the new side control)
+   ================================================================== */
+.smodal {
+  width: 1000px; height: 680px;
+  display: flex; flex-direction: column;
+  background: var(--surface-panel); color: var(--text-primary);
+  overflow: hidden;
+}
+.shead {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--space-2);
+  padding: 14px 18px; border-bottom: var(--stroke-1) solid var(--border); flex: 0 0 auto;
+}
+.shead h2 { margin: 0; font-size: var(--text-lg); font-weight: var(--fw-semibold); letter-spacing: .3px; }
+.sbody { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }
+.snav {
+  flex: 0 0 var(--stg-nav-w); display: flex; flex-direction: column; gap: var(--space-hair);
+  padding: var(--space-3) var(--space-2);
+  background: var(--surface-page); border-right: var(--stroke-1) solid var(--border);
+}
+.snav-item {
+  display: flex; align-items: center; gap: var(--space-3);
+  min-height: var(--control-h-md); padding: var(--space-1) var(--space-2);
+  background: transparent; border: 0; border-radius: var(--radius-sm);
+  color: var(--text-muted); font: var(--fw-regular) var(--text-ui)/var(--lh-snug) var(--font-ui);
+  text-align: left; white-space: nowrap; cursor: pointer;
+}
+.snav-item.is-active {
+  background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold);
+  box-shadow: inset var(--stroke-2) 0 0 var(--accent);
+}
+.snav-item svg { flex: 0 0 var(--icon-md); }
+.section { flex: 1 1 auto; min-width: 0; overflow: hidden; padding: var(--space-3) 18px 0; }
+.section h3 {
+  margin: 0 0 var(--space-3);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-ui);
+  letter-spacing: .8px; text-transform: uppercase; color: var(--text-muted);
+}
+.sformtitle {
+  margin: var(--space-4) 0 var(--space-2);
+  font: var(--fw-semibold) var(--text-xs)/1.2 var(--font-ui);
+  letter-spacing: .7px; text-transform: uppercase; color: var(--text-muted);
+}
+.shelp { margin: 0 0 var(--space-3); color: var(--text-muted); font-size: var(--text-ui); line-height: var(--lh-normal); max-width: 78ch; }
+.shelp b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+.orowlist { display: flex; flex-direction: column; gap: var(--space-2); margin: var(--space-1) 0 var(--space-4); }
+.orow {
+  display: flex; align-items: center; gap: var(--space-3);
+  height: 40px; padding: var(--space-1) var(--space-3);
+  background: var(--surface-raised);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+}
+.ogrip {
+  flex: 0 0 auto; display: grid; place-items: center;
+  width: var(--control-h-sm); height: var(--control-h-sm);
+  color: var(--text-muted); cursor: grab;
+}
+.ogrip svg { width: var(--icon-sm); height: var(--icon-sm); }
+.oicon { flex: 0 0 auto; display: grid; place-items: center; width: var(--icon-sm); height: var(--icon-sm); color: var(--text-muted); }
+.oicon svg { width: var(--icon-sm); height: var(--icon-sm); }
+.olabel { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-ui-lg); color: var(--text-primary); }
+.oactions { display: flex; align-items: center; gap: var(--space-hair); flex: 0 0 auto; }
+
+/* segmented control — controls.md §2.8, 30 high, inset ring */
+.oseg {
+  display: inline-flex; align-items: stretch; flex: 0 0 auto;
+  height: var(--control-h-md);
+  border: var(--stroke-1) solid var(--border-strong); border-radius: var(--radius-pill);
+  background: var(--surface-raised); overflow: hidden;
+}
+.oseg button {
+  appearance: none; border: 0; border-left: var(--stroke-1) solid var(--border);
+  background: transparent; color: var(--text-muted);
+  min-width: var(--control-h-lg); padding: 0 var(--space-2);
+  font: var(--fw-regular) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  cursor: pointer;
+}
+.oseg button:first-child { border-left: 0; }
+.oseg button[aria-pressed="true"] {
+  background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold);
+}
+.oseg button.is-hover { background: var(--accent-soft); color: var(--text-primary); }
+.oseg button:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+.oseg.is-focus button.is-target { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
+.saction {
+  height: var(--control-h-md); padding: 0 var(--space-3);
+  background: var(--surface-raised); color: var(--text-primary);
+  border: var(--stroke-1) solid var(--border-strong); border-radius: var(--radius-sm);
+  font: var(--fw-regular) var(--text-ui)/var(--lh-flat) var(--font-ui);
+  cursor: pointer; white-space: nowrap;
+}
+.saction:hover { background: var(--accent-soft); border-color: var(--accent); }
+.saction:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }
+.otoggle { min-width: calc(var(--control-h-md) * 2); padding: 0 var(--space-2); }
+.sfoot {
+  flex: 0 0 auto; display: flex; justify-content: flex-end; gap: var(--space-2);
+  padding: 12px 18px; border-top: var(--stroke-1) solid var(--border);
+}
+
+/* ---- state specimens for the segmented control ---- */
+.states { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--space-4); margin-top: var(--space-2); }
+.state {
+  margin: 0; padding: var(--space-4);
+  border: var(--stroke-1) solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+.state figcaption { margin-top: var(--space-3); font-size: var(--text-sm); color: var(--text-muted); }
+.state figcaption b { display: block; color: var(--text-primary); font-weight: var(--fw-semibold); font-size: var(--text-ui); margin-bottom: 2px; }
+.state-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; min-height: 40px; }
+.hint { margin: var(--space-2) 0 0; font: var(--fw-regular) var(--text-2xs)/1.5 var(--font-mono); color: var(--text-muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+</style>
+</head>
+<body>
+
+<!-- Sprite symbols copied verbatim from templates/index.html:51-293. -->
+<svg class="icon-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden">
+  <defs>
+    <symbol id="nb-icon-folder" viewBox="0 0 16 16">
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1l1.6 1.7h4.3A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="#EFA93B"/>
+      <path d="M2 6.4h12v5.1A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="#F7C15C"/>
+    </symbol>
+    <symbol id="nb-icon-folder-open" viewBox="0 0 16 16">
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3.1l1.6 1.7h3.9a1.2 1.2 0 0 1 1.16.86l.6 2.1H2z" fill="#EFA93B"/>
+      <path d="M2.4 8.2h11.5a.9.9 0 0 1 .87 1.16l-.9 3.1A1.5 1.5 0 0 1 12.1 13H3.9a1.5 1.5 0 0 1-1.44-1.13l-.9-3.1A.9.9 0 0 1 2.4 8.2z" fill="#F7C15C"/>
+    </symbol>
+    <symbol id="nb-icon-file" viewBox="0 0 16 16">
+      <path d="M4 1.8h4.7L13 6.1V14a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V2.6A.8.8 0 0 1 4 1.8z" fill="#DCE6FF" stroke="#6C9CFF" stroke-width="1" stroke-linejoin="round"/>
+      <path d="M8.7 1.8 13 6.1H9.5A.8.8 0 0 1 8.7 5.3z" fill="#6C9CFF"/>
+      <path d="M5.6 8.4h4.8M5.6 10.6h4.8" stroke="#6C9CFF" stroke-width="1" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-pin" viewBox="0 0 16 16">
+      <path d="M6 2.5h4l-.6 3.2 2.1 2v1H4.5v-1l2.1-2z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      <path d="M8 8.7v4.8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-workspace" viewBox="0 0 16 16">
+      <rect x="2.4" y="4.4" width="9.4" height="9.2" rx="1.8" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <path d="M5 3.2h6.4a1.6 1.6 0 0 1 1.6 1.6v6.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-session" viewBox="0 0 16 16">
+      <rect x="2.5" y="3.3" width="11" height="3.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <rect x="2.5" y="8.9" width="11" height="3.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+    </symbol>
+    <symbol id="nb-icon-tabs" viewBox="0 0 16 16">
+      <rect x="3.4" y="2.6" width="9.2" height="10.8" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.3"/>
+      <path d="M5.7 6.1h4.6M5.7 8.3h4.6M5.7 10.5h2.9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-explorer" viewBox="0 0 16 16">
+      <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3l1.6 1.7h4.4A1.5 1.5 0 0 1 14 6.2v5.3A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-bookmark" viewBox="0 0 16 16">
+      <path d="M4 2.8h8v10.4l-4-2.6-4 2.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-clock" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M8 4.8V8l2.2 1.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-search" viewBox="0 0 16 16">
+      <circle cx="6.8" cy="6.8" r="4.3" fill="none" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M10 10l3.4 3.4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-ai" viewBox="0 0 16 16">
+      <path d="M8 2.2l1.3 3.5L12.8 7l-3.5 1.3L8 11.8 6.7 8.3 3.2 7l3.5-1.3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-graph" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="1.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="3.2" cy="4.2" r="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="12.8" cy="4.2" r="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="3.2" cy="11.8" r="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <circle cx="12.8" cy="11.8" r="1.2" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M4.2 4.9 6.7 6.8M11.8 4.9 9.3 6.8M4.2 11.1 6.7 9.2M11.8 11.1 9.3 9.2" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-grip" viewBox="0 0 16 16">
+      <path d="M6 4h.01M10 4h.01M6 8h.01M10 8h.01M6 12h.01M10 12h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-logout" viewBox="0 0 16 16">
+      <path d="M9.5 3H12a1.3 1.3 0 0 1 1.3 1.3v7.4A1.3 1.3 0 0 1 12 13H9.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+      <path d="M6.5 5.2 3.8 8l2.7 2.8M4 8h5.4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-settings" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="2.1" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M8 2.2v1.6M8 12.2v1.6M2.2 8h1.6M12.2 8h1.6M3.9 3.9l1.1 1.1M11 11l1.1 1.1M12.1 3.9 11 5M5 11l-1.1 1.1" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-pencil" viewBox="0 0 16 16">
+      <path d="M3 13l.7-3 7.1-7.1a1.4 1.4 0 0 1 2 2L5.7 12z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M10 3.6l2.4 2.4" stroke="currentColor" stroke-width="1.4"/>
+    </symbol>
+    <symbol id="nb-icon-code" viewBox="0 0 16 16">
+      <path d="M5.6 4.5 2.2 8l3.4 3.5M10.4 4.5 13.8 8l-3.4 3.5M9 3.5 7 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-plus" viewBox="0 0 16 16">
+      <path d="M8 3.2v9.6M3.2 8h9.6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-more" viewBox="0 0 16 16">
+      <circle cx="3.2" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.8" cy="8" r="1.2" fill="currentColor"/>
+    </symbol>
+    <symbol id="nb-icon-back" viewBox="0 0 16 16">
+      <path d="M12.5 8H4M7 4.5 3.5 8 7 11.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-outline" viewBox="0 0 16 16">
+      <path d="M3 4h10M3 8h10M3 12h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      <circle cx="1.6" cy="4" r=".8" fill="currentColor"/><circle cx="1.6" cy="8" r=".8" fill="currentColor"/><circle cx="1.6" cy="12" r=".8" fill="currentColor"/>
+    </symbol>
+    <symbol id="nb-icon-books" viewBox="0 0 16 16">
+      <path d="M3 3.2h8.4v9.6H4.2A1.2 1.2 0 0 1 3 11.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <path d="M3 11.6A1.2 1.2 0 0 1 4.2 10.4H13M5 3.2v7.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-palette" viewBox="0 0 16 16">
+      <path d="M8 2.6a5.4 5.4 0 1 0 0 10.8c.8 0 1.2-.6 1.2-1.2 0-.7-.5-1.1-.5-1.7 0-.6.5-1.1 1.2-1.1h1.2A2.3 2.3 0 0 0 13.4 7C12.9 4.4 10.7 2.6 8 2.6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+      <circle cx="5.4" cy="6" r=".9" fill="currentColor"/><circle cx="8" cy="4.8" r=".9" fill="currentColor"/><circle cx="10.4" cy="6" r=".9" fill="currentColor"/>
+    </symbol>
+    <symbol id="nb-icon-keyboard" viewBox="0 0 16 16">
+      <rect x="2" y="5" width="12" height="7" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M4.4 7.2h.1M6.8 7.2h.1M9.2 7.2h.1M11.6 7.2h.1M4.4 9.6h.1M11.6 9.6h.1M6.4 9.6h3.2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-lock" viewBox="0 0 16 16">
+      <rect x="3.4" y="7" width="9.2" height="6.4" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M5.4 7V5.2a2.6 2.6 0 0 1 5.2 0V7" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-info" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/>
+      <path d="M8 7.2v3.4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="8" cy="5.4" r=".9" fill="currentColor"/>
+    </symbol>
+    <symbol id="nb-icon-close" viewBox="0 0 16 16">
+      <path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+    <symbol id="nb-icon-refresh" viewBox="0 0 16 16">
+      <path d="M12.8 6.1A5 5 0 1 0 13 9.6M13 3.2v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-chevron-left" viewBox="0 0 16 16">
+      <path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-chevron-right" viewBox="0 0 16 16">
+      <path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="nb-icon-menu" viewBox="0 0 16 16">
+      <path d="M2.6 4.4h10.8M2.6 8h10.8M2.6 11.6h10.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<header class="page-head">
+  <div>
+    <p class="eyebrow">docs/ui/secondary-sidebar-mockup.html</p>
+    <h1>Secondary sidebar</h1>
+    <p class="lede">Two rails, two panels, both open at once. The grid becomes five columns; the
+      Outline becomes a normal view in the right panel. Boards A–J at the shipped numbers, dark and
+      light where it matters.</p>
+    <p class="normative"><b>Illustrative.</b> The normative spec is
+      <code>docs/ui/secondary-sidebar.md</code>; where this mockup and that document differ, the
+      document wins. Tokens are <code>foundations.md</code> Appendix A; frame values are
+      <code>shell-frame.md</code> §1–§5.</p>
+  </div>
+</header>
+
+<!-- ============================================================
+     1. THE GRID
+     ============================================================ -->
+<section class="sec">
+  <h2>1 · The five-column grid</h2>
+  <p class="lede">Order left to right: activity rail 48, left panel 240, editor 1fr, right panel 240,
+    right rail 48. The right rail is the far-right edge column; the right panel sits between the
+    editor and that rail. Only the two panels resize, each from its inner edge.</p>
+
+  <div class="anatomy" role="img" aria-label="Five columns: 48 px left rail, 240 px left panel, editor, 240 px right panel, 48 px right rail; panel headers 34 px">
+    <div class="an-top">#topbar 46 — identity │ context │ actions</div>
+    <div class="an-cols">
+      <div class="an-seg">
+        <span class="n">48</span>
+        <span class="m">left<br>rail<br>fixed</span>
+        <span class="ind ind--left" aria-hidden="true"></span>
+      </div>
+      <div class="an-seg">
+        <span class="n">240</span>
+        <span class="minihead">header 34</span>
+        <span class="m">left panel<br>140 … min(480, 45 %)<br>resizes right</span>
+      </div>
+      <div class="an-seg an-seg--editor">
+        <span class="n">1fr</span>
+        <span class="minihead minihead--tab">tab bar 34</span>
+        <span class="m">editor<br>tab list to the edge<br>reader ≥ 352</span>
+      </div>
+      <div class="an-seg">
+        <span class="n">240</span>
+        <span class="minihead">header 34</span>
+        <span class="m">right panel<br>140 … min(480, 45 %)<br>resizes left</span>
+      </div>
+      <div class="an-seg">
+        <span class="n">48</span>
+        <span class="m">right<br>rail<br>fixed</span>
+        <span class="ind ind--right" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+  <p class="legend"><span><i></i>2 px active indicator on the rail's outer edge</span>
+    <span><i class="hair"></i>1 px <code>--border</code> hairline</span>
+    <span>left rail: views plus actions</span>
+    <span>right rail: view icons only</span></p>
+
+  <ul class="notes">
+    <li><strong>Borders.</strong> The left panel keeps its right border. The right panel and the right
+      rail each carry a left border, so the seam between editor and right panel is drawn once and the
+      seam between right panel and right rail is drawn once.</li>
+    <li><strong>Indicator mirrors.</strong> Left rail: the bar sits on the rail's left edge
+      (<code>left: -6px</code>, the 6 px button gutter). Right rail: the same bar sits on the rail's
+      right edge (<code>right: -6px</code>). Same 2 px <code>--accent</code>, same 4 px top/bottom inset.</li>
+    <li><strong>Headers.</strong> One 34 px header per panel, title uppercase <code>--text-xs</code>
+      muted, actions 24 px. The left panel's collapse chevron is <code>nb-icon-chevron-left</code>
+      (toward its rail); the right panel's is <code>nb-icon-chevron-right</code> (toward its rail).</li>
+    <li><strong>Resize edges.</strong> Both strips are 8 px, on the editor side — right on the left
+      panel, left on the right panel. Minimum <code>--shell-pane-min</code> 140; right panel default 240.</li>
+    <li><strong>Width tokens.</strong> The left panel reads <code>--side-panel-width</code>; the right
+      panel reads <code>--aux-panel-width</code>; both rails read <code>--activity-bar-width</code>.
+      Each panel clamps to <code>min(480, 45 % of the budget)</code>, and the budget subtracts both
+      rails and the 352 px reader floor.</li>
+    <li><strong>No tab-bar outline control.</strong> The old toggle is gone; the tab list
+      runs to the editor's right edge. The Outline's only rail icon is the one in the right rail.</li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     2. DEFAULT — both panels open
+     ============================================================ -->
+<section class="sec">
+  <h2>2 · Both panels open — the default</h2>
+  <p class="lede">Files on the left, Outline on the right. The right rail carries one view icon and no
+    actions; Settings, Graph and Log out stay on the left rail with the other views.</p>
+
+  <div class="scrollx">
+    <!-- ---------- A. dark ---------- -->
+    <div class="board" role="figure" aria-labelledby="fig1">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig1">A · Both panels open — Files left, Outline right</span><span class="grow"></span><span class="size">1280 × 800 · dark</span></div>
+      <div class="app app--1280">
+        <header class="tb">
+          <button class="brand" type="button" title="Field notebook — reload content from disk">
+            <svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg>
+            <span class="brand-text">Field notebook</span>
+            <span class="sr-only"> — reload content from disk</span>
+          </button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false" title="Lab notebook — ~/notes/lab">
+              <svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg>
+              <span class="sr-only">Workspace: </span><span class="chip-name">Lab notebook</span>
+              <svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg>
+            </button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false" title="Session: Bench tests">
+              <svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg>
+              <span class="sr-only">Session: </span><span class="chip-name">Bench tests</span>
+              <svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg>
+            </button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false" title="WYSIWYG edit mode"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source" title="Edit Markdown source (Ctrl/Cmd+Shift+E)"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--both">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer" title="Explorer"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions" title="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders" title="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks" title="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files" title="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Search" title="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs" title="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant" title="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view" title="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out" title="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings" title="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left" aria-labelledby="a-panel-title">
+            <div class="phead">
+              <h2 class="ptitle" id="a-panel-title">Files</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Top section: Pinned folders" title="Top section: Pinned folders. Click to show Bookmarks."><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+                <button class="hbtn" type="button" aria-label="Reload file tree from disk" title="Reload file tree from disk"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="hbtn" type="button" aria-label="Collapse panel" title="Collapse files (left arrow)"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="tree" role="tree" aria-label="Files">
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="Welcome.md">Welcome.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+                <span class="tname" title="hardware">hardware</span>
+              </div>
+              <div class="trow is-current" role="treeitem" aria-level="2" aria-selected="true" tabindex="0">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/pinout.md">pinout.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/i2c-timing.md">i2c-timing.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/power-budget.md">power-budget.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="firmware">firmware</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="docs">docs</span>
+              </div>
+            </div>
+            <button class="rz rz--right" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Files panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">i2c-timing.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">hardware/pinout.md</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div><div class="rl w70"></div>
+              <span class="cap">reader — reader.md</span>
+            </div>
+          </section>
+
+          <aside class="panel panel--right" aria-label="Right side panel">
+            <div class="phead">
+              <h2 class="ptitle" id="a-outline-title">Outline</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Collapse outline" title="Collapse outline (right arrow)"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+              </div>
+            </div>
+            <nav class="olist" aria-label="Outline">
+              <a class="oitem" href="#">Power budget</a>
+              <a class="oitem is-current" href="#" aria-current="location">Rail decoupling</a>
+              <a class="oitem l2" href="#">Bulk capacitors</a>
+              <a class="oitem l2" href="#">Ferrite beads</a>
+              <a class="oitem" href="#">I²C timing</a>
+              <a class="oitem l2" href="#">Bus recovery</a>
+              <a class="oitem" href="#">BME280 bring-up</a>
+              <a class="oitem l3" href="#">Calibration</a>
+            </nav>
+            <button class="rz rz--left" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Outline panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <nav class="rail rail--right" aria-label="Right activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Outline" title="Outline"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-outline"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+          </nav>
+        </div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><strong>Default sides.</strong> Left: Explorer, Sessions, Pinned, Bookmarks, Recent, Search,
+        Tabs, AI. Right: Outline. Each view's side is a Settings value, not markup — board F moves a
+        view across and board G empties a side.</li>
+      <li><strong>Tab bar.</strong> Two tabs, no trailing control. The tab list occupies the rest of
+        the 34 px row, up to the editor's right edge.</li>
+      <li><strong>Outline is a view.</strong> <code>.side-panel-view</code> with its own
+        <code>.panel-header</code> (chevron-right) and a heading list: 12 px indent per
+        level above 1, a 2 px accent bar on the current row, body rows muted, weight 400 throughout.</li>
+      <li><strong>Right rail.</strong> View icons only. No Settings, no Log out, no Graph — those are
+        actions and stay on the left rail.</li>
+    </ul>
+
+    <!-- ---------- B. light ---------- -->
+    <div class="board theme-light" role="figure" aria-labelledby="fig2">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig2">B · Both panels open — light</span><span class="grow"></span><span class="size">1280 × 800 · light</span></div>
+      <div class="app app--1280">
+        <header class="tb">
+          <button class="brand" type="button" title="Field notebook — reload content from disk">
+            <svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg>
+            <span class="brand-text">Field notebook</span>
+          </button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false" title="Lab notebook — ~/notes/lab">
+              <svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg>
+              <span class="chip-name">Lab notebook</span>
+              <svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg>
+            </button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false" title="Session: Bench tests">
+              <svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg>
+              <span class="chip-name">Bench tests</span>
+              <svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg>
+            </button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--both">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left" aria-labelledby="b-panel-title">
+            <div class="phead">
+              <h2 class="ptitle" id="b-panel-title">Files</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Reload file tree from disk"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="hbtn" type="button" aria-label="Collapse panel"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="tree" role="tree" aria-label="Files">
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="Welcome.md">Welcome.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+                <span class="tname" title="hardware">hardware</span>
+              </div>
+              <div class="trow is-current" role="treeitem" aria-level="2" aria-selected="true" tabindex="0">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/pinout.md">pinout.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/i2c-timing.md">i2c-timing.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/power-budget.md">power-budget.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="firmware">firmware</span>
+              </div>
+            </div>
+            <button class="rz rz--right" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Files panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">i2c-timing.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">hardware/pinout.md</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div><div class="rl w70"></div>
+              <span class="cap">reader — reader.md</span>
+            </div>
+          </section>
+
+          <aside class="panel panel--right" aria-label="Right side panel">
+            <div class="phead">
+              <h2 class="ptitle" id="b-outline-title">Outline</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Collapse outline" title="Collapse outline (right arrow)"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+              </div>
+            </div>
+            <nav class="olist" aria-label="Outline">
+              <a class="oitem" href="#">Power budget</a>
+              <a class="oitem is-current" href="#" aria-current="location">Rail decoupling</a>
+              <a class="oitem l2" href="#">Bulk capacitors</a>
+              <a class="oitem l2" href="#">Ferrite beads</a>
+              <a class="oitem" href="#">I²C timing</a>
+              <a class="oitem l2" href="#">Bus recovery</a>
+            </nav>
+            <button class="rz rz--left" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Outline panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <nav class="rail rail--right" aria-label="Right activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Outline"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-outline"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li><strong>Same geometry, different colour.</strong> No shadow on the chrome; each seam is one
+      1 px <code>--border</code>. <code>--text-muted</code> clears 4.5:1 on
+      <code>--surface-panel</code> in both themes, so the panel titles and outline rows stay readable
+      without a second grey.</li>
+    <li><strong>The light rail indicator</strong> is <code>--accent</code> <code>#2f5fd0</code>, 5.34:1
+      on the panel — the same bar, not a different one.</li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     3. COLLAPSE
+     ============================================================ -->
+<section class="sec">
+  <h2>3 · The four collapse states</h2>
+  <p class="lede">A panel collapses to 0 width and its rail keeps the view lit. On the right, the rail
+    itself stays until no view is homed there (board G); on the left it always stays because Settings
+    lives on it.</p>
+
+  <div class="scrollx">
+    <!-- ---------- C. right panel collapsed ---------- -->
+    <div class="board" role="figure" aria-labelledby="fig3">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig3">C · Right panel collapsed — Outline still lit</span><span class="grow"></span><span class="size">1280 × 800</span></div>
+      <div class="app app--1280">
+        <header class="tb">
+          <button class="brand" type="button"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg><span class="brand-text">Field notebook</span></button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg><span class="chip-name">Lab notebook</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg><span class="chip-name">Bench tests</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--right-closed">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left" aria-labelledby="c-panel-title">
+            <div class="phead">
+              <h2 class="ptitle" id="c-panel-title">Files</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Reload file tree from disk"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="hbtn" type="button" aria-label="Collapse panel"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="tree" role="tree" aria-label="Files">
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="Welcome.md">Welcome.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+                <span class="tname" title="hardware">hardware</span>
+              </div>
+              <div class="trow is-current" role="treeitem" aria-level="2" aria-selected="true" tabindex="0">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/pinout.md">pinout.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/i2c-timing.md">i2c-timing.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="firmware">firmware</span>
+              </div>
+            </div>
+            <button class="rz rz--right" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Files panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">i2c-timing.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">hardware/pinout.md · editor 944</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div><div class="rl w70"></div>
+              <span class="cap">reader — reader.md</span>
+            </div>
+          </section>
+
+          <aside class="panel panel--right is-collapsed" aria-hidden="true"></aside>
+
+          <nav class="rail rail--right" aria-label="Right activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="false" aria-label="Outline" title="Outline (panel collapsed)"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-outline"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+          </nav>
+        </div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><strong>The right panel is 0; the right rail is 48.</strong> Columns 48 | 240 | 944 | 0 | 48.
+        The Outline button stays lit and now reports <code>aria-expanded="false"</code>; pressing it
+        re-expands the panel to its saved width.</li>
+      <li>The right rail keeps its left border, which is now the seam with the editor. The collapsed
+        panel draws no border and has no focusable child.</li>
+    </ul>
+
+    <!-- ---------- D. left panel collapsed ---------- -->
+    <div class="board" role="figure" aria-labelledby="fig4">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig4">D · Left panel collapsed — right panel open</span><span class="grow"></span><span class="size">1280 × 800</span></div>
+      <div class="app app--1280">
+        <header class="tb">
+          <button class="brand" type="button"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg><span class="brand-text">Field notebook</span></button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg><span class="chip-name">Lab notebook</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg><span class="chip-name">Bench tests</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--left-closed">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="false" aria-label="Explorer" title="Explorer (panel collapsed)"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left is-collapsed" aria-hidden="true"></aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">i2c-timing.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">hardware/pinout.md · editor 944</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div><div class="rl w70"></div>
+              <span class="cap">reader — reader.md</span>
+            </div>
+          </section>
+
+          <aside class="panel panel--right" aria-label="Right side panel">
+            <div class="phead">
+              <h2 class="ptitle" id="d-outline-title">Outline</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Collapse outline" title="Collapse outline (right arrow)"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+              </div>
+            </div>
+            <nav class="olist" aria-label="Outline">
+              <a class="oitem" href="#">Power budget</a>
+              <a class="oitem is-current" href="#" aria-current="location">Rail decoupling</a>
+              <a class="oitem l2" href="#">Bulk capacitors</a>
+              <a class="oitem l2" href="#">Ferrite beads</a>
+              <a class="oitem" href="#">I²C timing</a>
+              <a class="oitem l2" href="#">Bus recovery</a>
+            </nav>
+            <button class="rz rz--left" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Outline panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <nav class="rail rail--right" aria-label="Right activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Outline"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-outline"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+          </nav>
+        </div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><strong>Independent panels.</strong> Columns 48 | 0 | 944 | 240 | 48. Collapsing the left
+        panel leaves the right one untouched: the two collapsed flags and the two saved widths never
+        share a key.</li>
+      <li>The Explorer icon stays lit with <code>aria-expanded="false"</code>; the left rail still
+        carries Graph, Log out and Settings while the panel is at 0.</li>
+    </ul>
+
+    <!-- ---------- E. both collapsed ---------- -->
+    <div class="board" role="figure" aria-labelledby="fig5">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig5">E · Both panels collapsed — editor full width</span><span class="grow"></span><span class="size">1280 × 800</span></div>
+      <div class="app app--1280">
+        <header class="tb">
+          <button class="brand" type="button"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg><span class="brand-text">Field notebook</span></button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg><span class="chip-name">Lab notebook</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg><span class="chip-name">Bench tests</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--all-closed">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="false" aria-label="Explorer" title="Explorer (panel collapsed)"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left is-collapsed" aria-hidden="true"></aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">i2c-timing.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">power-budget.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">hardware/pinout.md · editor 1184 — both rails, no panels</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div><div class="rl w70"></div>
+              <span class="cap">reader — reader.md</span>
+            </div>
+          </section>
+
+          <aside class="panel panel--right is-collapsed" aria-hidden="true"></aside>
+
+          <nav class="rail rail--right" aria-label="Right activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="false" aria-label="Outline" title="Outline (panel collapsed)"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-outline"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+          </nav>
+        </div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><strong>Columns 48 | 0 | 1184 | 0 | 48.</strong> Both rails stay, both panels are gone, and
+        the two lit icons are the way back. Reading width is unchanged: the reader still bounds its own
+        text, so a wider editor is margin, not a longer line.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================
+     4. SIDES ARE A SETTING
+     ============================================================ -->
+<section class="sec">
+  <h2>4 · Any view can move</h2>
+  <p class="lede">The side is a property of the view, stored per view in Settings. The rail draws only
+    views homed to it, in the saved order; a side with no visible views draws neither rail nor panel.</p>
+
+  <div class="scrollx">
+    <!-- ---------- F. side swap ---------- -->
+    <div class="board" role="figure" aria-labelledby="fig6">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig6">F · Side swap — Search left, Explorer right</span><span class="grow"></span><span class="size">1280 × 800</span></div>
+      <div class="app app--1280">
+        <header class="tb">
+          <button class="brand" type="button"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg><span class="brand-text">Field notebook</span></button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg><span class="chip-name">Lab notebook</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg><span class="chip-name">Bench tests</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--both">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left" aria-labelledby="f-panel-title">
+            <div class="phead">
+              <h2 class="ptitle" id="f-panel-title">Search</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Collapse panel" title="Collapse panel"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="searchbody">
+              <div class="sfield">
+                <svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-search"/></svg>
+                <span class="q">rail</span>
+                <button class="ib" type="button" aria-label="Clear search" title="Clear search"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+              </div>
+              <p class="ssum">2 notes · 5 matches</p>
+              <p class="snote">Click a row to open its first match.</p>
+              <div class="srow is-current" role="button" tabindex="0">
+                <div class="srow-top">
+                  <span class="srow-name" title="hardware/pinout.md">pinout.md (hardware)</span>
+                  <span class="srow-count">3 matches</span>
+                </div>
+                <p class="srow-snip">The 3V3 <mark>rail</mark> feeds the sensor breakout through…</p>
+              </div>
+              <div class="srow" role="button" tabindex="-1">
+                <div class="srow-top">
+                  <span class="srow-name" title="hardware/power-budget.md">power-budget.md</span>
+                  <span class="srow-count">2 matches</span>
+                </div>
+                <p class="srow-snip">Budget for the 3V3 <mark>rail</mark>, worst case at 40 °C.</p>
+              </div>
+            </div>
+            <button class="rz rz--right" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Search panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">i2c-timing.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">hardware/pinout.md</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div><div class="rl w70"></div>
+              <span class="cap">reader — reader.md</span>
+            </div>
+          </section>
+
+          <aside class="panel panel--right" aria-label="Right side panel">
+            <div class="phead">
+              <h2 class="ptitle" id="f-files-title">Files</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Reload file tree from disk" title="Reload file tree from disk"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="hbtn" type="button" aria-label="Collapse panel" title="Collapse files (right arrow)"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+              </div>
+            </div>
+            <div class="tree" role="tree" aria-label="Files">
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="Welcome.md">Welcome.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+                <span class="tname" title="hardware">hardware</span>
+              </div>
+              <div class="trow is-current" role="treeitem" aria-level="2" aria-selected="true" tabindex="0">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/pinout.md">pinout.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/i2c-timing.md">i2c-timing.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="firmware">firmware</span>
+              </div>
+            </div>
+            <button class="rz rz--left" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Files panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <nav class="rail rail--right" aria-label="Right activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer" title="Explorer"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+          </nav>
+        </div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><strong>Nothing is hard-wired except the side.</strong> The right panel shows Files with the
+        same header (title, refresh, collapse) it had on the left; the chevron now points right. The
+        left panel shows Search with its own header and chevron-left.</li>
+      <li><strong>The rail follows the view.</strong> Explorer left the left rail, so its icon is gone
+        from there; Search left the right side, so the right rail holds only Explorer. There is one
+        saved bar order, filtered by side: moving a view never renumbers the others, so Search still
+        sits between Recent and Tabs on the left.</li>
+      <li><strong>Search internals</strong> are drawn here only as context; <code>search-view.md</code>
+        owns them. The 36 px field and the row shapes match that document's anatomy.</li>
+    </ul>
+
+    <!-- ---------- G. no views on the right ---------- -->
+    <div class="board" role="figure" aria-labelledby="fig7">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig7">G · No views homed right</span><span class="grow"></span><span class="size">1280 × 800</span></div>
+      <div class="app app--1280">
+        <header class="tb">
+          <button class="brand" type="button"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg><span class="brand-text">Field notebook</span></button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg><span class="chip-name">Lab notebook</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg><span class="chip-name">Bench tests</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--no-right">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Outline"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-outline"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left" aria-labelledby="g-panel-title">
+            <div class="phead">
+              <h2 class="ptitle" id="g-panel-title">Files</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Reload file tree from disk"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="hbtn" type="button" aria-label="Collapse panel"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="tree" role="tree" aria-label="Files">
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="Welcome.md">Welcome.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+                <span class="tname" title="hardware">hardware</span>
+              </div>
+              <div class="trow is-current" role="treeitem" aria-level="2" aria-selected="true" tabindex="0">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/pinout.md">pinout.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/i2c-timing.md">i2c-timing.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="firmware">firmware</span>
+              </div>
+            </div>
+            <button class="rz rz--right" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Files panel" aria-valuenow="240" aria-valuemin="140" aria-valuemax="374" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+                <div class="tab" role="tab" aria-selected="false" tabindex="-1">i2c-timing.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <span class="anno anno--float" style="right:16px;top:16px">annotation — right rail and right panel are 0: no view is homed right</span>
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">hardware/pinout.md · editor 992</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div><div class="rl w70"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><strong>Columns 48 | 240 | 992 | 0 | 0.</strong> With no view homed right, the right rail
+        and the right panel both collapse to 0 and the editor takes the 288 px. This is the only case
+        that hides the right rail; the left rail cannot disappear because Settings and Log out live
+        there.</li>
+      <li><strong>How to get here:</strong> move every right-homed view to the left in Settings →
+        Appearance → Activity bar, or hide them. Hiding the last right view is the same state.</li>
+      <li>The Outline moved to the left rail here (its icon, last in the saved order) because this board
+        shows "no view is homed right" — it is one view icon, not a second right-rail button.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============================================================
+     5. BOUNDARIES
+     ============================================================ -->
+<section class="sec">
+  <h2>5 · Boundaries — 861 desktop edge, 390 phone</h2>
+  <p class="lede">The phone mode switch stays at 860. The last desktop pixel is 861, where both panels
+    sit at their 140 px floor and the reader keeps its 352 px.</p>
+
+  <div class="scrollx">
+    <!-- ---------- H. 861 ---------- -->
+    <div class="board" role="figure" aria-labelledby="fig8">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig8">H · 861 — both panels at the 140 px floor</span><span class="grow"></span><span class="size">861 × 560</span></div>
+      <div class="app app--861">
+        <header class="tb" style="gap:var(--space-2)">
+          <button class="brand" type="button"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-books"/></svg><span class="brand-text">Field notebook</span></button>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-workspace"/></svg><span class="chip-name">Lab</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-div" aria-hidden="true"></span>
+          <div class="chipwrap">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false"><svg width="14" height="14" aria-hidden="true"><use href="#nb-icon-session"/></svg><span class="chip-name">Bench</span><svg class="caret-down" width="14" height="14" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+          </div>
+          <span class="tb-spacer"></span>
+          <div class="tb-actions">
+            <button class="ib" type="button" aria-label="WYSIWYG edit mode" aria-pressed="false"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="ib" type="button" aria-label="Edit Markdown source"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-code"/></svg></button>
+          </div>
+        </header>
+
+        <div class="shell shell--floors">
+          <nav class="rail rail--left" aria-label="Activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="Tabs"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-tabs"/></svg></button>
+              <button class="rbtn" type="button" aria-pressed="false" aria-label="AI Assistant"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-ai"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+            <button class="rbtn" type="button" aria-label="Graph view"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-graph"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Log out"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-logout"/></svg></button>
+            <button class="rbtn" type="button" aria-label="Settings"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-settings"/></svg></button>
+          </nav>
+
+          <aside class="panel panel--left" aria-labelledby="h-panel-title">
+            <div class="phead">
+              <h2 class="ptitle" id="h-panel-title">Files</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Collapse panel"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="tree" role="tree" aria-label="Files">
+              <div class="trow is-current" role="treeitem" aria-level="1" aria-selected="true" tabindex="0">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/pinout.md">pinout.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/i2c-timing.md">i2c-timing.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="firmware">firmware</span>
+              </div>
+            </div>
+            <button class="rz rz--right" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Files panel" aria-valuenow="140" aria-valuemin="140" aria-valuemax="185" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <section class="editor" aria-label="Editor">
+            <div class="tabs">
+              <div class="tablist" role="tablist" aria-label="Open notes">
+                <div class="tab is-current" role="tab" aria-selected="true" tabindex="0">pinout.md</div>
+              </div>
+            </div>
+            <div class="reader">
+              <span class="anno anno--float" style="right:var(--space-4);bottom:var(--space-4)">editor 485 ≥ reader floor 352</span>
+              <h1 class="doc-title">Rail decoupling</h1>
+              <p class="doc-meta">pinout.md</p>
+              <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+              <h2 class="doc-h2">Ferrite beads</h2>
+              <div class="rl w92"></div><div class="rl w84"></div>
+            </div>
+          </section>
+
+          <aside class="panel panel--right" aria-label="Right side panel">
+            <div class="phead">
+              <h2 class="ptitle" id="h-outline-title">Outline</h2>
+              <div class="hact">
+                <button class="hbtn" type="button" aria-label="Collapse outline"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-chevron-right"/></svg></button>
+              </div>
+            </div>
+            <nav class="olist" aria-label="Outline">
+              <a class="oitem" href="#">Power budget</a>
+              <a class="oitem is-current" href="#" aria-current="location">Rail decoupling</a>
+              <a class="oitem l2" href="#">Bulk caps</a>
+              <a class="oitem" href="#">I²C timing</a>
+            </nav>
+            <button class="rz rz--left" type="button" role="separator" aria-orientation="vertical"
+                    aria-label="Resize Outline panel" aria-valuenow="140" aria-valuemin="140" aria-valuemax="185" tabindex="0"><span aria-hidden="true"></span></button>
+          </aside>
+
+          <nav class="rail rail--right" aria-label="Right activity bar">
+            <div class="rail-views">
+              <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Outline"><svg width="17" height="17" aria-hidden="true"><use href="#nb-icon-outline"/></svg></button>
+            </div>
+            <span class="rail-spacer"></span>
+          </nav>
+        </div>
+      </div>
+      <div class="measure measure--floors" aria-hidden="true">
+        <span>48</span><span>140</span><span>485</span><span>140</span><span>48</span>
+      </div>
+    </div>
+    <ul class="notes">
+      <li><strong>The budget now subtracts both rails.</strong>
+        <code>budget = 100vw − 48 − 48 − 352</code>; at 861 that is 413 px for the two panels, and the
+        floor pair spends 280 of it. Each cap is <code>min(480, 45 % of 413) = 185</code>, so two
+        140 px floors leave 133 px of the budget unspent and the reader keeps its 352.</li>
+      <li><strong>Nothing reflows at the boundary.</strong> Titles ellipsize, one tab shows, the
+        outline keeps its 12 px indent, and the reader is still ≥ 352. Below 861 the phone shell takes
+        over and the right rail does not exist.</li>
+      <li>The floor widths are what the two <code>role="separator"</code> strips report as
+        <code>aria-valuemin</code>/<code>aria-valuenow</code>; the caps are the same tokens the left
+        panel already uses.</li>
+    </ul>
+  </div>
+
+  <!-- ---------- I. 390 phone ---------- -->
+  <div class="scrollx" style="margin-top:var(--space-5)">
+    <div class="phone-pair">
+      <div class="board" role="figure" aria-labelledby="fig9">
+        <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig9">I.a · 390 — drawer closed: one shell, bottom rail</span><span class="grow"></span><span class="size">390 × 760</span></div>
+        <div class="app app--phone">
+          <header class="p-tb">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Workspace: Lab notebook">
+              <svg width="20" height="20" aria-hidden="true"><use href="#nb-icon-workspace"/></svg>
+            </button>
+            <button class="p-target" type="button" aria-label="Back" disabled><svg aria-hidden="true"><use href="#nb-icon-back"/></svg></button>
+            <button class="p-title" type="button" aria-label="Note pinout.md — browse notes">pinout.md</button>
+            <button class="p-target" type="button" aria-label="WYSIWYG edit mode"><svg aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="p-target" type="button" aria-label="Quick capture"><svg aria-hidden="true"><use href="#nb-icon-plus"/></svg></button>
+            <button class="p-target" type="button" aria-label="Note menu" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true"><use href="#nb-icon-more"/></svg></button>
+          </header>
+
+          <div class="p-reader">
+            <span class="anno anno--float" style="left:var(--space-5);bottom:var(--space-2)">no right rail · no right panel</span>
+            <h1 class="doc-title">Rail decoupling</h1>
+            <p class="doc-meta">pinout.md</p>
+            <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div><div class="rl w60"></div>
+            <div class="rl w92"></div><div class="rl w84"></div>
+          </div>
+
+          <nav class="p-rail" aria-label="Activity bar">
+            <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer"><svg aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+            <button class="rbtn" type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false"><svg aria-hidden="true"><use href="#nb-icon-menu"/></svg></button>
+          </nav>
+        </div>
+        <div class="capbar"><span class="anno">annotation — view sides are ignored on the phone · the Outline has no phone surface</span></div>
+      </div>
+
+      <div class="board" role="figure" aria-labelledby="fig10">
+        <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig10">I.b · 390 — drawer open, Files</span><span class="grow"></span><span class="size">390 × 760</span></div>
+        <div class="app app--phone">
+          <header class="p-tb">
+            <button class="chip" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="Workspace: Lab notebook">
+              <svg width="20" height="20" aria-hidden="true"><use href="#nb-icon-workspace"/></svg>
+            </button>
+            <button class="p-target" type="button" aria-label="Back" disabled><svg aria-hidden="true"><use href="#nb-icon-back"/></svg></button>
+            <button class="p-title" type="button" aria-label="Note pinout.md — browse notes">pinout.md</button>
+            <button class="p-target" type="button" aria-label="WYSIWYG edit mode"><svg aria-hidden="true"><use href="#nb-icon-pencil"/></svg></button>
+            <button class="p-target" type="button" aria-label="Quick capture"><svg aria-hidden="true"><use href="#nb-icon-plus"/></svg></button>
+            <button class="p-target" type="button" aria-label="Note menu" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true"><use href="#nb-icon-more"/></svg></button>
+          </header>
+
+          <div class="p-reader">
+            <h1 class="doc-title">Rail decoupling</h1>
+            <p class="doc-meta">pinout.md</p>
+            <div class="rl w96"></div><div class="rl w88"></div><div class="rl w94"></div>
+          </div>
+
+          <nav class="p-rail" aria-label="Activity bar">
+            <button class="rbtn is-active" type="button" aria-pressed="true" aria-expanded="true" aria-label="Explorer"><svg aria-hidden="true"><use href="#nb-icon-explorer"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Sessions"><svg aria-hidden="true"><use href="#nb-icon-session"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Pinned folders"><svg aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Bookmarks"><svg aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Recent files"><svg aria-hidden="true"><use href="#nb-icon-clock"/></svg></button>
+            <button class="rbtn" type="button" aria-pressed="false" aria-label="Search"><svg aria-hidden="true"><use href="#nb-icon-search"/></svg></button>
+            <button class="rbtn" type="button" aria-label="More views" aria-haspopup="dialog" aria-expanded="false"><svg aria-hidden="true"><use href="#nb-icon-menu"/></svg></button>
+          </nav>
+
+          <div class="p-scrim" aria-hidden="true"></div>
+
+          <aside class="p-drawer" role="dialog" aria-modal="true" aria-labelledby="p-drawer-title">
+            <div class="phead">
+              <h2 class="ptitle" id="p-drawer-title">Files</h2>
+              <div class="hact">
+                <button class="p-target" type="button" aria-label="Close panel"><svg aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+              </div>
+            </div>
+            <div class="tree" role="tree" aria-label="Files" style="margin-right:0">
+              <div class="trow" role="treeitem" aria-level="1" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="Welcome.md">Welcome.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+                <span class="tname" title="hardware">hardware</span>
+              </div>
+              <div class="trow is-current" role="treeitem" aria-level="2" aria-selected="true" tabindex="0">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/pinout.md">pinout.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="2" tabindex="-1">
+                <span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span>
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
+                <span class="tname" title="hardware/i2c-timing.md">i2c-timing.md</span>
+              </div>
+              <div class="trow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1">
+                <svg class="ticon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tname" title="firmware">firmware</span>
+              </div>
+            </div>
+            <div class="p-status">
+              <span class="origin">http://lab.local:8080</span>
+              <span class="p-dot" aria-hidden="true"></span><span class="word">Online</span>
+            </div>
+          </aside>
+        </div>
+        <div class="capbar"><span class="anno">annotation — the drawer is 335 px at 390 · same frame as the desktop panel, no side</span></div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li><strong>The phone is unchanged.</strong> One column, topbar 52 + inset, bottom rail 56 +
+      inset, drawer <code>min(86vw, 340px)</code> = 335 at 390, targets 44 × 44. There is no right rail
+      and no right panel at any phone width.</li>
+    <li><strong>The phone ignores view sides.</strong> Every view is a drawer view; the order is still
+      <code>sidebarOrder</code>, and the rail shows the first six of it plus More. A view homed right
+      is not promoted or demoted — it opens in the same drawer.</li>
+    <li><strong>The Outline has no phone surface.</strong> Its rail icon is absent from the phone rail,
+      it is not a More row, and there is no outline sheet. The phone reader is linear. Moving Outline
+      to the left does not give it one.</li>
+  </ul>
+</section>
+
+<!-- ============================================================
+     6. SETTINGS → APPEARANCE → ACTIVITY BAR
+     ============================================================ -->
+<section class="sec">
+  <h2>6 · Settings → Appearance → Activity bar</h2>
+  <p class="lede">Nine rows in bar order, each with the grip, the view icon, the label, a
+    <code>Left | Right</code> segmented control, and the Hide/Unhide button. Row height 40, pitch 48.
+    The segmented control takes the <code>controls.md</code> chip face at 30 px
+    (<code>secondary-sidebar.md</code> §8), so the 40 px row arithmetic is unchanged:
+    4 + 4 + 30 + 2 borders.</p>
+
+  <div class="scrollx">
+    <div class="board" role="figure" aria-labelledby="fig11">
+      <div class="board-head"><span class="dot" aria-hidden="true"></span><span id="fig11">J · Activity bar group — default sides</span><span class="grow"></span><span class="size">1000 × 680 · cropped after this group</span></div>
+      <div class="smodal">
+        <div class="shead">
+          <h2>Settings</h2>
+          <button class="ib" type="button" aria-label="Close settings"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-close"/></svg></button>
+        </div>
+        <div class="sbody">
+          <nav class="snav" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+            <button class="snav-item" role="tab" aria-selected="false" tabindex="-1"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-settings"/></svg>General</button>
+            <button class="snav-item" role="tab" aria-selected="false" tabindex="-1"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-workspace"/></svg>Workspaces</button>
+            <button class="snav-item is-active" role="tab" aria-selected="true" aria-controls="j-appearance"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-palette"/></svg>Appearance</button>
+            <button class="snav-item" role="tab" aria-selected="false" tabindex="-1"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-keyboard"/></svg>Shortcuts</button>
+            <button class="snav-item" role="tab" aria-selected="false" tabindex="-1"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-lock"/></svg>Security</button>
+            <button class="snav-item" role="tab" aria-selected="false" tabindex="-1"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-ai"/></svg>AI</button>
+            <button class="snav-item" role="tab" aria-selected="false" tabindex="-1"><svg width="16" height="16" aria-hidden="true"><use href="#nb-icon-info"/></svg>About</button>
+          </nav>
+
+          <div class="section" id="j-appearance" role="tabpanel" aria-label="Appearance">
+            <h3>Appearance</h3>
+            <div class="sformtitle">Activity bar</div>
+            <p class="shelp" id="j-help">Icons on the left rail and the right rail. The right rail
+              appears only when a view is assigned to it.</p>
+            <div class="orowlist" role="list" aria-label="Activity bar" aria-describedby="j-help">
+              <div class="orow" role="listitem" data-view="explorer" aria-posinset="1" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-explorer"/></svg></span>
+                <span class="olabel">Explorer</span>
+                <span class="oseg" role="group" aria-label="Side for Explorer">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Explorer" title="Hide Explorer">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="sessions" aria-posinset="2" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-session"/></svg></span>
+                <span class="olabel">Sessions</span>
+                <span class="oseg" role="group" aria-label="Side for Sessions">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Sessions" title="Hide Sessions">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="pinned" aria-posinset="3" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-pin"/></svg></span>
+                <span class="olabel">Pinned folders</span>
+                <span class="oseg" role="group" aria-label="Side for Pinned folders">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Pinned folders" title="Hide Pinned folders">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="bookmarks" aria-posinset="4" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-bookmark"/></svg></span>
+                <span class="olabel">Bookmarks</span>
+                <span class="oseg" role="group" aria-label="Side for Bookmarks">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Bookmarks" title="Hide Bookmarks">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="recent" aria-posinset="5" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-clock"/></svg></span>
+                <span class="olabel">Recent files</span>
+                <span class="oseg" role="group" aria-label="Side for Recent files">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Recent files" title="Hide Recent files">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="search" aria-posinset="6" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-search"/></svg></span>
+                <span class="olabel">Search</span>
+                <span class="oseg" role="group" aria-label="Side for Search">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Search" title="Hide Search">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="tabs" aria-posinset="7" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-tabs"/></svg></span>
+                <span class="olabel">Tabs</span>
+                <span class="oseg" role="group" aria-label="Side for Tabs">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Tabs" title="Hide Tabs">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="ai" aria-posinset="8" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-ai"/></svg></span>
+                <span class="olabel">AI Assistant</span>
+                <span class="oseg" role="group" aria-label="Side for AI Assistant">
+                  <button type="button" aria-pressed="true">Left</button>
+                  <button type="button" aria-pressed="false">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide AI Assistant" title="Hide AI Assistant">Hide</button></span>
+              </div>
+              <div class="orow" role="listitem" data-view="outline" aria-posinset="9" aria-setsize="9">
+                <span class="ogrip" draggable="true" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-grip"/></svg></span>
+                <span class="oicon" aria-hidden="true"><svg aria-hidden="true"><use href="#nb-icon-outline"/></svg></span>
+                <span class="olabel">Outline</span>
+                <span class="oseg" role="group" aria-label="Side for Outline">
+                  <button type="button" aria-pressed="false">Left</button>
+                  <button type="button" aria-pressed="true">Right</button>
+                </span>
+                <span class="oactions"><button class="saction otoggle" type="button" aria-label="Hide Outline" title="Hide Outline">Hide</button></span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sfoot"><button class="saction" type="button">Close</button></div>
+      </div>
+    </div>
+  </div>
+  <ul class="notes">
+    <li><strong>Nine rows, 40 high, 8 gap.</strong> 40 = 4 + 4 padding + 30 control + 2 border; pitch
+      48; the list measures 424. The row is still a card — <code>--surface-raised</code>, 1 px
+      <code>--border</code>, radius 8 — and still has no hover fill.</li>
+    <li><strong>The side control is one control, not two.</strong> A single <code>role="group"</code>
+      with two <code>aria-pressed</code> buttons, 30 px tall, <code>--surface-raised</code> face,
+      <code>1 px --border-strong</code>, <code>--radius-pill</code>, one divider
+      <code>--border</code>. Selected: <code>--accent-soft</code> face + <code>--accent</code> text,
+      600. Because the container clips, the focus ring is inset (−2).</li>
+    <li><strong>Outline is the odd row and that is correct.</strong> Its default is
+      <code>Right</code>; moving it left does not give it a second rail icon and does not restore the
+      tab-bar toggle.</li>
+    <li><strong>Unchanged from the shipped row:</strong> grip is the only drag source, the list always
+      shows every view, a hidden row keeps its position, and there is no keyboard reorder. The new
+      segmented control adds a keyboard-operable setting per row; it does not touch the drag.</li>
+  </ul>
+
+  <h2 style="margin-top:var(--space-6)">6.1 · The segmented control, four states</h2>
+  <p class="lede">Selection and state are independent: the hover and focus specimens keep
+    <code>Left</code> selected while the pointer or the keyboard is on <code>Right</code>.</p>
+
+  <div class="states">
+    <figure class="state">
+      <div class="state-row">
+        <span class="oseg" role="group" aria-label="Side for Search, rest with Left selected">
+          <button type="button" aria-pressed="true">Left</button>
+          <button type="button" aria-pressed="false">Right</button>
+        </span>
+      </div>
+      <figcaption><b>Rest · Left selected</b><code>--surface-raised</code> face, selected item
+        <code>--accent-soft</code> + <code>--accent</code>, 600.</figcaption>
+    </figure>
+
+    <figure class="state">
+      <div class="state-row">
+        <span class="oseg" role="group" aria-label="Side for Search, Right selected">
+          <button type="button" aria-pressed="false">Left</button>
+          <button type="button" aria-pressed="true">Right</button>
+        </span>
+      </div>
+      <figcaption><b>Right selected</b>The wash moves; nothing else changes. The row keeps its 40 px
+        height and the label keeps <code>--text-primary</code>.</figcaption>
+    </figure>
+
+    <figure class="state">
+      <div class="state-row">
+        <span class="oseg" role="group" aria-label="Side for Search, pointer over Right">
+          <button type="button" aria-pressed="true">Left</button>
+          <button type="button" class="is-hover" aria-pressed="false">Right</button>
+        </span>
+      </div>
+      <figcaption><b>Hover · over Right</b><code>--accent-soft</code> face and
+        <code>--text-primary</code> text on the hovered item; the selected item stays accent.</figcaption>
+    </figure>
+
+    <figure class="state">
+      <div class="state-row">
+        <span class="oseg is-focus" role="group" aria-label="Side for Search, keyboard focus on Right">
+          <button type="button" aria-pressed="true">Left</button>
+          <button type="button" class="is-target" aria-pressed="false">Right</button>
+        </span>
+      </div>
+      <figcaption><b>Focus-visible · on Right</b>2 px <code>--accent</code> ring, offset −2 because the
+        container clips. Tab reaches each item; Space/Enter selects.</figcaption>
+      <p class="hint">ArrowLeft / ArrowRight also move the selection inside the group.</p>
+    </figure>
+  </div>
+</section>
+
+</body>
+</html>

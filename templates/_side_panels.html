@@ -1,0 +1,59 @@
+{# One side's view hosts. Included twice from index.html, once per side:
+
+     {% with side="left",  views=boot.views_left,  active=boot.active_view_left  %}
+     {% with side="right", views=boot.views_right, active=boot.active_view_right %}
+
+   `views` is that side's subsequence of the global sidebarOrder, so the host
+   order inside the panel matches the rail order. Exactly one host per view id
+   is rendered across the two calls: a duplicate would break every
+   getElementById consumer. activity.js moves a host between panels with
+   appendChild when its side changes; it never re-creates one.
+
+   A host ships `hidden` unless it is its side's saved active view -- the
+   first paint shows the saved view with no flash. #sidebar (Explorer) and
+   #outline-view ship populated because sidebar.js and outline.js capture
+   their nodes at load; every other host is filled by its module on mount. #}
+{% for vid in views %}
+{% if vid == 'explorer' %}
+        <div id="sidebar" class="side-panel-view" data-view="explorer"{% if vid != active %} hidden{% endif %}>
+          <div class="panel-header">
+            <span class="panel-title">Files</span>
+            <div class="panel-header-actions">
+              <button class="collapse-btn" id="explorer-top-toggle" data-mode="pinned" title="Top section: Pinned folders. Click to show Bookmarks." aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
+              <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><svg class="icon refresh-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-refresh"/></svg></button>
+              <button class="collapse-btn" id="sidebar-collapse" data-collapse-view="explorer" title="Collapse files" aria-label="Collapse files"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-{% if side == 'right' %}right{% else %}left{% endif %}"/></svg></button>
+            </div>
+          </div>
+          <div id="pinned-folders" class="pinned-folders" hidden></div>
+          <div id="explorer-bookmarks" class="explorer-bookmarks" hidden></div>
+          <div id="file-tree" class="tree"></div>
+          <button class="expand-btn" id="sidebar-expand" title="Show files" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-right"/></svg></button>
+        </div>
+{% elif vid == 'sessions' %}
+        <div id="sessions-view" class="side-panel-view" data-view="sessions"{% if vid != active %} hidden{% endif %}></div>
+{% elif vid == 'pinned' %}
+        <div id="pinned-view" class="side-panel-view" data-view="pinned"{% if vid != active %} hidden{% endif %}></div>
+{% elif vid == 'bookmarks' %}
+        <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks"{% if vid != active %} hidden{% endif %}></div>
+{% elif vid == 'recent' %}
+        <div id="recent-view" class="side-panel-view" data-view="recent"{% if vid != active %} hidden{% endif %}></div>
+{% elif vid == 'search' %}
+        <div id="search-view" class="side-panel-view" data-view="search"{% if vid != active %} hidden{% endif %}></div>
+{% elif vid == 'ai' %}
+        <div id="ai-view" class="side-panel-view" data-view="ai"{% if vid != active %} hidden{% endif %}></div>
+{% elif vid == 'tabs' %}
+        <div id="tabs-view" class="side-panel-view" data-view="tabs"{% if vid != active %} hidden{% endif %}></div>
+{% elif vid == 'outline' %}
+        <!-- Outline: a normal side-panel view now, homed right by default.
+             Its rail icon is its only toggle. outline.js captures #outline
+             at load and survives a side change because the host is moved,
+             not rebuilt. -->
+        <div id="outline-view" class="side-panel-view" data-view="outline"{% if vid != active %} hidden{% endif %}>
+          <div class="panel-header">
+            <span class="panel-title">Outline</span>
+            <button class="collapse-btn" data-collapse-view="outline" title="Collapse outline" aria-label="Collapse outline"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-{% if side == 'right' %}right{% else %}left{% endif %}"/></svg></button>
+          </div>
+          <div id="outline" class="outline"></div>
+        </div>
+{% endif %}
+{% endfor %}

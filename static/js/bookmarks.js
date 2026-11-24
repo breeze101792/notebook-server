@@ -76,7 +76,7 @@
     });
     actions.appendChild(addBtn);
     if (NB.activity && NB.activity.makeCollapseBtn) {
-      actions.appendChild(NB.activity.makeCollapseBtn());
+      actions.appendChild(NB.activity.makeCollapseBtn("bookmarks"));
     }
     header.appendChild(actions);
     viewEl.appendChild(header);

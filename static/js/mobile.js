@@ -363,9 +363,22 @@
   }
 
   /* --- drawer -------------------------------------------------------- */
-  function drawerView() {
+  /* The drawer's view hosts. The status row (#mobile-drawer-status) is a
+   * plain child of #side-panel, not a view, so every lookup here filters to
+   * .side-panel-view rather than taking the first or last child. */
+  function drawerViews() {
     const panel = shell.sidePanel;
-    return panel ? panel.querySelector(".side-panel-view:not([hidden])") : null;
+    if (!panel) return [];
+    return Array.prototype.filter.call(panel.children, (el) =>
+      el.classList && el.classList.contains("side-panel-view"));
+  }
+
+  function drawerView() {
+    const views = drawerViews();
+    for (const view of views) {
+      if (!view.hidden) return view;
+    }
+    return views.length ? views[0] : null;
   }
 
   function focusDrawer() {
@@ -1048,6 +1061,12 @@
       // styling; its glyph and label are owned by sidebar.js.
       if (btn.id === "sidebar-refresh" || btn.id === "explorer-top-toggle" ||
           btn.querySelector(".refresh-glyph")) return;
+      // A [data-collapse-view] button belongs to activity.js, which draws the
+      // glyph for its panel's side (chevron-left, chevron-right, or the
+      // drawer's close cross) and re-titles it on every side or mode change.
+      // Rewriting it here would clobber "Collapse outline" back to "Collapse
+      // panel" on a phone -> desktop flip.
+      if (btn.hasAttribute("data-collapse-view")) return;
       // Keep the sprite, not a text glyph: a "\u2039" inherits the panel font
       // size and stops matching the 16 px icon buttons beside it.
       btn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#' +

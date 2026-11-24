@@ -8,7 +8,7 @@ shell states (1280 expanded, panel collapsed, outline collapsed, topbar hidden, 
 handle at rest / hover / drag.
 
 **Normative source.** This document owns the frame: `#topbar`, `#activity-bar`, the `#side-panel`
-frame, the `#outline-pane` frame, the desktop grid, and the phone conversion. It reads
+frame, the auxiliary panel frame, the desktop grid, and the phone conversion. It reads
 [`foundations.md`](foundations.md) for every token and [`controls.md`](controls.md) for control
 anatomy, states, focus and ARIA. It does **not** design the inside of a view: Explorer, Sessions,
 Pinned, Bookmarks, Recent, Search and AI content are later documents. The workspace picker and
@@ -17,6 +17,13 @@ session picker internals are described by the archived records
 and [`sessions.md`](sessions.md) — source material, not current specs. This document
 only places their two topbar mounts and their rail mounts. The phone behaviours are described
 by `docs/archive/design/mobile-shell.md`; §6 reconciles them and §12 records every disagreement.
+
+**Superseded in part.** [`secondary-sidebar.md`](secondary-sidebar.md) replaces the single-rail,
+single-panel grid with two rails and two panels, and turns the Outline into a side-panel view. It
+owns §1 (grid, column contract, budget, saved geometry keys, state matrix), §3 (the rail's per-view
+side, mirroring and empty-right rule), §5 (the outline as a view, and the removal of both outline
+toggles), the outline rows of §7.1-§7.2, the outline/toggle parts of §9.2-§9.3, and AC1, AC2, AC4,
+AC10, AC11, AC14 and AC19 of §10. Everything else here still holds.
 
 Where this document and `static/css/style.css` differ today, this document is the target and §9
 says how the stylesheet gets there. Where this document and a shipped surface doc differ, §12
@@ -27,94 +34,23 @@ records the conflict and names which side changes. Every claim about current cod
 
 ## 1. The grid
 
-### 1.1 Anatomy
+Owned by [`secondary-sidebar.md`](secondary-sidebar.md) §3. The frame keeps one topbar and one
+`#layout` grid, now five columns:
 
 ```
 #app  (100dvh, flex column)
 ├── #topbar                        46 px   --topbar-h, 0 when hidden
 └── #layout  (grid, minmax(0,1fr) row)
-    ├── #activity-bar              48 px   fixed, never resizes
-    ├── #side-panel                240 px  the primary resizable pane
-    │   ├── .panel-header          34 px   frame owns it
-    │   ├── .side-panel-view       flex    view host; view owns its scroller
-    │   └── .resize-handle         8 px    overlays the inner edge
-    ├── #editor-pane               1fr     absorbs every change, min 0
-    │   ├── #tab-bar               34 px   hosts #outline-toggle
-    │   ├── #edit-bar              content-driven; 63 at 772, 119 at 861
-    │   └── reader                 1fr
-    └── #outline-pane              220 px  resizable on its left edge
-        ├── .panel-header          34 px
-        └── #outline               flex    the scroller
+    ├── #activity-bar              48 px   left rail, view icons + actions
+    ├── #side-panel               240 px   left panel, resizable on its right edge
+    ├── #editor-pane               1fr     #tab-bar 34, #edit-bar, reader
+    ├── #aux-panel               240 px   right panel, resizable on its left edge
+    └── #activity-bar-right        48 px   right rail, view icons only
 ```
 
-Current grid: `grid-template-columns: var(--activity-bar-width) var(--side-panel-width) 1fr
-var(--outline-width)` (`style.css:215-227`). The activity bar and the outline never resize in
-that rule; the side panel does. A second resize handle is installed on the outline
-(`app.js:811-812`), so **two** columns resize.
-
-### 1.2 Column contract
-
-| Column | Token | Default | Minimum | Maximum | Resizes? | Saved key |
-|---|---|---|---|---|---|---|
-| Activity rail | `--activity-bar-width` | 48 | 48 | 48 | no | — |
-| Side panel | `--side-panel-width` | 240 | `--shell-pane-min` 140 | `min(--side-panel-max 480, 60 % of the budget)` | pointer, keyboard | `sidebarWidth` |
-| Editor | — | 1fr | 0 | — | absorbs every change | — |
-| Outline | `--outline-width` | 220 | `--shell-pane-min` 140 | `min(--outline-max 520, budget − panel track)` | pointer, keyboard | `outlineWidth` |
-| Topbar | `--topbar-h` | 46 | 0 | 46 | no | `hideTopbar` |
-
-**The pane budget.** The reader must keep 352 px on desktop; below that the phone shell takes
-over (`docs/archive/design/mobile-shell.md` §2.2 measures the failure at 390 px). The two panes share one
-budget and never spend the reader's floor:
-
-```
---shell-pane-budget = 100vw − var(--activity-bar-width) − var(--shell-reader-min)
-panel cap   = min(--side-panel-max 480, 60 % of the budget)
-outline cap = min(--outline-max 520, budget − panel track)
-```
-
-The outline takes whatever the panel leaves, up to 520. The panel keeps its 60 % ceiling so a
-wide outline cannot starve it. Nothing is reallocated beyond that: at 861 with the panel at 277,
-the outline caps at 184; at 861 with the panel at 140, the outline can take 321. At 1280 with
-both at their caps the reader keeps 400. The 140 px floors never collide with the caps in
-desktop mode, because the budget reaches the floor pair only near the phone switch.
-
-The absolute 480 px panel cap is new. The shipped half-viewport maximum allowed 640 at 1280 —
-which leaves a 392 px reader — and 1280 px on a 2560 screen. A navigation panel does not need to
-grow with the monitor.
-
-The current JS clamps the panel to half the viewport and the outline to a flat 520 during a drag
-only (`app.js:819-821`, `:860`); a saved width is never re-clamped when the window narrows. The
-`clamp()` in §9 fixes both, and `endDrag` starts persisting the requested width rather than the
-rendered one (`app.js:839-842`), so a clamped drag does not overwrite the user's large-screen
-width.
-
-### 1.3 Saved keys
-
-| Key | Type | Default | Written when | Read at |
-|---|---|---|---|---|
-| `sidebarWidth` | number (px) | 240 | drag end, expand | boot inline style `templates/index.html:2`; `app.js:486-493` |
-| `sidebarCollapsed` | bool | false | collapse, expand | same |
-| `outlineWidth` | number (px) | 220 | drag end | boot inline style; `app.js:495-503` |
-| `outlineCollapsed` | bool | false | header `›`, tab-bar toggle | same |
-| `hideTopbar` | bool | false | Settings checkbox (`settings.js:474-477`), Mod+Shift+T (`app.js:786`) | `templates/index.html:42`, `app.js:393` |
-| `hideTabBar` | bool | false | Settings checkbox, Mod+Shift+B | `templates/index.html` (`#tab-bar[hidden]`), `app.js` |
-| `activeView` | string | `explorer` | every activation (`app.js:742-745`) | server render; `activity.js` adopts it |
-
-`activeView` is not geometry, but the collapsed-but-active state in §4.6 depends on it: the rail
-keeps the saved view lit while the panel is at zero width.
-
-### 1.4 State matrix
-
-| State | Topbar | Rail | Side panel | Outline | Editor | Set by |
-|---|---|---|---|---|---|---|
-| Expanded | 46 | 48 | 240 or dragged | 220 or dragged | rest | default |
-| Panel collapsed | 46 | 48 | **0**, children hidden | unchanged | wider | rail icon toggle, header `‹` |
-| Outline collapsed | 46 | 48 | unchanged | **0**, children hidden | wider | header `›`, `#outline-toggle` |
-| Both collapsed | 46 | 48 | 0 | 0 | full width | both above |
-| Topbar hidden | **0**, not rendered | 48, workspace mount appears | unchanged | unchanged | 46 px taller | Settings, Mod+Shift+T |
-| Phone | 52 + top inset | bottom bar 56 + bottom inset | drawer, 0 when closed | **removed** | single column | media query |
-| Auth locked | 46, dimmed to .25 | blurred | blurred | blurred | blurred | `body.auth-locked` |
-| No view | 46 | 48 | header + empty line | unchanged | unchanged | mount failure or no registration |
+The column contract (minima, caps, saved keys), the shared pane budget that two panels spend, and
+the state matrix live in [`secondary-sidebar.md`](secondary-sidebar.md) §3.2-§3.4 and are not
+repeated here. The reader floor stays 352 px on desktop.
 
 ---
 
@@ -290,6 +226,12 @@ frame changes; do not add a second lock treatment.
 
 ## 3. Activity rail
 
+**The rail is now one of two.** Read [`secondary-sidebar.md`](secondary-sidebar.md) §4 for the
+right rail and §2 for the per-view side model. Deltas to this section: the rail renders only the
+views homed on its side, in the global `sidebarOrder`; the active indicator mirrors to the outer
+edge on the right; the settings, log-out, graph and workspace buttons exist on the left rail
+only; and the right rail is hidden when no visible view is homed right.
+
 ### 3.1 Order
 
 | # | Slot | Id / data-view | Glyph symbol | Mounted | Phone |
@@ -305,10 +247,9 @@ frame changes; do not add a second lock treatment.
 | 9 | views | `tabs` | `nb-icon-tabs` | host ships, filled by `tabs-view.js` | More sheet (first six of the saved order) |
 | — | spacer | `.activity-bar-spacer` | — | — | hidden (`:7189`) |
 | 10 | bottom | `#topbar-show-btn` | `nb-icon-topbar` | topbar hidden only | hidden |
-| 11 | bottom | `#outline-rail-btn` | `nb-icon-outline` | tab bar hidden only | hidden |
-| 12 | bottom | `#activity-graph-btn` | `nb-icon-graph` | action | hidden |
-| 13 | bottom | `#logout-btn` | `nb-icon-logout` | auth on | hidden |
-| 14 | bottom | `#activity-settings-btn` | `nb-icon-gear` | action | hidden |
+| 11 | bottom | `#activity-graph-btn` | `nb-icon-graph` | action | hidden |
+| 12 | bottom | `#logout-btn` | `nb-icon-logout` | auth on | hidden |
+| 13 | bottom | `#activity-settings-btn` | `nb-icon-gear` | action | hidden |
 
 View order is `sidebarOrder` (Settings → Appearance), seeded from the
 server-rendered `data-sidebar-order` attribute; unnamed views follow in
@@ -322,11 +263,10 @@ The Tabs view ([`tabs-view.md`](tabs-view.md)) registers last, so with an empty 
 the eighth view and, on the phone, the first view past the six-slot rail — a More row until the user
 promotes it ([`mobile-more-sheet.md`](mobile-more-sheet.md) §1.2, `activity.js:43-46`, `:148-162`).
 
-`#outline-rail-btn` is the outline pane's second mount, the `#workspace-rail-btn` pattern
-(`templates/index.html:359-363`, `style.css:8874-8878`): `display: none` until
-`body:has(#tab-bar[hidden])`, because the control's first mount lives in the tab strip
-([`tab-bar.md`](tab-bar.md) §8.1). The strip's toggle is untouched; exactly one of the two is
-visible at a time.
+`#activity-bar-right` is the second rail: view icons only, no actions, no topbar mount. It is
+hidden while no visible view is homed right ([`secondary-sidebar.md`](secondary-sidebar.md) §4).
+The Outline icon lives on whichever rail hosts the outline view; there is no longer a second
+mount in the tab strip.
 
 The split is structural, not visual: **views** select a panel and carry an active state;
 **actions** fire once and never take `aria-pressed`. `.activity-action.active::before` is already
@@ -481,10 +421,9 @@ drag `--accent`. Bar colour transitions at `--dur-1`; there is no transition whi
 
 | Affordance | Where | State |
 |---|---|---|
-| Rail icon toggle | `#activity-bar` | Always. Clicking the active view collapses; any view click expands. |
-| Header `‹` | panel header, last action | Expanded only. Desktop collapse. |
+| Rail icon toggle | `#activity-bar`, `#activity-bar-right` | Always. Clicking the active view collapses its own panel; any view click expands it. |
+| Header `‹` / `›` | panel header, last action | Expanded only. Desktop collapse, glyph pointing away from the panel edge. |
 | Header `×` | same node, phone drawer | Closes the drawer. |
-| `#outline-toggle` | `#tab-bar` right edge | Outline only. |
 | `.expand-btn` strip | inside `#sidebar`, `:437-448` | **Retired.** The collapsed width is 0, so the strip has no area. The rail icon is the re-expand affordance (`templates/index.html:274-276`). Remove the element and its CSS when the panel next changes. |
 
 Collapse is a width of 0 plus `[hidden]` on the children (`style.css:444-452`), not a second mini
@@ -513,31 +452,37 @@ the button reports the collapsed state.
 
 ## 5. Outline pane
 
+**Superseded in part.** The outline is now the `#outline-view` side-panel view inside `#aux-panel`
+([`secondary-sidebar.md`](secondary-sidebar.md) §5). §5.1's frame, §5.2's header (its chevron now
+collapses the aux panel) and §5.6's two toggles no longer apply; neither `#outline-toggle` nor
+`#outline-rail-btn` exists. §5.3's list, §5.4's active tracking and §5.5's empty state still
+describe the list and now describe the outline view's body.
+
 ### 5.1 Anatomy
 
 ```
-#outline-pane  width var(--outline-width), --surface-panel, left border, position:relative
-┌─┬────────────────────────────────────────┐
-│ │ .panel-header  34 px                   │
-│ │   h2 "Outline"            [›]          │
-│ ├────────────────────────────────────────┤
-│ │ nav#outline[aria-label="Outline"]      │
-│ │   4 px accent bar on the active row    │
-│ │   H1 ─────────────────────────         │
-│ │     H2 ───────────────────────         │
-│ │       H3 ─────────────────────         │
-└─┴────────────────────────────────────────┘
+#aux-panel  width var(--aux-panel-width), --surface-panel, left border, position:relative
+└── #outline-view.side-panel-view[data-view="outline"]
+    ├── .panel-header  34 px
+    │     h2 "Outline"            [›]
+    └── nav#outline[aria-label="Outline"]
+          4 px accent bar on the active row
+          H1 ─────────────────────────
+            H2 ───────────────────────
+              H3 ─────────────────────
 ```
 
-The 8 px resize strip sits on the **left** edge, so the list insets `margin-left:
-var(--space-2)` (`style.css:392-397`).
+The aux panel's 8 px resize strip sits on its **left** edge, so the list insets
+`margin-left: var(--space-2)` (`style.css:392-397`).
 
 ### 5.2 Header
 
 Same component as §4.2. Title "Outline", `--text-xs`, `--tracking-label`, `--text-muted`, one
-action: `#outline-collapse`, glyph `nb-icon-chevron-right`, `aria-label="Collapse outline"`,
-`title="Collapse outline (right arrow)"`. Today the button has a `title` but no `aria-label`
-(`templates/index.html:592`).
+action: a `.collapse-btn` with `data-collapse-view="outline"`, glyph `nb-icon-chevron-right`,
+`aria-label="Collapse outline"`, `title="Collapse outline"`. The id `#outline-collapse` is retired;
+the delegated handler resolves the side at click time and `activity.js` refreshes the glyph when
+the view changes sides ([`secondary-sidebar.md`](secondary-sidebar.md) §7.2). Today the button has
+a `title` but no `aria-label` (`templates/index.html:592`).
 
 ### 5.3 List
 
@@ -580,13 +525,12 @@ Rules:
 
 ### 5.6 Collapse and phone
 
-- `#outline-collapse` in the header collapses to 0 and persists `outlineCollapsed`.
-- `#outline-toggle` in the tab bar toggles the same state (`app.js:749-758`), and its `title` /
-  `aria-label` and pressed state must follow. Today it has a static `aria-label="Toggle outline
-  pane"` and no `aria-pressed` (`index.html:293`).
-- No expand strip. The tab-bar toggle is always visible while the editor is.
-- The phone removes the pane and the toggle (`style.css:7085`, `:7021`). There is no outline
-  sheet; the phone reader is linear and has no tab bar.
+- The header button collapses `#aux-panel` and persists `auxPanelCollapsed`; its glyph is `›`
+  when the outline is on the right and `‹` when it has been moved left
+  ([`secondary-sidebar.md`](secondary-sidebar.md) §5.2, §7.2).
+- There is no tab-bar toggle and no rail twin. The outline's rail icon is its only control.
+- The phone removes the right panel entirely; the outline has no phone surface
+  (`secondary-sidebar.md` §9).
 
 ---
 
@@ -611,10 +555,12 @@ deltas.
 | Resize strips | 8 px | none | `:7237` |
 | Expand strip | retired | retired | — |
 
-Hidden but never removed: `#brand`, `.topbar-spacer`, `#edit-toggle`, `#outline-toggle`,
-`#explorer-top-toggle`, `#tab-bar`, `#outline-pane`, `.activity-bar-spacer`, the graph / settings
+Hidden but never removed: `#brand`, `.topbar-spacer`, `#edit-toggle`,
+`#explorer-top-toggle`, `#tab-bar`, `.activity-bar-spacer`, the graph / settings
 / logout actions, the AI rail view and host, and the Sessions rail view and host
-(`style.css:7017-7021`, `:7189-7196`, `:8515-8516`).
+(`style.css:7017-7021`, `:7189-7196`, `:8515-8516`). The right rail and `#aux-panel` are
+`display: none` on the phone, and every view host is moved into the drawer
+([`secondary-sidebar.md`](secondary-sidebar.md) §9).
 
 ### 6.2 Drawer
 
@@ -665,11 +611,13 @@ resolves it in favour of the single height.
 
 DOM order, no positive `tabindex` (foundations §10.5):
 
-`#topbar` (brand, chips, actions) → `#activity-bar` → panel header → active view → `#tab-bar`
-→ `#edit-bar` → reader → `#outline-pane` → body-level layers.
+`#topbar` (brand, chips, actions) → `#activity-bar` → left panel header → left active view →
+`#tab-bar` → `#edit-bar` → reader → right panel header → right active view → `#activity-bar-right`
+→ body-level layers.
 
 The skip from the topbar to the rail crosses the panel because the panel is after the rail in
-the DOM (`templates/index.html:192`, `:222`). That is shipped and stays.
+the DOM (`templates/index.html:192`, `:222`). That is shipped and stays. The right side follows
+the editor for the same reason: its panel and rail are the last two children of `#layout`.
 
 ### 7.2 Roles and attributes
 
@@ -679,16 +627,17 @@ the DOM (`templates/index.html:192`, `:222`). That is shipped and stays.
 | `#brand` | `<button type="button">`, visible name + hidden action | `Enter` | remove the `aria-label` that hides the title |
 | chips | `<button aria-haspopup="menu" aria-expanded aria-controls>` | `Enter`, `Esc` | shipped and correct |
 | `#activity-bar` | `<nav aria-label="Activity bar">` | arrows, `Home`, `End` | §3.4 |
+| `#activity-bar-right` | `<nav aria-label="Right activity bar">` | arrows, `Home`, `End` | view icons only, no actions; hidden when no visible view is homed right |
 | view buttons | `<button aria-pressed aria-expanded>` | `Enter` / `Space` | `aria-pressed` = this view is selected; `aria-expanded` = the panel is open. Both live on the same button |
-| action buttons | `<button aria-label title>` | `Enter` / `Space` | never `aria-pressed` |
+| action buttons | `<button aria-label title>` | `Enter` / `Space` | never `aria-pressed`; left rail only |
 | `#side-panel` | `<aside aria-label="Side panel">` | — | the label is stable; each view keeps its own `.panel-title` node |
-| `#outline-pane` | `<aside aria-label="Outline">` | — | |
+| `#aux-panel` | `<aside aria-label="Right side panel">` | — | same frame, mirrored; `#outline-view` is one of its `.side-panel-view` children |
 | panel header | `<h2 class="panel-title">` + `.panel-header-actions` | — | one pattern per view, not one shared node |
 | panel resize strip | `role="separator" aria-orientation="vertical" aria-valuenow aria-valuemin aria-valuemax tabindex="0" aria-label="Resize side panel"` | arrows, `Home`, `End`, `Enter` | `ArrowRight` grows the panel; `aria-valuetext` in px |
-| outline resize strip | same, `aria-label="Resize outline"` | arrows, `Home`, `End`, `Enter` | `ArrowLeft` grows the outline; the values are the outline width |
+| aux resize strip | same, `aria-label="Resize right side panel"` | arrows, `Home`, `End`, `Enter` | `ArrowLeft` grows the panel; the values are the aux width |
+| `#outline-view` | `.side-panel-view[data-view="outline"]` | — | a view, not a pane; its header's chevron collapses `#aux-panel` |
 | `#outline` | `<nav aria-label="Outline">` + `<ul>` | `Tab`, `Enter` | |
 | outline active link | `aria-current="location"` | `Enter` | |
-| `#outline-toggle` | `<button aria-pressed>` + one stable name "Outline" | `Enter` | pressed = pane open; owned by `tab-bar.md` §9.3 |
 | drawer (open) | `#side-panel[role="dialog"][aria-modal="true"]` | trap `Tab` | §6.2 |
 | scrim | `#mobile-scrim` no role, `hidden` when shut | — | pointer only |
 | topbar actions | icon buttons: `aria-label` + `title`; `aria-pressed` on `#hybrid-toggle` | native | |
@@ -738,7 +687,7 @@ is a number, not a colour, so none needs a second theme declaration.
 | `--shell-reader-min` | `352px` | The measured desktop reader floor (`mobile-shell.md` §2.2). No spacing token expresses "the width below which the reader fails"; `--space-*` stops at 48. |
 | `--shell-pane-min` | `140px` | The pane floor, today a JS literal (`app.js:860`). Used by both the CSS clamp and the keyboard step. |
 | `--side-panel-max` | `480px` | The panel's absolute cap. The shipped cap is half the viewport (`app.js:819-820`), which grows without bound on a wide monitor. |
-| `--outline-max` | `520px` | The outline cap, today a JS literal (`app.js:821`). |
+| `--aux-panel-max` | `480px` | The right panel's absolute cap, the same value as the left: a navigation panel does not need to grow with the monitor. Replaces `--outline-max` 520 — the right pane is a full panel now, not a minimap. |
 | `--icon-xl` | `22px` | Phone chrome glyphs are 20–22 px today (`style.css:7042`, `:7186`); the 14/16/17 ladder is desktop-only and cannot carry a 56 px rail. |
 
 Shell-local variables declared on `#layout`, in the `--te-*` model, not global tokens:
@@ -762,7 +711,7 @@ Each step is one commit and shippable alone; a stopped pass leaves the shell con
 | 5 | `#activity-bar`: `--icon-lg`, derived indicator, `--space-*` padding; add `#topbar-show-btn` and its two visibility rules; add the sprite symbols | `style.css:231-279`; `templates/index.html:192-212`, sprite `:51-109` | one glyph size, one recovery path |
 | 6 | Panel frame: unify the markup inside each view's existing `.panel-header` node; add the no-view and mount-error rows; retire `.expand-btn` | `activity.js`, `bookmarks.js`, `sessions.js`, `ai.js`, `sidebar.js`, `index.html:222-277`, `style.css:329-356`, `:437-452` | one header pattern, existing selectors and the drawer close preserved |
 | 7 | Resize: `role="separator"` + valuenow + keys + double-click reset + hover `--border-strong` + focus ring; persist the requested width | `app.js:815-875`; `style.css:403-421` | both panes resize from the keyboard; no clipped persist |
-| 8 | Outline: `nav` landmark, `aria-current="location"`, `--text-*` and `--space-*` rows, `aria-label` on the collapse button, `aria-pressed` on `#outline-toggle` | `outline.js:24-73`; `index.html:293`, `:589-594`; `style.css:3101-3126` | one ARIA story, tokens on every value |
+| 8 | Outline view: `nav` landmark, `aria-current="location"`, `--text-*` and `--space-*` rows, `aria-label` on the collapse button; the host ships inside `#aux-panel` and both tab-bar toggles are deleted | `outline.js:24-73`; `index.html:589-594`; `style.css:3101-3126` | one ARIA story, tokens on every value |
 | 9 | Phone: order and hides, `--icon-xl` glyphs, drawer role/trap/inert, scrim token, remove the landscape claim | `style.css:6975-7260`; `mobile.js:332-360` | the drawer is modal in fact and in the tree |
 | 10 | Reduced motion: each new bar-colour and drawer transition lands with its twin in the same commit, not after | `style.css` | foundations §7.3 |
 
@@ -770,22 +719,26 @@ Step 2's rule, exactly:
 
 ```css
 #layout {
-  --shell-pane-budget: calc(100vw - var(--activity-bar-width) - var(--shell-reader-min));
+  --shell-pane-budget: calc(100vw - 2 * var(--activity-bar-width) - var(--shell-reader-min));
   --shell-panel-track: clamp(var(--shell-pane-min), var(--side-panel-width),
-    min(var(--side-panel-max), calc(.6 * var(--shell-pane-budget))));
-  --shell-outline-track: clamp(var(--shell-pane-min), var(--outline-width),
-    min(var(--outline-max), calc(var(--shell-pane-budget) - var(--shell-panel-track))));
+    min(var(--side-panel-max), calc(.45 * var(--shell-pane-budget))));
+  --shell-aux-track: clamp(var(--shell-pane-min), var(--aux-panel-width),
+    min(var(--aux-panel-max), calc(.45 * var(--shell-pane-budget))));
+  --aux-rail-track: var(--activity-bar-width);
   grid-template-columns: var(--activity-bar-width) var(--shell-panel-track)
-    minmax(0, 1fr) var(--shell-outline-track);
+    minmax(0, 1fr) var(--shell-aux-track) var(--aux-rail-track);
 }
 #layout:has(#side-panel.collapsed) { --shell-panel-track: 0px; }
-#layout:has(#outline-pane.collapsed) { --shell-outline-track: 0px; }
+#layout:has(#aux-panel.collapsed) { --shell-aux-track: 0px; }
+#layout[data-right-empty="true"] { --shell-aux-track: 0px; --aux-rail-track: 0px; }
 ```
 
 `#layout` already declares the row as `minmax(0, 1fr)` (`style.css:225`); only the column list
-changes. The two `:has()` rules make the class on the aside the source of the collapsed track, so
-a saved width of 240 does not survive as a 140 px clamp when the pane is collapsed. JS keeps
-writing its current `0` (the DOM tests read `--side-panel-width` directly); the two agree.
+changes. The `:has()` rules make the class on each aside the source of its collapsed track, so a
+saved width of 240 does not survive as a 140 px clamp when the panel is collapsed. JS keeps
+writing its current `0` (the DOM tests read `--side-panel-width` directly); the two agree. The
+`data-right-empty` attribute is written by `activity.js` and is the only case where a rail takes
+a zero track.
 
 ### 9.3 JS changes, named
 
@@ -793,11 +746,12 @@ writing its current `0` (the DOM tests read `--side-panel-width` directly); the 
 |---|---|---|
 | Arrow / Home / End focus movement on the rail | `activity.js`, `renderBar()` | §3.4 |
 | Persist the requested width: `cfg.sidebarWidth + sign*dx`, not the rendered `startW + dx` (`app.js:848`, `:860`) | `app.js:839-843` | a drag at the clamp must not overwrite the saved width |
-| Read `--shell-pane-min` / `--outline-max` for the drag clamp | `app.js:819-821`, `:860` | CSS and JS must agree |
+| Read `--shell-pane-min` / `--aux-panel-max` for the drag clamp | `app.js:819-821`, `:860` | CSS and JS must agree |
 | `aria-valuenow` on every drag step; keyboard steps | `app.js:845-866` | separator contract |
 | Mount-failure row + Retry | `activity.js:189-194` | §4.7 |
 | Drawer `role` / `aria-modal` / trap / inert / return focus | `mobile.js:332-360`; `dialog.js` helper | §6.2 |
-| `aria-pressed` on `#hybrid-toggle` | `hybrid.js`; `app.js` for the outline toggle (`:757-762`) | state is visual today |
+| `aria-pressed` on `#hybrid-toggle` | `hybrid.js` | state is visual today |
+| Two-side bar/panel state, per-side persistence and re-homing | `activity.js`, `app.js` | [`secondary-sidebar.md`](secondary-sidebar.md) §10.2-§10.3 |
 | `#topbar-show-btn` click → `setHideTopbar(false)` + persist; visible only under `body.topbar-hidden` | `app.js:1281`; new listener | AC9 |
 | Viewer gate: hide `#edit-toggle`, and make `Mod+Shift+E` / `Mod+E` no-ops for a viewer | `viewer.js:958-964`; `shortcuts.js:58-59` | AC18 |
 
@@ -819,6 +773,14 @@ No framework, no build step, no new dependency.
 ---
 
 ## 10. Acceptance criteria
+
+**AC1, AC2, AC4, AC10, AC11, AC14 and AC19 are superseded** by
+[`secondary-sidebar.md`](secondary-sidebar.md) §11. The rows stay here for history; the new
+document's criteria are the ones to build and test. In particular: the grid is five columns
+(AC1), the budget spends two rails and two 45 % caps (AC2), the two panels resize with mirrored
+keyboard directions (AC4), the rails are per side (AC10), the outline is a view whose header uses
+the shared pattern (AC11), each rail icon reports its own panel (AC14), and the outline toggle is
+gone (AC19).
 
 | # | Criterion | File | Observable |
 |---|---|---|---|

@@ -630,7 +630,7 @@
     title.textContent = "Pinned";
     header.appendChild(title);
     if (NB.activity && NB.activity.makeCollapseBtn) {
-      header.appendChild(NB.activity.makeCollapseBtn());
+      header.appendChild(NB.activity.makeCollapseBtn("pinned"));
     }
     host.appendChild(header);
 
@@ -1034,8 +1034,11 @@
     }
     if (NB.activity && NB.activity.activate) {
       const ok = NB.activity.activate("explorer", false);
-      if (ok && NB.activity.isCollapsed && NB.activity.isCollapsed()) {
-        NB.activity.expand();
+      // Explorer's home side is whatever sidebarSide says; "Show in file
+      // sidebar" must expand that side, not always the left one.
+      const side = (NB.activity.sideOf && NB.activity.sideOf("explorer")) || "left";
+      if (ok && NB.activity.isCollapsed && NB.activity.isCollapsed(side)) {
+        NB.activity.expand(side);
       }
     }
     const parts = path.split("/");

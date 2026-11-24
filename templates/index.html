@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"{% if boot.workspace_id %} data-workspace="{{ boot.workspace_id }}"{% endif %}{% if boot.role is defined %} data-role="{{ boot.role or '' }}"{% endif %} style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --outline-width: {{ boot.outline_width }}px;">
+<html lang="en"{% if boot.workspace_id %} data-workspace="{{ boot.workspace_id }}"{% endif %}{% if boot.role is defined %} data-role="{{ boot.role or '' }}"{% endif %} style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --aux-panel-width: {{ boot.aux_panel_width }}px;">
 {% from "_edit_window.html" import edit_header, edit_bar, edit_footer %}
 <head>
   <meta charset="utf-8">
@@ -369,13 +369,15 @@
       </div>
     </header>
 
-    <main id="layout">
+    <main id="layout" data-sidebar-side="{{ boot.sidebar_side|tojson|forceescape }}"{% if boot.right_empty %} data-right-empty="true"{% endif %}>
       <!-- Activity bar: narrow vertical strip of icon buttons pinned to
            the far-left edge. Each icon swaps the #side-panel's content;
            clicking the active icon again collapses the panel so only the
            strip remains. Icons are rendered by activity.js via
            NB.activity.register(); the bar itself is static markup so the
-           grid column exists before the module boots. -->
+           grid column exists before the module boots. The bar's twin
+           (#activity-bar-right, after #aux-panel) carries the views homed
+           right and nothing else. -->
       <nav id="activity-bar" class="activity-bar" aria-label="Activity bar"
            data-sidebar-order="{{ boot.sidebar_order | join(',') }}"
            data-sidebar-hidden="{{ boot.sidebar_hidden | join(',') }}">
@@ -396,12 +398,6 @@
              view: clicking it just opens the Settings modal, no panel
              swap. -->
         <div class="activity-bar-spacer"></div>
-        <!-- The outline pane's second mount. Its first mount is
-             #outline-toggle inside #tab-bar, which disappears with the
-             strip, so this twin is shown by body:has(#tab-bar[hidden]).
-             Hidden on the phone, where the outline pane does not exist. -->
-        <button id="outline-rail-btn" class="activity-btn activity-action" type="button"
-                title="{% if boot.outline_collapsed %}Show outline{% else %}Hide outline{% endif %}" aria-label="Toggle outline pane" aria-pressed="{% if boot.outline_collapsed %}false{% else %}true{% endif %}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-outline"/></svg></button>
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-graph"/></svg></button>
         <button id="logout-btn" class="activity-btn activity-action" title="Log out" aria-label="Log out" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-logout"/></svg></button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-settings"/></svg></button>
@@ -412,75 +408,13 @@
                 aria-haspopup="dialog" aria-expanded="false"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-menu"/></svg></button>
       </nav>
 
-      <!-- Side panel: hosts the currently-active activity view. The
-           Explorer view (#sidebar) ships here by default; further views
-           (Recent, future plugins) are mounted on demand by activity.js
-           and live as siblings that are shown/hidden as the active
-           view changes. The panel shares one resize handle and one
-           --side-panel-width CSS var; individual views never resize
-           independently. -->
+      <!-- Side panel (left): hosts the active view homed on the left. Every
+           view ships its host here or in #aux-panel, per the saved
+           sidebarSide; activity.js shows/hides and moves them. The panel
+           shares one resize handle and one --side-panel-width CSS var;
+           individual views never resize independently. -->
       <aside id="side-panel"{% if boot.sidebar_collapsed %} class="collapsed"{% endif %}>
-        <!-- Explorer view: the original file tree. Stays in the DOM so
-             its state (collapsed folders, selection, scroll) survives
-             view switches; hidden via [hidden] when inactive. -->
-        <div id="sidebar" class="side-panel-view" data-view="explorer"{% if boot.active_view != 'explorer' %} hidden{% endif %}>
-          <div class="panel-header">
-            <span class="panel-title">Files</span>
-            <div class="panel-header-actions">
-              <button class="collapse-btn" id="explorer-top-toggle" data-mode="pinned" title="Top section: Pinned folders. Click to show Bookmarks." aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-pin"/></svg></button>
-              <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><svg class="icon refresh-glyph" aria-hidden="true" focusable="false"><use href="#nb-icon-refresh"/></svg></button>
-              <button class="collapse-btn" id="sidebar-collapse" title="Collapse files (left arrow)"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-left"/></svg></button>
-            </div>
-          </div>
-          <div id="pinned-folders" class="pinned-folders" hidden></div>
-          <div id="explorer-bookmarks" class="explorer-bookmarks" hidden></div>
-          <div id="file-tree" class="tree"></div>
-          <button class="expand-btn" id="sidebar-expand" title="Show files" hidden><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-right"/></svg></button>
-        </div>
-
-        <!-- Sessions view: one row per session. sessions.js builds the
-             header + list at load (the bookmarks.js pattern); the host stays
-             in the DOM so scroll and row state survive view switches.
-             On the phone the view is hosted in the drawer. -->
-        <div id="sessions-view" class="side-panel-view" data-view="sessions"
-             {% if boot.active_view != 'sessions' %}hidden{% endif %}></div>
-
-        <!-- Pinned folders view: the same pin rows the Explorer's inline
-             top section shows, in their own activity-bar pane. Mounted
-             lazily by sidebar.js the first time the 📌 icon is activated. -->
-        <div id="pinned-view" class="side-panel-view" data-view="pinned"{% if boot.active_view != 'pinned' %} hidden{% endif %}></div>
-
-        <!-- Bookmarks view: the pinned-files list. bookmarks.js populates
-             this host at load (header + list); it stays in the DOM so list
-             state survives view switches. -->
-        <div id="bookmarks-view" class="side-panel-view" data-view="bookmarks"{% if boot.active_view != 'bookmarks' %} hidden{% endif %}></div>
-
-        <!-- Recent view: quick-open list of recently edited files with a
-             fuzzy filter. Mounted lazily by activity.js the first time
-             the Recent icon is activated. The placeholder below is
-             replaced on mount. -->
-        <div id="recent-view" class="side-panel-view" data-view="recent"{% if boot.active_view != 'recent' %} hidden{% endif %}></div>
-
-        <!-- Search view: the search surface, with its own input and
-             results list. Mounted lazily by activity.js. -->
-        <div id="search-view" class="side-panel-view" data-view="search"{% if boot.active_view != 'search' %} hidden{% endif %}></div>
-
-        <!-- AI assistant view: chat + reviewable nb-edit proposal cards.
-             Mounted lazily by activity.js on first activation. The chat
-             streams through POST /api/ai/chat; assistant answers parse
-             into cards that apply via the standard /api/edit endpoint. -->
-        <div id="ai-view" class="side-panel-view" data-view="ai"{% if boot.active_view != 'ai' %} hidden{% endif %}></div>
-
-        <!-- Tabs view: the open files of the active session, pinned first.
-             tabs-view.js builds the header + list at load (the sessions.js
-             pattern); the host stays in the DOM so scroll and row state
-             survive view switches. It ships last so the template's data-view
-             order matches the registration order. -->
-        <div id="tabs-view" class="side-panel-view" data-view="tabs"{% if boot.active_view != 'tabs' %} hidden{% endif %}></div>
-
-        <!-- Collapsed-strip affordance removed: the activity bar's icons
-             are the re-expand trigger, so the panel hides completely
-             (width 0) when collapsed. -->
+        {% with side="left", views=boot.views_left, active=boot.active_view_left %}{% include "_side_panels.html" %}{% endwith %}
       </aside>
 
       <section id="editor-pane">
@@ -491,13 +425,11 @@
                hides it entirely while nothing is pinned. -->
           <div id="tab-pinned" class="tab-pinned" hidden></div>
           <!-- File tabs render into this inner scroller (tabs.js). It is the
-               only part of the row that scrolls, so the outline toggle
-               beside it is never overlapped by an overflowing tab. -->
+               only part of the row that scrolls, and it runs to the bar's
+               right edge: the tab bar has no outline toggle any more (the
+               Outline lives in the right panel, and its rail icon is its
+               only control). -->
           <div id="tab-list" class="tab-list"></div>
-          <!-- Outline toggle icon: shows/hides the right-side pane. A
-               sibling of the scroller, pinned to the right edge of the row,
-               independent of the open file tabs. -->
-          <button id="outline-toggle" class="icon-btn outline-toggle" title="{% if boot.outline_collapsed %}Show outline{% else %}Hide outline{% endif %}" aria-label="Toggle outline pane" aria-pressed="{% if boot.outline_collapsed %}false{% else %}true{% endif %}"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-outline"/></svg></button>
         </div>
         <div id="edit-bar" class="edit-bar" hidden>
           <button class="eb" data-act="undo"   title="Undo (Ctrl+Z)">↶</button>
@@ -821,13 +753,26 @@
         </div>
       </section>
 
-      <aside id="outline-pane"{% if boot.outline_collapsed %} class="collapsed"{% endif %}>
-        <div class="panel-header">
-          <span class="panel-title">Outline</span>
-          <button class="collapse-btn" id="outline-collapse" title="Collapse outline (right arrow)"><svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-chevron-right"/></svg></button>
-        </div>
-        <div id="outline" class="outline"></div>
+      <!-- Auxiliary panel (right): the twin of #side-panel. It hosts the
+           active view homed right -- the Outline by default -- and shares
+           one resize handle and one --aux-panel-width CSS var. It takes no
+           width while the right side is empty, which activity.js mirrors
+           onto #layout[data-right-empty]. -->
+      <aside id="aux-panel" aria-label="Right side panel"{% if boot.aux_panel_collapsed %} class="collapsed"{% endif %}>
+        {% with side="right", views=boot.views_right, active=boot.active_view_right %}{% include "_side_panels.html" %}{% endwith %}
       </aside>
+
+      <!-- Right activity bar: the left rail's twin, view icons only. The
+           left rail keeps every action button (workspace, graph, settings,
+           log out, More); a duplicate here would bind the second copy of a
+           getElementById lookup to a dead handler. Icons are rendered by
+           activity.js from the views homed right. -->
+      <nav id="activity-bar-right" class="activity-bar" aria-label="Right activity bar"
+           data-sidebar-order="{{ boot.sidebar_order | join(',') }}"
+           data-sidebar-hidden="{{ boot.sidebar_hidden | join(',') }}">
+        <div class="activity-bar-views"></div>
+        <div class="activity-bar-spacer"></div>
+      </nav>
     </main>
   </div>
 
@@ -1002,8 +947,9 @@
             </div>
             <h3>Keyboard</h3>
             <p class="settings-help">
-              Enable VIM-style keybindings. When on, the sidebar, outline, and editor
-              act as three vim "windows" (Ctrl+W to cycle). Inside the editor itself,
+              Enable VIM-style keybindings. When on, the left panel, the editor and
+              the right panel act as three vim "windows" (Ctrl+W to cycle). Inside the
+              editor itself,
               CodeMirror 6's vim mode gives you full VIM (normal/insert, motions,
               text objects, <code>:w</code> to save, <code>:q</code> to exit, etc.).
               Press <kbd>?</kbd> from the shell for the full keymap.
@@ -1102,8 +1048,10 @@
             </div>
             <div class="settings-form-title">Activity bar</div>
             <p class="settings-help" id="settings-sidebar-order-help">
-              Order of the side-bar icons. Drag a row by its handle to reorder it,
-              and use Hide to remove a view from the activity bar. Unhide restores it.
+              Icons on the left rail and the right rail. The right rail appears only
+              when a view is assigned to it. Drag a row by its handle to reorder it
+              in the shared order, and use Hide to remove a view from its rail.
+              Unhide restores it.
             </p>
             <div id="settings-sidebar-order" class="sidebar-order-list" role="list"
                  aria-label="Activity bar order"

@@ -165,7 +165,7 @@ async function pageState(page) {
       viewerShown: shown("viewer"),
       stripShown: shown("tab-bar"),
       panelShown: shown("side-panel"),
-      outlineShown: shown("outline-pane"),
+      auxShown: shown("aux-panel"),
       sessionsViewShown: shown("sessions-view"),
       stripTabs: Array.from(document.querySelectorAll("#tab-bar .tab"))
         .map((t) => t.dataset.path),
@@ -296,7 +296,7 @@ async function main() {
       const shown = await pageState(page);
       check("1280: the page replaces the reader and the strip and both panels stay",
         shown.pageShown && !shown.viewerShown && shown.stripShown &&
-        shown.panelShown && shown.outlineShown && shown.sessionsViewShown,
+        shown.panelShown && shown.auxShown && shown.sessionsViewShown,
         JSON.stringify(shown));
       check("1280: one card per session, in model order",
         shown.cards === 4 && shown.sessionIds.join(",") === "s1,s2,s3,s4" &&
@@ -315,15 +315,15 @@ async function main() {
         twoCols === 2, String(twoCols));
       await page.screenshot({ path: path.join(tmp, "sessions-page-1280.png") });
 
-      await page.click("#outline-collapse");
+      await page.click("#activity-bar-right .activity-btn[data-view=\"outline\"]");
       await page.waitForTimeout(250);
       const threeCols = await firstRowCards(page);
       check("1280: collapsing the outline widens the grid to three columns",
         threeCols === 3, String(threeCols));
       await page.screenshot({ path: path.join(tmp, "sessions-page-3col.png") });
-      // The collapsed pane hides its own collapse control; the strip's own
-      // outline toggle is the way back (the same state, the same control).
-      await page.click("#outline-toggle");
+      // The collapsed panel hides its own collapse control; the right-rail
+      // icon is the Outline's only toggle and the way back.
+      await page.click("#activity-bar-right .activity-btn[data-view=\"outline\"]");
       await page.waitForTimeout(250);
       check("1280: expanding the outline takes the grid back to two columns",
         (await firstRowCards(page)) === 2);

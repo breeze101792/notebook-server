@@ -1,5 +1,11 @@
 # Active side-panel view restore and first paint — functional spec
 
+**Superseded in part:** the view-to-side model and the per-side active views
+(`activeViewLeft` / `activeViewRight`) are specified in
+[`../ui/secondary-sidebar.md`](../ui/secondary-sidebar.md) §2 and §6. This document still owns
+the first-paint rule and the failure fallbacks; read `activeView` below as "each side's saved
+active view".
+
 Status: shipped (active side-panel view restore and first paint). Owner: `product-designer`.
 Applies to: `static/js/activity.js`, `static/js/app.js`, `templates/index.html`,
 `app.py` (`boot_state()` / `_render_index()`), `tests/dom/test_dom.js`,
@@ -371,9 +377,9 @@ Still open (out of scope for this spec):
 
 - Q2. Should a failed config fetch preserve the entire shell-rendered chrome
   (theme, font, widths), not just the side panel? This spec requires only the
-  side panel. `boot()`'s failed-fetch path now restores the side panel and
-  outline pane (collapse state, and widths where the shell exposes a non-zero
-  value) from the DOM; theme, font, and wallpaper still fall back to
+  side panel. `boot()`'s failed-fetch path now restores both panels (collapse
+  state, and widths where the shell exposes a non-zero value) from the DOM;
+  theme, font, and wallpaper still fall back to
   `DEFAULTS`. The broader behavior is a separate contract question.
 
 ## 10. Non-hard-coded values

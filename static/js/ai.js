@@ -3031,7 +3031,7 @@
     const actions = document.createElement("div");
     actions.className = "panel-header-actions";
     if (NB.activity && NB.activity.makeCollapseBtn) {
-      actions.appendChild(NB.activity.makeCollapseBtn());
+      actions.appendChild(NB.activity.makeCollapseBtn("ai"));
     }
     header.appendChild(actions);
     host.appendChild(header);

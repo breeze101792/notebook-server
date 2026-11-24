@@ -35,10 +35,11 @@ a 320 px viewport cap the row at **seven slots**: 7 × 44 = 308.
 it; push a view past slot 6 and it moves to More. The default order puts Sessions second, so Sessions
 gets a rail slot without anyone ranking views.
 
-Why six and not five: the default order is Explorer, Sessions, Pinned folders, Bookmarks, Recent files,
-Search, AI. Five slots would push Search — the phone's main find path (`product/mobile.md` M4) — into
-More. Six keeps every view the shipped rail already had, adds Sessions, and still fits a 320 px phone
-as seven 44 px slots.
+Why six and not five: the default order (registration order, with an empty `sidebarOrder`) is
+Explorer, Sessions, Pinned folders, Bookmarks, Recent files, Search, AI, Tabs, Outline. Five slots
+would push Search — the phone's main find path (`product/mobile.md` M4) — into More. Six keeps
+every view the shipped rail already had, adds Sessions, and still fits a 320 px phone as seven
+44 px slots; AI and Outline are off the phone entirely.
 
 ### 1.2 The two constants
 
@@ -47,7 +48,7 @@ as seven 44 px slots.
 const PHONE_RAIL_SLOTS = 6;
 // Views with no phone surface at all. They take neither a slot nor a More row,
 // because a row that opens an empty drawer is worse than no row.
-const PHONE_OFF_VIEWS = ["ai"];
+const PHONE_OFF_VIEWS = ["ai", "outline"];
 
 function railViews() {
   if (!isPhone()) return visibleViews();
@@ -72,12 +73,17 @@ function offRailViews() {
 | Bookmarks | rail 4 | a saved list with no other door |
 | Recent files | rail 5 | jump back without typing |
 | Search | rail 6 | the phone's main find path |
+| Tabs | More | the seventh view until the user promotes it |
 | AI Assistant | **off** | rejected for the phone on 2026-11-09 (`ai-panel.md` §9.2); no rail slot and no More row |
+| Outline | **off** | a desktop-only view: it lives in the right panel, which does not exist on a phone (`secondary-sidebar.md` §9) |
 | Graph | not a view | a full-screen canvas with its own gestures, deliberately desktop-only (`graph-view.md` §7); proposed for the phone in §11 P1, not built |
 
 A view added to the bar later takes the seventh position in More until the user moves it up. A view
 registered but not yet in the saved order lands after the known ones (`activity.js:109-122`) and
 follows the same rule.
+
+The phone ignores a view's side entirely: every host is moved into the drawer, so a view the user
+homed right on the desktop still opens here (`secondary-sidebar.md` §9).
 
 ### 1.3 What the sheet lists
 
@@ -309,7 +315,7 @@ option: Settings and Sign out would be unreachable from a note.
 |---|---|---|---|
 | AC1 | The phone rail has six view buttons and More | `activity.js`, `style.css` | At 390 in the default order: Explorer, Sessions, Pinned folders, Bookmarks, Recent files, Search, More |
 | AC2 | The rail is the first six in the user's order | `activity.js` | `PHONE_RAIL_SLOTS` is the only slice; reorder the bar on desktop and the phone rail follows after reload |
-| AC3 | AI takes neither a slot nor a More row | `activity.js` | `PHONE_OFF_VIEWS = ["ai"]`; `railViews()` and `offRailViews()` both exclude it |
+| AC3 | AI and Outline take neither a slot nor a More row | `activity.js` | `PHONE_OFF_VIEWS = ["ai", "outline"]`; `railViews()` and `offRailViews()` both exclude them; a right-homed view still opens in the drawer |
 | AC4 | Every view with a phone surface is reachable | `activity.js`, `mobile.js` | Each visible view is either a rail button or a More row, and choosing the row opens it in the drawer |
 | AC5 | The More sheet lists the views past slot 6 plus Settings and Sign out | `mobile.js` | Empty `Views` group under the default order; two `App` rows; no duplicate of a rail view |
 | AC6 | A hidden view appears in neither place | `mobile.js` | Hiding a view on desktop removes its button and leaves no More row |
@@ -319,7 +325,7 @@ option: Settings and Sign out would be unreachable from a note.
 | AC10 | The sheet is a modal dialog | `mobile.js`, `index.html` | `role="dialog"`, `aria-modal`, trap, Esc closes, scrim tap closes, focus returns |
 | AC11 | Targets are 44 px or larger | `style.css` | Rail buttons ≥44 × 56; rows 52 with full-width hit area; close 44 |
 | AC12 | No new token and no raw duration | `style.css` | The block adds no hex, no px radius, no literal ms |
-| AC13 | Desktop is unchanged | `style.css`, `activity.js` | At 1280 the rail has all seven views, no More button, and the slice is not applied |
+| AC13 | Desktop is unchanged | `style.css`, `activity.js` | At 1280 each rail renders every visible view assigned to it (eight left, one right by default), with no More button, and the six-slot slice is not applied |
 | AC14 | The mockup is self-contained | `mobile-shell-mockup.html` | Opens offline, dark and light |
 
 ---

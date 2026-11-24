@@ -22,45 +22,50 @@ Abbreviations: `style.css` = `static/css/style.css`; `settings.js` = `static/js/
 
 ## 1. Model
 
-The group holds two independent settings over one list of seven rows.
+The group holds three independent settings over one list of nine rows.
 
 | Setting | Input | Writes | Source |
 |---|---|---|---|
 | Order | pointer drag on the grip | `sidebarOrder` | `settings.js:424-550` |
 | Visibility | the row's `Hide` / `Unhide` button | `sidebarHidden` | `settings.js:558-573` |
+| Side | the row's `Left \| Right` segmented control | `sidebarSide` | [`secondary-sidebar.md`](secondary-sidebar.md) §8 |
 
 Rules:
 
-1. **Drag is the only way to reorder.** There is no arrow button and no keyboard reorder. The button
-   that used to sit in each row has been replaced by the visibility toggle, so the row has exactly one
-   control.
-2. **The grip is the only drag source.** The card, the label and the button are not draggable
+1. **Drag is the only way to reorder.** There is no arrow button and no keyboard reorder. Each row
+   carries two controls — the visibility toggle and the side control — and neither moves it.
+2. **The grip is the only drag source.** The card, the label and the buttons are not draggable
    (`settings.js:425-428`). Drag is a pointer gesture on one 24 × 24 box per row.
-3. **The list always shows all seven views**, in bar order, hidden or not. It is the only place a
+3. **The list always shows all nine views**, in bar order, hidden or not. It is the only place a
    hidden view can be restored, so it is never filtered.
 4. Both paths are live: reorder the bar, persist, re-render the list, restore focus, announce. There
    is no Apply, no Cancel and no undo.
 5. A hidden view keeps its position in the saved order. Hiding it and unhiding it puts it back where
    it was; hiding never re-numbers the rest (`activity.js:111-122`, `:134-136`).
+6. A view's side is independent of its position and of its visibility. Reordering never changes a
+   side, and hiding never changes one.
 
 **The honest keyboard statement.** Reordering has no keyboard path at all. `draggable` adds no role,
-no tab stop and no key handler, and nothing here replaces it. The only keyboard-operable control in
-the group is the visibility toggle. A keyboard user can hide and unhide, and cannot reorder. That is
-the shipped contract, stated once here so no later document claims otherwise.
+no tab stop and no key handler, and nothing here replaces it. The keyboard-operable controls are
+the visibility toggle and the two side buttons. A keyboard user can hide, unhide, and move a view
+between rails, and cannot reorder. That is the shipped contract, stated once here so no later
+document claims otherwise.
 
 ---
 
 ## 2. Anatomy
 
 ```
-#settings-sidebar-order        role=list, gap 8, no inner scroll, 7 rows
+#settings-sidebar-order        role=list, gap 8, no inner scroll, 9 rows
 ├── .sidebar-order-row        40 px card, --surface-raised, 1 px --border, radius 8
 │   ├── .sidebar-order-grip   24 × 24, #nb-icon-grip 14 px, --text-muted, cursor grab
 │   ├── .sidebar-order-icon   14 × 14, the view's own bar icon, --text-muted
 │   ├── .sidebar-order-label  flex 1, .93rem, --text-primary, one line, ellipsis
 │   └── .sidebar-order-actions
-│       └── .sidebar-order-toggle   Hide  (30 px tall, min-width 60)
-└── × 7   Explorer, Sessions, Pinned folders, Bookmarks, Recent files, Search, AI Assistant
+│       ├── .sidebar-order-side    Left | Right, 30 px segmented control
+│       └── .sidebar-order-toggle  Hide  (30 px tall, min-width 60)
+└── × 9   Explorer, Sessions, Pinned folders, Bookmarks, Recent files, Search, Tabs,
+         AI Assistant, Outline
 
 .sidebar-order-row.is-hidden  --surface-panel face, --text-muted label, icon unchanged, Unhide
 ```
@@ -69,7 +74,7 @@ the shipped contract, stated once here so no later document claims otherwise.
 |---|---|---|
 | List | flex column, gap 8, `margin: 4px 0 16px`, `role="list"`, `aria-label="Activity bar order"`, `aria-describedby` the help paragraph | `--space-2`, `--space-1`, `--space-4` |
 | Row height | **40** = 4 + 4 padding + 30 control + 2 border | `--space-1`, `--control-h-md` |
-| Row pitch | **48** = 40 + 8 gap; seven rows and six gaps measure **328** | `--space-2` |
+| Row pitch | **48** = 40 + 8 gap; nine rows and eight gaps measure **424** | `--space-2` |
 | Row face | `--surface-raised`, 1 px `--border`, radius 8, `position: relative`, no hover fill | `--stroke-1`, `--border`, `--radius-md` |
 | Row padding | `4px 12px`, `align-items: center`, gap 12 | `--space-1`, `--space-3` |
 | Grip box | 24 × 24, glyph 14 × 14, centred | `--control-h-sm`, `--icon-sm` |
@@ -203,12 +208,33 @@ Consequences worth stating:
 
 - Hiding does not delete an order. `sidebarHidden` and `sidebarOrder` are separate keys; unhide puts the
   view back at its saved index, not at the end.
+- Hiding does not delete a side either. `sidebarSide` keeps the view's entry while it is hidden, so
+  unhiding restores the icon on the rail it came from.
 - Hiding every view leaves no icon in the strip and no open panel. The Settings list still shows all
-  seven rows, so the state is recoverable from here.
+  nine rows, so the state is recoverable from here. With two rails, "every view" means every view on
+  that rail: hiding the last right-homed view empties the right side (rail and panel), and leaves the
+  left untouched ([`secondary-sidebar.md`](secondary-sidebar.md) §7.5).
 - The bar re-renders immediately; the write is debounced with every other live setting (§3.7 of
   `settings-modal.md`).
 - Hiding the active view does not close Settings: the modal is inert over the shell, and the panel
   change happens behind it.
+
+### 6.1 Side
+
+The segmented control writes `sidebarSide` and takes effect immediately: the view's host moves to the
+other panel, both rails re-render, and the moved view stays selected on its new side only when it was
+the source side's active view. The panel the view left keeps its own state; a side change never opens
+or closes a panel unless the source side is left with nothing visible, in which case it collapses.
+Full semantics: [`secondary-sidebar.md`](secondary-sidebar.md) §7.3.
+
+| Aspect | Rule |
+|---|---|
+| Options | Two `<button>`s in one 30 px pill, `role="group"` with `aria-label="<view> side"`, each `aria-pressed` |
+| Selected | `--accent-soft` face, `--accent` text; the unselected option is transparent on `--text-muted` |
+| Hover | `--accent-soft` face on the option under the pointer |
+| Focus | the standard ring at `--focus-offset` |
+| Persist | `NB.app.setSidebarSide(id, side)` → `persistConfig(["sidebarSide"])`; the phone writes nothing |
+| Announcement | `<View> moved to the <left\|right> rail, position <n> of <m>` where n/m count that rail's visible rows |
 
 ---
 
@@ -217,15 +243,16 @@ Consequences worth stating:
 | Requirement | Contract |
 |---|---|
 | Reorder by keyboard | **None.** There is no key, no focus target and no menu for reordering. The drag is pointer-only and this document does not pretend otherwise. |
-| Visibility by keyboard | The toggle is a native `<button>`: Tab reaches it, Enter and Space activate it. One stop per row, seven in the list. |
+| Visibility by keyboard | The toggle is a native `<button>`: Tab reaches it, Enter and Space activate it. One stop per row, nine in the list. |
 | Hidden view activation | Refused. A hidden view cannot be brought forward by an icon click, a shortcut, the phone drawer or boot; callers fall back to the first visible view (`activity.js:233-238`, `:348`). |
 | Row focus | Rows carry no `tabindex` and are not stops (`settings.js:374-380`). |
-| Accessible name of the toggle | `aria-label` and `title` are `Hide <view>` / `Unhide <view>`; the visible word alone would be ambiguous once seven rows share it (`settings.js:407-408`). |
-| Position information | Each row carries `aria-posinset` (1-based) and `aria-setsize="7"`, so the row reads "Bookmarks, 4 of 7" (`settings.js:379-380`). |
+| Accessible name of the toggle | `aria-label` and `title` are `Hide <view>` / `Unhide <view>`; the visible word alone would be ambiguous once nine rows share it (`settings.js:407-408`). |
+| Position information | Each row carries `aria-posinset` (1-based) and `aria-setsize="9"`, plus `aria-label` naming its side, so the row reads "Bookmarks, 4 of 9, left rail" (`settings.js:379-380`). |
 | Grip | `aria-hidden="true"` on the grip span and its SVG. It is a pointer affordance with no keyboard meaning. |
 | Instructions | The help paragraph carries `id="settings-sidebar-order-help"`; the list points at it with `aria-describedby`, so entering the list reads the rule once (`index.html:987-993`). |
 | Live region | `<p class="sr-only" id="settings-sidebar-order-status" role="status">` directly after the list (`.sr-only`, `style.css:4772-4781`). Its text is replaced, never appended. |
-| Announcement — reorder | `<View> moved to position <n> of 7.` after every completed drag (`settings.js:574-581`). |
+| Announcement — reorder | `<View> moved to position <n> of 9.` after every completed drag (`settings.js:574-581`). |
+| Announcement — side | `<View> moved to the <left\|right> rail, position <n> of <m>.` after a side change, where n/m count that rail's visible rows. |
 | Announcement — visibility | `<View> hidden.` / `<View> shown.` (`settings.js:569-572`). |
 | Silent cases | A no-op drop, a cancelled drag, and a drag that ends outside the list say nothing, because nothing changed. |
 | Focus after a drag | The moved row's toggle, `preventScroll` (`settings.js:547-548`, `:551-557`). Programmatic focus after a pointer gesture does not match `:focus-visible`, so no ring is painted; the next Tab continues from the button. |
@@ -276,10 +303,11 @@ reorder (proposal P1). The phone settings sheet has no order list at all
 
 | Where | Text |
 |---|---|
-| Help paragraph | `Order of the side-bar icons. Drag a row by its handle to reorder it, and use Hide to remove a view from the activity bar. Unhide restores it.` |
+| Help paragraph | `Icons on the left rail and the right rail. Drag a row by its handle to reorder it, Left or Right to choose its rail, and Hide to remove a view. Unhide restores it.` |
 | Toggle, view visible | `Hide`; `aria-label` / `title`: `Hide <view>` |
 | Toggle, view hidden | `Unhide`; `aria-label` / `title`: `Unhide <view>` |
-| Live region — move | `<View> moved to position <n> of 7.` |
+| Side control | `Left`, `Right`; group `aria-label`: `<view> side` |
+| Live region — move | `<View> moved to position <n> of 9.` |
 | Live region — hide | `<View> hidden.` |
 | Live region — unhide | `<View> shown.` |
 | List `aria-label` | `Activity bar order` |
@@ -295,7 +323,7 @@ One row as shipped (`settings.js:369-414` builds this):
 
 ```html
 <div class="sidebar-order-row" role="listitem" data-view="bookmarks"
-     aria-posinset="4" aria-setsize="7">
+     aria-posinset="4" aria-setsize="9">
   <span class="sidebar-order-grip" draggable="true" aria-hidden="true">
     <svg class="icon" aria-hidden="true" focusable="false"><use href="#nb-icon-grip"/></svg>
   </span>
@@ -304,6 +332,10 @@ One row as shipped (`settings.js:369-414` builds this):
   </span>
   <span class="sidebar-order-label">Bookmarks</span>
   <span class="sidebar-order-actions">
+    <span class="sidebar-order-side" role="group" aria-label="Bookmarks side">
+      <button class="sidebar-order-side-opt" type="button" aria-pressed="true">Left</button>
+      <button class="sidebar-order-side-opt" type="button" aria-pressed="false">Right</button>
+    </span>
     <button class="settings-action sidebar-order-toggle" type="button"
             aria-label="Hide Bookmarks" title="Hide Bookmarks">Hide</button>
   </span>
@@ -396,7 +428,7 @@ keys embedded as `data-sidebar-order` / `data-sidebar-hidden` (`index.html:334-3
 |---|---|---|---|
 | **P1** | A keyboard reorder: `Alt` + `↑` / `↓` on a focused row, or a row menu with `Move up` / `Move down` | Reordering is pointer-only today, and the two users who need it have no route at all | A second control per row or a nested menu; the row is one 40 px card and already carries a grip and a button |
 | **P2** | Raise the toggle to 44 px on a coarse pointer | foundations §10.4 asks for 44 on touch | It would be the only 44 px button in the modal; a control-layer decision, not this control's (§9) |
-| **P3** | A count beside the group title, `2 hidden` | Seven rows with two states is easy to lose track of | One line of copy and a render hook; no layout change |
+| **P3** | A count beside the group title, `2 hidden` | Nine rows with three settings are easy to lose track of | One line of copy and a render hook; no layout change |
 | **P4** | Fade the drop line in, or lift the dragged card | Perceived smoothness | Motion on an indicator delays the indicator; the drag image already supplies the movement (§8) |
 
 ---
@@ -412,14 +444,18 @@ keys embedded as `data-sidebar-order` / `data-sidebar-hidden` (`index.html:334-3
 | **AC5** | A drop outside changes nothing | `settings.js` | Releasing over the modal body or outside the window leaves the order and the focus unchanged and clears every mark |
 | **AC6** | Esc cancels and keeps the modal | `settings.js` | Esc during a drag ends the gesture and leaves Settings open |
 | **AC7** | Auto-scroll | `settings.js` | Dragging into the 32 px band at either edge of `.settings-sections` scrolls that column and keeps the mark under the pointer |
-| **AC8** | A move is announced and focused | `settings.js` | The region reads `<View> moved to position <n> of 7.` and focus lands on the moved row's toggle |
+| **AC8** | A move is announced and focused | `settings.js` | The region reads `<View> moved to position <n> of 9.` and focus lands on the moved row's toggle |
 | **AC9** | Hide removes the icon and keeps the row | `settings.js`, `activity.js` | The icon leaves `#activity-bar`; the row stays in place with `is-hidden` and `Unhide`; `sidebarHidden` gains the id |
 | **AC10** | Unhide restores the icon at its saved position | `settings.js`, `activity.js` | The icon returns between its neighbours, not at the end; `sidebarHidden` loses the id |
 | **AC11** | Visibility is announced and focused | `settings.js` | `<View> hidden.` / `<View> shown.`; focus stays on that row's toggle |
 | **AC12** | Hiding the active view is safe | `activity.js` | The panel switches to the first visible view; hiding every view collapses the panel and closes the phone drawer |
-| **AC13** | The list is the only control, and it is honest | `settings.js`, `index.html` | No `.sidebar-order-move` exists; the toggle is the only button per row; the help paragraph and this document both say reorder is drag-only |
+| **AC13** | The list is the only control, and it is honest | `settings.js`, `index.html` | No `.sidebar-order-move` exists; each row has exactly the visibility toggle and the side control; the help paragraph and this document both say reorder is drag-only |
 | **AC14** | Tokens only | `style.css` | The block adds no hex, no px radius, no raw duration |
 | **AC15** | Each row shows the view's own icon | `settings.js`, `index.html` | A 14 × 14 `.sidebar-order-icon` sits between the grip and the label, `aria-hidden`, on `--text-muted`, drawing the same `nb-icon-*` symbol as that view's activity-bar button; it survives Hide and Unhide unchanged; a view with a text icon falls back to the glyph (`tests/dom/test_dom.js:27566-27571`) |
+| **AC16** | Every row states its side | `settings.js` | The segmented control shows `Left` or `Right` selected; no row is blank; a view with no `sidebarSide` entry shows its registration default (Outline: Right, all others: Left) |
+| **AC17** | A side change is live and reversible | `settings.js`, `activity.js` | Clicking `Right` on a left row moves the view's icon to `#activity-bar-right` and its host into `#aux-panel` without a reload; clicking `Left` moves both back; `sidebarSide` is posted each time |
+| **AC18** | The side control is keyboard-operable and announced | `settings.js` | Each option is a native button, Tab reaches both, Enter/Space selects, `aria-pressed` follows; the status region reads `<View> moved to the <left\|right> rail, position <n> of <m>` |
+| **AC19** | A side change never alters the other side's panel state | `settings.js`, `activity.js` | Moving a background view leaves both panels' collapsed flags and active views unchanged |
 
 ---
 
@@ -434,6 +470,6 @@ keys embedded as `data-sidebar-order` / `data-sidebar-hidden` (`index.html:334-3
 | A gap placeholder or a floating ghost for the drop | Reflows under the pointer, or duplicates the drag image (§4) |
 | Dimming or striking through a hidden row | Face and label already carry it; a fade would cost the `Unhide` button its contrast (§3) |
 | `aria-grabbed` / `aria-dropeffect` | Deprecated and removed from ARIA 1.2 (§3) |
-| A `role="listbox"` sortable widget | Would replace seven native buttons with a composite widget for one list (§7) |
-| A nested scroll container around the list | 328 px does not justify a second scrollport; the sections column owns scrolling (§5) |
+| A `role="listbox"` sortable widget | Would replace nine native buttons with a composite widget for one list (§7) |
+| A nested scroll container around the list | 424 px does not justify a second scrollport; the sections column owns scrolling (§5) |
 | Claiming a keyboard reorder in any doc or tooltip | There is none (§1) |

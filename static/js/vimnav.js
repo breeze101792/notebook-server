@@ -1,11 +1,11 @@
 /* vimnav.js -- shell-level VIM keymap for the Markdown notebook app.
  *
  * Two layers of VIM in this app:
- *   1. App shell (this module): sidebar / editor / outline act as
- *      three vim "windows". Ctrl+W cycles focus. j/k/gg/G navigate
- *      within the active window. Ctrl+Shift+E enters/exits edit mode.
- *      Alt+H/L cycle to the previous/next tab. o/r/d mutate the
- *      file tree. / opens the Search panel.
+ *   1. App shell (this module): the left panel, the editor and the right
+ *      panel act as three vim "windows". Ctrl+W cycles focus. j/k/gg/G
+ *      navigate within the active window. Ctrl+Shift+E enters/exits edit
+ *      mode. Alt+H/L cycle to the previous/next tab. o/r/d mutate the file
+ *      tree. / opens the Search panel.
  *   2. Editor textarea (CodeMirror 6 + @replit/codemirror-vim):
  *      real VIM inside the raw editor (dd/dw/cw/:/etc.). The bridge
  *      (cm-bridge.js) registers the high-priority Ctrl+B / Ctrl+I
@@ -82,6 +82,11 @@
   }
 
   /* --- window + cursor helpers ------------------------------------ */
+  /* The three windows are positional, not per-view: the left panel, the
+   * editor and the right panel. A panel can host any view, so a panel whose
+   * active view has no keys simply answers fewer keys, which is what the
+   * editor window has always done. The internal names stay "sidebar" /
+   * "editor" / "outline" so the state machine is unchanged. */
   function setActiveWindow(w) {
     if (!["sidebar", "editor", "outline"].includes(w)) return;
     activeWindow = w;
@@ -259,9 +264,9 @@
     if (prefix === "g") {
       if (k === "g") {
         // gg: top
-        if (activeWindow === "sidebar") NB.sidebar.vimCursorPrev && scrollSidebarToEdge("top");
-        else if (activeWindow === "outline") NB.outline.vimCursorPrev && outlineJump("top");
-        else editorJump("top");
+        if (activeWindow === "sidebar" && viewVisible("explorer")) scrollSidebarToEdge("top");
+        else if (activeWindow === "outline" && viewVisible("outline")) outlineJump("top");
+        else if (activeWindow === "editor") editorJump("top");
       }
     }
   }
@@ -288,7 +293,17 @@
     if (win === "editor") return dispatchEditor(k, e);
   }
 
+  /* Is a view the one on screen? The shells' registry answers it; before
+   * activity.js has loaded there is nothing to ask, and no panel to key. */
+  function viewVisible(id) {
+    if (!NB.activity || !NB.activity.isViewVisible) return false;
+    return !!NB.activity.isViewVisible(id);
+  }
+
   function dispatchSidebar(k, e) {
+    // The window is the left panel; its keys are the tree's only while the
+    // Explorer is the view it shows.
+    if (!viewVisible("explorer")) return;
     const s = NB.sidebar;
     if (!s) return;
     if (k === "j" || k === "ArrowDown") { s.vimCursorNext(); return; }
@@ -304,6 +319,9 @@
   }
 
   function dispatchOutline(k, e) {
+    // The window is the right panel; its keys are the outline's only while
+    // the Outline is the view it shows (and its panel is open).
+    if (!viewVisible("outline")) return;
     const o = NB.outline;
     if (!o) return;
     if (k === "j" || k === "ArrowDown") { o.vimCursorNext(); return; }
@@ -373,7 +391,7 @@
         <div class="vimnav-help-body">
           <h3>App shell</h3>
           <table>
-            <tr><th><kbd>Ctrl</kbd>+<kbd>W</kbd></th><td>Cycle window: sidebar → editor → outline</td></tr>
+            <tr><th><kbd>Ctrl</kbd>+<kbd>W</kbd></th><td>Cycle window: left panel → editor → right panel</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd></th><td>Toggle edit mode (focus the editor / return to preview)</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>E</kbd></th><td>Toggle the WYSIWYG (hybrid) editor</td></tr>
             <tr><th><kbd>Alt</kbd>+<kbd>H</kbd> / <kbd>Alt</kbd>+<kbd>L</kbd></th><td>Previous / next tab (prompts to save if dirty in edit mode)</td></tr>
@@ -382,7 +400,7 @@
             <tr><th><kbd>Ctrl</kbd>+<kbd>/</kbd></th><td>Disable VIM mode for this session (escape hatch)</td></tr>
             <tr><th><kbd>Ctrl</kbd>+<kbd>S</kbd></th><td>Save</td></tr>
           </table>
-          <h3>Sidebar window</h3>
+          <h3>Left panel (Explorer)</h3>
           <table>
             <tr><th><kbd>j</kbd> / <kbd>k</kbd></th><td>Move cursor down / up</td></tr>
             <tr><th><kbd>l</kbd> / <kbd>Enter</kbd></th><td>Open file or expand folder</td></tr>
@@ -390,7 +408,7 @@
             <tr><th><kbd>gg</kbd> / <kbd>G</kbd></th><td>Jump to top / bottom of the tree</td></tr>
             <tr><th><kbd>o</kbd></th><td>New note (same as right-click → New file)</td></tr>
           </table>
-          <h3>Outline window</h3>
+          <h3>Right panel (Outline)</h3>
           <table>
             <tr><th><kbd>j</kbd> / <kbd>k</kbd></th><td>Move cursor down / up</td></tr>
             <tr><th><kbd>l</kbd> / <kbd>Enter</kbd></th><td>Scroll the editor to that heading</td></tr>
@@ -448,13 +466,15 @@
     enabled = !!on;
     if (enabled) {
       document.body.classList.add("vim-enabled");
-      // Tag the three windows so the css can show the focus ring.
-      document.querySelectorAll("#sidebar, #editor-pane, #outline-pane")
+      // Tag the three positional windows so the css can show the focus ring:
+      // left panel, editor, right panel. Every view host lives inside one of
+      // the panels, so a view moved between sides is still covered.
+      document.querySelectorAll("#side-panel, #editor-pane, #aux-panel")
         .forEach(el => {
           el.classList.add("vim-window");
-          if (el.id === "sidebar") el.dataset.vimWindow = "sidebar";
+          if (el.id === "side-panel") el.dataset.vimWindow = "sidebar";
           else if (el.id === "editor-pane") el.dataset.vimWindow = "editor";
-          else if (el.id === "outline-pane") el.dataset.vimWindow = "outline";
+          else if (el.id === "aux-panel") el.dataset.vimWindow = "outline";
         });
       setActiveWindow(activeWindow || "editor");
       // Wire click handlers so clicking a window gives it focus.

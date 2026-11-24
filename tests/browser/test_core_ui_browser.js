@@ -1801,7 +1801,10 @@ async function main() {
     // is not the active, expanded view.
     const openSessionsView = async () => {
       await page.evaluate(() => {
-        if (NB.activity.getActive() !== "sessions" || NB.activity.isCollapsed()) {
+        // With two sides getActive() means "last activated anywhere", so the
+        // visibility question must name the view and the side. Clicking the
+        // already-active icon on an open panel would collapse it.
+        if (!NB.activity.isViewVisible("sessions")) {
           document.querySelector('#activity-bar .activity-btn[data-view="sessions"]').click();
         }
       });
@@ -2371,6 +2374,258 @@ async function main() {
     check("sessions: cleanup leaves the single Main session",
       await page.evaluate(() => NB.tabs.getSessionList().length === 1 &&
         NB.tabs.getSessionList()[0].name === "Main"));
+
+    // ---------------------------------------------------------------
+    console.log("== secondary sidebar: two rails ==");
+    {
+      const sleep200 = () => sleep(200);
+      const resetShell = () => page.evaluate(() => {
+        NB.app.setSidebarHidden([]);
+        NB.app.setSidebarOrder([]);
+        if (NB.activity.sideOf("recent") === "right") NB.activity.setSide("recent", "left");
+        if (NB.activity.sideOf("sessions") === "right") NB.activity.setSide("sessions", "left");
+        NB.activity.activate("explorer", false);
+        NB.activity.activate("outline", false);
+        NB.activity.expand("left");
+        NB.activity.expand("right");
+      });
+      const dragHandle = async (panelId, toX) => {
+        const box = await page.locator("#" + panelId + " .resize-handle").boundingBox();
+        await page.mouse.move(box.x + box.width / 2, box.y + Math.min(200, box.height / 2));
+        await page.mouse.down();
+        await page.mouse.move(toX, box.y + Math.min(200, box.height / 2), { steps: 10 });
+        await page.mouse.up();
+        await sleep(150);
+      };
+      const geom = () => page.evaluate(() => {
+        const w = (id) => document.getElementById(id).getBoundingClientRect().width;
+        return {
+          left: w("side-panel"), right: w("aux-panel"), editor: w("editor-pane"),
+          leftRail: w("activity-bar"), rightRail: w("activity-bar-right"),
+          vw: innerWidth,
+          cols: getComputedStyle(document.getElementById("layout"))
+            .gridTemplateColumns.split(/\s+/).filter(Boolean),
+        };
+      });
+
+      await resetShell();
+      await sleep200();
+
+      // AC5: a right-rail icon activates its view in #aux-panel and leaves the
+      // left panel's active view and width unchanged.
+      await page.evaluate(() => NB.app.setSidebarSide("recent", "right"));
+      await sleep(400);
+      const ac5Before = await page.evaluate(() => ({
+        left: NB.activity.getActive("left"),
+        width: document.getElementById("side-panel").getBoundingClientRect().width,
+      }));
+      await page.click('#activity-bar-right .activity-btn[data-view="recent"]');
+      await sleep200();
+      const ac5 = await page.evaluate(() => ({
+        left: NB.activity.getActive("left"),
+        width: document.getElementById("side-panel").getBoundingClientRect().width,
+        rightVisible: !document.getElementById("recent-view").hidden &&
+          document.getElementById("recent-view").getBoundingClientRect().width > 0,
+        outlineHidden: document.getElementById("outline-view").hidden,
+        pressed: document.querySelector(
+          '#activity-bar-right .activity-btn[data-view="recent"]')
+          .getAttribute("aria-pressed"),
+      }));
+      check("AC5: the right icon shows its view in #aux-panel",
+        ac5.rightVisible && ac5.outlineHidden && ac5.pressed === "true",
+        JSON.stringify(ac5));
+      check("AC5: the left active view and width are unchanged",
+        ac5.left === ac5Before.left && ac5.width === ac5Before.width,
+        JSON.stringify([ac5Before, ac5.left, ac5.width]));
+
+      // AC6: clicking the active right icon collapses #aux-panel to 0 and
+      // keeps the icon lit; clicking again restores auxPanelWidth.
+      const auxDefault = await page.evaluate(() => NB.app.getAuxPanelWidth());
+      await page.click('#activity-bar-right .activity-btn[data-view="recent"]');
+      await sleep200();
+      const ac6Collapsed = await page.evaluate(() => ({
+        width: document.getElementById("aux-panel").getBoundingClientRect().width,
+        track: getComputedStyle(document.getElementById("layout"))
+          .getPropertyValue("--shell-aux-track").trim(),
+        pressed: document.querySelector(
+          '#activity-bar-right .activity-btn[data-view="recent"]')
+          .getAttribute("aria-pressed"),
+      }));
+      check("AC6: the active right icon collapses #aux-panel to 0",
+        ac6Collapsed.width <= 1 && ac6Collapsed.track === "0px" &&
+        ac6Collapsed.pressed === "true",
+        JSON.stringify(ac6Collapsed));
+      await page.click('#activity-bar-right .activity-btn[data-view="recent"]');
+      await sleep200();
+      const ac6Open = await page.evaluate(() => ({
+        width: document.getElementById("aux-panel").getBoundingClientRect().width,
+        pressed: document.querySelector(
+          '#activity-bar-right .activity-btn[data-view="recent"]')
+          .getAttribute("aria-pressed"),
+      }));
+      check("AC6: clicking again expands to the saved auxPanelWidth",
+        Math.abs(ac6Open.width - auxDefault) <= 1 && ac6Open.pressed === "true",
+        JSON.stringify([ac6Open, auxDefault]));
+      await page.evaluate(() => NB.app.setSidebarSide("recent", "left"));
+      await sleep(400);
+      await resetShell();
+      await sleep200();
+
+      // AC12: at 1280, both panels dragged to their caps leave the reader at
+      // least 352 px (the budget gives each panel 45 % of 832 = 374).
+      await dragHandle("side-panel", 1260);
+      await dragHandle("aux-panel", 20);
+      const cap1280 = await geom();
+      check("AC12: at 1280 both caps leave the reader at least 352 px",
+        cap1280.left > 370 && cap1280.right > 370 &&
+        cap1280.editor >= 352,
+        JSON.stringify(cap1280));
+      check("AC12: at 1280 the caps are 45 % of the shared budget",
+        cap1280.left <= 375 && cap1280.right <= 375 &&
+        Math.abs(cap1280.left - cap1280.right) <= 1,
+        JSON.stringify([cap1280.left, cap1280.right]));
+
+      // AC13: at 861 both caps still leave >= 352 (395), and both 140 floors
+      // leave 485.
+      await page.setViewportSize({ width: 861, height: 800 });
+      await sleep(300);
+      await page.evaluate(() => {
+        // Drags persist the CSS var; the viewport clamp shrinks both panels.
+        NB.activity.expand("left");
+        NB.activity.expand("right");
+      });
+      const cap861 = await geom();
+      check("AC13: at 861 both caps leave the reader at least 352 px",
+        cap861.editor >= 352 && cap861.left > 180 && cap861.right > 180,
+        JSON.stringify(cap861));
+      await dragHandle("side-panel", 20);
+      await dragHandle("aux-panel", 840);
+      const floor861 = await geom();
+      check("AC13: at 861 both 140 px floors leave the reader at 485",
+        Math.abs(floor861.left - 140) <= 1 &&
+        Math.abs(floor861.right - 140) <= 1 &&
+        floor861.editor >= 480,
+        JSON.stringify(floor861));
+
+      // Restore the desktop viewport and the default pane widths.
+      await page.setViewportSize(VIEW);
+      await sleep(300);
+      await page.evaluate(() => {
+        document.documentElement.style.setProperty("--side-panel-width", "240px");
+        document.documentElement.style.setProperty("--aux-panel-width", "240px");
+        const c = NB.app.getCfg();
+        c.sidebarWidth = 240;
+        c.auxPanelWidth = 240;
+      });
+      await sleep(200);
+
+      // AC14: with no visible view homed right, the right rail and panel take
+      // 0 width; the left rail keeps its action buttons; unhiding clears it.
+      const ac14empty = await page.evaluate(() => {
+        NB.app.setSidebarHidden(["outline"]);
+        const w = (id) => document.getElementById(id).getBoundingClientRect().width;
+        const cs = getComputedStyle(document.getElementById("layout"));
+        return {
+          rail: w("activity-bar-right"), aux: w("aux-panel"),
+          auxTrack: cs.getPropertyValue("--shell-aux-track").trim(),
+          railTrack: cs.getPropertyValue("--aux-rail-track").trim(),
+          leftRail: w("activity-bar"),
+          settings: getComputedStyle(
+            document.getElementById("activity-settings-btn")).display,
+          empty: document.getElementById("layout").dataset.rightEmpty,
+        };
+      });
+      check("AC14: an empty right side takes no rail and no panel",
+        ac14empty.rail <= 1 && ac14empty.aux <= 1 &&
+        ac14empty.auxTrack === "0px" && ac14empty.railTrack === "0px" &&
+        ac14empty.empty === "true", JSON.stringify(ac14empty));
+      check("AC14: the left rail keeps its action buttons",
+        ac14empty.leftRail > 0 && ac14empty.settings !== "none",
+        JSON.stringify(ac14empty));
+      const ac14back = await page.evaluate(() => {
+        NB.app.setSidebarHidden([]);
+        const w = (id) => document.getElementById(id).getBoundingClientRect().width;
+        return {
+          rail: w("activity-bar-right"), aux: w("aux-panel"),
+          empty: document.getElementById("layout").dataset.rightEmpty,
+        };
+      });
+      check("AC14: unhiding a right-homed view clears the empty state immediately",
+        ac14back.rail > 0 && ac14back.aux > 0 && ac14back.empty === "false",
+        JSON.stringify(ac14back));
+
+      // AC9: assigning a side's active view away activates its first visible
+      // view in rail order; an emptied right side collapses and hides its rail.
+      await page.evaluate(async () => {
+        NB.app.setSidebarOrder(["recent", "sessions"]);
+        NB.app.setSidebarHidden(["explorer"]);
+        NB.activity.activate("sessions", false);
+      });
+      await sleep200();
+      await page.evaluate(() => NB.app.setSidebarSide("sessions", "right"));
+      await sleep(500);
+      const ac9 = await page.evaluate(() => ({
+        left: NB.activity.getActive("left"),
+        right: NB.activity.getActive("right"),
+      }));
+      check("AC9: the source side activates its first visible view in rail order",
+        ac9.left === "recent" && ac9.right === "sessions",
+        JSON.stringify(ac9));
+      await page.evaluate(() => {
+        NB.app.setSidebarHidden(["outline", "sessions", "recent"]);
+      });
+      await sleep(400);
+      const ac9empty = await page.evaluate(() => ({
+        right: NB.activity.getActive("right"),
+        rail: document.getElementById("activity-bar-right").getBoundingClientRect().width,
+        aux: document.getElementById("aux-panel").getBoundingClientRect().width,
+        empty: document.getElementById("layout").dataset.rightEmpty,
+      }));
+      check("AC9: an emptied right side collapses and hides its rail",
+        ac9empty.right === null && ac9empty.rail <= 1 && ac9empty.aux <= 1 &&
+        ac9empty.empty === "true", JSON.stringify(ac9empty));
+      await resetShell();
+      await sleep(400);
+
+      // The tab bar has no outline toggle; hiding it leaves the Outline
+      // reachable from the right rail (the Outline's only control).
+      await page.evaluate(() => NB.app.setHideTabBar(true));
+      await sleep200();
+      const hideTab = await page.evaluate(() => {
+        const bar = document.getElementById("tab-bar");
+        const list = document.getElementById("tab-list");
+        return {
+          hidden: bar.hidden,
+          toggles: bar.querySelectorAll(".outline-toggle, #outline-toggle").length,
+          listRight: list.getBoundingClientRect().right,
+          barRight: bar.getBoundingClientRect().right,
+          rightIcon: !!document.querySelector(
+            '#activity-bar-right .activity-btn[data-view="outline"]'),
+        };
+      });
+      check("AC18: hiding the tab bar leaves no outline toggle and the list reaches the edge",
+        hideTab.hidden && hideTab.toggles === 0 &&
+        Math.abs(hideTab.listRight - hideTab.barRight) <= 2,
+        JSON.stringify(hideTab));
+      await page.click('#activity-bar-right .activity-btn[data-view="outline"]');
+      await sleep200();
+      const outlineReach = await page.evaluate(() => ({
+        width: document.getElementById("aux-panel").getBoundingClientRect().width,
+        visible: !document.getElementById("outline-view").hidden,
+      }));
+      check("AC18/hideTabBar: the Outline stays reachable from the right rail",
+        hideTab.rightIcon && outlineReach.width > 0 && outlineReach.visible,
+        JSON.stringify(outlineReach));
+      await page.evaluate(() => NB.app.setHideTabBar(false));
+      await resetShell();
+      await sleep200();
+
+      // Leave the shell at its default width/collapse state for later blocks.
+      await page.evaluate(() => {
+        document.documentElement.style.setProperty("--side-panel-width", "240px");
+        document.documentElement.style.setProperty("--aux-panel-width", "240px");
+      });
+    }
 
     // ---------------------------------------------------------------
     console.log("== page errors ==");

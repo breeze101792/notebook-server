@@ -30,14 +30,26 @@
   const WORKSPACE_SHARED_KEYS = [
     "sessions", "pinnedFiles", "bookmarks", "recentFiles", "pinnedFolders",
   ];
-  // Views that exist only in the desktop shell. A saved `activeView` naming
-  // one of them must fall back to Explorer on a phone, or the drawer would
-  // open onto a hidden host. Sessions is a phone view hosted in the drawer,
-  // so only AI stays here.
-  const PHONE_HIDDEN_VIEWS = ["ai"];
+  // Views that exist only in the desktop shell. A saved active view naming
+  // one of them must fall back on a phone, or the drawer would open onto a
+  // hidden host. Sessions is a phone view hosted in the drawer; the AI
+  // assistant and the Outline have no phone surface.
+  const PHONE_HIDDEN_VIEWS = ["ai", "outline"];
   // Special tabs with no phone surface. Restoring a shared session may make
   // one active; the phone shows another tab or Home instead of that pane.
   const PHONE_HIDDEN_TABS = ["§graph", "§sessions"];
+  // Retired single-panel config keys, migrated on read (secondary-sidebar.md
+  // §6.3) and never re-posted. A read-merge-write copies every key the server
+  // blob still holds, so the merge must drop these explicitly or the first
+  // desktop save would keep them in the file forever.
+  const LEGACY_CONFIG_KEYS = ["activeView", "outlineWidth", "outlineCollapsed"];
+  // A write that carries one of these is a write from the current client and
+  // may retire the legacy keys above. A phone keyed write carries none of
+  // them, so it must leave the legacy keys alone: dropping them there would
+  // delete the desktop's right-panel width without writing its replacement.
+  const LEGACY_RETIRING_KEYS = ["auxPanelWidth", "auxPanelCollapsed",
+                                "activeViewLeft", "activeViewRight",
+                                "sidebarSide"];
   // Same debounce as the config write below.
   const WORKSPACE_SAVE_DELAY_MS = 250;
   // Cross-device sync: the poll interval while the tab is visible, and the
@@ -75,23 +87,33 @@
     openFiles: [],
     activeFile: null,
     pinnedFiles: [],
-    // The active side-panel view id (see NB.activity.register). Persisted
-    // so a reload lands on the same view the user left (Explorer, Bookmarks,
-    // Recent, Search, AI) instead of always snapping back to the file tree.
-    // The server renders this view visible in the shell for first paint;
-    // boot reconciles the once-fetched config against it.
-    activeView: "explorer",
+    // Which rail hosts each view. A per-view map, not a list: a view the map
+    // does not name keeps the registration default (only the Outline
+    // defaults right), which distinguishes "the user put it left" from "this
+    // view did not exist when the list was written". Edited live in
+    // Settings -> Appearance -> Activity bar.
+    sidebarSide: {},
+    // The active view of each side. Persisted separately so a reload lands
+    // each panel on the view the user left it on. The server renders these
+    // views visible in the shell for first paint; boot reconciles the
+    // once-fetched config against that paint, one side at a time.
+    activeViewLeft: "explorer",
+    activeViewRight: "outline",
     // Left activity-bar icon order (view ids). Empty means the shipped
     // registration order; a partial list keeps the named views first and
-    // appends the rest. Edited in Settings -> Appearance.
+    // appends the rest. One global order over both rails; each rail shows
+    // the subsequence it owns. Edited in Settings -> Appearance.
     sidebarOrder: [],
     // Activity-bar views whose icons are hidden. The Settings list still
-    // shows every view so this is reversible; the order above is kept.
+    // shows every view so this is reversible; the order above is kept and
+    // so is the view's side.
     sidebarHidden: [],
     sidebarWidth: 240,
-    outlineWidth: 220,
     sidebarCollapsed: false,
-    outlineCollapsed: false,
+    // The auxiliary panel on the right, the #side-panel's twin. Its width and
+    // collapsed flag are its own; no state is shared between the sides.
+    auxPanelWidth: 240,
+    auxPanelCollapsed: false,
     searchCaseSensitive: false,
     // Side-panel search only: one row per note (unique=1) is the default
     // because the panel's job is finding the note, not every hit.
@@ -115,9 +137,8 @@
     hideTopbar: false,
     // Hide the file tab strip. The state is the `hidden` attribute on
     // #tab-bar (the server paints it on the first frame) plus
-    // .tab-bar[hidden]; the reader gains the bar's 34 px and the rail's
-    // outline twin appears in its place. Toggled from Appearance or
-    // Mod+Shift+B.
+    // .tab-bar[hidden]; the reader gains the bar's 34 px. Toggled from
+    // Appearance or Mod+Shift+B.
     hideTabBar: false,
     // The site title shown in the browser tab and the top-bar brand.
     // Defaults to "Notebook"; the user can rename it in General settings.
@@ -212,6 +233,21 @@
     return out;
   }
 
+  /* Keep only registered view ids whose saved side is "left" or "right".
+   * Anything else in a hand-edited config is dropped, and the next write
+   * persists the clean object. */
+  function normalizeSideMap(map) {
+    const out = {};
+    if (!map || typeof map !== "object" || Array.isArray(map)) return out;
+    const known = (NB.activity && NB.activity.views) ? NB.activity.views() : null;
+    for (const id of Object.keys(map)) {
+      if (known && known.indexOf(id) < 0) continue;
+      const side = map[id];
+      if (side === "left" || side === "right") out[id] = side;
+    }
+    return out;
+  }
+
   /* The personal spelling list, in the shape every reader expects: strings
    * only, trimmed, lower-cased, curly apostrophes folded, deduped in first-
    * seen order, and capped at the newest entries. A hand-edited config is
@@ -232,15 +268,33 @@
     return out.slice(-SPELL_WORD_MAX_ENTRIES);
   }
 
-  // Width used while the side panel is collapsed. 0 -- the activity
-  // bar's icons are the re-expand affordance, so the panel itself hides
-  // completely instead of leaving a thin strip.
+  // Width used while a panel is collapsed. 0 -- the rail icons are the
+  // re-expand affordance, so a panel hides completely instead of leaving a
+  // thin strip.
   const PANEL_COLLAPSED_W = 0;
-  // The outline pane's visibility is toggled from the tab-bar icon, so it
-  // hides completely (width 0) when collapsed -- no thin strip.
-  const OUTLINE_COLLAPSED_W = 0;
+  // Default width of either panel. One value for both sides: the panels are
+  // the same size at rest and each remembers its own dragged width.
+  const DEFAULT_PANE_W = 240;
+  // The CSS track caps (#layout in style.css) expressed in JS. The resize
+  // handle must stop where the track clamps, or it drags past the point the
+  // grid will paint: reader floor 352, one rail 48 each side, panel cap
+  // 480, each panel's share of the budget 45 %.
+  const SHELL_READER_MIN = 352;
+  const SHELL_RAIL_W = 48;
+  const SHELL_PANE_MAX = 480;
+  const SHELL_PANE_MIN = 140;
+  const SHELL_PANE_SHARE = 0.45;
+
+  function paneMax() {
+    const budget = window.innerWidth - 2 * SHELL_RAIL_W - SHELL_READER_MIN;
+    const cap = Math.min(SHELL_PANE_MAX, SHELL_PANE_SHARE * budget);
+    return Math.max(SHELL_PANE_MIN, cap);
+  }
 
   let cfg = { ...DEFAULTS };
+  // True while applyConfig() is re-homing views from the loaded side map:
+  // the activation events that causes must not echo back as a config write.
+  let applyingConfig = false;
   let saveTimer = null;
   let pendingConfigKeys = new Set();
   // One serial GET->POST chain for phone config writes. Overlapping
@@ -307,11 +361,11 @@
   }
 
   const editBtn  = document.getElementById("edit-toggle");
-  // The outer side panel (hosts the active activity view). The old
-  // #sidebar is now a view inside it; resize + collapse operate on the
-  // panel, not the view, so every activity view shares one width.
+  // The two side panels. #side-panel hosts the left active view, #aux-panel
+  // the right one; resize + collapse operate on the panel, not the view, so
+  // every activity view on a side shares that side's width.
   const sidePanelEl = document.getElementById("side-panel");
-  const outlineEl  = document.getElementById("outline-pane");
+  const auxPanelEl = document.getElementById("aux-panel");
 
   /* --- theme ---------------------------------------------------------- */
   // "auto" follows the system color scheme; dark is the fallback when the
@@ -530,11 +584,32 @@
   /* --- config persistence ------------------------------------------- */
   /* `serverFetched` says whether `c` is the body of a successful
    * GET /api/config. The failed-fetch path passes {} and false, so the sync
-   * loop stays off: without a base a write could only guess. */
+   * loop stays off: without a base a write could only guess.
+   *
+   * The legacy single-panel keys (`activeView`, `outlineWidth`,
+   * `outlineCollapsed`) are migrated here once and then deleted from the
+   * loaded object, so the next whole-blob POST drops them from the file
+   * (secondary-sidebar.md §6.3). They are absent from DEFAULTS for the same
+   * reason: while any writer still re-added them, every save would re-post
+   * the old keys. */
   function applyConfig(c, serverFetched) {
     const fetched = (serverFetched === undefined)
       ? (!!c && typeof c === "object") : !!serverFetched;
-    cfg = { ...DEFAULTS, ...c };
+    const loaded = (c && typeof c === "object") ? c : {};
+    if (loaded.activeViewLeft === undefined &&
+        typeof loaded.activeView === "string") {
+      loaded.activeViewLeft = loaded.activeView;
+    }
+    if (loaded.auxPanelWidth === undefined &&
+        typeof loaded.outlineWidth === "number") {
+      loaded.auxPanelWidth = loaded.outlineWidth;
+    }
+    if (loaded.auxPanelCollapsed === undefined &&
+        typeof loaded.outlineCollapsed === "boolean") {
+      loaded.auxPanelCollapsed = loaded.outlineCollapsed;
+    }
+    for (const key of LEGACY_CONFIG_KEYS) delete loaded[key];
+    cfg = { ...DEFAULTS, ...loaded };
     // Overlay the active workspace's state. Missing fields fall back to the
     // legacy top-level copy already spread above, so the first load after
     // the server migrates an old config shows the same session.
@@ -579,11 +654,28 @@
       ? cfg.searchSort : DEFAULTS.searchSort;
     cfg.searchTarget = SEARCH_TARGETS.indexOf(cfg.searchTarget) >= 0
       ? cfg.searchTarget : DEFAULTS.searchTarget;
+    cfg.sidebarSide = normalizeSideMap(cfg.sidebarSide);
     cfg.sidebarOrder = normalizeViewIdList(cfg.sidebarOrder);
     cfg.sidebarHidden = normalizeViewIdList(cfg.sidebarHidden);
     cfg.spellcheck = (typeof cfg.spellcheck === "boolean")
       ? cfg.spellcheck : DEFAULTS.spellcheck;
     cfg.spellcheckWords = normalizeSpellcheckWords(cfg.spellcheckWords);
+    // Re-home only the views whose saved side differs from the one the shell
+    // already has: setSide() moves the host node, which is not free, and it
+    // must never run for every view on a boot that already agrees. The
+    // activation events this causes must not echo back as a config write.
+    if (NB.activity && NB.activity.setSide && NB.activity.sideOf) {
+      applyingConfig = true;
+      try {
+        for (const id of Object.keys(cfg.sidebarSide)) {
+          if (NB.activity.sideOf(id) !== cfg.sidebarSide[id]) {
+            NB.activity.setSide(id, cfg.sidebarSide[id]);
+          }
+        }
+      } finally {
+        applyingConfig = false;
+      }
+    }
     if (NB.activity && NB.activity.setBarOrder) {
       NB.activity.setBarOrder(cfg.sidebarOrder);
     }
@@ -591,7 +683,7 @@
       NB.activity.setHidden(cfg.sidebarHidden);
     }
     applySidebarState();
-    applyOutlineState();
+    applyAuxState();
     // Hand the loaded bookmarks to the bookmarks module so the list
     // renders before the first tree refresh arrives. Done here, not
     // in boot(), so any cfg source (load from server, future sync,
@@ -619,56 +711,35 @@
     NB.evt.emit("config:changed", cfg, { loaded: true });
   }
 
-  /* Side panel minimize: toggle between the saved width and a thin strip.
-   * The collapsed state is persisted in config. NB.activity owns the
-   * activity-bar icon highlighting and the activate/toggle-on-click
-   * behavior; this function just applies the width + class from the
-   * persisted config on boot. The live toggle goes through the icon
-   * click -> NB.activity.activate(id, true) -> collapse()/expand() and
-   * is persisted by the listener below. */
+  /* Side panel minimise: apply the saved width and collapsed flag from the
+   * persisted config. NB.activity owns the rail highlighting and the
+   * activate/toggle-on-click behavior; this function just paints the state on
+   * boot and after a mode flip. The live toggle goes through the rail icon ->
+   * NB.activity.activate(id, true) -> collapse()/expand() and is persisted by
+   * the listeners below. */
   function applySidebarState() {
-    if (isPhoneMode()) return;
+    if (isPhoneMode() || !sidePanelEl) return;
     if (cfg.sidebarCollapsed) {
       document.documentElement.style.setProperty("--side-panel-width", PANEL_COLLAPSED_W + "px");
       sidePanelEl.classList.add("collapsed");
     } else {
-      document.documentElement.style.setProperty("--side-panel-width", (cfg.sidebarWidth || 240) + "px");
+      document.documentElement.style.setProperty("--side-panel-width", (cfg.sidebarWidth || DEFAULT_PANE_W) + "px");
       sidePanelEl.classList.remove("collapsed");
     }
   }
-  function applyOutlineState() {
-    syncOutlineButtons();
-    if (isPhoneMode()) return;
-    if (cfg.outlineCollapsed) {
-      document.documentElement.style.setProperty("--outline-width", OUTLINE_COLLAPSED_W + "px");
-      outlineEl.classList.add("collapsed");
+  /* The right panel's half of the same state. It has its own width var and its
+   * own collapsed flag; nothing is shared with the left panel. */
+  function applyAuxState() {
+    // A stale shell (a cached page from before the two-panel release) has no
+    // #aux-panel; painting nothing beats throwing inside boot.
+    if (isPhoneMode() || !auxPanelEl) return;
+    if (cfg.auxPanelCollapsed) {
+      document.documentElement.style.setProperty("--aux-panel-width", PANEL_COLLAPSED_W + "px");
+      auxPanelEl.classList.add("collapsed");
     } else {
-      document.documentElement.style.setProperty("--outline-width", (cfg.outlineWidth || 220) + "px");
-      outlineEl.classList.remove("collapsed");
+      document.documentElement.style.setProperty("--aux-panel-width", (cfg.auxPanelWidth || DEFAULT_PANE_W) + "px");
+      auxPanelEl.classList.remove("collapsed");
     }
-  }
-
-  // The pane has two mounts: the strip's #outline-toggle and the rail's
-  // #outline-rail-btn, which appears only while the strip is hidden. Pressed
-  // means the pane is showing; the title names the action each press takes.
-  function syncOutlineButtons() {
-    const pressed = cfg.outlineCollapsed ? "false" : "true";
-    const title = cfg.outlineCollapsed ? "Show outline" : "Hide outline";
-    ["outline-toggle", "outline-rail-btn"].forEach((id) => {
-      const btn = document.getElementById(id);
-      if (!btn) return;
-      btn.setAttribute("aria-pressed", pressed);
-      btn.title = title;
-    });
-  }
-
-  // The pane toggle both mounts share. Collapse hides the pane completely
-  // (0 width); there is no thin strip to re-expand it.
-  function toggleOutline() {
-    if (isPhoneMode()) return;
-    cfg.outlineCollapsed = !cfg.outlineCollapsed;
-    applyOutlineState();
-    persistConfig();
   }
 
   /* Persist config. `keys` names the only keys a caller may change.
@@ -1058,6 +1129,9 @@
    * from this POST, and re-attaches its own. */
   function mergeGlobalKeys(fresh, keyList) {
     const merged = (fresh && typeof fresh === "object") ? { ...fresh } : {};
+    if (keyList.some((key) => LEGACY_RETIRING_KEYS.indexOf(key) >= 0)) {
+      for (const key of LEGACY_CONFIG_KEYS) delete merged[key];
+    }
     for (const key of keyList) {
       if (key === "workspaceState" || key === "workspaceStateRev") continue;
       if (WORKSPACE_STATE_KEYS.indexOf(key) >= 0) continue;
@@ -1224,54 +1298,41 @@
     // Save stays in one place.
     editBtn.addEventListener("click", () => NB.viewer.toggleEdit());
 
-    // side panel minimize (collapse). The collapse button lives inside
-    // the Explorer view's header. Re-expansion is via the activity bar's
-    // icons (clicking any icon expands the panel and shows that view),
-    // so there's no separate expand button on the panel itself.
-    document.getElementById("sidebar-collapse").addEventListener("click",
-      () => {
-        if (isPhoneMode()) {
-          if (NB.mobile && NB.mobile.closeDrawer) NB.mobile.closeDrawer();
-          return;
-        }
-        cfg.sidebarCollapsed = true; applySidebarState(); persistConfig();
-      });
-    // The activity-bar icon toggle path: clicking the active icon
-    // collapses the panel via NB.activity; persist that state so a
-    // reload lands on the same shape. Activating a different icon from
-    // a collapsed panel expands it -- persist that too.
+    // Panel open/closed and the active view are owned by NB.activity, one
+    // record per side. Each panel's own header chevron goes through the same
+    // delegated [data-collapse-view] path, so there is no per-id click
+    // handler here any more: the side is resolved at click time.
     if (NB.evt) {
-      NB.evt.on("activity:collapsed", () => {
-        if (isPhoneMode()) return;
-        cfg.sidebarCollapsed = true; applySidebarState(); persistConfig();
+      // `activity:collapsed` / `activity:expanded` carry the side; the
+      // matching flag is the only one written.
+      NB.evt.on("activity:collapsed", ({ side }) => {
+        if (isPhoneMode() || applyingConfig) return;
+        if (side === "right") {
+          cfg.auxPanelCollapsed = true; applyAuxState(); persistConfig();
+        } else {
+          cfg.sidebarCollapsed = true; applySidebarState(); persistConfig();
+        }
       });
-      NB.evt.on("activity:expanded", () => {
-        if (isPhoneMode()) return;
-        cfg.sidebarCollapsed = false; applySidebarState(); persistConfig();
+      NB.evt.on("activity:expanded", ({ side }) => {
+        if (isPhoneMode() || applyingConfig) return;
+        if (side === "right") {
+          cfg.auxPanelCollapsed = false; applyAuxState(); persistConfig();
+        } else {
+          cfg.sidebarCollapsed = false; applySidebarState(); persistConfig();
+        }
       });
-      // Switching the active view persists so a reload restores it. Fired
-      // by activity.js on every activation; guard against the boot
-      // activation of the already-saved view to avoid a redundant save.
-      NB.evt.on("activity:changed", ({ id }) => {
-        if (isPhoneMode()) return;
-        if (cfg.activeView !== id) { cfg.activeView = id; persistConfig(); }
+      // Switching the active view persists that side's key so a reload
+      // restores both panels. Fired by activity.js on every activation; the
+      // comparison guards against the boot activation of the saved view.
+      NB.evt.on("activity:changed", ({ id, side }) => {
+        if (isPhoneMode() || applyingConfig) return;
+        if (side === "right") {
+          if (cfg.activeViewRight !== id) { cfg.activeViewRight = id; persistConfig(); }
+        } else if (cfg.activeViewLeft !== id) {
+          cfg.activeViewLeft = id; persistConfig();
+        }
       });
     }
-    document.getElementById("outline-collapse").addEventListener("click",
-      () => {
-        if (isPhoneMode()) return;
-        cfg.outlineCollapsed = true; applyOutlineState(); persistConfig();
-      });
-    // Tab-bar icon toggles the right outline pane on/off (collapse =
-    // hide the pane completely to 0 width; there's no thin strip to
-    // re-expand it). Mirrors how the activity-bar icon toggles the left
-    // side panel, giving both panes one persistent visibility control.
-    // The rail's twin (#outline-rail-btn) is the same handler: the strip's
-    // button disappears with the strip.
-    document.getElementById("outline-toggle").addEventListener("click",
-      toggleOutline);
-    const outlineRailBtn = document.getElementById("outline-rail-btn");
-    if (outlineRailBtn) outlineRailBtn.addEventListener("click", toggleOutline);
 
     // App-level keyboard shortcuts (active when VIM mode is off; see
     // static/js/shortcuts.js). The module owns the keydown listener
@@ -1306,32 +1367,32 @@
     document.getElementById("activity-settings-btn").addEventListener("click",
       () => NB.settings && NB.settings.open());
 
-    // resizable sidebars (drag the inner edge). Installed only on the
-    // desktop shell; a later phone->desktop mode flip re-runs this.
+    // resizable panels (drag the inner edge). Installed only on the desktop
+    // shell; a later phone->desktop mode flip re-runs this.
     ensureResizeHandles();
     NB.evt.on("mobile:mode", ({ mode }) => {
       if (mode !== "desktop") return;
       applySidebarState();
-      applyOutlineState();
+      applyAuxState();
       ensureResizeHandles();
     });
   }
 
   function ensureResizeHandles() {
     if (isPhoneMode()) return;
-    // The sidebar may be dragged up to half the viewport width; the
-    // outline is capped to a fixed 520px so it stays a minimap.
-    setupResize("side-panel", "--side-panel-width", "right", { max: () => window.innerWidth / 2 });
-    setupResize("outline-pane", "--outline-width", "left");
+    // Both panels stop where their CSS track clamps: the reader keeps its
+    // floor and each panel takes at most 45 % of the shared budget.
+    setupResize("side-panel", "--side-panel-width", "right", { max: paneMax });
+    setupResize("aux-panel", "--aux-panel-width", "left", { max: paneMax });
   }
 
   function setupResize(id, cssVar, edge, opts) {
     const pane = document.getElementById(id);
-    if (pane.querySelector(".resize-handle")) return;
-    // Max may be a fixed number (default 520) or a function evaluated
-    // live on each drag tick (e.g. half the current viewport width), so
-    // a window resize mid-drag keeps working.
-    const maxOpt = (opts && opts.max !== undefined) ? opts.max : 520;
+    if (!pane || pane.querySelector(".resize-handle")) return;
+    // Max may be a fixed number or a function evaluated live on each drag
+    // tick (the panel caps depend on the viewport), so a window resize
+    // mid-drag keeps working.
+    const maxOpt = (opts && opts.max !== undefined) ? opts.max : SHELL_PANE_MAX;
     let startX = 0, startW = 0, dragging = false;
     // The handle is a wider, hover-visible grab strip on the pane's inner
     // edge (size + look come from .resize-handle in CSS). Only the edge
@@ -1350,8 +1411,10 @@
       handle.classList.remove("dragging");
       document.body.classList.remove("resizing");
       const w = pane.getBoundingClientRect().width;
+      // Each panel owns one saved width (§6.1): the left writes sidebarWidth,
+      // the right writes auxPanelWidth.
       if (id === "side-panel") cfg.sidebarWidth = w;
-      else cfg.outlineWidth = w;
+      else if (id === "aux-panel") cfg.auxPanelWidth = w;
       persistConfig();
     }
 
@@ -1366,11 +1429,11 @@
     document.addEventListener("mousemove", (e) => {
       if (!dragging) return;
       const dx = e.clientX - startX;
-      // A left-edge handle (outline) widens when dragged away from the pane
-      // (dragging left => wider), so flip the sign; a right-edge handle
-      // (sidebar) drags naturally with +dx.
+      // A left-edge handle (the aux panel) widens when dragged away from the
+      // pane (dragging left => wider), so flip the sign; a right-edge handle
+      // (the side panel) drags naturally with +dx.
       const sign = edge === "left" ? -1 : 1;
-      const w = Math.max(140, Math.min(typeof maxOpt === "function" ? maxOpt() : maxOpt, startW + sign * dx));
+      const w = Math.max(SHELL_PANE_MIN, Math.min(typeof maxOpt === "function" ? maxOpt() : maxOpt, startW + sign * dx));
       document.documentElement.style.setProperty(cssVar, w + "px");
     });
     document.addEventListener("mouseup", endDrag);
@@ -1469,40 +1532,74 @@
     return true;
   }
 
-  /* Panel state the server rendered into the shell, read back from the DOM.
-   * boot() snapshots this before the async config fetch so a failed fetch
-   * restores it instead of repainting the panel with DEFAULTS (which would
-   * reveal the file tree, expand a collapsed panel, and lose the saved
-   * width). The collapsed width reads 0 in the DOM; the saved width is kept
-   * by cfg when the panel is expanded, so 0 is left untouched here. */
+  /* Panel state the server rendered into the shell, read back from the DOM,
+   * one record per side. boot() snapshots this before the async config fetch
+   * so a failed fetch restores it instead of repainting the panels with
+   * DEFAULTS (which would reveal the file tree, expand a collapsed panel, and
+   * lose the saved widths). A collapsed panel's width reads 0 in the DOM; the
+   * saved width is kept by cfg, so 0 is left untouched here. */
   function shellPanelState() {
     const px = (name) => parseInt(document.documentElement.style.getPropertyValue(name), 10);
-    // The activity bar is painted by activity.js from the server-rendered
+    const viewIn = (panel) => {
+      if (!panel) return null;
+      const el = panel.querySelector(".side-panel-view:not([hidden])");
+      return el ? el.dataset.view : null;
+    };
+    // The rails are painted by activity.js from the server-rendered
     // data-sidebar-order attribute; read it back for the failed-fetch path.
     const barEl = document.getElementById("activity-bar");
     const rawOrder = (barEl && barEl.dataset) ? barEl.dataset.sidebarOrder : "";
     const rawHidden = (barEl && barEl.dataset) ? barEl.dataset.sidebarHidden : "";
+    const layoutEl = document.getElementById("layout");
+    let sidebarSide = {};
+    try {
+      sidebarSide = (layoutEl && layoutEl.dataset.sidebarSide)
+        ? JSON.parse(layoutEl.dataset.sidebarSide) : {};
+    } catch (_) {
+      sidebarSide = {};
+    }
     return {
-      activeView: (NB.activity.getActive && NB.activity.getActive()) || cfg.activeView,
-      collapsed: !!(sidePanelEl && sidePanelEl.classList.contains("collapsed")),
-      width: px("--side-panel-width"),
-      outlineCollapsed: !!(outlineEl && outlineEl.classList.contains("collapsed")),
-      outlineWidth: px("--outline-width"),
+      left: {
+        activeView: viewIn(sidePanelEl),
+        collapsed: !!(sidePanelEl && sidePanelEl.classList.contains("collapsed")),
+        width: px("--side-panel-width"),
+      },
+      right: {
+        activeView: viewIn(auxPanelEl),
+        collapsed: !!(auxPanelEl && auxPanelEl.classList.contains("collapsed")),
+        width: px("--aux-panel-width"),
+      },
       sidebarOrder: rawOrder ? rawOrder.split(",").filter(Boolean) : [],
       sidebarHidden: rawHidden ? rawHidden.split(",").filter(Boolean) : [],
+      sidebarSide,
     };
   }
 
-  /* Decide whether a successful config fetch should switch the side panel
-   * to a different view. Returns the id to activate, or null to leave the
-   * panel alone. A failed fetch (fetchedView is not a string), a fetch that
-   * names the view already showing, and a user who switched away from the
-   * shell-painted view while the fetch was in flight all return null. */
+  /* Does a successful config fetch name a different view for this side? The
+   * id to activate, or null to leave the panel alone. A failed fetch (no
+   * string), a fetch that names the view already showing, and a user who
+   * switched that side away from the shell-painted view while the fetch was
+   * in flight all return null. */
   function resolveBootView(currentView, shellView, fetchedView) {
     if (typeof fetchedView !== "string") return null;
     if (currentView !== shellView) return null;
     if (fetchedView === shellView) return null;
     return fetchedView;
+  }
+
+  /* The side's saved active view, validated with the server's per-side rules
+   * (§6.2): it must be homed on this side and must not be hidden; otherwise
+   * the first visible view on that side in rail order takes over, or null.
+   * A raw id that fails validation is never passed to activate(). */
+  function resolveSideView(side, c) {
+    if (!NB.activity || !NB.activity.barItems) return null;
+    const items = NB.activity.barItems().filter(item => item.side === side);
+    const visible = items.filter(item => !item.hidden);
+    const saved = side === "right" ? c.activeViewRight : c.activeViewLeft;
+    if (typeof saved === "string" && visible.some(item => item.id === saved)) {
+      return saved;
+    }
+    return visible.length ? visible[0].id : null;
   }
 
   /* --- boot ---------------------------------------------------------- */
@@ -1511,8 +1608,8 @@
     if (booted) return;   // idempotent: DOMContentLoaded fires once, but guard anyway
     booted = true;
     wire();
-    // Snapshot the shell-painted panel before the async config fetch so the
-    // failed-fetch path below can restore it intact.
+    // Snapshot both panels before the async config fetch so the failed-fetch
+    // path below can restore them intact.
     const shellPanel = shellPanelState();
     let serverCfg = null;
     try {
@@ -1520,14 +1617,16 @@
       applyConfig(serverCfg);
     } catch (e) {
       applyConfig({}, false);
-      // The shell already painted the saved panel; a failed fetch must not
-      // reset it to DEFAULTS. Restore what applyConfig just overwrote.
-      cfg.sidebarCollapsed = shellPanel.collapsed;
-      cfg.outlineCollapsed = shellPanel.outlineCollapsed;
+      // The shell already painted the saved panels; a failed fetch must not
+      // reset them to DEFAULTS. Restore what applyConfig just overwrote, then
+      // let activity.js adopt each side's painted view again.
+      cfg.sidebarCollapsed = shellPanel.left.collapsed;
+      cfg.auxPanelCollapsed = shellPanel.right.collapsed;
       cfg.sidebarOrder = shellPanel.sidebarOrder;
       cfg.sidebarHidden = shellPanel.sidebarHidden;
-      if (shellPanel.width > 0) cfg.sidebarWidth = shellPanel.width;
-      if (shellPanel.outlineWidth > 0) cfg.outlineWidth = shellPanel.outlineWidth;
+      cfg.sidebarSide = shellPanel.sidebarSide;
+      if (shellPanel.left.width > 0) cfg.sidebarWidth = shellPanel.left.width;
+      if (shellPanel.right.width > 0) cfg.auxPanelWidth = shellPanel.right.width;
       if (NB.activity && NB.activity.setBarOrder) {
         NB.activity.setBarOrder(cfg.sidebarOrder);
       }
@@ -1535,23 +1634,40 @@
         NB.activity.setHidden(cfg.sidebarHidden);
       }
       applySidebarState();
-      applyOutlineState();
+      applyAuxState();
+      if (!isPhoneMode() && NB.activity && NB.activity.adoptShellView) {
+        // Adopting emits activity:changed; suppress the listener so a failed
+        // fetch never turns the shell paint into a config write (§7.8 step 5).
+        applyingConfig = true;
+        try {
+          NB.activity.adoptShellView("left");
+          NB.activity.adoptShellView("right");
+        } finally {
+          applyingConfig = false;
+        }
+      }
     }
     // watcher.js auto-starts the polling fallback at module load; a saved
     // "off" choice must stop it once config has arrived.
     if (cfg.watchEnabled === false && NB.watcher && NB.watcher.disable) {
       NB.watcher.disable();
     }
-    // Reconcile the fetched view only when it names a different view than
-    // the shell painted AND the user has not switched away while the fetch
-    // was in flight (see resolveBootView). A failed fetch reconciles nothing.
-    const bootView = isPhoneMode() ? null : resolveBootView(
-      NB.activity.getActive(), shellPanel.activeView,
-      serverCfg && serverCfg.activeView);
-    if (bootView) NB.activity.activate(bootView, false);
-    // Phone has no AI view; a saved desktop activeView of it, or any hidden
-    // view, must not leave the drawer pointing at an unusable host. Pick the
-    // first visible phone view instead.
+    // Reconcile each side on its own: only when the fetched config names a
+    // different, valid view for it AND the user has not switched that side
+    // while the fetch was in flight (see resolveBootView). A failed fetch
+    // reconciles nothing.
+    if (!isPhoneMode() && serverCfg) {
+      for (const side of ["left", "right"]) {
+        const snapshot = shellPanel[side];
+        const current = NB.activity.getActive(side);
+        const next = resolveSideView(side, serverCfg);
+        const target = resolveBootView(current, snapshot.activeView, next);
+        if (target) NB.activity.activate(target, false);
+      }
+    }
+    // Phone has no AI or Outline view; a saved desktop active view of one, or
+    // any hidden view, must not leave the drawer pointing at an unusable
+    // host. Pick the first visible phone view instead.
     if (isPhoneMode() && NB.activity.visible && NB.activity.getActive) {
       const usable = NB.activity.visible()
         .filter(id => PHONE_HIDDEN_VIEWS.indexOf(id) < 0);
@@ -1560,10 +1676,16 @@
         NB.activity.activate(usable[0], false);
       }
     }
-    // The panel is the source of truth for the active view -- the failed
-    // path leaves cfg at DEFAULTS -- so mirror it back. Without this a later
-    // unrelated save would persist "explorer" and drop the saved view.
-    if (NB.activity.getActive) cfg.activeView = NB.activity.getActive();
+    // Each panel is the source of truth for its side's active view -- the
+    // failed path leaves cfg at DEFAULTS -- so mirror both back. Without this
+    // a later unrelated save would persist the defaults and drop the saved
+    // views. A null side keeps whatever it had: null is not a view id.
+    if (NB.activity.getActive) {
+      const left = NB.activity.getActive("left");
+      const right = NB.activity.getActive("right");
+      if (left) cfg.activeViewLeft = left;
+      if (right) cfg.activeViewRight = right;
+    }
 
     await NB.sidebar.refresh();
     const tree = NB.sidebar.getTree();
@@ -1782,10 +1904,11 @@
    * trigger a persist without reaching into our module-scoped state. */
   NB.app = {
     getCfg: () => cfg,
-    // The canonical side-panel width, read by NB.activity.expand() to
-    // restore the panel to the user's last-dragged size after a
-    // collapse cycle. Kept here so the width has one owner.
-    getSidePanelWidth: () => (cfg.sidebarWidth || 240),
+    // The canonical width of each panel, read by NB.activity.expand() to
+    // restore that panel to the user's last-dragged size after a collapse
+    // cycle. Kept here so each width has one owner.
+    getSidePanelWidth: () => (cfg.sidebarWidth || DEFAULT_PANE_W),
+    getAuxPanelWidth: () => (cfg.auxPanelWidth || DEFAULT_PANE_W),
     // Shared helpers used by ad-hoc UX (code-block Copy button, etc.).
     // notify() is the single-line toast; copyToClipboard() is the
     // Clipboard-API-with-fallback writer; copyPath()/copyLink() are the
@@ -1846,6 +1969,19 @@
       persistConfig(["sidebarHidden"]);
     },
     getSidebarHidden: () => normalizeViewIdList(cfg.sidebarHidden),
+    // Which rail hosts a view. The live move is NB.activity.setSide (it moves
+    // the host node and re-renders both rails); this records the applied side
+    // in the saved map and persists it with an explicit key list, which is
+    // what the phone's read-merge-write path can write safely.
+    setSidebarSide: (id, side) => {
+      if (!id || (side !== "left" && side !== "right")) return;
+      if (!NB.activity || !NB.activity.setSide) return;
+      const applied = NB.activity.setSide(id, side);
+      if (!applied) return;
+      cfg.sidebarSide = { ...normalizeSideMap(cfg.sidebarSide), [id]: applied };
+      persistConfig(["sidebarSide"]);
+    },
+    getSidebarSide: () => normalizeSideMap(cfg.sidebarSide),
     setSettingsModalWidth: (name) => { applySettingsModalWidth(name); persistConfig(); },
     getSettingsModalWidth: () => cfg.settingsModalWidth || "medium",
     setSettingsModalHeight: (name) => { applySettingsModalHeight(name); persistConfig(); },

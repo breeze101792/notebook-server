@@ -121,7 +121,7 @@
     header.appendChild(heading);
 
     if (NB.activity && NB.activity.makeCollapseBtn) {
-      header.appendChild(NB.activity.makeCollapseBtn());
+      header.appendChild(NB.activity.makeCollapseBtn("tabs"));
     }
     viewEl.appendChild(header);
 

@@ -223,27 +223,31 @@ async function main() {
           activityW: rect("activity-bar").width,
           panelW: rect("side-panel").width,
           viewerW: rect("viewer").width,
-          outlineW: rect("outline-pane").width,
+          auxW: rect("aux-panel").width,
+          rightRailW: rect("activity-bar-right").width,
           activityLeft: rect("activity-bar").left,
           panelLeft: rect("side-panel").left,
           editorLeft: rect("editor-pane").left,
-          outlineLeft: rect("outline-pane").left,
+          auxLeft: rect("aux-panel").left,
+          rightRailLeft: rect("activity-bar-right").left,
           mobileTitle: cs("mobile-title").display,
           sessionBar: cs("session-bar").display,
           sessionBtnW: rect("session-switch").width,
           overflow: document.documentElement.scrollWidth - window.innerWidth,
         };
       });
-      check("desktop 1280: #layout is a grid with four columns",
-        d.display === "grid" && d.colCount === 4,
+      check("desktop 1280: #layout is a grid with five columns",
+        d.display === "grid" && d.colCount === 5,
         "display=" + d.display + " cols=" + d.colCount);
       check("desktop 1280: every desktop column has width",
-        d.activityW > 0 && d.panelW > 0 && d.viewerW > 0 && d.outlineW > 0,
-        JSON.stringify([d.activityW, d.panelW, d.viewerW, d.outlineW]));
-      check("desktop 1280: columns stay left-to-right",
+        d.activityW > 0 && d.panelW > 0 && d.viewerW > 0 &&
+        d.auxW > 0 && d.rightRailW > 0,
+        JSON.stringify([d.activityW, d.panelW, d.viewerW, d.auxW, d.rightRailW]));
+      check("desktop 1280: columns stay in the five-track order",
         d.activityLeft < d.panelLeft && d.panelLeft < d.editorLeft &&
-        d.editorLeft < d.outlineLeft,
-        JSON.stringify([d.activityLeft, d.panelLeft, d.editorLeft, d.outlineLeft]));
+        d.editorLeft < d.auxLeft && d.auxLeft < d.rightRailLeft,
+        JSON.stringify([d.activityLeft, d.panelLeft, d.editorLeft,
+          d.auxLeft, d.rightRailLeft]));
       check("desktop 1280: the tab strip is visible",
         d.tabDisplay !== "none" && d.tabHeight > 0,
         "display=" + d.tabDisplay + " height=" + d.tabHeight);
@@ -253,18 +257,27 @@ async function main() {
         views: Array.from(
           document.querySelectorAll("#activity-bar .activity-btn[data-view]"))
           .map((b) => b.dataset.view),
+        rightViews: Array.from(
+          document.querySelectorAll("#activity-bar-right .activity-btn[data-view]"))
+          .map((b) => b.dataset.view),
         more: getComputedStyle(document.getElementById("activity-more-btn")).display,
         railViews: window.NB.activity.railViews().length,
+        rightRailViews: window.NB.activity.railViews("right").length,
         offRail: window.NB.activity.offRailViews().length,
       }));
-      check("desktop 1280: the rail carries every view and no More button",
+      check("desktop 1280: the left rail carries the left-homed views and no More button",
         desktopRail.views.join(",") ===
           "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs" &&
         desktopRail.more === "none",
         desktopRail.views.join(",") + " more=" + desktopRail.more);
+      check("desktop 1280: the right rail carries the Outline only",
+        desktopRail.rightViews.join(",") === "outline",
+        desktopRail.rightViews.join(","));
       check("desktop 1280: the rail is not sliced",
-        desktopRail.railViews === 8 && desktopRail.offRail === 0,
-        "rail=" + desktopRail.railViews + " off=" + desktopRail.offRail);
+        desktopRail.railViews === 8 && desktopRail.rightRailViews === 1 &&
+        desktopRail.offRail === 0,
+        "rail=" + desktopRail.railViews + " right=" + desktopRail.rightRailViews +
+        " off=" + desktopRail.offRail);
       check("desktop 1280: the edit controls are available for a writable note",
         await page.evaluate(() =>
           getComputedStyle(document.getElementById("hybrid-toggle")).display !== "none" &&
@@ -334,7 +347,8 @@ async function main() {
           overflow: document.documentElement.scrollWidth - window.innerWidth,
           bodyOverflow: document.body.scrollWidth - window.innerWidth,
           tabDisplay: cs("tab-bar").display,
-          outlineDisplay: cs("outline-pane").display,
+          auxDisplay: cs("aux-panel").display,
+          rightRailDisplay: cs("activity-bar-right").display,
           sessionDisplay: cs("session-bar").display,
           sessionBtnW: rect("session-switch").width,
           railPosition: cs("activity-bar").position,
@@ -380,9 +394,11 @@ async function main() {
       check(size.name + ": the page has no horizontal overflow",
         layout.overflow <= 1 && layout.bodyOverflow <= 1,
         "doc=" + layout.overflow + " body=" + layout.bodyOverflow);
-      check(size.name + ": tab strip and outline are hidden",
-        layout.tabDisplay === "none" && layout.outlineDisplay === "none",
-        "tabs=" + layout.tabDisplay + " outline=" + layout.outlineDisplay);
+      check(size.name + ": tab strip, right panel and right rail are hidden",
+        layout.tabDisplay === "none" && layout.auxDisplay === "none" &&
+        layout.rightRailDisplay === "none",
+        "tabs=" + layout.tabDisplay + " aux=" + layout.auxDisplay +
+        " rail=" + layout.rightRailDisplay);
       check(size.name + ": the activity bar is fixed to the bottom",
         layout.railPosition === "fixed" &&
         Math.abs(layout.railBottom - layout.viewportH) <= 1,
@@ -967,6 +983,99 @@ async function main() {
       await phone.screenshot({ path: path.join(tmp, "phone-shared.png") });
       await mctx.close();
       await dctx.close();
+    }
+
+    // --- AC16/AC17: a right-homed view on the phone; no outline surface --
+    // A view assigned to the right rail opens in the phone drawer; the right
+    // rail and right panel have no phone surface; the Outline is absent from
+    // the rail and the More sheet and activate("outline") is refused.
+    {
+      const setCfg = (body) => fetch(BASE + "/api/config", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      await setCfg({
+        sidebarSide: { search: "right" },
+        activeViewLeft: "explorer",
+        activeViewRight: "search",
+      });
+      const ctx = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        serviceWorkers: "block",
+      });
+      const page = await ctx.newPage();
+      const pageErrors = [];
+      page.on("pageerror", (e) => pageErrors.push(String(e)));
+      await page.goto(BASE + "/");
+      await bootApp(page);
+      check("AC16: the right-homed Search boots in #aux-panel on desktop",
+        await page.evaluate(() =>
+          !!document.querySelector('#aux-panel [data-view="search"]') &&
+          !document.getElementById("search-view").hidden));
+      // A live desktop -> phone flip: the mode switch re-lays the hosts.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.waitForFunction(() =>
+        document.documentElement.dataset.uiMode === "phone" &&
+        getComputedStyle(document.getElementById("aux-panel")).display === "none",
+        null, { timeout: 8000 });
+      const flip = await page.evaluate(() => {
+        const hosts = Array.from(document.querySelectorAll(".side-panel-view"));
+        return {
+          outside: hosts.filter((h) => h.parentNode.id !== "side-panel")
+            .map((h) => h.dataset.view),
+          visible: hosts.filter((h) => !h.hidden).map((h) => h.dataset.view),
+          rightRail: getComputedStyle(
+            document.getElementById("activity-bar-right")).display,
+          aux: getComputedStyle(document.getElementById("aux-panel")).display,
+        };
+      });
+      check("AC16: a live desktop->phone flip leaves exactly one drawer host",
+        flip.outside.length === 0 && flip.visible.length === 1,
+        JSON.stringify(flip));
+      check("AC16: the phone renders no right rail and no right panel",
+        flip.rightRail === "none" && flip.aux === "none",
+        "rail=" + flip.rightRail + " aux=" + flip.aux);
+      // The right-homed Search opens in the drawer like any other view.
+      const opened = await page.evaluate(() => {
+        NB.mobile.openDrawer("search");
+        return {
+          drawer: document.body.classList.contains("drawer-open"),
+          search: !document.getElementById("search-view").hidden,
+          input: !!document.querySelector(
+            '#side-panel #search-view .search-panel-input'),
+        };
+      });
+      check("AC16: the right-homed view opens in the phone drawer",
+        opened.drawer && opened.search && opened.input, JSON.stringify(opened));
+      await page.evaluate(() => NB.mobile.closeDrawer());
+      await page.waitForFunction(
+        () => !document.body.classList.contains("drawer-open"), null, { timeout: 5000 });
+      // AC17: no Outline slot in the rail, nor a row in the More sheet.
+      const phoneOutline = await page.evaluate(() => {
+        const rail = NB.activity.railViews().slice();
+        const hostVisible = !document.getElementById("outline-view").hidden;
+        const refused = NB.activity.activate("outline", false) === false;
+        return { rail, hostVisible, refused };
+      });
+      check("AC17: the phone rail carries no Outline slot",
+        phoneOutline.rail.indexOf("outline") < 0, phoneOutline.rail.join(","));
+      check("AC17: activate('outline') is refused on the phone",
+        phoneOutline.refused === true && phoneOutline.hostVisible === false);
+      await page.click("#activity-more-btn");
+      await page.waitForFunction(() => !document.getElementById("mobile-views-sheet").hidden,
+        null, { timeout: 5000 });
+      const moreRows = await page.evaluate(() => Array.from(
+        document.querySelectorAll("#mobile-views-sheet .mobile-more-row"))
+        .map((r) => r.textContent.replace(/\s+/g, " ").trim()));
+      check("AC17: the More sheet has no Outline row",
+        !moreRows.some((t) => /Outline/.test(t)) &&
+        moreRows.some((t) => /Settings/.test(t)),
+        moreRows.join(" | "));
+      check("AC16/17: no uncaught page errors", pageErrors.length === 0,
+        pageErrors.join(" | "));
+      await ctx.close();
+      await setCfg({});
     }
 
     // --- The narrow floor: seven slots still clear 44 px at 320 ----

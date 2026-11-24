@@ -177,13 +177,23 @@ into the page shell for first paint.
 
 | Key | Default | Effect |
 | --- | --- | --- |
-| `sidebarWidth` | `240` | Side panel width in pixels (`app.js`) |
-| `outlineWidth` | `220` | Outline pane width in pixels (`app.js`) |
-| `sidebarCollapsed` | `false` | Collapses the side panel to width 0 (`app.js`) |
-| `outlineCollapsed` | `false` | Collapses the outline pane to width 0 (`app.js`) |
-| `activeView` | `explorer` | Active side-panel view: `explorer`, `sessions`, `pinned`, `bookmarks`, `recent`, `search`, or `ai`; any other value falls back to `explorer` (`app.js`, `_ACTIVE_VIEWS` in `app.py`) |
-| `sidebarOrder` | `[]` | Activity-bar icon order: array of view ids; unknown ids are dropped and unnamed views keep registration order. Embedded in the shell for first paint (`app.js`, `app.py`) |
-| `sidebarHidden` | `[]` | Activity-bar views whose icons are hidden: array of view ids; unknown ids are dropped. Settings lists every view so a hidden one can be unhidden. Embedded in the shell for first paint (`app.js`, `app.py`) |
+| `sidebarWidth` | `240` | Left side-panel width in pixels (`app.js`) |
+| `sidebarCollapsed` | `false` | Collapses the left side panel to width 0 (`app.js`) |
+| `auxPanelWidth` | `240` | Right side-panel width in pixels (`app.js`). Falls back to `outlineWidth`; see the migration note below |
+| `auxPanelCollapsed` | `false` | Collapses the right side panel to width 0 (`app.js`). Falls back to `outlineCollapsed` |
+| `sidebarSide` | `{}` | Which rail hosts each view: object of view id → `"left"` or `"right"`. A view with no entry uses its registration default — `right` for `outline`, `left` for every other view. Unknown ids and other values are dropped (`app.py`) |
+| `activeViewLeft` | `explorer` | The left panel's active view: `explorer`, `sessions`, `pinned`, `bookmarks`, `recent`, `search`, `tabs`, or `ai`; any other value, a view homed right, or a hidden view falls back to the first visible left view (`app.js`, `_ACTIVE_VIEWS` in `app.py`) |
+| `activeViewRight` | `outline` | The right panel's active view, validated the same way against the views homed right |
+| `activeView` | `explorer` | **Legacy.** Read once as the `activeViewLeft` fallback when that key is absent (`app.py`, `app.js`) |
+| `outlineWidth` | — | **Legacy.** Read once as the `auxPanelWidth` fallback |
+| `outlineCollapsed` | — | **Legacy.** Read once as the `auxPanelCollapsed` fallback |
+| `sidebarOrder` | `[]` | Activity-bar icon order across **both** rails: array of view ids; unknown ids are dropped and unnamed views keep registration order. Each rail renders the subsequence it owns. Embedded in the shell for first paint (`app.js`, `app.py`) |
+| `sidebarHidden` | `[]` | Activity-bar views whose icons are hidden: array of view ids; unknown ids are dropped. Settings lists every view so a hidden one can be unhidden. A hidden view keeps its side. Embedded in the shell for first paint (`app.js`, `app.py`) |
+
+The migration is one release long: `activeView`, `outlineWidth` and `outlineCollapsed` are read only
+when their replacements are absent, and the client deletes them from the blob after a successful
+load so the next desktop save rewrites the file without them. The design is
+[`ui/secondary-sidebar.md`](../ui/secondary-sidebar.md) §6.
 
 ### Files and tabs
 

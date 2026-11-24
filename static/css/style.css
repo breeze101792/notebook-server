@@ -17,15 +17,18 @@
   --ok: #5fd49a;       /* "watching is on" -- green for the active state */
   --warn: #f3b454;     /* "watching is off" -- amber draws the eye */
   --sidebar-width: 240px;   /* legacy alias; kept for any external callers */
-  --outline-width: 220px;
   /* The activity bar is a fixed-width icon strip pinned to the far-left
-   * edge. It never resizes; the side panel next to it does. */
+   * edge. It never resizes; the side panel next to it does. The right rail
+   * (#activity-bar-right) reuses this width. */
   --activity-bar-width: 48px;
   /* Width of the side panel that hosts the active activity view. Renamed
    * from --sidebar-width so the resize + collapse logic reads clearly
    * (the panel now hosts more than just the file tree). The Explorer
    * view reuses this width since it lives inside the panel. */
   --side-panel-width: 240px;
+  /* Width of the auxiliary panel on the right, the #side-panel's twin. It
+   * hosts the views homed right -- the Outline by default. */
+  --aux-panel-width: 240px;
   --topbar-h: 46px;
   /* Multiplier applied to the app's text size. Default 1; the user picks
    * S/M/L/XL in the Settings modal which maps to 0.9 / 1 / 1.15 / 1.3.
@@ -285,7 +288,6 @@ body[data-theme="light"] {
   --shell-pane-min: 140px;
   --shell-reader-min: 352px;
   --side-panel-max: 480px;
-  --outline-max: 520px;
   --tree-indent: 18px;
 
   --ai-composer-min-h: 40px;
@@ -395,19 +397,23 @@ body.topbar-hidden { --topbar-h: 0px; }
 #topbar select { padding: 4px 6px; }
 
 /* ------------------------------------------------------------------ */
-/* Three-column layout                                                 */
+/* Five-column layout: rail | panel | editor | aux panel | rail        */
 /* ------------------------------------------------------------------ */
 #layout {
   display: grid;
-  /* Activity bar (fixed) | side panel | editor | outline.
-   * The panes share one budget and never spend the reader's floor. */
-  --shell-pane-budget: calc(100vw - var(--activity-bar-width) - var(--shell-reader-min));
+  /* Activity bar | side panel | editor | aux panel | right rail.
+   * Both panels share one budget and never spend the reader's floor. The
+   * budget subtracts both rails: at 1280 it is 832, so each cap is 374 and
+   * two panels at their caps leave 435 px of reader; two 140 px floors
+   * leave 704. The 45 % share (not 60 %) is what makes "both open" fit. */
+  --shell-pane-budget: calc(100vw - 2 * var(--activity-bar-width) - var(--shell-reader-min));
   --shell-panel-track: clamp(var(--shell-pane-min), var(--side-panel-width),
-    min(var(--side-panel-max), calc(.6 * var(--shell-pane-budget))));
-  --shell-outline-track: clamp(var(--shell-pane-min), var(--outline-width),
-    min(var(--outline-max), calc(var(--shell-pane-budget) - var(--shell-panel-track))));
+    min(var(--side-panel-max), calc(.45 * var(--shell-pane-budget))));
+  --shell-aux-track: clamp(var(--shell-pane-min), var(--aux-panel-width),
+    min(var(--side-panel-max), calc(.45 * var(--shell-pane-budget))));
+  --aux-rail-track: var(--activity-bar-width);
   grid-template-columns: var(--activity-bar-width) var(--shell-panel-track)
-    minmax(0, 1fr) var(--shell-outline-track);
+    minmax(0, 1fr) var(--shell-aux-track) var(--aux-rail-track);
   /* One bounded row filling the available vertical space. With no row track
    * declared the implicit auto row would size to its content's max-height,
    * so a tall child (e.g. a long AI chat) pushes the whole layout past the
@@ -419,10 +425,14 @@ body.topbar-hidden { --topbar-h: 0px; }
   min-height: 0;
 }
 
-/* The collapsed class on the aside is the source of the zero track; JS keeps
- * writing its 0 width, and this rule makes the track correct either way. */
+/* A collapsed class on an aside is the source of the zero track; JS keeps
+ * writing its 0 width, and these rules make the track correct either way.
+ * A right side with no visible view takes no panel and no rail: the
+ * data-right-empty attribute is derived by activity.js on every render, so
+ * moving or unhiding a view clears it immediately. */
 #layout:has(#side-panel.collapsed) { --shell-panel-track: 0px; }
-#layout:has(#outline-pane.collapsed) { --shell-outline-track: 0px; }
+#layout:has(#aux-panel.collapsed) { --shell-aux-track: 0px; }
+#layout[data-right-empty="true"] { --shell-aux-track: 0px; --aux-rail-track: 0px; }
 /* The activity bar: a narrow vertical strip of icon buttons. It is the
  * leftmost grid column and never scrolls; icons stack top-to-bottom. */
 #activity-bar {
@@ -479,9 +489,33 @@ body.topbar-hidden { --topbar-h: 0px; }
  * has a slot for every view. */
 #activity-more-btn { display: none; }
 
-/* Side panel: hosts the active activity view. Shares one resize handle
- * and one --side-panel-width var; individual views never resize
- * independently. */
+/* The right activity bar: the left rail's twin, mirrored. Same box (48 px,
+ * --surface-panel, 8 px vertical padding, 2 px gap, centred icons) with its
+ * border on the left edge, because it sits at the far right. It holds view
+ * icons only -- no workspace, graph, settings, log-out or More: every one of
+ * those resolves through getElementById, and a duplicate would bind a dead
+ * handler (app.js, graph.js, auth.js, workspaces.js). */
+#activity-bar-right {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 0;
+  background: var(--surface-panel);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  min-width: 0;
+}
+/* The active indicator mirrors the left rail's: a 2 px accent bar on the
+ * rail's own edge, which for the right rail is the right edge. */
+#activity-bar-right .activity-btn.active::before {
+  left: auto;
+  right: -6px;
+}
+
+/* Side panel: hosts the active activity view homed left. Shares one resize
+ * handle and one --side-panel-width var; individual views never resize
+ * independently. #aux-panel below is its mirror on the right. */
 #side-panel {
   background: var(--bg-panel);
   border-right: 1px solid var(--border);
@@ -492,9 +526,23 @@ body.topbar-hidden { --topbar-h: 0px; }
   min-height: 0;   /* grid item: allow shrink so inner scrollers engage */
   position: relative;
 }
-/* A side-panel view fills the panel. Only one is shown at a time; the
- * others carry [hidden]. */
-:where(#side-panel) .side-panel-view {
+/* Auxiliary panel: hosts the active activity view homed right. The box
+ * mirrors #side-panel with its border and its resize handle on the left
+ * edge, because it sits against the right rail. */
+#aux-panel {
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+/* A view host fills whichever panel it lives in. Only one is shown per
+ * panel at a time; the others carry [hidden]. Both panels are scoped, so a
+ * host moved between them (activity.js appendChild) keeps its box. */
+:where(#side-panel, #aux-panel) .side-panel-view {
   flex: 1 1 auto;
   display: flex;
   flex-direction: column;
@@ -502,7 +550,7 @@ body.topbar-hidden { --topbar-h: 0px; }
   min-width: 0;
   overflow: hidden;
 }
-:where(#side-panel) .side-panel-view[hidden] { display: none; }
+:where(#side-panel, #aux-panel) .side-panel-view[hidden] { display: none; }
 
 /* The original #sidebar is now a side-panel-view. It reuses the
  * .side-panel-view flex layout; this rule only adds the background +
@@ -513,16 +561,6 @@ body.topbar-hidden { --topbar-h: 0px; }
  * at once). */
 #sidebar {
   background: var(--bg-panel);
-  overflow: hidden;
-  min-width: 0;
-  position: relative;
-}
-#outline-pane {
-  background: var(--bg-panel);
-  border-right: none;
-  border-left: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   min-width: 0;
   position: relative;
@@ -605,7 +643,7 @@ body.topbar-hidden { --topbar-h: 0px; }
   flex: 1 1 auto;
   overflow: auto;
   min-height: 0;
-  margin-left: 8px;          /* handle lives on the outline's left edge */
+  margin-left: 8px;          /* the aux panel's left-edge handle inset */
 }
 
 /* --- resize handles (drag the inner edge to resize a pane) ------------- */
@@ -661,14 +699,13 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
 }
 .expand-btn:hover { color: var(--fg); background: var(--accent-soft); }
 
-#side-panel.collapsed .expand-btn,
-#outline-pane.collapsed .expand-btn { display: flex; }
+#side-panel.collapsed .expand-btn { display: flex; }
 #side-panel.collapsed .side-panel-view,
 #side-panel.collapsed .panel-header,
-#outline-pane.collapsed .panel-header,
-#outline-pane.collapsed #outline { display: none; }
+#aux-panel.collapsed .side-panel-view,
+#aux-panel.collapsed .panel-header { display: none; }
 #side-panel.collapsed .resize-handle,
-#outline-pane.collapsed .resize-handle { display: none; }
+#aux-panel.collapsed .resize-handle { display: none; }
 
 #editor-pane {
   position: relative;
@@ -706,20 +743,20 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
   padding: 0 var(--space-1);
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
-  /* The row itself never scrolls; the inner #tab-list does. That keeps the
-   * outline toggle a fixed sibling to the right of the scroller, so an
-   * overflowing tab can never slide under and cover it. */
+  /* The row itself never scrolls; the inner #tab-list does. The list is the
+   * last child now that the outline toggle is gone, so it runs to the bar's
+   * inner right edge. */
   overflow: hidden;
 }
 
 /* hideTabBar: the bar's display:flex outranks the UA [hidden] rule, so the
  * attribute needs its own rule. The server renders the attribute on the
- * first frame and app.js toggles it; body:has(#tab-bar[hidden]) shows the
- * rail's outline twin. */
+ * first frame and app.js toggles it. */
 .tab-bar[hidden] { display: none; }
 
-/* The scrolling part of the tab row: holds the tabs only. #outline-toggle
- * sits outside it, at the fixed right edge. */
+/* The scrolling part of the tab row: holds the tabs only and runs to the
+ * bar's right edge -- the outline toggle that used to sit beside it is gone
+ * (docs/ui/secondary-sidebar.md §5.2). */
 .tab-list {
   display: flex;
   align-items: flex-end;
@@ -748,7 +785,7 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
  * pin-less bar lays out as before. It never shrinks (the scroller yields),
  * but is capped at half the bar and scrolls internally beyond that (with the
  * scrollbar hidden), so a long pinned set can neither squeeze the scroller
- * out nor push the outline toggle off the edge. */
+ * out nor spill past the bar's edge. */
 .tab-pinned {
   display: flex;
   align-items: flex-end;
@@ -772,17 +809,6 @@ body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
  * so it needs no room reserved for one, and it lifts the shared max-width
  * rail so a long name shows in full. The region caps and scrolls instead. */
 .tab-pinned .tab { flex: 0 0 auto; max-width: none; }
-
-/* Outline toggle icon pinned to the right edge of the tab bar. A sibling of
- * the #tab-list scroller, so it stays visible and un-overlapped however many
- * tabs are open. Keeps the tab bar its only control for showing/hiding the
- * right outline pane. */
-.tab-bar .outline-toggle {
-  align-self: center;
-  flex: 0 0 auto;
-  font-size: 1rem;
-  padding: 2px 6px;
-}
 
 /* Edit bar: a thin row of formatting buttons that sits between the tab
  * bar and the textarea. Hidden by default; viewer.js shows it on
@@ -2573,6 +2599,7 @@ body[data-theme="light"] #settings-overlay {
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-height: 40px;          /* 40 px row + 8 px gap = the 48 px pitch */
   padding: var(--space-1) var(--space-3);
   background: var(--surface-raised);
   border: var(--stroke-1) solid var(--border);
@@ -2624,6 +2651,48 @@ body[data-theme="light"] #settings-overlay {
   align-items: center;
   gap: var(--space-hair);
   flex: 0 0 auto;
+}
+/* The per-row Left | Right control (secondary-sidebar.md §8): two real
+ * buttons in a group, the chip face -- 30 px, --surface-raised,
+ * --border-strong, --radius-pill. The pressed option is the selected chip;
+ * each button is a Tab stop and Space/Enter selects it. */
+.sidebar-order-side {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: stretch;
+  height: var(--control-h-md);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  overflow: hidden;
+}
+.sidebar-order-side-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-h-lg);
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--text-ui);
+  line-height: 1;
+  cursor: pointer;
+}
+.sidebar-order-side-btn + .sidebar-order-side-btn {
+  border-left: var(--stroke-1) solid var(--border);
+}
+.sidebar-order-side-btn:hover { color: var(--text-primary); }
+.sidebar-order-side-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+/* The container clips, so the ring is inset (controls.md §2.8). */
+.sidebar-order-side-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: var(--focus-offset-inset);
 }
 #settings-overlay .sidebar-order-toggle {
   min-width: calc(var(--control-h-md) * 2);
@@ -2737,7 +2806,9 @@ body[data-theme="light"] #settings-overlay {
  body.auth-locked #editor-pane,
  body.auth-locked #sidebar,
  body.auth-locked #side-panel,
- body.auth-locked #activity-bar { filter: blur(6px); }
+ body.auth-locked #aux-panel,
+ body.auth-locked #activity-bar,
+ body.auth-locked #activity-bar-right { filter: blur(6px); }
 
 /* Passwords section inside the Settings modal. The inputs reuse the
  * .auth-input look from the login modal; we just add a max-width so
@@ -8308,7 +8379,8 @@ body[data-theme="light"] #dw-designer-overlay {
 #mobile-title,
 #mobile-capture,
 #mobile-more { display: none; }
-#side-panel .tree-more { display: none; }
+#side-panel .tree-more,
+:where(#aux-panel) .tree-more { display: none; }
 #mobile-home[hidden] { display: none; }
 
 /* Phone shell: narrow windows, or a coarse pointer up to tablet size
@@ -8357,7 +8429,6 @@ body[data-theme="light"] #dw-designer-overlay {
   body.topbar-hidden { --topbar-h: calc(var(--m-topbar-h) + env(safe-area-inset-top)); }
   #brand,
   .topbar-spacer,
-  #outline-toggle,
   #explorer-top-toggle { display: none; }
   .topbar-actions { flex: 1 1 auto; gap: 4px; align-items: center; min-width: 0; }
   #topbar #back-btn,
@@ -8424,10 +8495,14 @@ body[data-theme="light"] #dw-designer-overlay {
   body.auth-locked #mobile-home { display: none; }
 
   /* ---- one-column layout ------------------------------------------ */
+  /* Sides are a desktop concept: the right rail and the aux panel have no
+   * phone surface. applyLayout("phone") moves every view host into
+   * #side-panel, which is the drawer. */
   #layout { display: block; position: relative; flex: 1 1 auto; min-height: 0; }
   #editor-pane { height: 100%; min-height: 0; }
   #tab-bar,
-  #outline-pane,
+  #activity-bar-right,
+  #aux-panel,
   #cm-host { display: none; }
   /* Two classes outrank the desktop `#welcome.welcome` flex rule; Home is
    * the phone's no-note screen. */
@@ -8639,7 +8714,7 @@ body[data-theme="light"] #dw-designer-overlay {
   }
   .status-dot.offline { background: var(--warn); }
 
-  :where(#side-panel) .side-panel-view { min-height: 0; }
+  :where(#side-panel, #aux-panel) .side-panel-view { min-height: 0; }
   #file-tree,
   .explorer-bookmarks,
   .bookmarks-list,
@@ -9219,6 +9294,8 @@ body[data-theme="light"] #dw-designer-overlay {
 
   @media (prefers-reduced-motion: reduce) {
     #side-panel,
+    #aux-panel,
+    #activity-bar-right,
     #mobile-scrim,
     #capture-sheet,
     #mobile-settings,
@@ -9354,16 +9431,6 @@ body.topbar-hidden #workspace-rail-btn { display: flex; }
 #workspace-rail-btn:hover .workspace-glyph,
 #workspace-rail-btn[aria-expanded="true"] .workspace-glyph { color: var(--fg); }
 #workspace-rail-btn.is-missing .workspace-glyph { color: var(--ws-warn); }
-
-/* The outline pane's rail mount: the strip's #outline-toggle is its first
- * mount, so this twin appears only while the strip is hidden. CSS-only, so a
- * saved hideTabBar paints it on the first frame with no script. */
-#outline-rail-btn { display: none; }
-body:has(#tab-bar[hidden]) #outline-rail-btn { display: flex; }
-/* No .activity-btn:focus-visible rule exists, so the rail mount would fall
- * back to the UA ring on a dark panel. Give it the same ring the workspace
- * twin gets. */
-#outline-rail-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* The glyph, name and caret are shared by the chip; the caret only exists
  * on the chip, the rail mount is icon-only. */
@@ -9691,10 +9758,6 @@ body:has(#tab-bar[hidden]) #outline-rail-btn { display: flex; }
   }
   #topbar .workspace-switch .workspace-caret { display: none; }
   #activity-bar #workspace-rail-btn { display: none; }
-  /* The outline pane does not exist on the phone, so neither does its rail
-   * twin. :has() lifts the desktop rule's specificity, so repeat the prefix
-   * to outrank it (the strip's own toggle is hidden above). */
-  body:has(#tab-bar[hidden]) #activity-bar #outline-rail-btn { display: none; }
   .workspace-menu { --ws-pop-width: min(320px, calc(100vw - 16px)); }
   .ws-item { min-height: var(--m-hit); font-size: .95rem; }
   .ws-foot { font-size: .8rem; }
@@ -9704,8 +9767,8 @@ body:has(#tab-bar[hidden]) #outline-rail-btn { display: flex; }
 /* Sessions                                                            */
 /* A named set of unpinned tabs plus its own active tab, per workspace.*/
 /* The control is a side-panel view beside Explorer, Pinned and        */
-/* Bookmarks. The tab bar is untouched: #tab-pinned, #tab-list and     */
-/* #outline-toggle are its only children.                              */
+/* Bookmarks. The tab bar is untouched: #tab-pinned and #tab-list are    */
+/* its only children.                                                   */
 /* Spec: docs/ui/sessions.md revision 3 — marker rows.                 */
 /* ------------------------------------------------------------------ */
 
@@ -10595,13 +10658,6 @@ details.ai-tool-trace .ai-tool-out { display: block; margin-top: 4px; }
   height: var(--control-h-md);
   font-size: var(--text-ui);
   border-color: var(--border-strong);
-}
-.tab-bar .outline-toggle {
-  display: grid;
-  place-items: center;
-  width: var(--control-h-md);
-  height: var(--control-h-md);
-  padding: 0;
 }
 @media (max-width: 860px), ((pointer: coarse) and (max-width: 1023px)) {
   #topbar #back-btn { display: flex; }

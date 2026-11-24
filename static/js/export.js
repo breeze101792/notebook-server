@@ -48,7 +48,8 @@
   // Focus target when the opener is gone: Export… is usually reached from a
   // context-menu item that the menu hides before the dialog opens.
   const FALLBACK_FOCUS_SELECTOR =
-    '#activity-bar .activity-btn[data-view="explorer"]';
+    '#activity-bar .activity-btn[data-view="explorer"], ' +
+    '#activity-bar-right .activity-btn[data-view="explorer"]';
 
   // How long to wait for Paged.js to finish paginating the print document
   // before printing anyway. This is only a safety net against a renderer

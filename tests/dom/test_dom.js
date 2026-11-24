@@ -314,12 +314,10 @@ const html = `<!DOCTYPE html><html><head>
       <button id="hybrid-toggle" class="icon-btn" title="WYSIWYG edit mode" aria-label="WYSIWYG edit mode" hidden>✎</button>
       <button id="edit-toggle" class="icon-btn" title="Edit Markdown source (Ctrl/Cmd+E)" aria-label="Edit Markdown source">📝</button>
     </header>
-    <main id="layout">
+    <main id="layout" data-sidebar-side="{}">
       <nav id="activity-bar" class="activity-bar" aria-label="Activity bar"
            data-sidebar-order="" data-sidebar-hidden="">
         <div class="activity-bar-spacer"></div>
-        <button id="outline-rail-btn" class="activity-btn activity-action" type="button"
-                title="Show outline" aria-label="Toggle outline pane" aria-pressed="false">≣</button>
         <button id="activity-graph-btn" class="activity-btn activity-action" title="Graph view" aria-label="Graph view">🕸</button>
         <button id="logout-btn" class="activity-btn activity-action" hidden>⎋</button>
         <button id="activity-settings-btn" class="activity-btn activity-action" title="Settings" aria-label="Settings">⚙</button>
@@ -333,7 +331,7 @@ const html = `<!DOCTYPE html><html><head>
             <div class="panel-header-actions">
               <button class="collapse-btn" id="explorer-top-toggle" data-mode="pinned" title="Top section: Pinned folders. Click to show Bookmarks." aria-label="Top section: Pinned folders. Click to show Bookmarks.">📌</button>
               <button class="collapse-btn" id="sidebar-refresh" title="Reload file tree from disk" aria-label="Reload file tree from disk"><span class="refresh-glyph">↻</span></button>
-              <button class="collapse-btn" id="sidebar-collapse" title="Collapse files">‹</button>
+              <button class="collapse-btn" id="sidebar-collapse" data-collapse-view="explorer" title="Collapse files">‹</button>
             </div></div>
           <div id="pinned-folders" class="pinned-folders" hidden></div>
           <div id="explorer-bookmarks" class="explorer-bookmarks" hidden></div>
@@ -351,7 +349,6 @@ const html = `<!DOCTYPE html><html><head>
         <div id="tab-bar" class="tab-bar">
           <div id="tab-pinned" class="tab-pinned" hidden></div>
           <div id="tab-list" class="tab-list"></div>
-          <button id="outline-toggle" class="icon-btn outline-toggle" title="Show outline" aria-label="Toggle outline pane">≣</button>
         </div>
         <div id="edit-bar" class="edit-bar" hidden>
           <button class="eb" data-act="undo">Undo</button>
@@ -543,11 +540,17 @@ const html = `<!DOCTYPE html><html><head>
           <div id="sessions-page" class="sessions-page special-tab-view" hidden></div>
         </div>
       </section>
-      <aside id="outline-pane">
-        <div class="panel-header"><span class="panel-title">Outline</span>
-          <button class="collapse-btn" id="outline-collapse" title="Collapse outline">›</button></div>
-        <div id="outline" class="outline"></div>
+      <aside id="aux-panel" aria-label="Right side panel">
+        <div id="outline-view" class="side-panel-view" data-view="outline">
+          <div class="panel-header"><span class="panel-title">Outline</span>
+            <button class="collapse-btn" data-collapse-view="outline" title="Collapse outline" aria-label="Collapse outline">›</button></div>
+          <div id="outline" class="outline"></div>
+        </div>
       </aside>
+      <nav id="activity-bar-right" class="activity-bar" aria-label="Right activity bar"
+           data-sidebar-order="" data-sidebar-hidden="">
+        <div class="activity-bar-views"></div>
+      </nav>
     </main>
   </div>
   <div id="auth-overlay" class="settings-overlay" hidden>
@@ -7114,13 +7117,17 @@ function check(label, cond, extra) {
   };
   check("boot opened one tab (notes/a.md)", tabs().length === 1 && tabs()[0].dataset.path === "notes/a.md",
     tabs().length + " tab(s)");
-  // Tabs live in the inner #tab-list scroller; #outline-toggle is a sibling
-  // of that scroller, so an overflowing tab can never cover the toggle.
+  // Tabs live in the inner #tab-list scroller. The tab bar has no outline
+  // toggle any more: the Outline is a right-panel view and its right-rail
+  // icon is its only control (secondary-sidebar.md §5.2).
   const tabListEl = window.document.getElementById("tab-list");
-  const outlineToggleEl = window.document.getElementById("outline-toggle");
   check("tabs render inside #tab-list", tabListEl && tabs()[0].parentElement === tabListEl);
-  check("outline toggle is a sibling of #tab-list",
-    outlineToggleEl && outlineToggleEl.parentElement === barEl && !tabListEl.contains(outlineToggleEl));
+  check("tab bar: no outline toggle or rail twin remains",
+    !window.document.getElementById("outline-toggle") &&
+    !window.document.getElementById("outline-rail-btn") &&
+    !barEl.querySelector(".outline-toggle"));
+  check("tab list is the tab bar's last child (no toggle sibling)",
+    tabListEl && tabListEl.nextElementSibling === null);
   check("active tab is notes/a.md", activeTabPath() === "notes/a.md");
   // Wheel scroll: browsers map a wheel onto the axis its delta names, so a
   // vertical wheel over the X-only strip is ignored without tabs.js. jsdom has
@@ -24388,15 +24395,17 @@ function check(label, cond, extra) {
   await tick(10);
   check("left sidebar .collapsed removed", !$("side-panel").classList.contains("collapsed"));
   check("left sidebar width restored (240px)", cssVar("--side-panel-width") === "240px", cssVar("--side-panel-width"));
-  // right outline: toggled from the tab-bar icon (no strip button now)
-  click("outline-toggle");
+  // right outline: its only toggle is the right-rail icon
+  const outlineRailBtn = () => window.document.querySelector(
+    '#activity-bar-right .activity-btn[data-view="outline"]');
+  outlineRailBtn().dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("outline gets .collapsed", $("outline-pane").classList.contains("collapsed"));
-  check("outline width -> 0px", cssVar("--outline-width") === "0px", cssVar("--outline-width"));
-  click("outline-toggle");
+  check("outline gets .collapsed", $("aux-panel").classList.contains("collapsed"));
+  check("outline width -> 0px", cssVar("--aux-panel-width") === "0px", cssVar("--aux-panel-width"));
+  outlineRailBtn().dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
-  check("outline .collapsed removed", !$("outline-pane").classList.contains("collapsed"));
-  check("outline width restored (220px)", cssVar("--outline-width") === "220px", cssVar("--outline-width"));
+  check("outline .collapsed removed", !$("aux-panel").classList.contains("collapsed"));
+  check("outline width restored (240px)", cssVar("--aux-panel-width") === "240px", cssVar("--aux-panel-width"));
   // persistence: collapse then wait for debounced config save
   click("sidebar-collapse");
   await tick(350);
@@ -24408,43 +24417,65 @@ function check(label, cond, extra) {
   explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(10);
 
-  console.log("== active side-panel view persists ==");
-  // The active view is written to config on every switch so a reload lands
-  // on the same view instead of snapping back to the file tree. Collapsing
-  // the panel on the active icon must NOT clobber it (the icon stays lit).
+  console.log("== active side-panel views persist ==");
+  // Each side writes its own key on every switch so a reload restores both
+  // panels. Collapsing a panel on its active icon must NOT clobber that
+  // side's key (the icon stays lit). The legacy single-view key is gone.
   {
     const bookmarksBtn = window.document.querySelector(
       '#activity-bar .activity-btn[data-view="bookmarks"]');
     bookmarksBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(350);
     let post = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
-    check("active view: switching to bookmarks persists activeView",
-      /"activeView":"bookmarks"/.test(post), post);
-    // Clicking the already-active icon collapses the panel; activeView stays.
+    check("active view: switching to bookmarks persists activeViewLeft",
+      /"activeViewLeft":"bookmarks"/.test(post), post);
+    check("active view: the post no longer carries the legacy activeView key",
+      !/"activeView":/.test(post), post);
+    check("active view: the post carries the right side's key too",
+      /"activeViewRight":"outline"/.test(post), post);
+    // Clicking the already-active icon collapses the panel; the key stays.
     bookmarksBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(350);
     post = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
-    check("active view: collapsing on the active icon keeps activeView",
-      /"activeView":"bookmarks"/.test(post), post);
+    check("active view: collapsing on the active icon keeps activeViewLeft",
+      /"activeViewLeft":"bookmarks"/.test(post), post);
     // Re-expand and return to Explorer so the blocks below see the tree.
     bookmarksBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(20);
     explorerBtn.dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(20);
     check("active view: back on explorer",
-      window.NB.activity.getActive() === "explorer");
+      window.NB.activity.getActive("left") === "explorer");
+    // The right side writes its own key when a right-homed view is activated.
+    window.NB.activity.activate("outline", false);
+    await tick(350);
+    post = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+    check("active view: the right side persists activeViewRight separately",
+      /"activeViewRight":"outline"/.test(post) &&
+      /"activeViewLeft":"explorer"/.test(post), post);
     // The boot half now lives in activity.js (adoptShellView, driven in
     // the "activity adopts the shell view" block below); app.js reconciles
     // the fetched config after applyConfig and no longer paints from it.
     const appSrc = read("static/js/app.js");
-    check("active view: DEFAULT config declares activeView",
-      /activeView:\s*"explorer"/.test(appSrc));
-    check("active view: boot reconciles the fetched view",
-      /serverCfg\.activeView/.test(appSrc) &&
-      /NB\.activity\.getActive\(\)/.test(appSrc));
+    check("active view: DEFAULT config declares activeViewLeft",
+      /activeViewLeft:\s*"explorer"/.test(appSrc));
+    check("active view: DEFAULT config declares activeViewRight",
+      /activeViewRight:\s*"outline"/.test(appSrc));
+    const defaultsStart = appSrc.indexOf("const DEFAULTS = {");
+    const defaultsBody = appSrc.slice(
+      defaultsStart, appSrc.indexOf("\n  };", defaultsStart));
+    check("active view: the legacy keys are gone from DEFAULTS",
+      defaultsStart >= 0 &&
+      !/^\s*activeView:\s/m.test(defaultsBody) &&
+      !/^\s*outlineWidth:\s/m.test(defaultsBody) &&
+      !/^\s*outlineCollapsed:\s/m.test(defaultsBody),
+      (defaultsBody.match(/^\s*(activeView|outlineWidth|outlineCollapsed):/gm) || []).join(","));
+    check("active view: boot reconciles each side independently",
+      /resolveSideView\(side, serverCfg\)/.test(appSrc) &&
+      /NB\.activity\.getActive\(side\)/.test(appSrc));
     const applyCfgBody = appSrc.slice(
       appSrc.indexOf("function applyConfig"),
-      appSrc.indexOf("/* Side panel minimize"));
+      appSrc.indexOf("/* Side panel minimise"));
     check("active view: applyConfig no longer activates a view",
       !/NB\.activity\.activate/.test(applyCfgBody), applyCfgBody.slice(0, 120));
   }
@@ -24488,6 +24519,380 @@ function check(label, cond, extra) {
     check("collapse: back to Explorer, panel expanded",
       !$("side-panel").classList.contains("collapsed") &&
       window.NB.activity.getActive() === "explorer");
+  }
+
+  console.log("== secondary sidebar: two rails ==");
+  // docs/ui/secondary-sidebar.md: two rails, two panels, one view host each,
+  // a side map and independent per-side state. AC5, AC6, AC7, AC9, AC10,
+  // AC15, AC19, AC20, AC21, AC22.
+  {
+    const A = () => window.NB.activity;
+    const leftIcon = (id) => window.document.querySelector(
+      '#activity-bar .activity-btn[data-view="' + id + '"]');
+    const rightIcon = (id) => window.document.querySelector(
+      '#activity-bar-right .activity-btn[data-view="' + id + '"]');
+    const hostIn = (panelId, id) => $(panelId).querySelector(
+      '.side-panel-view[data-view="' + id + '"]');
+    const visibleIn = (panelId) => Array.from(
+      $(panelId).querySelectorAll(".side-panel-view"))
+      .filter((h) => !h.hidden).map((h) => h.dataset.view);
+
+    A().activate("explorer", false);
+    A().expand("left");
+    A().expand("right");
+    await tick(20);
+
+    // The rails split the registry: Outline right, everything else left.
+    check("two rails: the right rail carries the right-homed views only",
+      Array.from(window.document.querySelectorAll(
+        "#activity-bar-right .activity-btn[data-view]"))
+        .map((b) => b.dataset.view).join(",") === "outline");
+    check("two rails: the Outline keeps no icon on the left rail",
+      !leftIcon("outline"));
+
+    // AC5: a right-rail icon activates its view in #aux-panel and leaves the
+    // left panel's active view and width alone.
+    window.NB.app.setSidebarSide("recent", "right");
+    await tick(30);
+    check("two rails: setSide moves the host node into #aux-panel",
+      !!hostIn("aux-panel", "recent") && !hostIn("side-panel", "recent"));
+    const ac5LeftActive = A().getActive("left");
+    const ac5LeftWidth = cssVar("--side-panel-width");
+    rightIcon("recent").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("AC5: the right icon shows its view inside #aux-panel",
+      visibleIn("aux-panel").join(",") === "recent",
+      visibleIn("aux-panel").join(","));
+    check("AC5: the left active view and width are untouched",
+      A().getActive("left") === ac5LeftActive &&
+      cssVar("--side-panel-width") === ac5LeftWidth,
+      A().getActive("left") + " " + cssVar("--side-panel-width"));
+    check("AC5/right rail: the active icon carries aria-pressed",
+      rightIcon("recent").getAttribute("aria-pressed") === "true");
+
+    // AC6: clicking the active right-rail icon collapses #aux-panel to 0 and
+    // keeps the icon lit; clicking again restores auxPanelWidth.
+    rightIcon("recent").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("AC6: the active right icon collapses #aux-panel to 0",
+      $("aux-panel").classList.contains("collapsed") &&
+      cssVar("--aux-panel-width") === "0px",
+      cssVar("--aux-panel-width"));
+    check("AC6: the collapsed panel's icon stays aria-pressed",
+      rightIcon("recent").getAttribute("aria-pressed") === "true");
+    rightIcon("recent").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("AC6: clicking again expands to the saved auxPanelWidth",
+      !$("aux-panel").classList.contains("collapsed") &&
+      cssVar("--aux-panel-width") === window.NB.app.getAuxPanelWidth() + "px",
+      cssVar("--aux-panel-width"));
+
+    // AC7: moving the Outline to the left re-glyphs its static header chevron
+    // and the chevron collapses the panel that now hosts it.
+    window.NB.app.setSidebarSide("outline", "left");
+    await tick(30);
+    const outlineChevron = () => window.document.querySelector(
+      '#outline-view [data-collapse-view="outline"]');
+    check("AC7: the moved host reaches #side-panel",
+      !!hostIn("side-panel", "outline") && !hostIn("aux-panel", "outline"));
+    check("AC7: the moved chevron points left with the left-panel title",
+      outlineChevron() &&
+      outlineChevron().querySelector("use").getAttribute("href") ===
+        "#nb-icon-chevron-left" &&
+      outlineChevron().title === "Collapse outline",
+      outlineChevron() && outlineChevron().querySelector("use").getAttribute("href") +
+        " / " + outlineChevron().title);
+    outlineChevron().dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("AC7: the moved chevron collapses the panel that hosts it",
+      $("side-panel").classList.contains("collapsed"));
+    A().expand("left");
+    window.NB.app.setSidebarSide("outline", "right");
+    await tick(30);
+    check("AC7: moving it back re-glyphs the chevron to the right",
+      outlineChevron() &&
+      outlineChevron().querySelector("use").getAttribute("href") ===
+        "#nb-icon-chevron-right");
+    A().expand("right");
+    await tick(20);
+
+    // AC9: moving a side's active view away activates that side's first
+    // visible view in RAIL order, and an emptied right side collapses.
+    window.NB.app.setSidebarSide("recent", "left");
+    await tick(30);
+    window.NB.app.setSidebarOrder(["recent", "sessions"]);
+    window.NB.app.setSidebarHidden(["explorer"]);
+    A().activate("sessions", false);
+    await tick(20);
+    window.NB.app.setSidebarSide("sessions", "right");
+    await tick(30);
+    check("AC9: the source side activates its first visible view in rail order",
+      A().getActive("left") === "recent",
+      "active=" + A().getActive("left"));
+    // Empty the right side: no visible view remains, so rail and panel take 0.
+    window.NB.app.setSidebarSide("sessions", "left");
+    window.NB.app.setSidebarHidden(["outline"]);
+    await tick(30);
+    check("AC9: an emptied right side collapses and hides its rail",
+      A().getActive("right") === null &&
+      $("aux-panel").classList.contains("collapsed") &&
+      window.document.querySelectorAll(
+        "#activity-bar-right .activity-btn[data-view]").length === 0 &&
+      $("layout").dataset.rightEmpty === "true",
+      "empty=" + $("layout").dataset.rightEmpty);
+    window.NB.app.setSidebarHidden([]);
+    window.NB.app.setSidebarOrder([]);
+    A().activate("explorer", false);
+    A().expand("left");
+    rightIcon("outline").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+
+    // AC15: hiding the last right-homed view collapses the right side and
+    // leaves the left active view and width untouched.
+    const ac15Left = A().getActive("left");
+    const ac15Width = cssVar("--side-panel-width");
+    window.NB.app.setSidebarHidden(["outline"]);
+    await tick(30);
+    check("AC15: hiding the last right view empties the right side",
+      A().getActive("right") === null &&
+      $("aux-panel").classList.contains("collapsed") &&
+      window.document.querySelectorAll(
+        "#activity-bar-right .activity-btn[data-view]").length === 0);
+    check("AC15: the left side is untouched",
+      A().getActive("left") === ac15Left &&
+      cssVar("--side-panel-width") === ac15Width);
+    window.NB.app.setSidebarHidden([]);
+    await tick(20);
+
+    // AC22 + AC19: Settings lists nine rows; each row's Left | Right control
+    // reflects and writes the side and announces the rail and position.
+    window.NB.settings.open();
+    await tick(20);
+    const orderRows = Array.from(window.document.querySelectorAll(
+      "#settings-sidebar-order .sidebar-order-row"));
+    check("AC19: Settings lists nine activity rows in the global order",
+      orderRows.length === 9 &&
+      orderRows.map((r) => r.dataset.view).join(",") ===
+        "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs,outline",
+      orderRows.map((r) => r.dataset.view).join(","));
+    const outlineRow = orderRows.find((r) => r.dataset.view === "outline");
+    const sideOptions = (row) => Array.from(
+      row.querySelectorAll(".sidebar-order-side-btn"));
+    check("AC19: every row carries a two-option Left | Right control",
+      orderRows.every((r) => {
+        const opts = sideOptions(r);
+        return opts.length === 2 &&
+          opts.filter((b) => b.getAttribute("aria-pressed") === "true").length === 1;
+      }));
+    check("AC19: the Outline row reflects its right home",
+      outlineRow.querySelector('.sidebar-order-side-btn[data-side="right"]')
+        .getAttribute("aria-pressed") === "true");
+    const outlineLeftOpt = outlineRow.querySelector(
+      '.sidebar-order-side-btn[data-side="left"]');
+    check("AC19: each option is a real, tabbable button",
+      outlineLeftOpt.tagName === "BUTTON" &&
+      outlineLeftOpt.tabIndex !== -1 &&
+      outlineLeftOpt.getAttribute("aria-pressed") === "false");
+    outlineLeftOpt.focus();
+    check("AC19: the option takes focus", window.document.activeElement === outlineLeftOpt);
+    outlineLeftOpt.dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(30);
+    const outlineRowNow = () => window.document.querySelector(
+      '#settings-sidebar-order .sidebar-order-row[data-view="outline"]');
+    check("AC19: choosing Left moves the row and the view",
+      outlineRowNow().querySelector('.sidebar-order-side-btn[data-side="left"]')
+        .getAttribute("aria-pressed") === "true" &&
+      A().sideOf("outline") === "left",
+      "pressed=" +
+        outlineRowNow().querySelector('.sidebar-order-side-btn[data-side="left"]')
+          .getAttribute("aria-pressed") + " side=" + A().sideOf("outline"));
+    check("AC19: the change is announced with the rail and position",
+      $("settings-sidebar-order-status").textContent ===
+        "Outline moved to the left rail, position 9 of 9.",
+      $("settings-sidebar-order-status").textContent);
+    // A hidden row keeps its side control and its saved side.
+    const pinnedRow = orderRows.find((r) => r.dataset.view === "pinned");
+    pinnedRow.querySelector(".sidebar-order-toggle").dispatchEvent(
+      new window.Event("click", { bubbles: true }));
+    await tick(20);
+    const pinnedRowNow = window.document.querySelector(
+      '#settings-sidebar-order .sidebar-order-row[data-view="pinned"]');
+    check("AC19: a hidden row still shows its side control",
+      sideOptions(pinnedRowNow).length === 2 &&
+      pinnedRowNow.querySelector('.sidebar-order-side-btn[data-side="left"]')
+        .getAttribute("aria-pressed") === "true");
+    pinnedRowNow.querySelector(".sidebar-order-toggle").dispatchEvent(
+      new window.Event("click", { bubbles: true }));
+    await tick(20);
+    // Choosing Right again restores the Outline and posts the map.
+    window.document.querySelector(
+      '#settings-sidebar-order .sidebar-order-row[data-view="outline"]')
+      .querySelector('.sidebar-order-side-btn[data-side="right"]')
+      .dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(350);
+    const sidePost = fetchLog.filter((x) => x.startsWith("POST /api/config")).pop() || "";
+    check("AC10: the side map is persisted with an explicit key list",
+      sidePost.indexOf('"sidebarSide"') !== -1 &&
+      sidePost.indexOf('"outline":"right"') !== -1,
+      sidePost);
+    check("AC19: returning to Right announces the right rail position",
+      $("settings-sidebar-order-status").textContent ===
+        "Outline moved to the right rail, position 1 of 1.",
+      $("settings-sidebar-order-status").textContent);
+    window.NB.settings.close();
+    await tick(10);
+    A().expand("right");
+    await tick(20);
+
+    // AC22: hiding the Outline in Settings empties the right side; the only
+    // way back is Settings -> Unhide.
+    rightIcon("outline").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    window.NB.settings.open();
+    await tick(20);
+    const ac22Row = window.document.querySelector(
+      '#settings-sidebar-order .sidebar-order-row[data-view="outline"]');
+    check("AC22: the Outline row is present with an Unhide path",
+      !!ac22Row &&
+      ac22Row.querySelector(".sidebar-order-toggle").textContent === "Hide");
+    ac22Row.querySelector(".sidebar-order-toggle").dispatchEvent(
+      new window.Event("click", { bubbles: true }));
+    await tick(30);
+    const ac22RowNow = () => window.document.querySelector(
+      '#settings-sidebar-order .sidebar-order-row[data-view="outline"]');
+    check("AC22: hiding the Outline empties the right side",
+      A().getActive("right") === null &&
+      $("aux-panel").classList.contains("collapsed") &&
+      window.document.querySelectorAll(
+        "#activity-bar-right .activity-btn[data-view]").length === 0,
+      "active=" + A().getActive("right") +
+        " collapsed=" + $("aux-panel").classList.contains("collapsed") +
+        " icons=" + window.document.querySelectorAll(
+          "#activity-bar-right .activity-btn[data-view]").length +
+        " empty=" + $("layout").dataset.rightEmpty);
+    check("AC22: the Outline row keeps its side control while hidden",
+      ac22RowNow().querySelector(".sidebar-order-toggle").textContent === "Unhide" &&
+      ac22RowNow().querySelector('.sidebar-order-side-btn[data-side="right"]')
+        .getAttribute("aria-pressed") === "true");
+    ac22RowNow().querySelector(".sidebar-order-toggle").dispatchEvent(
+      new window.Event("click", { bubbles: true }));
+    await tick(30);
+    check("AC22: Unhide restores the right rail icon",
+      !!rightIcon("outline") && $("layout").dataset.rightEmpty === "false");
+    rightIcon("outline").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("AC22: the restored icon reopens the Outline",
+      !$("aux-panel").classList.contains("collapsed") &&
+      visibleIn("aux-panel").join(",") === "outline");
+    window.NB.settings.close();
+    await tick(10);
+
+    // AC20: isViewVisible is false while the view is active on a collapsed
+    // side, and "/" expands that side before focusing the input.
+    A().activate("explorer", false);
+    A().expand("left");
+    A().activate("search", false);
+    await tick(20);
+    leftIcon("search").dispatchEvent(new window.Event("click", { bubbles: true }));
+    await tick(20);
+    check("AC20: isViewVisible is false while Search is active on a collapsed side",
+      A().getActive("left") === "search" &&
+      $("side-panel").classList.contains("collapsed") &&
+      A().isViewVisible("search") === false,
+      "active=" + A().getActive("left") + " visible=" + A().isViewVisible("search"));
+    if (window.document.activeElement && window.document.activeElement.blur) {
+      window.document.activeElement.blur();
+    }
+    window.document.body.focus();
+    window.document.dispatchEvent(new window.KeyboardEvent("keydown", {
+      key: "/", code: "Slash", bubbles: true, cancelable: true,
+    }));
+    await tick(40);
+    const searchInput = () => $("search-view").querySelector(".search-panel-input");
+    check("AC20: / expands the side and focuses the Search input",
+      !$("side-panel").classList.contains("collapsed") &&
+      A().isViewVisible("search") &&
+      window.document.activeElement === searchInput(),
+      "collapsed=" + $("side-panel").classList.contains("collapsed") +
+        " active=" + (window.document.activeElement &&
+          window.document.activeElement.className));
+    searchInput().blur();
+    A().activate("explorer", false);
+    await tick(20);
+
+    // AC21: shellPanelState reads both sides independently (the failed-fetch
+    // restoration source), and a fetched raw id is only adopted when it
+    // survives the per-side rules.
+    const savedLeftW = cssVar("--side-panel-width");
+    const savedAuxW = cssVar("--aux-panel-width");
+    window.document.documentElement.style.setProperty("--side-panel-width", "311px");
+    window.document.documentElement.style.setProperty("--aux-panel-width", "222px");
+    const shellBoth = window.NB.app.shellPanelState();
+    check("AC21: shellPanelState reads both panels' widths and active views",
+      shellBoth.left.width === 311 && shellBoth.right.width === 222 &&
+      shellBoth.left.activeView === A().getActive("left") &&
+      shellBoth.right.activeView === A().getActive("right"),
+      JSON.stringify({ l: [shellBoth.left.width, shellBoth.left.activeView],
+        r: [shellBoth.right.width, shellBoth.right.activeView] }));
+    window.document.documentElement.style.setProperty("--side-panel-width", savedLeftW);
+    window.document.documentElement.style.setProperty("--aux-panel-width", savedAuxW);
+    // A hidden view cannot become a side's active view.
+    window.NB.app.setSidebarHidden(["outline"]);
+    await tick(20);
+    check("AC21: the server's per-side rule rejects a hidden view",
+      A().activate("outline", false) === false && A().getActive("right") === null);
+    window.NB.app.setSidebarHidden([]);
+    await tick(20);
+    // A successful fetch that names the view already painted is a no-op.
+    check("AC21: a fetch naming the painted view never re-activates",
+      window.NB.app.resolveBootView("outline", "outline", "outline") === null);
+
+    // AC16 (host side): applyLayout("phone") -- what the mobile:mode listener
+    // calls -- moves every host into the drawer and leaves exactly one
+    // visible; "desktop" restores each side. Driving applyLayout directly
+    // avoids refreshMode's phone-history seeding, which would change the URL
+    // the deep-link block below reads.
+    A().activate("explorer", false);
+    A().activate("outline", false);
+    A().expand("left");
+    A().expand("right");
+    await tick(20);
+    A().applyLayout("phone");
+    await tick(20);
+    check("drawer: a phone layout moves every host into #side-panel",
+      Array.from(window.document.querySelectorAll(".side-panel-view"))
+        .every((h) => h.parentNode === $("side-panel")) &&
+      visibleIn("side-panel").length === 1,
+      "outside=" + Array.from(window.document.querySelectorAll(".side-panel-view"))
+        .filter((h) => h.parentNode !== $("side-panel"))
+        .map((h) => h.dataset.view).join(",") +
+        " visible=" + visibleIn("side-panel").join(","));
+    A().applyLayout("desktop");
+    await tick(20);
+    check("drawer: the desktop layout restores each host to its side's panel",
+      !!hostIn("side-panel", "explorer") && !!hostIn("aux-panel", "outline") &&
+      visibleIn("side-panel").length === 1 &&
+      visibleIn("aux-panel").length === 1,
+      "left=" + visibleIn("side-panel").join(",") +
+        " right=" + visibleIn("aux-panel").join(",") +
+        " hosts=" + Array.from(window.document.querySelectorAll(".side-panel-view"))
+          .map((h) => h.dataset.view + "@" + (h.parentNode && h.parentNode.id) +
+            (h.hidden ? ":h" : ":v")).join(",") +
+        " Ractive=" + A().getActive("right") + " side=" + A().sideOf("outline"));
+    // activity.js wires the same call from the mode event.
+    check("drawer: the mobile:mode listener calls applyLayout per mode",
+      /mobile:mode[\s\S]{0,120}applyLayout\(mode === "phone" \? "phone" : "desktop"\)/
+        .test(read("static/js/activity.js")));
+
+    A().activate("explorer", false);
+    A().activate("outline", false);
+    A().expand("left");
+    A().expand("right");
+    window.NB.app.setSidebarSide("recent", "left");
+    window.NB.app.setSidebarSide("outline", "right");
+    window.NB.app.setSidebarOrder([]);
+    window.NB.app.setSidebarHidden([]);
+    await tick(30);
   }
 
   console.log("== bookmarks view (activity bar) ==");
@@ -27075,7 +27480,8 @@ function check(label, cond, extra) {
   {
     // Structural: the markup, the config default, and the export are wired.
     check("pinned folders: index.html ships #pinned-folders",
-      read("templates/index.html").indexOf('id="pinned-folders"') !== -1);
+      read("templates/index.html").indexOf('id="pinned-folders"') !== -1 ||
+      read("templates/_side_panels.html").indexOf('id="pinned-folders"') !== -1);
     check("pinned folders: app.js DEFAULTS declares pinnedFolders",
       read("static/js/app.js").indexOf("pinnedFolders: []") !== -1);
     check("pinned folders: sidebar export includes togglePin",
@@ -27396,7 +27802,8 @@ function check(label, cond, extra) {
     check("pinned view: activity bar has a data-view=pinned button",
       !!pinnedBtn);
     check("pinned view: index.html ships #pinned-view",
-      read("templates/index.html").indexOf('id="pinned-view"') !== -1);
+      read("templates/index.html").indexOf('id="pinned-view"') !== -1 ||
+      read("templates/_side_panels.html").indexOf('id="pinned-view"') !== -1);
     check("pinned view: sidebar exports mountPinnedView",
       typeof window.NB.sidebar.mountPinnedView === "function");
 
@@ -30482,25 +30889,44 @@ function check(label, cond, extra) {
   await tick(20);
   check("sidebar order: Unhide restores the icon and the row",
     window.NB.activity.barItems().map(item => item.id).join(",") ===
-      "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs" &&
+      "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs,outline" &&
+      window.document.querySelectorAll(
+        "#activity-bar .activity-btn[data-view]").length === 8 &&
+      window.document.querySelectorAll(
+        "#activity-bar-right .activity-btn[data-view]").length === 1 &&
       window.NB.app.getSidebarHidden().length === 0,
     window.NB.activity.barItems().map(item => item.id).join(","));
   check("sidebar order: unhiding is announced",
     $("settings-sidebar-order-status").textContent === "Explorer shown.",
     $("settings-sidebar-order-status").textContent);
-  // Hiding every view leaves no icon to reopen the panel, so it collapses.
+  // Hiding every view leaves no icon to reopen either panel: both sides
+  // collapse and the right rail hides. The left rail keeps its action
+  // buttons, so Settings stays reachable.
   window.NB.app.setSidebarHidden(registeredIds);
   await tick(20);
-  check("sidebar order: hiding every view empties and collapses the bar",
+  check("sidebar order: hiding every view empties and collapses both rails",
     window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length === 0 &&
-      window.NB.activity.isCollapsed() &&
-      window.NB.activity.getActive() === null,
-    "icons=" + window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length);
+      window.document.querySelectorAll("#activity-bar-right .activity-btn[data-view]").length === 0 &&
+      window.NB.activity.isCollapsed("left") &&
+      window.NB.activity.isCollapsed("right") &&
+      window.NB.activity.getActive("left") === null &&
+      window.NB.activity.getActive("right") === null &&
+      window.NB.activity.isCollapsed("left") &&
+      window.NB.activity.isCollapsed("right") &&
+      $("layout").dataset.rightEmpty === "true",
+    "icons=" + window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length +
+      " empty=" + $("layout").dataset.rightEmpty +
+      " L=" + window.NB.activity.getActive("left") + "/" +
+        window.NB.activity.isCollapsed("left") +
+      " R=" + window.NB.activity.getActive("right") + "/" +
+        window.NB.activity.isCollapsed("right"));
   window.NB.app.setSidebarHidden([]);
   await tick(20);
-  check("sidebar order: unhiding every view restores the bar",
-    window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length ===
-      registeredIds.length);
+  check("sidebar order: unhiding every view restores both rails",
+    window.document.querySelectorAll("#activity-bar .activity-btn[data-view]").length +
+      window.document.querySelectorAll("#activity-bar-right .activity-btn[data-view]").length ===
+      registeredIds.length &&
+      $("layout").dataset.rightEmpty === "false");
   window.NB.app.setSidebarOrder(["search", "explorer", 5, "search"]);
   await tick(20);
   check("sidebar order: invalid ids are dropped and duplicates collapse",
@@ -30508,13 +30934,18 @@ function check(label, cond, extra) {
     window.NB.app.getSidebarOrder().join(","));
   check("sidebar order: unnamed views follow the saved prefix",
     window.NB.activity.barItems().map(item => item.id).join(",") ===
-      "search,explorer,sessions,pinned,bookmarks,recent,ai,tabs",
+      "search,explorer,sessions,pinned,bookmarks,recent,ai,tabs,outline",
     window.NB.activity.barItems().map(item => item.id).join(","));
   window.NB.app.setSidebarOrder([]);
   await tick(20);
   check("sidebar order: an empty order restores registration order",
     window.NB.activity.barItems().map(item => item.id).join(",") ===
-      "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs");
+      "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs,outline");
+  // The hide-everything case above collapsed both panels; re-expand them so
+  // the VIM and tab-bar blocks below see their usual shell.
+  window.NB.activity.activate("explorer", true);
+  window.NB.activity.activate("outline", true);
+  await tick(20);
 
   console.log("== activity bar drag and drop ==");
   window.NB.settings.close();
@@ -30570,11 +31001,11 @@ function check(label, cond, extra) {
   await tick(20);
   const dragOrder = window.NB.activity.barItems().map(item => item.id).join(",");
   check("sidebar order: drag moves Explorer before Bookmarks",
-    dragOrder === "sessions,pinned,explorer,bookmarks,recent,search,ai,tabs",
+    dragOrder === "sessions,pinned,explorer,bookmarks,recent,search,ai,tabs,outline",
     dragOrder);
   check("sidebar order: a drag is announced",
     $("settings-sidebar-order-status").textContent ===
-      "Explorer moved to position 3 of 8.",
+      "Explorer moved to position 3 of 8 on the left rail.",
     $("settings-sidebar-order-status").textContent);
   const draggedRow = dragList.querySelector('.sidebar-order-row[data-view="explorer"]');
   check("sidebar order: drag focuses the moved row's toggle",
@@ -33546,6 +33977,10 @@ function check(label, cond, extra) {
       vc.scrollTop === beforeTyping, "after=" + vc.scrollTop);
     spSearchInput().blur();
     await tick(10);
+    // Return the left panel to Explorer: the typing guard above opened
+    // Search, and the VIM block below navigates the file tree.
+    window.NB.activity.activate("explorer", false);
+    await tick(10);
   }
 
   console.log("== back button ==");
@@ -33926,7 +34361,11 @@ function check(label, cond, extra) {
   await tick(10);
   const sidebarCursor2 = window.NB.sidebar.getVimCursor();
   check("vim: sidebar j -> next row (notes/b.md)",
-    sidebarCursor2 === "notes/b.md", "cursor=" + sidebarCursor2);
+    sidebarCursor2 === "notes/b.md", "cursor=" + sidebarCursor2 +
+      " left=" + window.NB.activity.getActive("left") +
+      " visible=" + window.NB.activity.isViewVisible("explorer") +
+      " rows=" + window.document.querySelectorAll("#file-tree .tree-row").length +
+      " win=" + window.NB.vimnav.getWindow());
   pressKey("k");
   await tick(10);
   check("vim: sidebar k -> prev row (notes/a.md)",
@@ -40152,16 +40591,20 @@ function check(label, cond, extra) {
       /<html[^>]*style="[^"]*--font-scale:/.test(tpl));
     check("boot: <html> has an inline --side-panel-width style",
       /<html[^>]*style="[^"]*--side-panel-width:/.test(tpl));
-    check("boot: <html> has an inline --outline-width style",
-      /<html[^>]*style="[^"]*--outline-width:/.test(tpl));
+    check("boot: <html> has an inline --aux-panel-width style",
+      /<html[^>]*style="[^"]*--aux-panel-width:/.test(tpl));
     check("boot: <title> is rendered from boot state",
       /<title>\{\{\s*boot\.site_title\s*\}\}<\/title>/.test(tpl));
     check("boot: brand text is rendered from boot state",
       /id="brand" class="brand"[^>]*>\s*<img class="brand-icon" src="\/static\/favicon\.svg"[^>]*>\s*\{\{\s*boot\.site_title\s*\}\}/.test(tpl));
     check("boot: side panel collapse state is rendered server-side",
       /id="side-panel"\{%.*sidebar_collapsed.*%\}\s*class="collapsed"/.test(tpl));
-    check("boot: outline collapse state is rendered server-side",
-      /id="outline-pane"\{%.*outline_collapsed.*%\}\s*class="collapsed"/.test(tpl));
+    check("boot: aux panel collapse state is rendered server-side",
+      /id="aux-panel"[^>]*\{%.*aux_panel_collapsed.*%\}\s*class="collapsed"/.test(tpl));
+    check("boot: the saved side map is rendered on #layout with forceescape",
+      /id="layout"[^>]*data-sidebar-side="\{\{\s*boot\.sidebar_side\s*\|\s*tojson\s*\|\s*forceescape\s*\}\}"/.test(tpl));
+    check("boot: data-right-empty is rendered server-side",
+      /id="layout"[^>]*\{%.*boot\.right_empty.*%\}\s*data-right-empty="true"/.test(tpl));
     check("boot: topbar-hidden is rendered server-side",
       /<body\{%.*topbar_hidden.*%\}\s*class="topbar-hidden"/.test(tpl));
     // The tab strip is hidden by an attribute on #tab-bar, not by a body
@@ -40251,7 +40694,7 @@ function check(label, cond, extra) {
     window.NB.activity.adoptShellView();
     await tick(10);
     check("adopt: shell bookmarks becomes the active view",
-      window.NB.activity.getActive() === "bookmarks");
+      window.NB.activity.getActive("left") === "bookmarks");
     check("adopt: #bookmarks-view visible, #sidebar hidden",
       !$("bookmarks-view").hidden && $("sidebar").hidden);
 
@@ -40260,7 +40703,7 @@ function check(label, cond, extra) {
     window.NB.activity.adoptShellView();
     await tick(10);
     check("adopt: no visible host falls back to explorer",
-      window.NB.activity.getActive() === "explorer" && !$("sidebar").hidden);
+      window.NB.activity.getActive("left") === "explorer" && !$("sidebar").hidden);
 
     // 3. An unregistered visible host falls back to Explorer (and shows it,
     //    never a blank panel) without throwing.
@@ -40274,20 +40717,32 @@ function check(label, cond, extra) {
     catch (e) { threw = true; }
     await tick(10);
     check("adopt: an unregistered visible host falls back to explorer, non-blank",
-      !threw && window.NB.activity.getActive() === "explorer" && !$("sidebar").hidden);
+      !threw && window.NB.activity.getActive("left") === "explorer" && !$("sidebar").hidden);
     fake.remove();
 
-    // 4. The registry and the server host set stay in sync.
+    // 4. The registry and the server host set stay in sync: every id once.
     const ids = window.NB.activity.views();
-    check("adopt: views() lists the eight ids in registration order",
+    check("adopt: views() lists the nine ids in registration order",
       ids.join(",") ===
-        "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs", ids.join(","));
+        "explorer,sessions,pinned,bookmarks,recent,search,ai,tabs,outline", ids.join(","));
     const tplIds = Array.from(
-      read("templates/index.html").matchAll(
+      (read("templates/index.html") + read("templates/_side_panels.html")).matchAll(
         /class="side-panel-view"[^>]*data-view="([^"]+)"/g),
       m => m[1]);
-    check("adopt: registered ids match the template's data-view hosts",
-      tplIds.join(",") === ids.join(","), "tpl=" + tplIds.join(","));
+    check("adopt: the template ships exactly one host per registered id",
+      tplIds.length === ids.length &&
+      ids.every((id) => tplIds.filter((x) => x === id).length === 1),
+      "tpl=" + tplIds.join(","));
+
+    // The side table is per language: app.py's _VIEW_SIDES must equal the
+    // `side:` values the registry declares (secondary-sidebar.md §6.1).
+    const outlineEntry = window.NB.activity.barItems()
+      .find((item) => item.id === "outline");
+    check("adopt: the Outline is the only right-homed registration default",
+      !!outlineEntry && outlineEntry.side === "right" &&
+      window.NB.activity.barItems()
+        .filter((item) => item.side !== "right")
+        .every((item) => item.side === "left"));
 
     // 5. The load-time call site must adopt -- a revert to the old hard-coded
     //    Explorer would otherwise slip through green (the fixture shell
@@ -40309,16 +40764,21 @@ function check(label, cond, extra) {
     check("reconcile: a slow fetch does not yank the user's switch",
       rb("search", "bookmarks", "bookmarks") === null);
 
-    // 7. shellPanelState reads the shell-painted panel back from the DOM,
+    // 7. shellPanelState reads both shell-painted panels back from the DOM,
     //    the failed-fetch restoration source.
     const sps = window.NB.app.shellPanelState();
-    check("shell state: reads the active view",
-      sps.activeView === window.NB.activity.getActive(),
-      "activeView=" + sps.activeView);
+    check("shell state: reads each side's active view",
+      sps.left.activeView === window.NB.activity.getActive("left") &&
+      sps.right.activeView === window.NB.activity.getActive("right"),
+      "left=" + sps.left.activeView + " right=" + sps.right.activeView);
     panel.classList.add("collapsed");
-    check("shell state: reads the collapsed class",
-      window.NB.app.shellPanelState().collapsed === true);
+    check("shell state: reads the left collapsed class",
+      window.NB.app.shellPanelState().left.collapsed === true);
     panel.classList.remove("collapsed");
+    $("aux-panel").classList.add("collapsed");
+    check("shell state: reads the right collapsed class and width",
+      window.NB.app.shellPanelState().right.collapsed === true);
+    $("aux-panel").classList.remove("collapsed");
 
     // Restore the fixture's hidden state before the collapse check.
     hosts.forEach((h, i) => { h.hidden = savedHidden[i]; });
@@ -46308,12 +46768,20 @@ function check(label, cond, extra) {
     check("mobile: phone config POST never writes lastFile",
       !!cfgBody && cfgBody.lastFile === "desktop.md",
       cfgBody && cfgBody.lastFile);
-    check("mobile: phone config POST keeps sidebarCollapsed and pane widths",
+    // secondary-sidebar.md §6.3: a phone keyed read-merge-write must preserve
+    // the desktop's geometry keys; only a write that carries a replacement
+    // key retires the legacy ones. mergeGlobalKeys() drops LEGACY_CONFIG_KEYS
+    // only when the write carries one of LEGACY_RETIRING_KEYS, and a phone
+    // width save carries none, so the desktop's width survives here under
+    // whichever key wrote it.
+    check("mobile: phone config POST preserves the desktop pane width",
       !!cfgBody && cfgBody.sidebarCollapsed === false &&
-      cfgBody.sidebarWidth === 300 && cfgBody.outlineWidth === 220,
+      cfgBody.sidebarWidth === 300 &&
+      (cfgBody.auxPanelWidth === 220 || cfgBody.outlineWidth === 220),
       cfgBody && JSON.stringify({
         c: cfgBody.sidebarCollapsed, sw: cfgBody.sidebarWidth,
-        ow: cfgBody.outlineWidth,
+        aw: cfgBody.auxPanelWidth, ow: cfgBody.outlineWidth,
+        keys: Object.keys(cfgBody).filter((k) => /width|panel/i.test(k)),
       }));
     // Cross-device sync moved `recentFiles` (and every other scoped key) to
     // the workspace-state write (sessions.md §17.1): POST /api/config keeps
@@ -46882,7 +47350,12 @@ function check(label, cond, extra) {
     check("mobile: desktop mode restores the unfiltered rail",
       Array.from(window.document.querySelectorAll(
         "#activity-bar .activity-btn[data-view]")).length ===
-        window.NB.activity.barItems().filter((v) => !v.hidden).length,
+        window.NB.activity.barItems()
+          .filter((v) => !v.hidden && v.side === "left").length &&
+      Array.from(window.document.querySelectorAll(
+        "#activity-bar-right .activity-btn[data-view]")).length ===
+        window.NB.activity.barItems()
+          .filter((v) => !v.hidden && v.side === "right").length,
       String(window.document.querySelectorAll(
         "#activity-bar .activity-btn[data-view]").length));
   }
@@ -49115,7 +49588,7 @@ function check(label, cond, extra) {
       spPage.hidden === false && $("viewer").hidden === true &&
       $("cm-host").hidden === true && $("welcome").hidden === true &&
       $("tab-bar").hidden === false && $("sessions-view").hidden === false &&
-      $("side-panel").hidden === false && !$("outline-pane").hasAttribute("hidden"));
+      $("side-panel").hidden === false && !$("aux-panel").hidden);
     check("sessions page: the tab is a special tab labelled Sessions with the module sprite",
       spStripTab("§sessions").classList.contains("special") &&
       spStripTab("§sessions").getAttribute("aria-label") === "Sessions" &&
@@ -51009,29 +51482,33 @@ function check(label, cond, extra) {
   await tick(20);
   check("tab bar: setHideTabBar(true) sets hidden on #tab-bar",
     $("tab-bar").hidden === true && window.NB.app.getHideTabBar() === true);
-  // Start from a stated state, so the assertion is a literal rather than a
-  // restatement of cfg.outlineCollapsed, which the implementation reads:
-  // an inverted aria-pressed would satisfy the old check.
-  if ($("outline-pane").classList.contains("collapsed")) {
-    click("outline-rail-btn");
+  // The right rail is the Outline's only control, so hiding the strip must
+  // leave it reachable. Start from an expanded panel and a literal state, so
+  // an inverted aria-pressed cannot satisfy the check.
+  const outlineRail = () => window.document.querySelector(
+    '#activity-bar-right .activity-btn[data-view="outline"]');
+  if ($("aux-panel").classList.contains("collapsed")) {
+    outlineRail().dispatchEvent(new window.Event("click", { bubbles: true }));
     await tick(20);
   }
-  check("tab bar: the rail's outline twin reads pressed while the pane shows",
-    !$("outline-pane").classList.contains("collapsed") &&
-    $("outline-rail-btn").getAttribute("aria-pressed") === "true",
-    "pressed=" + $("outline-rail-btn").getAttribute("aria-pressed"));
-  click("outline-rail-btn");
+  check("tab bar: hideTabBar leaves the Outline reachable from the right rail",
+    $("tab-bar").hidden === true &&
+    !$("aux-panel").classList.contains("collapsed") &&
+    outlineRail().getAttribute("aria-pressed") === "true",
+    "pressed=" + (outlineRail() && outlineRail().getAttribute("aria-pressed")));
+  outlineRail().dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
-  check("tab bar: the rail's outline twin toggles the pane",
-    $("outline-pane").classList.contains("collapsed") &&
-    $("outline-rail-btn").getAttribute("aria-pressed") === "false",
-    "pressed=" + $("outline-rail-btn").getAttribute("aria-pressed"));
-  click("outline-toggle");
+  check("tab bar: the right-rail icon still collapses the Outline with the strip hidden",
+    $("aux-panel").classList.contains("collapsed") &&
+    outlineRail().getAttribute("aria-pressed") === "true",
+    "pressed=" + (outlineRail() && outlineRail().getAttribute("aria-pressed")));
+  outlineRail().dispatchEvent(new window.Event("click", { bubbles: true }));
   await tick(20);
-  check("tab bar: the strip's outline toggle lands on the same state",
-    !$("outline-pane").classList.contains("collapsed") &&
-    $("outline-toggle").getAttribute("aria-pressed") === "true",
-    "pressed=" + $("outline-toggle").getAttribute("aria-pressed"));
+  check("tab bar: the right-rail icon re-expands the Outline",
+    !$("aux-panel").classList.contains("collapsed"));
+  check("tab bar: no outline toggle exists in the strip",
+    !$("tab-bar").querySelector("#outline-toggle") &&
+    !$("tab-bar").querySelector(".outline-toggle"));
 
   window.NB.settings.open();
   await tick(20);

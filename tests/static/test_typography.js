@@ -91,7 +91,6 @@ const ALLOWLIST = [
   { file: "static/css/style.css", selector: "#topbar button, #topbar select", value: ".93rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".activity-btn", value: "1.15rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".expand-btn", value: "1rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
-  { file: "static/css/style.css", selector: ".tab-bar .outline-toggle", value: "1rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: "#edit-bar .eb", value: ".93rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: "#edit-bar .eb code, #edit-bar .eb b, #edit-bar .eb i, #edit-bar .eb s", value: ".93rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },
   { file: "static/css/style.css", selector: ".nb-drag-proxy", value: ".8rem", why: "token-value literal; tier-1 token swap pending", retires: "phase 1" },

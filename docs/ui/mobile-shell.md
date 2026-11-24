@@ -22,7 +22,7 @@ visual is a proposal in §13.
 |---|---|---|
 | Switch | `(max-width: 860px), ((pointer: coarse) and (max-width: 1023px))`, defined once | `style.css:6975` |
 | Signal | `--ui-mode: phone`; JS mirrors it to `html[data-ui-mode]` | `:6977`, `mobile.js:85` |
-| Shell | `#layout` becomes one column; `#editor-pane` fills; tab bar, outline, CM host and desktop welcome hide | `:7082-7090` |
+| Shell | `#layout` becomes one column; `#editor-pane` fills; tab bar, both side panels, CM host and desktop welcome hide | `:7082-7090` |
 | Tokens | `--m-hit` 44, `--m-topbar-h` 52, `--m-rail-h` 56, `--m-gutter` 20, `--m-reader-max` 680, `--m-radius` 10, `--m-sheet-radius` 16, `--m-scrim` `.45` | `:6977-6986` |
 | Body | `100dvh`, padding 0; each edge layer applies its own safe-area inset | `:6990-6998` |
 
@@ -33,7 +33,7 @@ There is no second mode switch. A component phone rule lives inside this query.
 ## 2. Topbar
 
 52 px + top inset. Order: workspace chip, back, title, capture, more.
-`#brand`, the spacer, `#edit-toggle`, `#hybrid-toggle`, the outline toggle and the desktop actions
+`#brand`, the spacer, `#edit-toggle`, `#hybrid-toggle`, the right rail and `#aux-panel` and the desktop actions
 hide. Editing is entered from the note menu, so the bar spends its width on the title.
 
 | Part | Value | Source |

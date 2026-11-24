@@ -189,7 +189,7 @@
     actions.appendChild(pageBtn);
 
     if (NB.activity && NB.activity.makeCollapseBtn) {
-      actions.appendChild(NB.activity.makeCollapseBtn());
+      actions.appendChild(NB.activity.makeCollapseBtn("sessions"));
     }
     header.appendChild(actions);
     viewEl.appendChild(header);

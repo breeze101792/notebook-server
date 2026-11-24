@@ -503,7 +503,7 @@ The strip may be hidden; that is the second reason this view exists.
 | Toggle | `app.js` sets and removes the attribute and persists; `body:has(#tab-bar[hidden])` is the only selector that needs to know, and `:has()` is already shipped (`style.css:424`) | `app.js` |
 | Settings | Appearance row `Hide tab bar`, under `Hide top bar` (`settings-modal.md` §4.3) | settings-modal |
 | Shortcut | `Mod+Shift+B`, action `toggleTabbar`; `Mod+B` is bold in hybrid mode | `shortcuts.js:49-63` |
-| Outline | the pane's only control is a child of `#tab-bar` (`templates/index.html:463`, `app.js:1155`), so the rail gets `#outline-rail-btn`, `display: none` until `body:has(#tab-bar[hidden])`, wired by the same handler — the `#workspace-rail-btn` pattern (`templates/index.html:359-363`, `style.css:8874-8878`) | [`shell-frame.md`](shell-frame.md) §3.1 |
+| Outline | not a strip control any more: the outline is a side-panel view in the right panel and its rail icon is its only toggle ([`secondary-sidebar.md`](secondary-sidebar.md) §5) | [`shell-frame.md`](shell-frame.md) §5 |
 
 **The cost, recorded.** With the strip hidden and the Tabs view not showing, the desktop shell has
 no chrome-level name for the open file: the reader renders the note's own title, `#viewer`'s name is

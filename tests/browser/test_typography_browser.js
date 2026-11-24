@@ -775,7 +775,7 @@ async function main() {
       { key: "search-advanced", surface: "search", state: "advanced open", scope: "#search-view" },
       { key: "search-results", surface: "search", state: "with results", scope: "#search-view", lists: ["search"] },
       { key: "ai", surface: "ai", state: "messages and error", scope: "#ai-view", lists: ["ai"] },
-      { key: "outline", surface: "outline", state: "note open", scope: "#outline-pane", lists: ["outline"] },
+      { key: "outline", surface: "outline", state: "note open", scope: "#outline-view", lists: ["outline"] },
     ];
     const settingsStates = SETTINGS_TABS.map((tab) => ({
       key: "settings:" + tab, surface: "settings", state: tab, scope: "#settings-overlay",

@@ -1,11 +1,14 @@
 # File tab strip — `#tab-bar`
 
-Status: Current spec — pre-implementation.
-Scope: `#tab-bar` and its children (`#tab-pinned`, `#tab-list`, `#outline-toggle`), the `.tab`
-element and its slots, drag and drop, the width freeze/release, the ghost close, overflow
-scrolling, keyboard, and the tab context menu. Note content, the editor, the session model
-([`sessions.md`](sessions.md)), the workspace picker, and the outline pane's contents are out of
-scope.
+Status: Current spec — pre-implementation. **Superseded in part:**
+[`secondary-sidebar.md`](secondary-sidebar.md) §5 removes `#outline-toggle` from the bar. The
+strip now has two children, `#tab-pinned` and `#tab-list`; §1.1, §1.2, §3 (zero-tab row), §8.1,
+§8.2 and §9.2-§9.3 below are amended accordingly.
+
+Scope: `#tab-bar` and its children (`#tab-pinned`, `#tab-list`), the `.tab` element and its slots,
+drag and drop, the width freeze/release, the ghost close, overflow scrolling, keyboard, and the
+tab context menu. Note content, the editor, the session model ([`sessions.md`](sessions.md)), the
+workspace picker, and the outline view's contents are out of scope.
 
 Reference mockup: [`tab-bar-mockup.html`](tab-bar-mockup.html) — dark and light, eleven boards:
 bar states (zero, one, only pinned), five mixed tabs, pinned region, overflow, tab anatomy, state
@@ -29,32 +32,29 @@ cited document.
 
 ## 1. Structure
 
-### 1.1 The three children
+### 1.1 The two children
 
-`templates/index.html:280-293`, in this order, and nothing else:
+`templates/index.html:280-292`, in this order, and nothing else:
 
 | # | Child | Class | Owner | Role |
 |---|---|---|---|---|
 | 1 | `#tab-pinned` | `.tab-pinned` | `tabs.js` `render()` (`static/js/tabs.js:703`), visibility by `syncPinnedRegion()` (`:578`) | Pinned tabs. Fixed at the left, `flex: 0 0 auto`, capped at half the bar, scrolls internally past the cap (`style.css:535-546`). `hidden` while empty (`:550`). |
 | 2 | `#tab-list` | `.tab-list` | `tabs.js` `render()` (`:703`) | The active session's unpinned tabs. The strip's main scroller: `flex: 1 1 auto; min-width: 0; overflow-x: auto` (`style.css:506-528`). |
-| 3 | `#outline-toggle` | `.icon-btn.outline-toggle` | `app.js:757` (click), `tabs.js` never touches it | An icon button that toggles the right outline pane. Not a tab. |
 
 The bar itself (`.tab-bar`, `style.css:473-499`) is `display: flex; align-items: flex-end;
 gap: 2px; flex: 0 0 auto; height: 34px; padding: 0 6px; background: var(--bg-panel);
 border-bottom: 1px solid var(--border); overflow: hidden`. It never scrolls and never wraps.
 
-### 1.2 Why the outline toggle is a sibling
+`#outline-toggle` is gone. The outline lives in the right panel and its rail icon is its only
+toggle ([`secondary-sidebar.md`](secondary-sidebar.md) §5). The tab list therefore runs to the
+bar's inner right edge, and the 30 px button plus its 2 px gap come back to the strip.
 
-Three reasons, all of them load-bearing:
+### 1.2 Why the bar holds no outline control
 
-1. **It must survive overflow.** `#tab-list` is the scroller (`overflow-x: auto`). Anything inside
-   it can be scrolled away or covered by a tab. As a sibling, the toggle sits outside the scroll
-   box, so no tab can overlap it (`templates/index.html:290-292` states exactly this).
-2. **It is not a tab.** It does not select the viewer's content; it resizes a column. A tablist
-   may only contain tabs, so the toggle cannot live in either region.
-3. **The bar's structure is frozen.** `sessions.md` records that the strip gains no child beyond
-   these three (`docs/archive/ui/sessions.md:82`, `:1468`). Wrapping the two regions in a new container to
-   make one tablist would add a child and break that record.
+There is no third child and none is planned. A control that resizes a column is not a tab, and
+`#tab-pinned`/`#tab-list` are the only two regions the strip needs. The outline's control is the
+right rail's `nb-icon-outline` button, which exists whether the strip is shown or hidden — the
+case the removed twin used to cover (`shell-frame.md` §8.1, retired).
 
 ### 1.3 The two-tablist model, and why the bar is not one tablist
 
@@ -63,8 +63,8 @@ Three reasons, all of them load-bearing:
 
 The bar cannot, for three mechanical reasons:
 
-- A tablist's owned elements must be tabs (or presentational wrappers). `#outline-toggle` is a
-  button, and it is inside `#tab-bar`.
+- A tablist's owned elements must be tabs (or presentational wrappers). The bar holds two
+  scroll/equalize regions that are not tabs.
 - Two tablists cannot nest. Putting one tablist around both regions would make each region's
   scroller a presentational child of a tablist, and the pinned region's `hidden` toggle would no
   longer remove only its own tabs.
@@ -118,7 +118,6 @@ label never grows the tab; the full path is the tab's `title` (`tabs.js:651`).
 | Tab border | 1 px, bottom none | `--stroke-1` | `:1190-1191` |
 | Tab type | 13.02 px / 1.5, weight 400 | `--text-ui-lg` | today `.89rem` (`:1195`) |
 | Close hit | 24 × 24, radius 4 | `--control-h-sm`, `--radius-xs` | today ~15 × 16 (`:1218-1227`) |
-| Outline toggle | 30 × 30, radius 6 | `--control-h-md`, `--radius-sm` | today ~26 × 26 (`:563-567`, overridden by `:1345`) |
 
 Two arithmetic consequences, both intended:
 
@@ -193,10 +192,10 @@ result (`style.css:1185-1187`). Three regimes, and no fourth:
 | Shrink | between 120 and 170 | Every tab shrinks together. Five tabs in an 840 px strip are 166.4 px each *(measured)*. |
 | Overflow | < 120 | Every tab is 120 and the strip scrolls. Thirteen tabs are 13 × 120 + 12 × 2 = 1584 px *(measured; matches the recorded `scrollWidth` of 1584 in `tab-equalization.md` §11.1)*. |
 
-The strip's available width is `bar content − pinned region − 30 (toggle) − one gap` when
-nothing is pinned. At an 880 px bar that is 840; at 353 px (an 861 px viewport with the default
-240 + 220 panes) it is 313, so **two** tabs fit and a third overflows. At exactly 860 the phone
-shell applies and the bar is hidden; 861 is the last desktop pixel.
+The strip's available width is `bar content − pinned region − one gap` when nothing is pinned
+(the outline toggle that used to take 30 px is gone). At an 880 px bar that is 872; at 353 px (an
+861 px viewport with two 240 px panels) it is 345, so **two** tabs fit and a third overflows. At
+exactly 860 the phone shell applies and the bar is hidden; 861 is the last desktop pixel.
 
 ### 3.2 Pinned tabs are content-sized
 
@@ -210,7 +209,7 @@ One correction to that record: the shared `min-width: 120px` still applies, so a
 uses 120 / 138 / 164.
 
 The region is capped at `max-width: 50%` and scrolls internally past the cap (`:540-542`), so a
-long pinned set can neither squeeze the scroller out nor push the toggle off the edge. The
+long pinned set can neither squeeze the scroller out nor spill past the bar's edge. The
 percentage resolves against the bar's **content** box, so the cap is 436 px in an 880 px bar
 (50 % of 872), not 440.
 
@@ -298,7 +297,7 @@ Bar states:
 
 | State | What is on screen |
 |---|---|
-| Zero tabs | A 34 px `--surface-panel` band, its bottom hairline, and the outline toggle. The pinned region is `hidden` (`tabs.js:581`), so it takes no gap. |
+| Zero tabs | A 34 px `--surface-panel` band with its bottom hairline. The pinned region is `hidden` (`tabs.js:581`), so it takes no gap. |
 | One tab | One 220 px tab at the left, the rest of the strip empty. |
 | Only pinned | The pinned region holds everything and still caps at 50 %; `#tab-list` is empty and `flex: 1 1 auto` absorbs the space. |
 | Overflowing | `#tab-list` scrolled; the last visible tab is cut at the clip edge; no scrollbar, no fade, no chevron. |
@@ -538,7 +537,7 @@ active tab in each") cannot hold in that case; §11 records it.
 | Element | Ring |
 |---|---|
 | `.tab` | `var(--focus-ring)` at `var(--focus-offset-inset)` (−2). The strip clips vertically and neighbours are 2 px apart, so an outset ring would be cut on the first tab and collide with the next. |
-| `.outline-toggle` | `var(--focus-ring)` at `var(--focus-offset)` (+2). It is outside the scroller. |
+| `#tab-list` | `var(--focus-ring)` at `var(--focus-offset-inset)` (−2) | It is the scroller. |
 
 Both are `:focus-visible` only; a pointer click draws neither. The tab ring is a second accent line
 inside the active tab's own accent border; that is deliberate — the state and the focus are two
@@ -569,13 +568,12 @@ outranks the UA `[hidden]` rule and because the boot template's assertion at
 `boot_state()` (`app.py:1547`), so the first frame is correct; no script measures the bar's height,
 so nothing else moves and the reader gains the 34 px.
 
-Hiding the strip moves one control: the outline pane's only toggle is a child of `#tab-bar`
-(`templates/index.html:463`, `app.js:1155`). The rail's `#outline-rail-btn` is shown under
-`body:has(#tab-bar[hidden])`, the `#workspace-rail-btn` pattern (`shell-frame.md` §3.1), and shares
-the handler. The bar keeps its own toggle; the two are never both visible. `:has()` is already
-shipped in the stylesheet (`style.css:424`).
+Hiding the strip no longer moves a control. The outline is a view in the right panel, and its
+rail icon stays visible whether the strip is shown or hidden
+([`secondary-sidebar.md`](secondary-sidebar.md) §5). `body:has(#tab-bar[hidden])` no longer has an
+outline rule; `#workspace-rail-btn` keeps its own.
 
-The strip's structure is unchanged while hidden: the same three children, the same tablists, the
+The strip's structure is unchanged while hidden: the same two children, the same tablists, the
 same DOM. `hidden` does not unmount `tabs.js`; every strip path no-ops at zero width
 (`tabs.js:722-723`). With the strip hidden, the open set is reached through the Tabs view
 ([`tabs-view.md`](tabs-view.md)), and the active file's name is the Tabs row — the desktop shell has
@@ -583,8 +581,7 @@ no other chrome-level title (`tabs-view.md` §10).
 
 ### 8.2 Phone
 
-`#tab-bar` is `display: none` under the mode switch (`style.css:7085`); `#outline-toggle` is
-hidden separately (`:7020`) because it only exists for the desktop outline pane. The DOM stays,
+`#tab-bar` is `display: none` under the mode switch (`style.css:7085`). The DOM stays,
 `tabs.js` keeps running, and every strip path no-ops at zero width (`tabs.js:722-723`).
 
 What replaces tab switching:
@@ -733,24 +730,6 @@ token except the four animation ones the tests read.
   outline: var(--focus-ring);
   outline-offset: var(--focus-offset-inset);
 }
-.tab-bar .outline-toggle:focus-visible {
-  outline: var(--focus-ring);
-  outline-offset: var(--focus-offset);
-}
-
-.tab-bar .outline-toggle {
-  display: grid;
-  place-items: center;
-  align-self: center;
-  flex: 0 0 auto;
-  width: var(--control-h-md);
-  height: var(--control-h-md);
-  padding: 0;
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-}
-.tab-bar .outline-toggle:hover { color: var(--text-primary); background: var(--accent-soft); }
-.tab-bar .outline-toggle[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 ```
 
 The ghost block keeps its shape. Only the fill's geometry changes:
@@ -771,19 +750,14 @@ The ghost block keeps its shape. Only the fill's geometry changes:
 `.tab.ghost`, `@keyframes nb-tab-ghost-close`, `@keyframes nb-tab-equalize` and
 `.tab-bar.nb-tab-equalizing .tab` are untouched.
 
-`.outline-toggle` is scoped `.tab-bar .outline-toggle` on purpose: today the bare
-`.outline-toggle` rule at `:563` is *earlier* than `.icon-btn` at `:1345` and loses to it on equal
-specificity, so its `font-size` and `padding` are dead. The compound selector makes the rule win
-and keeps the intent readable.
-
 ### 9.3 Markup and JS deltas
 
 | File | Change |
 |---|---|
-| `templates/index.html:293` | The toggle's text glyph `≣` becomes `<svg class="icon"><use href="#nb-icon-outline"/></svg>`; add `aria-pressed="false"`. Add three symbols after the existing ones (`:51-109`): `nb-icon-close`, `nb-icon-conflict`, `nb-icon-outline`; reuse the existing `nb-icon-pin`. |
+| `templates/index.html:292` | Delete `#outline-toggle` and its comment. The three symbols it needed (`nb-icon-close`, `nb-icon-conflict`, `nb-icon-outline`) stay: the first two are tab states, the third is the outline view's rail icon. |
 | `static/js/tabs.js:644-702` | `role="tab"`, `aria-selected`, `tabindex`, `aria-label`; the pin and conflict spans become `<svg class="icon …">`; the conflict node moves out of `.tab-label` to the tab's flex row; each close button gets `aria-label` and `tabindex="-1"`; a `mousedown` guard for middle-click. |
 | `static/js/tabs.js` | The roving-stop state, the key handler (§5.6), `onClose` focus return on the menu, the 0,0 anchor fallback. |
-| `static/js/app.js:751-760` | `applyOutlineState()` also sets `aria-pressed` on `#outline-toggle` and swaps its `title` between "Show outline" and "Hide outline". |
+| `static/js/app.js:751-760` | `applyOutlineState()`'s toggle half is deleted: there is no `#outline-toggle` to set `aria-pressed` or `title` on. `#outline-view`'s rail icon reports the state. |
 | `static/css/style.css` | §9.2, in place. |
 
 ### 9.4 Order
@@ -794,7 +768,7 @@ over the old faces. Within the commit:
 1. CSS first, because every JS change below assumes the new geometry and the focus rule.
 2. Sprite symbols, then the markup swap; the old text glyphs are removed in the same edit.
 3. `tabs.js` roles, names, roving stop and key handler.
-4. `app.js` outline-toggle state.
+4. `app.js` — remove the outline-toggle state and its two mounts.
 5. Run `node tests/dom/test_dom.js`; the tab, pinned-region and animation blocks must stay green
    (AC13, AC14, AC16). Then the `core` and `mobile` browser suites (AC16, AC21).
 
@@ -807,21 +781,21 @@ Each is testable and names the file and the observable result. `style.css` is
 
 | # | Criterion | File | Observable |
 |---|---|---|---|
-| **AC1** | The bar has exactly three element children, in order: `#tab-pinned`, `#tab-list`, `#outline-toggle` | `templates/index.html`, `static/js/tabs.js` | `#tab-bar.children.length === 3`; the toggle is not a descendant of `#tab-list`; a zero-tab bar still renders the toggle |
+| **AC1** | The bar has exactly two element children, in order: `#tab-pinned`, `#tab-list` | `templates/index.html`, `static/js/tabs.js` | `#tab-bar.children.length === 2`; a zero-tab bar is just the band |
 | **AC2** | Two valid tablists, no third | `static/js/tabs.js` | `#tab-pinned` and `#tab-list` each have `role="tablist"` and a distinct `aria-label`; `#tab-bar` has no `role`; when nothing is pinned, `#tab-pinned` has `hidden` and no focusable child |
 | **AC3** | One roving stop per visible region | `static/js/tabs.js` | Exactly one `.tab` in each visible region has `tabindex="0"`; the active one has `aria-selected="true"`; with the active file unpinned the pinned region has no tab with `aria-selected="true"` |
 | **AC4** | Arrow keys move and select inside a region | `static/js/tabs.js` | `ArrowRight` on the last tab of a region stays there; `Tab` moves to the other region; `Home`/`End` stay inside the region; the ends do not wrap |
 | **AC5** | `Delete` closes and moves focus | `static/js/tabs.js` | `Delete` on a focused tab closes it; focus lands on `pickNeighbor()`'s tab; closing a region's last tab moves focus into the other region; closing the strip's last tab moves focus to `#welcome` |
 | **AC6** | Close buttons are pointer-only and not announced | `static/js/tabs.js` | Every `.tab-close` has `tabindex="-1"` and `aria-hidden="true"`; its hit box is 24 × 24; `style.css` gives it `--control-h-sm`; `Delete` and the tab menu close the tab from the keyboard |
 | **AC7** | Every state is in the accessible name | `static/js/tabs.js` | A pinned dirty conflicting tab's `aria-label` is `"{name}, pinned, unsaved changes, changed on disk"`; every glyph inside a tab is `aria-hidden="true"` |
-| **AC8** | Both controls draw a focus ring | `style.css` | `.tab:focus-visible` uses `var(--focus-ring)` at `var(--focus-offset-inset)`; `.outline-toggle:focus-visible` uses the 2 px offset; tabbing the strip never lands on an unstyled control |
+| **AC8** | Every strip control draws a focus ring | `style.css` | `.tab:focus-visible` uses `var(--focus-ring)` at `var(--focus-offset-inset)`; tabbing the strip never lands on an unstyled control |
 | **AC9** | The dirty label clears the text floor | `style.css` | A dirty inactive tab's label colour is `--text-primary`; measured 8.31:1 dark / 11.49:1 light on `--accent-soft` (was 3.65 / 4.37) |
 | **AC10** | Hover is perceivable as a control state | `style.css` | `.tab:hover` border is `--border-strong`; measured 3.62:1 dark / 3.36:1 light on `--surface-raised` |
 | **AC11** | The active tab keeps its face and border in every combination | `style.css` | In source order `.tab.dirty` precedes `.tab.active`; a tab with both classes renders `--surface-page` and an `--accent` border |
-| **AC12** | The tab's numbers come from tokens | `style.css` | No `5px`, `6px`, `10px`, `11px`, `.89rem` or `16px` remains as a property value in the tab, bar, ghost-fill and toggle rules; the only remaining literals are the token declarations (`--tab-h`, the width rails, the four animation values) |
+| **AC12** | The tab's numbers come from tokens | `style.css` | No `5px`, `6px`, `10px`, `11px`, `.89rem` or `16px` remains as a property value in the tab, bar, ghost-fill and list rules; the only remaining literals are the token declarations (`--tab-h`, the width rails, the four animation values) |
 | **AC13** | The animation literals survive | `style.css` | `tests/dom/test_dom.js` green at `:6484`, `:6487`, `:6502`, `:6506`, `:7034`, `:7037`, `:7040`, `:7042`, `:7050-7058` |
 | **AC14** | Geometry is unchanged where it is contractual | `style.css` | `.tab-pinned` keeps `flex: 0 0 auto`, `max-width: 50%`, `overflow-x: auto`; `.tab-pinned .tab` keeps `flex: 0 0 auto`; `.tab-pinned[hidden]` is `display: none` — the `== tab pin + region ==` and `== tab pinned region ==` blocks in `tests/dom/test_dom.js` stay green |
-| **AC15** | No tab is taller than the bar at any font scale | the mockup, `style.css` | At 1.0 the tab is ≈28.5 px in a 34 px bar; at 1.3 it is ≈34.4 in a 44.2 px bar; the toggle is 30 × 30 and `align-self: center` |
+| **AC15** | No tab is taller than the bar at any font scale | the mockup, `style.css` | At 1.0 the tab is ≈28.5 px in a 34 px bar; at 1.3 it is ≈34.4 in a 44.2 px bar |
 | **AC16** | The strip still scrolls, reveals and preserves | `static/js/tabs.js` | `tests/browser/test_core_ui_browser.js` "tab strip scroll" stays green; the wheel tests in `tests/dom/test_dom.js` still see `scrollBy({left, behavior:"instant"})` |
 | **AC17** | No emoji and no text glyph in the bar | `templates/index.html`, `static/js/tabs.js`, `static/js/graph.js` | The §11.3 glyph grep (`foundations.md`) finds no `📌`, `↻`, `≣`, `×` in the tab code path and no `🕸` in the special-tab registration |
 | **AC18** | The drag indicator cannot clip | `style.css` | `.drop-before` / `.drop-after` are `inset` box-shadows; `tests/dom/test_dom.js`'s drag block stays green |
@@ -849,7 +823,7 @@ Each is recorded with a position; none is silently resolved.
 | **C6** | `.tab-conflict` paints `--danger`; `controls.md` §4 says the tab's conflict glyph is `--warn`. | `style.css:1315`; `controls.md:861` | Follow `controls.md`: `--warn` (5.65 / 4.34 on the wash; an icon needs 3:1). A newer file version is a caution, not an error. |
 | **C7** | `frontend.md` §7 and `controls.md` §5 call `#tab-list` "the only part of the row that scrolls", but `.tab-pinned` is also `overflow-x: auto` and the wheel handler scrolls it. | `docs/architecture/frontend.md:391`; `style.css:542`; `tabs.js:1318-1334`; the DOM test "wheel over the pinned region scrolls it" | Two scrollers: `#tab-list` always when it overflows, `#tab-pinned` only past the 50 % cap. The **bar** never scrolls. §3.4 states it that way. |
 | **C8** | "Pinned tabs rest at their natural width" (`tab-equalization.md` §2.4) omits that the shared `min-width: 120px` still applies, so a short pinned name is 120 px, not its content width. | `style.css:557` leaves `min-width` in force; `tab-equalization.md:164-173` | §3.2 states `max(120, content)`. No CSS change: the rail is wanted, so a pinned strip does not become a row of tiny stubs. |
-| **C9** | `#outline-toggle`'s `aria-label` says "Toggle outline pane", its `title` says "Show outline", and neither changes when the pane is collapsed. It has no `aria-pressed` or `aria-expanded`. Its `.outline-toggle` rule (`:563`) also loses to `.icon-btn` (`:1345`) on equal specificity, so its `font-size` and `padding` are dead. | `index.html:293`; `app.js:757-762`; `style.css:563`, `:1345` | Fixed: one stable name, `aria-pressed` mirroring `outlineCollapsed`, a swapping `title`, and the compound selector in §9.2. |
+| **C9** | `#outline-toggle`'s `aria-label` said "Toggle outline pane" while its `title` said "Show outline", and neither changed with the pane; it had no `aria-pressed`/`aria-expanded`, and its `.outline-toggle` rule (`:563`) lost to `.icon-btn` (`:1345`). | `index.html:293`; `app.js:757-762`; `style.css:563`, `:1345` | Retired: the toggle is removed and the outline is a view whose rail icon carries the state (`secondary-sidebar.md` §5). |
 | **C10** | `context-menus.md` still names a `#tab-context-menu` host in `tabs.js`; the menu is `NB.menu`'s shared `#nb-menu`. | `docs/architecture/context-menus.md:41`; `tabs.js:1456-1460` | Stale record, no code change. §5.5 references `NB.menu`. |
 | **C11** | `controls.md` §2.2 lists `.tab-close` as a 24 px `sm` icon button; the shipped box is ≈15 × 16 with a 16 px text `×`. | `controls.md:206`; `style.css:1218-1227` | Follow `controls.md`; the hit grows to 24 × 24 without growing the tab (§2.2). |
 | **C12** | `controls.md` §6.2 requires `aria-controls` on a tab; this strip omits it because a special tab feeds a different container. | `controls.md` §6.2; `tabs.js:826-849` | Omitted here, recorded. The panel is named and `aria-selected` carries the relationship; `aria-controls="viewer"` would be false for `§graph`. |
@@ -867,8 +841,8 @@ Two smaller findings, not conflicts:
 
 | Rejected | Reason |
 |---|---|
-| A third tablist, or a wrapper around the two regions | A tablist may contain only tabs; the bar has exactly three children (sessions.md:1468) and the toggle is one of them. §1.3 |
-| A `role="tablist"` on `#tab-bar` | Same reasons, plus it would swallow the toggle. |
+| A third tablist, or a wrapper around the two regions | A tablist may contain only tabs; the bar has exactly two children since the outline toggle was removed (`session.md:1468` predates the removal). §1.3 |
+| A `role="tablist"` on `#tab-bar` | Same reasons; it would swallow the two regions. |
 | `aria-controls` on every tab pointing at `#viewer` | False for special tabs, and it adds nothing over `aria-selected` plus a named panel. §7.1 |
 | A live region inside the bar | No fourth child. Focus movement already announces the new tab. §7.5 |
 | A toast on every close | Noise for a pointer user who watched the tab go. §7.5 |

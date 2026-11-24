@@ -469,7 +469,7 @@ tabindex: exactly one tab has `tabindex="0"`. `ArrowUp`/`ArrowDown` (vertical) o
 `role="tabpanel"` with `aria-labelledby`.
 
 The file tab bar is two regions, not one: `#tab-pinned` and `#tab-list` are separate
-siblings inside `#tab-bar`, and `#outline-toggle` is a third sibling that is not a tab
+siblings inside `#tab-bar`, and no third child
 (`templates/index.html:280-293`). Each region gets its own `role="tablist"` with an
 `aria-label`; a hidden pinned region removes its tablist from the tree. This keeps the
 `role="tab"` children inside a tablist without wrapping or moving the toggle. A file tab's

@@ -421,7 +421,7 @@ viewport (and 598 px at 1280). Both figures are in exception **E12**.
 | VIM mode | live on `change` | `vimMode` | `settings.js:450-455` |
 | Watch toggle | live on click, after the picker resolves | `watchEnabled` | `settings.js:376-391` |
 | Hide top bar, particles | live on `change` | `hideTopbar`, `graphParticles` | `settings.js:474-487` |
-| Activity bar order / visibility | live on a drop or a Hide/Unhide click; a no-op drop writes nothing | `sidebarOrder`, `sidebarHidden`; re-renders the bar immediately | `settings.js:369-597`; [`activity-bar-order.md`](activity-bar-order.md) |
+| Activity bar order / visibility / side | live on a drop, a Hide/Unhide click, or a Left/Right click; a no-op drop writes nothing | `sidebarOrder`, `sidebarHidden`, `sidebarSide`; re-renders both rails immediately | `settings.js:369-597`; [`activity-bar-order.md`](activity-bar-order.md), [`secondary-sidebar.md`](secondary-sidebar.md) §8 |
 | Theme, font size | live on `change` | `theme`, `fontSize` | `settings.js:228-233` |
 | Modal width/height | live on `change` | `settingsModalWidth/Height` → `--settings-modal-width/height` on `:root` | `settings.js:234-239`, `app.js:304-313` |
 | Wallpaper ×4 | live on `change` | `wallpaper`, `wallpaperScroll`, `wallpaperColor`, `wallpaperIntensity` | `settings.js:240-251` |
@@ -521,12 +521,12 @@ not clickable (`workspaces.js:859`). A missing folder renders the row as a disab
 | 3 | Row: `Theme` + 3 chips | `Auto` `Dark` `Light` | live → `theme`; `Auto` follows the system |
 | 4 | Row: `Font size · 12.6 px` (value follows the setting) + 4 preview tiles | `Aa` `Aa` `Aa` `Aa` over `S 12.6 px` `M 14 px` `L 16.1 px` `XL 18.2 px` | live → `fontSize`; sets `--font-scale` 0.9 / 1 / 1.15 / 1.3 and the root to 12.6 / 14 / 16.1 / 18.2 px. Anatomy, states and ARIA: §3.6.1 |
 | 5 | Row: `Hide top bar` + switch | off | live → `hideTopbar`; the topbar collapses to 0 px |
-| 6 | Row: `Hide tab bar` + switch | off | live → `hideTabBar`; `#tab-bar` takes `hidden` and the rail's outline twin appears (`shell-frame.md` §1.3, §3.1; `tab-bar.md` §8.1) |
+| 6 | Row: `Hide tab bar` + switch | off | live → `hideTabBar`; `#tab-bar` takes `hidden` and the reader gains 34 px (`shell-frame.md` §1.3; `tab-bar.md` §8.1) |
 | 7 | Row: `Graph background particles` + switch | off | live → `graphParticles` |
 | 8 | Group title | `Activity bar` | — |
-| 9 | Help paragraph `#settings-sidebar-order-help` | "Order of the side-bar icons. Drag a row by its handle to reorder it, and use Hide to remove a view from the activity bar. Unhide restores it." | `id` so the list can name it via `aria-describedby`; names both paths |
-| 10 | List `#settings-sidebar-order` | 8 cards, 40 px each, gap 8: handle, the view's own 14 px icon, view label, `Hide` / `Unhide` button | `role="list"`, rows `role="listitem"` with `aria-posinset` / `aria-setsize`; dragged by the handle only; a hidden row stays in the list, muted, with `Unhide`; live on a drop → `sidebarOrder`, live on Hide/Unhide → `sidebarHidden`; focus stays on the moved or toggled row's button |
-| 11 | Live region `#settings-sidebar-order-status` | `<View> moved to position <n> of 8.` · `<View> hidden.` · `<View> shown.` | `.sr-only`, `role="status"`; written after a completed move or visibility change, silent on a cancelled or no-op drag |
+| 9 | Help paragraph `#settings-sidebar-order-help` | "Icons on the left rail and the right rail. Drag a row by its handle to reorder it, Left or Right to choose its rail, and Hide to remove a view. Unhide restores it." | `id` so the list can name it via `aria-describedby`; names all three paths |
+| 10 | List `#settings-sidebar-order` | 9 cards, 40 px each, gap 8: handle, the view's own 14 px icon, view label, `Left \| Right` segmented control, `Hide` / `Unhide` button | `role="list"`, rows `role="listitem"` with `aria-posinset` / `aria-setsize`; dragged by the handle only; a hidden row stays in the list, muted, with `Unhide`; live on a drop → `sidebarOrder`, on Hide/Unhide → `sidebarHidden`, on the segment → `sidebarSide`; focus stays on the moved or toggled row's control |
+| 11 | Live region `#settings-sidebar-order-status` | `<View> moved to position <n> of 9.` · `<View> moved to the <left\|right> rail, position <n> of <m>.` · `<View> hidden.` · `<View> shown.` | `.sr-only`, `role="status"`; written after a completed move, side change or visibility change, silent on a cancelled or no-op drag |
 | 12 | Group title | `Modal size` | — |
 | 13 | Row: `Settings modal width` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalWidth` (60/75/90 vw) |
 | 14 | Row: `Settings modal height` + 3 chips | `Compact` `Medium` `Wide` | live → `settingsModalHeight` (80/85/90 vh) |

@@ -96,13 +96,41 @@ class BaseTest(unittest.TestCase):
         self.assertIsNotNone(m, "no side-panel host for view id %r" % view_id)
         return "hidden" in m.group(0)
 
-    def assert_only_view(self, html, active):
-        """Exactly the `active` view host is visible; every other host is
-        hidden. This is the first-paint contract (exactly one host shown)."""
+    def panel_html(self, html, side):
+        """The markup inside #side-panel (left) or #aux-panel (right)."""
+        panel_id = "side-panel" if side == "left" else "aux-panel"
+        m = re.search(r'<aside id="%s"[^>]*>(.*?)</aside>'
+                      % re.escape(panel_id), html, re.S)
+        self.assertIsNotNone(m, "no #%s in the rendered shell" % panel_id)
+        return m.group(1)
+
+    def visible_views(self, html, side):
+        """The data-view ids whose hosts are visible inside one panel, in
+        document (rail) order."""
+        panel = self.panel_html(html, side)
+        out = []
+        for m in re.finditer(
+                r'<div\b[^>]*class="side-panel-view"[^>]*data-view="([^"]+)"[^>]*>',
+                panel):
+            if "hidden" not in m.group(0):
+                out.append(m.group(1))
+        return out
+
+    def assert_only_view(self, html, left_active, right_active="outline"):
+        """Exactly one host is visible per panel: `left_active` on the left,
+        `right_active` on the right. `None` means the side has no active view
+        and paints no host at all (secondary-sidebar.md §2.3, §7.5)."""
+        for side, active in (("left", left_active), ("right", right_active)):
+            expected = [] if active is None else [active]
+            self.assertEqual(
+                self.visible_views(html, side), expected,
+                "%s panel visibility wrong for active view %r"
+                % (side, active))
         for view in nb._ACTIVE_VIEWS:
             self.assertEqual(
-                self.view_hidden(html, view), view != active,
-                "view %r visibility wrong for active view %r" % (view, active))
+                self.view_hidden(html, view), view not in (left_active, right_active),
+                "view %r visibility wrong for active views %r/%r"
+                % (view, left_active, right_active))
 
 
 class TestIndexAndSeed(BaseTest):
@@ -119,8 +147,8 @@ class TestIndexAndSeed(BaseTest):
         # that flash.
         self.post("/api/config", {
             "theme": "light", "siteTitle": "My Notes", "fontSize": "xlarge",
-            "sidebarWidth": 312, "outlineWidth": 344,
-            "sidebarCollapsed": False, "outlineCollapsed": True,
+            "sidebarWidth": 312, "auxPanelWidth": 344,
+            "sidebarCollapsed": False, "auxPanelCollapsed": True,
             "wallpaper": "grid", "wallpaperColor": "green",
             "wallpaperIntensity": "bold", "wallpaperScroll": "fixed",
             "sidebarOrder": ["search", "explorer", "not-a-view"],
@@ -134,10 +162,10 @@ class TestIndexAndSeed(BaseTest):
         # needs no post-fetch reorder; unknown ids are dropped.
         self.assertIn('data-sidebar-order="search,explorer"', html)
         self.assertIn('data-sidebar-hidden="ai"', html)
-        # The outline is collapsed -> its width is 0 and it carries the
+        # The aux panel is collapsed -> its width is 0 and it carries the
         # collapsed class, matching what app.js would apply post-fetch.
-        self.assertIn("--outline-width: 0px", html)
-        self.assertIn('id="outline-pane" class="collapsed"', html)
+        self.assertIn("--aux-panel-width: 0px", html)
+        self.assertIn('id="aux-panel" aria-label="Right side panel" class="collapsed"', html)
         self.assertIn("wallpaper-grid", html)
         self.assertIn("wallpaper-color-green", html)
         self.assertIn("wallpaper-intensity-bold", html)
@@ -186,9 +214,9 @@ class TestIndexAndSeed(BaseTest):
         self.assertIn("<title>Notebook</title>", html)
         self.assertIn("--font-scale: 1.0", html)
         self.assertIn("--side-panel-width: 240px", html)
-        self.assertIn("--outline-width: 220px", html)
+        self.assertIn("--aux-panel-width: 240px", html)
         self.assertNotIn('id="side-panel" class="collapsed"', html)
-        self.assertNotIn('id="outline-pane" class="collapsed"', html)
+        self.assertNotIn('id="aux-panel" aria-label="Right side panel" class="collapsed"', html)
         self.assertIn("wallpaper-none", html)
 
     def test_boot_state_sanitizes_hostile_config(self):
@@ -201,7 +229,7 @@ class TestIndexAndSeed(BaseTest):
             "siteTitle": "  <img src=x onerror=alert(1)>  ",
             "fontSize": "' onmouseover='alert(1)",
             "sidebarWidth": "not-a-number",
-            "outlineWidth": 999999,
+            "auxPanelWidth": 999999,
             "wallpaper": "javascript:alert(1)",
             "wallpaperColor": "rgb(1,2,3);background:url(javascript:1)",
             "wallpaperIntensity": "nope",
@@ -212,7 +240,7 @@ class TestIndexAndSeed(BaseTest):
         self.assertEqual(state["theme"], "auto")
         self.assertEqual(state["font_scale"], 1.0)
         self.assertEqual(state["side_panel_width"], 240)   # bad -> default
-        self.assertEqual(state["outline_width"], 2000)     # clamped to ceiling
+        self.assertEqual(state["aux_panel_width"], 2000)   # clamped to ceiling
         self.assertEqual(state["sidebar_order"], ["ai"])
         self.assertEqual(state["sidebar_hidden"], ["ai"])
         self.assertEqual(state["wallpaper_classes"],
@@ -239,7 +267,7 @@ class TestIndexAndSeed(BaseTest):
         self.assertEqual(
             nb.boot_state({"sidebarWidth": 300, "sidebarCollapsed": True})["side_panel_width"], 0)
         self.assertEqual(
-            nb.boot_state({"outlineWidth": 300, "outlineCollapsed": True})["outline_width"], 0)
+            nb.boot_state({"auxPanelWidth": 300, "auxPanelCollapsed": True})["aux_panel_width"], 0)
 
     def test_boot_state_sidebar_order(self):
         # Only known view ids survive, duplicates collapse, and a value that
@@ -259,19 +287,22 @@ class TestIndexAndSeed(BaseTest):
             ["ai", "explorer"])
         self.assertEqual(
             nb.boot_state({"sidebarHidden": "ai"})["sidebar_hidden"], [])
-        # A hidden view cannot be the painted active view.
+        # A hidden view cannot be the painted active view: the first visible
+        # view on that side in rail order takes over.
+        left_views = [v for v in nb._ACTIVE_VIEWS
+                      if nb._VIEW_SIDES.get(v, "left") == "left"]
+        second_left = left_views[1]
         self.assertEqual(
-            nb.boot_state({"activeView": "search",
-                           "sidebarHidden": ["search"]})["active_view"],
+            nb.boot_state({"activeViewLeft": "search",
+                           "sidebarHidden": ["search"]})["active_view_left"],
             "explorer")
         self.assertEqual(
-            nb.boot_state({"activeView": "ai",
-                           "sidebarHidden": ["explorer", "ai"]})["active_view"],
-            "sessions")
-        self.assertEqual(
-            nb.boot_state({"activeView": "search",
-                           "sidebarHidden": list(nb._ACTIVE_VIEWS)})["active_view"],
-            "explorer")
+            nb.boot_state({"activeViewLeft": "ai",
+                           "sidebarHidden": ["explorer", "ai"]})["active_view_left"],
+            second_left)
+        self.assertIsNone(
+            nb.boot_state({"activeViewLeft": "search",
+                           "sidebarHidden": list(left_views)})["active_view_left"])
 
     def test_boot_state_does_not_leak_content(self):
         # The shell is served before auth, so nothing content-bearing may
@@ -341,69 +372,77 @@ class TestIndexAndSeed(BaseTest):
         self.assertIn("--font-scale: 1.15", html)
 
     # --- active side-panel view first paint ------------------------------
-    def test_index_paints_saved_active_view(self):
-        # The saved active view is first-paint chrome: the shell must show
-        # exactly that view and hide the rest, so an authenticated reload
-        # never paints the file tree before the saved view.
-        self.post("/api/config", {"activeView": "bookmarks"})
+    def test_index_paints_saved_active_views_per_side(self):
+        # Each side's saved active view is first-paint chrome: the shell
+        # shows exactly that view in that panel and hides the rest, so an
+        # authenticated reload never paints the wrong view.
+        self.post("/api/config", {"activeViewLeft": "bookmarks",
+                                  "activeViewRight": "outline"})
         html = self.client.get("/").get_data(as_text=True)
-        self.assert_only_view(html, "bookmarks")
+        self.assert_only_view(html, "bookmarks", "outline")
         self.assertFalse(self.view_hidden(html, "bookmarks"))
         self.assertTrue(self.view_hidden(html, "explorer"))
+        self.assertFalse(self.view_hidden(html, "outline"))
 
-    def test_index_paints_explorer_for_default_and_missing(self):
-        # Explicit "explorer" and the no-key case both boot Explorer.
-        self.post("/api/config", {"activeView": "explorer"})
-        html = self.client.get("/").get_data(as_text=True)
-        self.assert_only_view(html, "explorer")
-        self.assertFalse(self.view_hidden(html, "explorer"))
-
-        self.post("/api/config", {})
-        html = self.client.get("/").get_data(as_text=True)
-        self.assert_only_view(html, "explorer")
-
-    def test_index_paints_each_saved_active_view(self):
-        for view in ("recent", "search", "ai"):
-            self.post("/api/config", {"activeView": view})
+    def test_index_paints_each_saved_left_view(self):
+        # Every left-homed view can be the saved first paint.
+        left_views = [v for v in nb._ACTIVE_VIEWS
+                      if nb._VIEW_SIDES.get(v, "left") == "left"]
+        for view in left_views:
+            self.post("/api/config", {"activeViewLeft": view})
             html = self.client.get("/").get_data(as_text=True)
             self.assert_only_view(html, view)
             self.assertFalse(self.view_hidden(html, view))
 
-    def test_index_falls_back_to_explorer_for_bad_active_view(self):
-        # Unknown id and non-string values must fall back silently, never
-        # error or leave the panel empty.
+    def test_index_paints_defaults_for_missing_keys(self):
+        # No saved keys: Explorer on the left, Outline on the right.
+        self.post("/api/config", {})
+        html = self.client.get("/").get_data(as_text=True)
+        self.assert_only_view(html, "explorer", "outline")
+
+    def test_index_falls_back_per_side_for_bad_active_view(self):
+        # Unknown id and non-string values fall back silently to the first
+        # visible view on that side, never error or leave the panel empty.
+        left_views = [v for v in nb._ACTIVE_VIEWS
+                      if nb._VIEW_SIDES.get(v, "left") == "left"]
         for bad in ("gone", 42, None):
-            self.post("/api/config", {"activeView": bad})
+            self.post("/api/config", {"activeViewLeft": bad,
+                                      "activeViewRight": bad})
             r = self.client.get("/")
             self.assertEqual(r.status_code, 200)
-            self.assert_only_view(r.get_data(as_text=True), "explorer")
+            html = r.get_data(as_text=True)
+            self.assert_only_view(html, left_views[0], "outline")
 
     def test_index_paints_saved_view_in_collapsed_shell(self):
-        # Collapse is orthogonal to the active view: the shell stays
-        # collapsed at width 0 and still shows the saved view inside.
-        self.post("/api/config", {"activeView": "bookmarks",
-                                  "sidebarCollapsed": True})
+        # Collapse is orthogonal to the active view: each panel stays
+        # collapsed at width 0 and still shows its saved view inside.
+        self.post("/api/config", {"activeViewLeft": "bookmarks",
+                                  "sidebarCollapsed": True,
+                                  "auxPanelCollapsed": True})
         html = self.client.get("/").get_data(as_text=True)
         self.assertIn('id="side-panel" class="collapsed"', html)
         self.assertIn("--side-panel-width: 0", html)
-        self.assertFalse(self.view_hidden(html, "bookmarks"))
-        self.assertTrue(self.view_hidden(html, "explorer"))
+        self.assertIn('id="aux-panel" aria-label="Right side panel" class="collapsed"', html)
+        self.assertIn("--aux-panel-width: 0", html)
+        self.assert_only_view(html, "bookmarks", "outline")
 
-    def test_spa_catch_all_paints_active_view(self):
+    def test_spa_catch_all_paints_active_views(self):
         # The catch-all route renders the same shell, so a deep-link reload
-        # must not flash the file tree either.
-        self.post("/api/config", {"activeView": "search"})
+        # must not flash the wrong view either.
+        self.post("/api/config", {"activeViewLeft": "search"})
         root = self.client.get("/").get_data(as_text=True)
         deep = self.client.get("/Welcome.md").get_data(as_text=True)
-        self.assert_only_view(root, "search")
-        self.assert_only_view(deep, "search")
+        self.assert_only_view(root, "search", "outline")
+        self.assert_only_view(deep, "search", "outline")
 
     def test_active_view_not_leaked_until_authenticated(self):
         # The shell is served before login, so an unauthenticated request
-        # must select Explorer and never paint the saved view. After a real
-        # login the reload paints the saved view.
+        # must paint the defaults and never the saved views. After a real
+        # login the reload paints the saved views.
         import bcrypt as _bcrypt
-        self.post("/api/config", {"activeView": "bookmarks"})
+        self.post("/api/config", {"activeViewLeft": "bookmarks",
+                                  "activeViewRight": "recent",
+                                  "sidebarSide": {"recent": "right"}})
         with open(nb.AUTH_FILE, "w", encoding="utf-8") as f:
             json.dump({
                 "secret": "x" * 64,
@@ -412,18 +451,128 @@ class TestIndexAndSeed(BaseTest):
             }, f)
         anon = nb.app.test_client()
         html = anon.get("/").get_data(as_text=True)
-        self.assert_only_view(html, "explorer")
+        self.assert_only_view(html, "explorer", "outline")
         self.assertTrue(self.view_hidden(html, "bookmarks"))
         client = nb.app.test_client()
         client.post("/api/login", json={"password": "admin-pw-secret"})
         authed = client.get("/").get_data(as_text=True)
-        self.assert_only_view(authed, "bookmarks")
+        self.assert_only_view(authed, "bookmarks", "recent")
 
-    def test_active_view_allowlist_matches_registry_and_dom(self):
-        # boot_state's allowlist must equal the view ids activity.js
-        # registers and the data-view hosts the shell ships; a drift is a
-        # defect. Parsed textually, in the same cross-file-guard style as
-        # the renderer-registry and version-drift tests.
+    def test_boot_state_per_side_active_view(self):
+        # Each side owns an active id. The saved value survives when it is
+        # homed on that side and visible; otherwise the first visible view on
+        # that side in rail order takes over, or the side has none.
+        state = nb.boot_state({"activeViewLeft": "search",
+                               "activeViewRight": "outline"})
+        self.assertEqual(state["active_view_left"], "search")
+        self.assertEqual(state["active_view_right"], "outline")
+        # A left id cannot paint the right panel and vice versa.
+        self.assertEqual(
+            nb.boot_state({"activeViewRight": "search"})["active_view_right"],
+            "outline")
+
+    def test_boot_state_active_view_falls_back_in_rail_order(self):
+        # "Rail order" is _ordered_views(cfg): the saved sidebarOrder first,
+        # then the registration order. A saved active view that moved to the
+        # other side falls back to the first visible view in that order, not
+        # to _ACTIVE_VIEWS order.
+        state = nb.boot_state({
+            "sidebarOrder": ["search", "explorer"],
+            "sidebarSide": {"bookmarks": "right"},
+            "activeViewLeft": "bookmarks",
+        })
+        self.assertEqual(state["active_view_left"], "search")
+        self.assertEqual(state["views_left"][:2], ["search", "explorer"])
+        # Hiding every right-homed view leaves the right side with none.
+        state = nb.boot_state({"sidebarHidden": ["outline"],
+                               "activeViewRight": "outline"})
+        self.assertIsNone(state["active_view_right"])
+        self.assertTrue(state["right_empty"])
+
+    def test_boot_state_sidebar_side_validation(self):
+        # sidebarSide must be an object; unknown ids and values other than
+        # "left"/"right" are dropped. The surviving map is emitted as
+        # sidebar_side.
+        self.assertEqual(nb.boot_state({})["sidebar_side"], {})
+        for bad in ("outline", ["outline"], 5, None):
+            self.assertEqual(nb.boot_state({"sidebarSide": bad})["sidebar_side"], {},
+                             "sidebarSide=%r must be rejected" % (bad,))
+        self.assertEqual(
+            nb.boot_state({"sidebarSide": {
+                "outline": "left", "explorer": "right",
+                "not-a-view": "right", "ai": "middle", "search": 5,
+            }})["sidebar_side"],
+            {"outline": "left", "explorer": "right"})
+
+    def test_boot_state_aux_width_legacy_fallback_and_clamp(self):
+        # auxPanelWidth wins; outlineWidth is the one-release fallback.
+        self.assertEqual(
+            nb.boot_state({"auxPanelWidth": 300})["aux_panel_width"], 300)
+        self.assertEqual(
+            nb.boot_state({"outlineWidth": 300})["aux_panel_width"], 300)
+        self.assertEqual(
+            nb.boot_state({"outlineWidth": 200, "auxPanelWidth": 320})["aux_panel_width"],
+            320)
+        self.assertEqual(
+            nb.boot_state({"outlineWidth": 1})["aux_panel_width"],
+            nb._MIN_PANE_WIDTH)
+        self.assertEqual(
+            nb.boot_state({"outlineWidth": 99999})["aux_panel_width"],
+            nb._MAX_PANE_WIDTH)
+        # Same fallback for the collapsed flag.
+        self.assertTrue(nb.boot_state({"outlineCollapsed": True})["aux_panel_collapsed"])
+        self.assertFalse(
+            nb.boot_state({"outlineCollapsed": True,
+                           "auxPanelCollapsed": False})["aux_panel_collapsed"])
+
+    def test_boot_state_right_empty(self):
+        # A side with no visible view takes no rail and no panel. The left
+        # rail never takes this state (it carries the action buttons).
+        self.assertFalse(nb.boot_state({})["right_empty"])
+        self.assertTrue(nb.boot_state({"sidebarHidden": ["outline"]})["right_empty"])
+        self.assertTrue(
+            nb.boot_state({"sidebarHidden": list(nb._ACTIVE_VIEWS)})["right_empty"])
+        self.assertFalse(nb.boot_state({
+            "sidebarHidden": ["outline"],
+            "sidebarSide": {"recent": "right"},
+        })["right_empty"])
+
+    def test_index_paints_outline_in_the_aux_panel(self):
+        # AC2: the outline is a normal view host inside #aux-panel and the
+        # fixed #outline-pane is gone.
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertNotIn('id="outline-pane"', html)
+        aux = self.panel_html(html, "right")
+        self.assertIn('id="outline-view"', aux)
+        self.assertIn('data-view="outline"', aux)
+        self.assertEqual(self.visible_views(html, "right"), ["outline"])
+        self.assertIn('id="outline"', aux)
+
+    def test_every_view_host_rendered_once_and_inside_its_side(self):
+        # AC3: every view id appears exactly once as data-view in the
+        # rendered page, and each host sits inside the panel its saved side
+        # names. A `set()` comparison is not enough: a duplicate breaks every
+        # getElementById consumer without changing the set.
+        self.post("/api/config", {"sidebarSide": {
+            "bookmarks": "right", "outline": "left",
+            "recent": "right",
+        }})
+        html = self.client.get("/").get_data(as_text=True)
+        ids = re.findall(r'data-view="([^"]+)"', html)
+        for view in nb._ACTIVE_VIEWS:
+            self.assertEqual(ids.count(view), 1,
+                             "view %r hosted %d times" % (view, ids.count(view)))
+        self.assertEqual(set(ids), set(nb._ACTIVE_VIEWS))
+        left = self.panel_html(html, "left")
+        right = self.panel_html(html, "right")
+        self.assertIn('data-view="outline"', left)
+        self.assertIn('data-view="bookmarks"', right)
+        self.assertIn('data-view="recent"', right)
+
+    def test_view_sides_match_activity_registry(self):
+        # AC3: _VIEW_SIDES equals the `side:` values parsed out of the built-in
+        # register() calls. A view registered right-homed but absent from
+        # _VIEW_SIDES would boot a left first paint for a right-homed view.
         with open(os.path.join(ROOT, "app.py"), encoding="utf-8") as f:
             app_src = f.read()
         m = re.search(r"_ACTIVE_VIEWS\s*=\s*\(([^)]*)\)", app_src)
@@ -435,20 +584,43 @@ class TestIndexAndSeed(BaseTest):
             activity_src = f.read()
         registered = set(re.findall(
             r'(?:NB\.activity\.)?register\(\{\s*id:\s*"([^"]+)"', activity_src))
-
-        with open(os.path.join(ROOT, "templates", "index.html"),
-                  encoding="utf-8") as f:
-            shell_src = f.read()
-        hosts = set(re.findall(r'data-view="([^"]+)"', shell_src))
-
         self.assertEqual(
             allow, registered,
             "boot_state _ACTIVE_VIEWS and activity.js registry differ "
             "(missing from registry: %s)" % sorted(allow - registered))
+
+        sides = {}
+        for rm in re.finditer(r'register\(\{\s*(.*?)\}\)', activity_src, re.S):
+            body = rm.group(1)
+            idm = re.search(r'id:\s*"([^"]+)"', body)
+            sm = re.search(r'side:\s*"(left|right)"', body)
+            if idm:
+                sides[idm.group(1)] = sm.group(1) if sm else "left"
+        declared = {view: side for view, side in sides.items() if side != "left"}
         self.assertEqual(
-            allow, hosts,
-            "boot_state _ACTIVE_VIEWS and index.html data-view hosts differ "
-            "(missing from shell: %s)" % sorted(allow - hosts))
+            nb._VIEW_SIDES, declared,
+            "app.py _VIEW_SIDES and activity.js `side:` differ: %r vs %r"
+            % (nb._VIEW_SIDES, declared))
+
+    def test_right_rail_contains_only_view_icons(self):
+        # AC4: the right rail is view icons only. A duplicated action button
+        # would bind the second copy of a getElementById lookup to a dead
+        # handler.
+        html = self.client.get("/").get_data(as_text=True)
+        m = re.search(r'<nav id="activity-bar-right"[^>]*>(.*?)</nav>', html, re.S)
+        self.assertIsNotNone(m, "no right activity rail in the rendered shell")
+        rail = m.group(1)
+        for control in ("activity-settings-btn", "workspace-rail-btn",
+                        "activity-graph-btn", "logout-btn",
+                        "activity-more-btn"):
+            self.assertNotIn(control, rail,
+                             "the right rail must not carry #%s" % control)
+        # The left rail keeps every one of them.
+        left = re.search(r'<nav id="activity-bar"[^>]*>(.*?)</nav>', html, re.S)
+        self.assertIsNotNone(left)
+        for control in ("activity-graph-btn", "activity-settings-btn",
+                        "activity-more-btn"):
+            self.assertIn(control, left.group(1))
 
 
     def test_seed_creates_welcome_and_empty_config(self):
@@ -5262,11 +5434,11 @@ class TestBackendHelperBranches(BaseTest):
         for bad in (float("nan"), float("inf"), float("-inf"), "wide"):
             with self.subTest(bad=bad):
                 state = nb.boot_state({"sidebarWidth": bad,
-                                       "outlineWidth": bad})
+                                       "auxPanelWidth": bad})
                 self.assertEqual(state["side_panel_width"],
                                  nb._DEFAULT_SIDEBAR_WIDTH)
-                self.assertEqual(state["outline_width"],
-                                 nb._DEFAULT_OUTLINE_WIDTH)
+                self.assertEqual(state["aux_panel_width"],
+                                 nb._DEFAULT_AUX_WIDTH)
 
     def test_boot_state_rejects_non_string_or_blank_title(self):
         self.assertEqual(nb.boot_state({"siteTitle": 42})["site_title"],

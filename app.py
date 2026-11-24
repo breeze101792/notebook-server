@@ -1395,7 +1395,9 @@ def service_worker():
 # before auth, so it must not leak anything content-bearing.
 _FONT_SCALES = {"small": 0.9, "medium": 1.0, "large": 1.15, "xlarge": 1.3}
 _DEFAULT_SIDEBAR_WIDTH = 240
-_DEFAULT_OUTLINE_WIDTH = 220
+# The right panel is the outline pane's successor: a full panel that can host
+# any view, so it opens at the left panel's width, not the minimap's 220.
+_DEFAULT_AUX_WIDTH = 240
 _MIN_PANE_WIDTH = 140
 _MAX_PANE_WIDTH = 2000
 _WALLPAPERS = ("none", "lines", "grid")
@@ -1406,7 +1408,11 @@ _WALLPAPER_INTENSITIES = ("subtle", "medium", "bold")
 # ships; tests/test_app.py enforces that. "graph" is an overlay, not a
 # view, so it is deliberately absent.
 _ACTIVE_VIEWS = ("explorer", "sessions", "pinned", "bookmarks", "recent",
-                 "search", "ai", "tabs")
+                 "search", "ai", "tabs", "outline")
+# Default rail home per view. Must equal the `side:` value each view passes
+# to activity.js register(); tests/test_app.py keeps the two in sync. Only
+# the outline defaults right -- every other view starts on the left rail.
+_VIEW_SIDES = {"outline": "right"}
 
 
 def _read_public_config():
@@ -1561,12 +1567,24 @@ def boot_state(cfg=None):
             return default
         return int(max(_MIN_PANE_WIDTH, min(_MAX_PANE_WIDTH, w)))
 
+    def _pane_width_first(primary, legacy, default):
+        """Read the new key, else the legacy key, else the default."""
+        if primary in cfg:
+            return _pane_width(primary, default)
+        return _pane_width(legacy, default)
+
     def _choice(key, allowed, default):
         val = cfg.get(key, default)
         return val if val in allowed else default
 
     sidebar_collapsed = bool(cfg.get("sidebarCollapsed"))
-    outline_collapsed = bool(cfg.get("outlineCollapsed"))
+    # The right panel replaced the outline pane; read the old key once, and
+    # only when the new one is absent. A present-but-non-bool value is
+    # coerced the way the client coerces it, so the first paint cannot flip.
+    if "auxPanelCollapsed" in cfg:
+        aux_collapsed = bool(cfg.get("auxPanelCollapsed"))
+    else:
+        aux_collapsed = bool(cfg.get("outlineCollapsed"))
 
     site_title = cfg.get("siteTitle", "Notebook")
     if not isinstance(site_title, str) or not site_title.strip():
@@ -1587,24 +1605,60 @@ def boot_state(cfg=None):
             if view_id in _ACTIVE_VIEWS and view_id not in sidebar_hidden:
                 sidebar_hidden.append(view_id)
 
-    # The active view cannot be hidden: the shell would paint a panel whose
-    # icon is absent. Fall back to the first visible view (Explorer when every
-    # view is hidden; the client then collapses the empty panel).
-    active_view = cfg.get("activeView")
-    if active_view not in _ACTIVE_VIEWS or active_view in sidebar_hidden:
-        active_view = next(
-            (view_id for view_id in _ACTIVE_VIEWS
-             if view_id not in sidebar_hidden), "explorer")
+    # Which rail hosts each view. An id the user has not moved keeps the
+    # view's registration default, so a saved object records only moves.
+    sidebar_side = {}
+    raw_side = cfg.get("sidebarSide")
+    if isinstance(raw_side, dict):
+        for view_id, side in raw_side.items():
+            if view_id in _ACTIVE_VIEWS and side in ("left", "right"):
+                sidebar_side[view_id] = side
+
+    def _side_of(view_id):
+        return sidebar_side.get(view_id, _VIEW_SIDES.get(view_id, "left"))
 
     # Activity-bar order: unknown ids are dropped, duplicates collapse, and
     # anything missing keeps its registration order after the named ones.
+    # The list is global; each rail renders the subsequence it owns.
     sidebar_order = []
     raw_order = cfg.get("sidebarOrder")
     if isinstance(raw_order, list):
         for view_id in raw_order:
             if view_id in _ACTIVE_VIEWS and view_id not in sidebar_order:
                 sidebar_order.append(view_id)
+    ordered_views = sidebar_order + [
+        view_id for view_id in _ACTIVE_VIEWS if view_id not in sidebar_order]
 
+    # Every view ships a host, hidden or not: the client reveals hosts without
+    # re-rendering them, and a hidden view must still be adoptable when it is
+    # unhidden. Only the per-side active view paints visible.
+    views_left = [v for v in ordered_views if _side_of(v) == "left"]
+    views_right = [v for v in ordered_views if _side_of(v) == "right"]
+
+    def _active_for(side, primary_key, legacy_key=None):
+        """The saved active view for one side, validated.
+
+        A side's active view must live on that side and must not be hidden;
+        otherwise the first visible view in rail order takes over. The client
+        collapses a side with no visible view.
+        """
+        ids = views_left if side == "left" else views_right
+        saved = cfg.get(primary_key)
+        if saved is None and legacy_key:
+            saved = cfg.get(legacy_key)
+        if saved in ids and saved not in sidebar_hidden:
+            return saved
+        for view_id in ids:
+            if view_id not in sidebar_hidden:
+                return view_id
+        return None
+
+    active_view_left = _active_for("left", "activeViewLeft", "activeView")
+    active_view_right = _active_for("right", "activeViewRight")
+
+    # A side with no visible view takes no rail and no panel. The client keeps
+    # this attribute derived at runtime; the server sets the first paint.
+    right_empty = not any(v not in sidebar_hidden for v in views_right)
     # The viewer-content classes are assembled here so the shell can render
     # them directly; keep them in the same shape app.js applies.
     wallpaper_classes = ["wallpaper-" + wallpaper]
@@ -1621,14 +1675,20 @@ def boot_state(cfg=None):
         # Collapsed panes collapse to 0 regardless of the saved width.
         "side_panel_width": 0 if sidebar_collapsed
                             else _pane_width("sidebarWidth", _DEFAULT_SIDEBAR_WIDTH),
-        "outline_width": 0 if outline_collapsed
-                         else _pane_width("outlineWidth", _DEFAULT_OUTLINE_WIDTH),
+        "aux_panel_width": 0 if aux_collapsed
+                           else _pane_width_first("auxPanelWidth", "outlineWidth",
+                                                  _DEFAULT_AUX_WIDTH),
         "sidebar_collapsed": sidebar_collapsed,
-        "outline_collapsed": outline_collapsed,
+        "aux_panel_collapsed": aux_collapsed,
         "topbar_hidden": bool(cfg.get("hideTopbar")),
         "tabbar_hidden": bool(cfg.get("hideTabBar")),
         "wallpaper_classes": " ".join(wallpaper_classes),
-        "active_view": active_view,
+        "sidebar_side": sidebar_side,
+        "views_left": views_left,
+        "views_right": views_right,
+        "active_view_left": active_view_left,
+        "active_view_right": active_view_right,
+        "right_empty": right_empty,
         "sidebar_order": sidebar_order,
         "sidebar_hidden": sidebar_hidden,
         **_boot_workspaces(),

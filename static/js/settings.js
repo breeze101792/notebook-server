@@ -386,10 +386,12 @@
     }
   }
 
-  // Activity-bar order: one card per registered view. The grip is the only
-  // drag source; the row's toggle hides or restores the icon without losing
-  // its place. Reads the live bar order so a partial saved list still shows
-  // every view.
+  // Activity-bar order: one card per registered view, listing the views of
+  // both rails in the one global order. The grip is the only drag source; the
+  // row's toggle hides or restores the icon on its rail without losing its
+  // place, and the Left | Right control moves the view to the other rail live
+  // (secondary-sidebar.md §8). Reads the live bar order so a partial saved
+  // list still shows every view.
   function renderSidebarOrder() {
     if (!sidebarOrderListEl || !NB.activity || !NB.activity.barItems) return;
     const items = NB.activity.barItems();
@@ -433,6 +435,7 @@
       label.className = "sidebar-order-label";
       label.textContent = item.label;
       row.appendChild(label);
+      row.appendChild(buildSideControl(item));
       const actions = document.createElement("span");
       actions.className = "sidebar-order-actions";
       const toggle = document.createElement("button");
@@ -446,6 +449,49 @@
       row.appendChild(actions);
       sidebarOrderListEl.appendChild(row);
     });
+  }
+
+  /* The row's Left | Right control: two real buttons in a group, the
+   * controls.md chip face. aria-pressed says which rail hosts the view; the
+   * choice reflects the saved map or the registration default and is never
+   * blank. Space/Enter on a focused button selects that rail. */
+  function buildSideControl(item) {
+    const group = document.createElement("div");
+    group.className = "sidebar-order-side";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", item.label + " rail");
+    for (const side of ["left", "right"]) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "sidebar-order-side-btn";
+      btn.dataset.side = side;
+      btn.textContent = side === "left" ? "Left" : "Right";
+      const on = item.side === side;
+      btn.setAttribute("aria-pressed", on ? "true" : "false");
+      btn.addEventListener("click", () => setSidebarSide(item.id, side));
+      group.appendChild(btn);
+    }
+    return group;
+  }
+
+  /* Move a view to the other rail. Live: activity.js moves the host node and
+   * re-renders both rails; this persists the side map immediately (no Apply)
+   * and announces the rail and the view's position on it. */
+  function setSidebarSide(viewId, side) {
+    if (!NB.app || !NB.app.setSidebarSide) return;
+    NB.app.setSidebarSide(viewId, side);
+    renderSidebarOrder();
+    focusSidebarOrderSide(viewId, side);
+    announceSidebarSide(viewId, side);
+  }
+
+  function focusSidebarOrderSide(viewId, side) {
+    if (!sidebarOrderListEl) return;
+    const row = sidebarOrderListEl.querySelector(
+      '.sidebar-order-row[data-view="' + viewId + '"]');
+    const btn = row && row.querySelector(
+      '.sidebar-order-side-btn[data-side="' + side + '"]');
+    if (btn) btn.focus({ preventScroll: true });
   }
   function sidebarRequestFrame(fn) {
     return window.requestAnimationFrame
@@ -581,7 +627,7 @@
     if (NB.app && NB.app.setSidebarOrder) NB.app.setSidebarOrder(ids);
     renderSidebarOrder();
     focusSidebarOrderToggle(viewId);
-    announceSidebarMove(viewId, ids.indexOf(viewId), ids.length);
+    announceSidebarMove(viewId);
   }
   function focusSidebarOrderToggle(viewId) {
     if (!sidebarOrderListEl) return;
@@ -606,29 +652,59 @@
         item.label + (item.hidden ? " shown." : " hidden.");
     }
   }
-  function announceSidebarMove(viewId, index, total) {
+  /* Position N of M counts the visible rows of the rail the view is on, in
+   * rail order: the whole-list position no longer describes either rail. */
+  function sidebarRailPosition(viewId, side) {
+    const items = (NB.activity && NB.activity.barItems) ? NB.activity.barItems() : [];
+    const rail = items.filter(entry => entry.side === side && !entry.hidden);
+    return { index: rail.findIndex(entry => entry.id === viewId), total: rail.length };
+  }
+  function announceSidebarSide(viewId, side) {
     if (!sidebarOrderStatusEl) return;
     const items = (NB.activity && NB.activity.barItems) ? NB.activity.barItems() : [];
     const item = items.find(entry => entry.id === viewId);
     const label = (item && item.label) || viewId;
-    sidebarOrderStatusEl.textContent =
-      label + " moved to position " + (index + 1) + " of " + total + ".";
+    const rail = side + " rail";
+    const pos = sidebarRailPosition(viewId, side);
+    // A hidden row has no position on its rail: it has no icon there at all.
+    sidebarOrderStatusEl.textContent = pos.index < 0
+      ? label + " moved to the " + rail + "."
+      : label + " moved to the " + rail + ", position " +
+        (pos.index + 1) + " of " + pos.total + ".";
   }
-  // A config load can change the order or the hidden set while the modal is
-  // open. Re-render only when the list actually differs, so an ordinary save
-  // does not steal focus mid-move.
+  function announceSidebarMove(viewId) {
+    if (!sidebarOrderStatusEl) return;
+    const items = (NB.activity && NB.activity.barItems) ? NB.activity.barItems() : [];
+    const item = items.find(entry => entry.id === viewId);
+    const label = (item && item.label) || viewId;
+    const pos = sidebarRailPosition(viewId, item ? item.side : "left");
+    sidebarOrderStatusEl.textContent = pos.index < 0
+      ? label + " moved."
+      : label + " moved to position " + (pos.index + 1) + " of " + pos.total +
+        " on the " + (item ? item.side : "left") + " rail.";
+  }
+  // A config load can change the order, the hidden set or a view's side while
+  // the modal is open. Re-render only when the list actually differs, so an
+  // ordinary save does not steal focus mid-move.
   NB.evt.on("config:changed", () => {
     if (!isOpen() || !sidebarOrderListEl || !NB.activity || !NB.activity.barItems) return;
     const items = NB.activity.barItems();
-    const shownOrder = Array.from(sidebarOrderListEl.children)
-      .map(row => row.dataset.view).join(",");
-    const shownHidden = Array.from(sidebarOrderListEl.children)
+    const shown = Array.from(sidebarOrderListEl.children);
+    const shownOrder = shown.map(row => row.dataset.view).join(",");
+    const shownHidden = shown
       .filter(row => row.classList.contains("is-hidden"))
       .map(row => row.dataset.view).join(",");
+    const shownSide = shown.map(row => {
+      const on = row.querySelector('.sidebar-order-side-btn[aria-pressed="true"]');
+      return row.dataset.view + ":" + (on ? on.dataset.side : "");
+    }).join(",");
     const nowOrder = items.map(item => item.id).join(",");
     const nowHidden = items.filter(item => item.hidden)
       .map(item => item.id).join(",");
-    if (shownOrder !== nowOrder || shownHidden !== nowHidden) renderSidebarOrder();
+    const nowSide = items.map(item => item.id + ":" + item.side).join(",");
+    if (shownOrder !== nowOrder || shownHidden !== nowHidden || shownSide !== nowSide) {
+      renderSidebarOrder();
+    }
   });
 
   // One row at a time can be capturing. We arm the shortcuts module's
@@ -876,8 +952,9 @@
     });
   }
 
-  /* Hide tab bar: live. The attribute goes on #tab-bar, and the rail's
-   * outline twin follows it in CSS. */
+  /* Hide tab bar: live. The attribute goes on #tab-bar; nothing else moves,
+   * because the tab bar no longer holds an outline toggle (the Outline is a
+   * right-panel view, toggled from its rail icon). */
   if (hideTabbarEl) {
     hideTabbarEl.addEventListener("change", () => {
       if (NB.app && NB.app.setHideTabBar) NB.app.setHideTabBar(hideTabbarEl.checked);

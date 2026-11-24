@@ -330,17 +330,22 @@ async function main() {
 
       await page.screenshot({ path: path.join(tmp, "tabs-view-1280.png") });
 
-      // --- hiding the strip (AC13) ----------------------------------
+      // --- hiding the strip (AC13; secondary-sidebar.md §5.2) -------
+      // The tab bar has no outline toggle any more: the Outline lives in the
+      // right panel and its right-rail icon is its only control, so hiding
+      // the strip must not strand it.
+      const outlineRight = '#activity-bar-right .activity-btn[data-view="outline"]';
       const before = await page.evaluate(() => ({
         barShown: getComputedStyle(document.getElementById("tab-bar")).display,
-        railShown: getComputedStyle(document.getElementById("outline-rail-btn")).display,
         hideTabBar: window.NB.app.getHideTabBar(),
-        outlineW: document.getElementById("outline-pane").getBoundingClientRect().width,
-        collapsed: !!window.NB.app.getCfg().outlineCollapsed,
+        auxW: document.getElementById("aux-panel").getBoundingClientRect().width,
+        collapsed: !!window.NB.app.getCfg().auxPanelCollapsed,
+        toggles: document.querySelectorAll(
+          "#outline-toggle, .outline-toggle, #outline-rail-btn").length,
       }));
       check("1280: hideTabBar defaults off and the strip is painted",
         before.hideTabBar === false && before.barShown !== "none" &&
-        before.railShown === "none",
+        before.toggles === 0,
         JSON.stringify(before));
 
       await page.evaluate(() => window.NB.app.setHideTabBar(true));
@@ -348,60 +353,63 @@ async function main() {
       const hidden = await page.evaluate(() => ({
         barShown: getComputedStyle(document.getElementById("tab-bar")).display,
         barAttr: document.getElementById("tab-bar").hidden,
-        railShown: getComputedStyle(document.getElementById("outline-rail-btn")).display,
-        outlineW: document.getElementById("outline-pane").getBoundingClientRect().width,
-        collapsed: !!window.NB.app.getCfg().outlineCollapsed,
+        railIcon: !!document.querySelector(
+          '#activity-bar-right .activity-btn[data-view="outline"]'),
+        auxW: document.getElementById("aux-panel").getBoundingClientRect().width,
+        collapsed: !!window.NB.app.getCfg().auxPanelCollapsed,
       }));
-      check("1280: hiding the strip removes it and reveals the outline twin",
+      check("1280: hiding the strip leaves the Outline reachable from the right rail",
         hidden.barAttr === true && hidden.barShown === "none" &&
-        hidden.railShown !== "none",
+        hidden.railIcon === true && hidden.auxW > 100,
         JSON.stringify(hidden));
 
-      await page.click("#outline-rail-btn");
+      await page.click(outlineRight);
       await page.waitForTimeout(150);
       const collapsed = await page.evaluate(() => ({
-        w: document.getElementById("outline-pane").getBoundingClientRect().width,
-        collapsed: !!window.NB.app.getCfg().outlineCollapsed,
-        pressed: document.getElementById("outline-rail-btn").getAttribute("aria-pressed"),
+        w: document.getElementById("aux-panel").getBoundingClientRect().width,
+        collapsed: !!window.NB.app.getCfg().auxPanelCollapsed,
+        pressed: document.querySelector(
+          '#activity-bar-right .activity-btn[data-view="outline"]')
+          .getAttribute("aria-pressed"),
       }));
-      check("1280: the rail's outline twin collapses the pane",
+      check("1280: the right-rail icon collapses #aux-panel",
         collapsed.collapsed === !hidden.collapsed &&
-        collapsed.w <= 1.5 && collapsed.w < hidden.outlineW - 50 &&
-        collapsed.pressed === "false",
-        JSON.stringify(collapsed) + " was " + hidden.outlineW);
-      await page.click("#outline-rail-btn");
+        collapsed.w <= 1.5 && collapsed.w < hidden.auxW - 50 &&
+        collapsed.pressed === "true",
+        JSON.stringify(collapsed) + " was " + hidden.auxW);
+      await page.click(outlineRight);
       await page.waitForTimeout(150);
       const expanded = await page.evaluate(() => ({
-        w: document.getElementById("outline-pane").getBoundingClientRect().width,
-        collapsed: !!window.NB.app.getCfg().outlineCollapsed,
-        pressed: document.getElementById("outline-rail-btn").getAttribute("aria-pressed"),
+        w: document.getElementById("aux-panel").getBoundingClientRect().width,
+        collapsed: !!window.NB.app.getCfg().auxPanelCollapsed,
+        pressed: document.querySelector(
+          '#activity-bar-right .activity-btn[data-view="outline"]')
+          .getAttribute("aria-pressed"),
       }));
-      check("1280: a second press expands the pane again",
+      check("1280: a second press expands #aux-panel again",
         expanded.collapsed === hidden.collapsed &&
-        Math.abs(expanded.w - hidden.outlineW) <= 0.5 &&
+        Math.abs(expanded.w - hidden.auxW) <= 1 &&
         expanded.pressed === "true",
-        JSON.stringify(expanded) + " was " + hidden.outlineW);
+        JSON.stringify(expanded) + " was " + hidden.auxW);
 
       await page.evaluate(() => window.NB.app.setHideTabBar(false));
       await page.waitForTimeout(120);
       const restored = await page.evaluate(() => ({
         barShown: getComputedStyle(document.getElementById("tab-bar")).display,
         barAttr: document.getElementById("tab-bar").hidden,
-        railShown: getComputedStyle(document.getElementById("outline-rail-btn")).display,
-        outlineW: document.getElementById("outline-pane").getBoundingClientRect().width,
+        auxW: document.getElementById("aux-panel").getBoundingClientRect().width,
+        tabsRight: document.getElementById("tab-list").getBoundingClientRect().right,
+        barRight: document.getElementById("tab-bar").getBoundingClientRect().right,
       }));
-      check("1280: showing the strip again restores the bar and hides the twin",
+      check("1280: showing the strip again restores the bar and keeps the panel",
         restored.barAttr === false && restored.barShown !== "none" &&
-        restored.railShown === "none" &&
-        Math.abs(restored.outlineW - before.outlineW) <= 0.5,
+        Math.abs(restored.auxW - before.auxW) <= 1 &&
+        restored.barRight - restored.tabsRight <= 4.5 && restored.barRight - restored.tabsRight >= 0,
         JSON.stringify(restored));
 
       // --- the setting persists and the server frame is right (AC13) --
       // The hide is a server-side decision: boot renders #tab-bar with
-      // `hidden` and the CSS `body:has(#tab-bar[hidden])` rule paints the
-      // rail twin, so the first paint shows the right chrome before any
-      // script runs. Let the two earlier writes' 250 ms debounce land first,
-      // or one of them would answer the config POST awaited below.
+      // `hidden`. Let the earlier writes' 250 ms debounce land first.
       await page.waitForTimeout(400);
       const cfgPost = page.waitForResponse(
         (r) => r.request().method() === "POST" &&
@@ -418,11 +426,12 @@ async function main() {
       check("1280: the server render ships the strip hidden",
         /<div id="tab-bar"[^>]*\shidden>/.test(servedHtml),
         (servedHtml.match(/<div id="tab-bar"[^>]*>/) || [""])[0]);
+      check("1280: the server render ships no outline toggle or pane",
+        !/id="outline-toggle"/.test(servedHtml) &&
+        !/id="outline-pane"/.test(servedHtml) &&
+        /id="outline-view"/.test(servedHtml));
 
-      // Only a JavaScript-free load sees the server's frame: every wait a
-      // JS-enabled page allows resolves after the deferred scripts have run,
-      // so that read cannot tell the server's `hidden` from app.js's
-      // applyTabBar. A script-free context removes the second author.
+      // Only a JavaScript-free load sees the server's frame.
       const noJsCtx = await browser.newContext({
         viewport: { width: 1280, height: 800 },
         javaScriptEnabled: false,
@@ -432,30 +441,25 @@ async function main() {
       const serverFrame = await noJsPage.evaluate(() => ({
         barAttr: document.getElementById("tab-bar").hidden,
         barShown: getComputedStyle(document.getElementById("tab-bar")).display,
-        railShown: getComputedStyle(
-          document.getElementById("outline-rail-btn")).display,
+        auxShown: getComputedStyle(document.getElementById("aux-panel")).display,
+        outlineVisible: !document.getElementById("outline-view").hidden,
       }));
-      check("1280: the server frame alone ships the strip hidden and the twin shown",
+      check("1280: the server frame alone ships the strip hidden",
         serverFrame.barAttr === true && serverFrame.barShown === "none" &&
-        serverFrame.railShown !== "none",
+        serverFrame.auxShown !== "none" && serverFrame.outlineVisible === true,
         JSON.stringify(serverFrame));
       await noJsCtx.close();
 
-      // The booted app must not undo that frame: the config it fetches keeps
-      // the bar hidden. This read cannot prove which author painted it -- the
-      // check above is that assertion -- but it catches a client apply that
-      // flips the server's state back.
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForFunction(() => window.NB && window.NB.app, null, { timeout: 20000 });
       const bootedFrame = await page.evaluate(() => ({
         barAttr: document.getElementById("tab-bar").hidden,
         barShown: getComputedStyle(document.getElementById("tab-bar")).display,
-        railShown: getComputedStyle(document.getElementById("outline-rail-btn")).display,
         setting: window.NB.app.getHideTabBar(),
       }));
-      check("1280: the booted app keeps the strip hidden and the twin shown",
+      check("1280: the booted app keeps the strip hidden",
         bootedFrame.barAttr === true && bootedFrame.barShown === "none" &&
-        bootedFrame.railShown !== "none" && bootedFrame.setting === true,
+        bootedFrame.setting === true,
         JSON.stringify(bootedFrame));
 
       // Leave the fixture as the 390 context expects it: the strip shown.

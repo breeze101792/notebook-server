@@ -505,11 +505,12 @@ stopped spinner reads as a hung request.
 | `--viewer-tail` | `48px` | `:2396` |
 
 Rows with a source line are already declared. `--tab-h` and `--viewer-pad-x` name
-literals that exist only as values today. The grid is `activity | side panel | editor | outline`
-(`style.css:215-227`). The activity bar never resizes. Both the side panel and the outline pane
-resize (`app.js:811-812`) and both collapse to zero width. The side panel floors at 140 px;
-today it caps at half the viewport, and the target is `--side-panel-max` 480 or 60 % of the
-pane budget. The outline caps at 520 px, or whatever the panel leaves. The reader needs 352 px
+literals that exist only as values today. The grid is `rail | panel | editor | panel | rail`
+(`style.css:215-227`; [`secondary-sidebar.md`](secondary-sidebar.md) §3). The activity bar
+never resizes. Both panels
+resize (`app.js:811-812`) and both collapse to zero width. Each panel floors at 140 px;
+today the left caps at half the viewport, and the target is `--side-panel-max` 480 or 45 % of the
+pane budget, mirrored as `--aux-panel-max` 480. The reader needs 352 px
 (`mobile-shell.md` §2.2).
 
 Phone overrides: `--topbar-h` 52 → `calc(52px + inset)` (`:6991`), rail 56

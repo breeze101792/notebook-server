@@ -2,10 +2,12 @@
  *
  * Three small additions:
  *   1. .vim-active -- a subtle 1-2px focus ring on whichever of the
- *      three "windows" (sidebar / editor / outline) the user is
- *      currently navigating. Shows where j/k will move the cursor.
+ *      three positional "windows" (left panel / editor / right panel)
+ *      the user is currently navigating. Shows where j/k will move the
+ *      cursor. The window is the panel, not the view inside it: a panel
+ *      can host any view.
  *   2. .vim-cursor -- a left-border highlight on the file / heading
- *      the vim cursor is currently on (in sidebar / outline).
+ *      the vim cursor is currently on (in the file tree / outline).
  *   3. #vimnav-help -- the :help overlay (keymap cheatsheet). Reuses
  *      the .settings-overlay / .settings-modal classes for visual
  *      consistency, so the dim + centered modal look is identical to

@@ -72,14 +72,15 @@ top-bar logout button.
 `boot_state()` (`app.py`) renders a sanitized config subset into the
 HTML shell before any script runs, avoiding a visible reflow once the
 async `GET /api/config` lands. The values become an inline style on
-`<html>` (`index.html`), classes on `<body>`/`#viewer-content`, and the
-`hidden` attribute on every `.side-panel-view` host except the active view.
+`<html>` (`index.html`), classes on `<body>`/`#viewer-content`, the
+`hidden` attribute on every `.side-panel-view` host except each side's active
+view, and the host's position inside the panel its side names.
 The wallpaper classes are painted on `#viewer-content` (the page); `app.js`
 moves them to `#viewer-scroll` when the fixed mode is active.
 
 Only chrome values are embedded: theme, site title, font scale, pane
-widths, collapse state, the active side-panel view, the activity-bar icon
-order, and wallpaper classes.
+widths, collapse state, each side's active view, the view-to-side map, the
+activity-bar icon order, and wallpaper classes.
 Notebook content (`recentFiles`, `openFiles`, `bookmarks`) is never embedded,
 because the page is served before auth (`app.py`). When auth is on
 and no session exists, only the theme is embedded and everything else falls
@@ -103,11 +104,11 @@ the session's 40-tab cap closes the active tab when it has no unsaved edits,
 so the requested note still opens; if it cannot (a dirty tab), boot leaves the
 `?file=` URL in place and the user can close a tab and refresh.
 
-`boot()` does not paint the active side-panel view: the shell already
-rendered it and `activity.js` adopts it at load (`adoptShellView`). Boot
+`boot()` does not paint either panel's active view: the shell already
+rendered it and `activity.js` adopts it at load (`adoptShellView`, per side). Boot
 reconciles only if a successful `GET /api/config` names a different view
 and the user has not switched since (`resolveBootView`). On a failed fetch
-it restores the shell-painted panel (`shellPanelState`) instead of
+it restores the shell-painted panels (`shellPanelState`) instead of
 repainting `DEFAULTS`.
 
 ### Service worker
@@ -150,7 +151,7 @@ implemented today.
 | `table-editor.js` | 2234 | `NB.tableEditor` | Hybrid-only "Edit table" modal (`#table-editor-overlay`, a static `.settings-overlay`): spreadsheet grid over a snapshot of the table's cell HTML and per-cell alignment. Uses the shared edit-window shell (header, action bar, commit footer); the bar's Undo/Redo run a modal-local stack (deduplicated snapshots, coalesced text steps, 100-snapshot and 4 M-character caps). Apply rebuilds one GFM table, flushes the pending undo snapshot first, replaces the source node, and calls `onContentChange()`; an unchanged table closes without a write. Merged-cell tables open read-only with a notice. |
 | `list-editor.js` | — (new) | `NB.listEditor` | Hybrid-only "Edit list" modal (`#list-editor-overlay`, a static `.settings-overlay`): a treegrid over one list container, holding the live `<li>` nodes plus depth and done state. Multi-select, block move, indent/outdent, one-level sort, done-to-bottom, mark done/open and delete. Apply flushes the pending snapshot, moves the live rows into the reassembled wrappers (the original `<ul>/<ol>` nodes are reused, so `start`/`reversed`/`type` survive), calls `onContentChange()`, and closes; the same structural signature writes nothing. A `hybrid:rerendered` invalidation turns the window read-only instead of writing to detached nodes. See [list-editor.md](list-editor.md). |
 | `watcher.js` | 337 | `NB.watcher` | External-change detection. File System Observer API when granted, else a 5s poll that re-checks the tree via `/api/tree` (refresh on a JSON diff) and open files via `/api/file?ifModifiedSince=`. Pauses when the tab is hidden; a window `focus` event forces an immediate tree check. The first tick runs on a macrotask so `NB.sidebar` exists (deferred load order puts watcher.js before sidebar.js). |
-| `outline.js` | 176 | `NB.outline` | Right-side H1–H6 TOC minimap with scroll-spy and click-to-jump. |
+| `outline.js` | 176 | `NB.outline` | The Outline view's H1–H6 list with scroll-spy and click-to-jump. Homed in the right panel by default. |
 | `sidebar.js` | 1739 | `NB.sidebar` | File tree, pinned folders, bookmarks, and the item sets for the tree-row, folder, bookmark, and root menus (new, rename/move, copy, delete, Export…, copy path/link). Ctrl/Cmd+click toggles a row and Shift+click selects the visible range; a multi-selection moves together via the row menu's "Move N items to…" or a multi-item drag (the Pinned section has no multi-select). The Explorer header carries a ↻ button that re-fetches `/api/tree` on demand (bypassing the watcher's JSON-diff short-circuit) with a one-shot spin animation. |
 | `graph-2d.js` | 1138 | `NB.graph2d` | Original 2D neural renderer: force layout, pan/zoom, hover/selection, particles, edge pulses, glow. |
 | `graph-3d.js` | 2523 | `NB.graph3d` | 3D renderer: perspective orbit camera, canvas-2D projection, force physics, depth spread, hover/selection/filter states, loading/empty/error layers, optional particles. |
@@ -168,7 +169,7 @@ implemented today.
 | `wavedrom-designer.js` | 1588 | `NB.wavedromDesign` | WaveDrom design window; the parsed object is the model and Apply writes strict JSON. |
 | `vimnav.js` | 533 | `NB.vimnav` | Shell-level vim keymap. Sidebar, editor, and outline act as three windows; Ctrl+W cycles, j/k/gg/G navigate. Vim only — there is no Emacs mode. |
 | `ai.js` | 4246 | `NB.ai` | Agentic assistant. SSE chat; six tools (`list`/`read`/`write`/`patch`/`fetch`/`search`) as ` ```nb-tool ` JSON blocks; legacy ` ```nb-edit ` cards; per-file chats in a versioned store at `localStorage["nb:aiChats"]` with a bar and a manager in the panel; `MAX_TOOL_ROUNDS = 5`. See [ai-assistant.md](ai-assistant.md). |
-| `activity.js` | 1371 | `NB.activity` | Left activity bar and side-panel view switcher. Registers seven views: Explorer, Sessions, Pinned, Bookmarks, Recent (fuzzy quick-open), Search, AI. The Search view has a clear × inside the query field (hidden for an empty/whitespace query); match case, target, grouping, and sort live in the Advanced disclosure. `openSearch()` activates Search, expands the panel or phone drawer, and focuses the query. Boots into whichever `.side-panel-view` host the server rendered visible (`adoptShellView`). |
+| `activity.js` | 1371 | `NB.activity` | Two activity rails and their panels: registers nine views (Explorer, Sessions, Pinned, Bookmarks, Recent, Search, AI, Tabs, Outline), routes each activation to the view's side, and moves a view's host when its side changes. The Search view has a clear × inside the query field (hidden for an empty/whitespace query); match case, target, grouping, and sort live in the Advanced disclosure. `openSearch()` activates Search on its home side, expands that panel or phone drawer, and focuses the query. Boots each side into whichever `.side-panel-view` host the server rendered visible (`adoptShellView`). |
 | `bookmarks.js` | 453 | `NB.bookmarks` | Bookmarks side-panel view: ordered list, star toggle, drag reorder, context menu, auto-prune, rename re-key. |
 | `shortcuts.js` | 411 | `NB.shortcuts` | Configurable non-vim keymap. Defaults include save `Mod+S`, openSearch `/`, tabPrev `Alt+H`, tabNext `Alt+L`, toggleEdit `Mod+Shift+E`, toggleHybrid `Mod+E`, windowCycle `Mod+W`, toggleTopbar `Mod+Shift+T`, openSettings `Mod+comma`. |
 | `mobile.js` | 1253 | `NB.mobile` | Phone shell: mode mirror, drawer, Home list, quick capture, mobile settings sheet. |
@@ -253,13 +254,16 @@ schema is `DEFAULTS` in `app.js`:
 | `wallpaperColor` | `"neutral"` | neutral / blue / green / purple / amber |
 | `wallpaperIntensity` | `"subtle"` | subtle / medium / bold |
 | `wallpaperScroll` | `"scroll"` | scroll / fixed |
-| `activeView` | `"explorer"` | Active side-panel view (explorer / sessions / pinned / bookmarks / recent / search / ai) |
-| `sidebarOrder` | `[]` | Activity-bar icon order (view ids); unnamed views follow in registration order. Validated into the shell for first paint. |
+| `activeViewLeft` | `"explorer"` | Left panel's active view (explorer / sessions / pinned / bookmarks / recent / search / tabs / ai) |
+| `activeViewRight` | `"outline"` | Right panel's active view, validated against the views homed right |
+| `activeView` | `"explorer"` | Legacy; read once as the `activeViewLeft` fallback |
+| `sidebarSide` | `{}` | Which rail hosts each view: `{viewId: "left" \| "right"}`. A missing entry uses the registration default (`outline`: right, all others: left) |
+| `sidebarOrder` | `[]` | Activity-bar icon order across both rails (view ids); unnamed views follow in registration order. Validated into the shell for first paint. |
 | `sidebarHidden` | `[]` | Activity-bar views whose icons are hidden (view ids). Validated into the shell for first paint; Settings still lists them for unhide. |
-| `sidebarWidth` | `240` | |
-| `outlineWidth` | `220` | |
-| `sidebarCollapsed` | `false` | |
-| `outlineCollapsed` | `false` | |
+| `sidebarWidth` | `240` | Left panel width |
+| `auxPanelWidth` | `240` | Right panel width; falls back to the legacy `outlineWidth` |
+| `sidebarCollapsed` | `false` | Left panel collapsed |
+| `auxPanelCollapsed` | `false` | Right panel collapsed; falls back to the legacy `outlineCollapsed` |
 | `searchCaseSensitive` | `false` | Read by the side-panel Search view |
 | `searchUnique` | `true` | Side-panel Search: one row per note (`unique=1`) |
 | `searchSort` | `"path"` | Side-panel Search order: `path` / `mtime` / `count` |
@@ -403,7 +407,8 @@ current number would, and none does.
 
 ### Activity bar views
 
-`NB.activity` registers seven side-panel views (`activity.js`):
+`NB.activity` registers nine side-panel views (`activity.js`) across two rails and two panels
+([`ui/secondary-sidebar.md`](../ui/secondary-sidebar.md)):
 
 | View | What it shows |
 | --- | --- |
@@ -414,6 +419,8 @@ current number would, and none does.
 | Recent | Fuzzy quick-open over recent files |
 | Search | Side-panel search input and results |
 | AI | Assistant chat panel |
+| Tabs | The active session's open files as rows ([ui/tabs-view.md](../ui/tabs-view.md)) |
+| Outline | H1–H6 table of contents with scroll-spy and click-to-jump; homed right by default ([ui/secondary-sidebar.md](../ui/secondary-sidebar.md) §5) |
 
 Registration order is rail order. Mounts are lazy: a view's host stays empty
 until the first activation. The Sessions icon is hidden on the phone, where
@@ -428,7 +435,6 @@ unchanged by sessions:
 | --- | --- | --- |
 | `#tab-pinned` (`.tab-pinned`) | Pinned tabs, shared by every session. A fixed region (`flex: 0 0 auto`), capped at half the bar and scrolling internally, so a long pinned set cannot squeeze the scroller out; hidden while nothing is pinned. Pinned tabs rest at their natural width (`.tab-pinned .tab { flex: 0 0 auto; max-width: none; }`, `style.css`). |
 | `#tab-list` (`.tab-list`) | The active session's unpinned tabs. The only part of the row that scrolls (`overflow-x: auto`). |
-| `#outline-toggle` | The outline button, a fixed sibling at the right edge. |
 
 `tabs.js` toggles the pinned region's `hidden` attribute through
 `syncPinnedRegion()` (`tabs.js`): `#tab-pinned` is hidden while

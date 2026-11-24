@@ -255,7 +255,7 @@ Notes:
 | **Empty (reference)** | `#welcome` replaces `#viewer`; the page is emptied first. Out of scope. | `viewer.js:693-717`; `index.html:400` | Later document. |
 | **Long note** | The page grows; the scroller is the only scrollbar. No virtualisation, no inner scrollers. | `:2380-2400`; `docs/architecture/markdown.md:214-230` | — |
 | **Very long unbroken word** | Wraps at the page edge via `overflow-wrap: break-word`. `min-content` is untouched, so a table or `pre` keeps its own overflow. | `:3134-3137` | A single unbroken run in a heading can still overflow its line box on a very narrow column; no `hyphens`. |
-| **No headings** | The page is unchanged; the outline pane shows "No headings". | `outline.js:26-29` | Outside this surface. |
+| **No headings** | The page is unchanged; the outline view shows "No headings". | `outline.js:26-29` | Outside this surface. |
 | **Read-only** | No visual difference. The reader is always read-only; the only editable state is hybrid mode, which is out of scope. | `:2694-2703` | — |
 | **Hybrid (out of scope)** | `#viewer-content` becomes `contentEditable`, takes a 2 px `--accent-soft` inset outline and 20 px top padding. | `:2694-2703`, `:2736-2744` | Documented here only so it is not mistaken for a reader state. |
 
@@ -436,7 +436,7 @@ Consequences of the phone block that are easy to get wrong:
   the phone relaxes the rhythm, it does not scale it.
 - Only the page's `font-size` changes to 16 px; `1.6em` of a list indent is 25.6 px and
   `.9em` of inline code is 14.4 px.
-- The phone has no tab strip and no outline pane, so a note starts at the top of the
+- The phone has no tab strip and no right panel, so a note starts at the top of the
   scroller directly under the 52 px topbar (`style.css:7085`).
 
 ---
