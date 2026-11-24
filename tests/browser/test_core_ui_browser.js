@@ -860,6 +860,40 @@ async function main() {
     check("outline: first item is the document title",
       (await page.locator("#outline .outline-item a").first().textContent()).trim() === "Long");
 
+    // The outline draws the file tree's guide cells (shell-frame.md §5.3):
+    // 18 px columns, 1 px strokes, and adjacent rows' cells touching so the
+    // stroke reads as one line.
+    const guideGeom = await page.evaluate(() => {
+      const items = Array.from(document.querySelectorAll("#outline .outline-item"));
+      const first = items[0];
+      const nested = items.find(i => i.querySelectorAll(".tree-guide .tcell").length >= 1);
+      const cell = nested && nested.querySelector(
+        ".tree-guide .tcell.vert, .tree-guide .tcell.cnr, .tree-guide .tcell.cnr-last");
+      const cs = cell ? getComputedStyle(cell) : null;
+      const after = cell ? getComputedStyle(cell, "::after") : null;
+      let touching = null;
+      for (let i = 0; i < items.length - 1; i += 1) {
+        const a = items[i].querySelector(".tree-guide .tcell");
+        const b = items[i + 1].querySelector(".tree-guide .tcell");
+        if (a && b) { touching = Math.abs(b.getBoundingClientRect().top -
+          a.getBoundingClientRect().bottom) <= 1; break; }
+      }
+      return {
+        rootCells: first.querySelectorAll(".tcell").length,
+        nestedCells: nested ? nested.querySelectorAll(".tcell").length : 0,
+        width: cs ? cs.width : null,
+        stroke: after ? after.width : null,
+        touching,
+      };
+    });
+    check("outline: root rows carry no guide cells", guideGeom.rootCells === 0,
+      JSON.stringify(guideGeom));
+    check("outline: nested rows use one 12 px cell with a 1 px stroke",
+      guideGeom.nestedCells === 1 && guideGeom.width === "12px" &&
+      guideGeom.stroke === "1px", JSON.stringify(guideGeom));
+    check("outline: adjacent rows' guide cells touch, so the stroke is continuous",
+      guideGeom.touching === true, JSON.stringify(guideGeom));
+
     // A middle heading has enough content below it to actually reach
     // the top of the scroller, so the scroll-spy expectation is exact.
     const targetOutline = page.locator("#outline .outline-item").nth(6);

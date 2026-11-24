@@ -29,31 +29,78 @@
       return;
     }
 
-    // Flat list, indented by level.
-    const ul = document.createElement("ul");
+    // Nest the flat heading list by level, then draw the file tree's guide
+    // cells: one 18 px column per ancestor that keeps branching, plus this
+    // row's own corner. A level jump (H1 -> H3) nests at the next depth,
+    // like the tree. The classes are shared with the file tree so both
+    // panes draw the same lines (style.css `.tree-guide`).
+    const roots = [];
+    const stack = [];
     headings.forEach(h => {
-      const li = document.createElement("li");
-      li.className = "outline-item";
-      li.dataset.id = h.id;
-      li.dataset.level = h.level;
-      li.style.paddingLeft = ((h.level - 1) * 12) + "px";
-      const a = document.createElement("a");
-      a.href = "#" + h.id;
-      a.textContent = h.text;
-      a.title = h.text;
-      a.addEventListener("click", (e) => {
-        e.preventDefault();
-        // Use the stored node: getElementById could return a note element
-        // earlier in document order that reused the heading id.
-        h.el.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-      li.appendChild(a);
-      ul.appendChild(li);
+      while (stack.length && stack[stack.length - 1].level >= h.level) stack.pop();
+      const node = { h, children: [] };
+      (stack.length ? stack[stack.length - 1].node.children : roots).push(node);
+      stack.push({ level: h.level, node });
     });
+
+    const ul = document.createElement("ul");
+    const renderNodes = (nodes, ancestors, depth) => {
+      nodes.forEach((node, idx) => {
+        const h = node.h;
+        const isLast = idx === nodes.length - 1;
+        const isRoot = depth === 0;
+        const li = document.createElement("li");
+        li.className = "outline-item";
+        li.dataset.id = h.id;
+        li.dataset.level = h.level;
+        li.appendChild(guideCells(ancestors, isLast, isRoot));
+        const a = document.createElement("a");
+        a.href = "#" + h.id;
+        a.textContent = h.text;
+        a.title = h.text;
+        a.addEventListener("click", (e) => {
+          e.preventDefault();
+          // Use the stored node: getElementById could return a note element
+          // earlier in document order that reused the heading id.
+          h.el.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+        li.appendChild(a);
+        ul.appendChild(li);
+        if (node.children.length) {
+          // A top-level heading is a flat section title, so it spends no guide
+          // column on its children: an H2's corner sits at column 0, like the
+          // first level of `tree` output. Deeper levels pass their own pipe.
+          const childAncestors = isRoot ? [] : ancestors.concat(!isLast);
+          renderNodes(node.children, childAncestors, depth + 1);
+        }
+      });
+    };
+    renderNodes(roots, [], 0);
     outlineEl.innerHTML = "";
     outlineEl.appendChild(ul);
     // New file = new outline; drop the vim cursor.
     vimCursorId = null;
+  }
+
+  /* One 18 px cell per ancestor that keeps branching below this row, plus a
+   * corner cell for the row itself ("├──" / "└──"); root rows stay flat.
+   * The same markup the file tree builds (sidebar.js renderGuide), so the
+   * outline and the tree read identically. */
+  function guideCells(ancestors, isLast, isRoot) {
+    const guide = document.createElement("span");
+    guide.className = "tree-guide";
+    guide.setAttribute("aria-hidden", "true");
+    for (const pipe of ancestors) {
+      const cell = document.createElement("span");
+      cell.className = "tcell" + (pipe ? " vert" : "");
+      guide.appendChild(cell);
+    }
+    if (!isRoot) {
+      const corner = document.createElement("span");
+      corner.className = "tcell" + (isLast ? " cnr-last" : " cnr");
+      guide.appendChild(corner);
+    }
+    return guide;
   }
 
   function setActive(id) {

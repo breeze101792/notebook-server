@@ -289,6 +289,9 @@ body[data-theme="light"] {
   --shell-reader-min: 352px;
   --side-panel-max: 480px;
   --tree-indent: 18px;
+  /* The outline reuses the tree's guide cells but has no icon column to
+   * spend 18 px on, so its step is narrower. */
+  --outline-indent: 12px;
 
   --ai-composer-min-h: 40px;
   --ai-composer-max-h: 160px;
@@ -3595,8 +3598,28 @@ body > #nb-menu .submenu.open {
 /* ------------------------------------------------------------------ */
 /* Outline minimap                                                     */
 /* ------------------------------------------------------------------ */
-.outline { padding: 8px 6px; }
+.outline { padding: 8px 6px 8px 2px; }
 .outline ul { list-style: none; margin: 0; padding: 0; }
+/* Each row is the file tree's guide cells plus the link. The outline adds
+ * only two things: the flex box, and a narrower cell (12 px vs the tree's
+ * 18 px) because the outline has no icon column to fill. The anchor takes
+ * the remaining width so a long heading still ellipsizes. */
+.outline-item { display: flex; align-items: stretch; }
+.outline-item > .tree-guide { flex: 0 0 auto; }
+.outline-item > a {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.outline .tree-guide .tcell { width: var(--outline-indent); }
+.outline .tree-guide .tcell.vert::after,
+.outline .tree-guide .tcell.cnr::after,
+.outline .tree-guide .tcell.cnr-last::after {
+  left: calc((var(--outline-indent) - 2px) / 2);
+}
+.outline .tree-guide .tcell.cnr::before,
+.outline .tree-guide .tcell.cnr-last::before {
+  left: calc((var(--outline-indent) - 2px) / 2);
+}
 .outline-item a {
   display: block;
   padding: 3px 6px;

@@ -4360,6 +4360,34 @@ function check(label, cond, extra) {
   check("outline items == headings", items.length === heads.length, items.length + " vs " + heads.length);
   check("outline items have data-level",
     Array.from(items).every(i => i.dataset.level), "first=" + (items[0] && items[0].dataset.level));
+
+  // Guide lines reuse the file tree's cells (shell-frame.md §5.3). Build a
+  // synthetic heading run so the shape is exact, then restore the real one.
+  const gRoot = window.document.createElement("div");
+  gRoot.innerHTML =
+    '<h1 id="g1">A</h1>' +
+    '<h2 id="g2a">B</h2><h3 id="g3a">C</h3>' +
+    '<h2 id="g2b">D</h2><h3 id="g3b">E</h3>' +
+    '<h1 id="g1b">F</h1><h2 id="g2c">G</h2>';
+  window.NB.outline.build(gRoot);
+  const gItems = Array.from(window.document.querySelectorAll("#outline .outline-item"));
+  const gCells = (li) => Array.from(li.querySelector(".tree-guide").children);
+  const gClasses = (li) => gCells(li).map(c => c.className).join(",");
+  check("outline guides: one item per heading", gItems.length === 7, gItems.length);
+  check("outline guides: a root row is flat", gCells(gItems[0]).length === 0);
+  check("outline guides: an H2 under a root starts at column 0 with its corner",
+    gClasses(gItems[1]) === "tcell cnr", gClasses(gItems[1]));
+  check("outline guides: an H3 adds its parent's pipe",
+    gClasses(gItems[2]) === "tcell vert,tcell cnr-last", gClasses(gItems[2]));
+  check("outline guides: the last child of a branch closes with cnr-last",
+    gClasses(gItems[3]) === "tcell cnr-last", gClasses(gItems[3]));
+  check("outline guides: a branch's last child passes an empty cell to its children",
+    gClasses(gItems[4]) === "tcell,tcell cnr-last", gClasses(gItems[4]));
+  check("outline guides: a child of the last root still starts at column 0",
+    gClasses(gItems[6]) === "tcell cnr-last", gClasses(gItems[6]));
+  check("outline guides: the guide is hidden from assistive tech",
+    gItems.every(li => li.querySelector(".tree-guide").getAttribute("aria-hidden") === "true"));
+  window.NB.outline.build(window.document.getElementById("viewer"));
   const codeEl = window.document.querySelector("#viewer pre code");
   check("code block highlighted", !!codeEl && /hljs/.test(codeEl.innerHTML), codeEl && codeEl.className);
 

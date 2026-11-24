@@ -1,0 +1,313 @@
+<!doctype html>
+<!-- Illustrative mockup. docs/ui/shell-frame.md §5.3 is normative; where the
+     two differ, the document wins. No external assets, no network. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Outline — tree-style guide lines</title>
+<style>
+  /* Tokens copied from static/css/style.css :root and the light block. The
+     outline adds none: it reuses --bg-panel, --border, --fg-muted,
+     --outline-active, --accent-soft and the tree's guide cell narrowed to
+     12px (the tree's 18px is its icon column). */
+  :root {
+    --bg: #1a1b1f;
+    --bg-panel: #22232a;
+    --fg: #e6e6ea;
+    --fg-muted: #9799a4;
+    --accent: #7c9cff;
+    --accent-soft: rgba(124, 156, 255, 0.18);
+    --outline-indent: 12px;
+    --border: #383a45;
+    --outline-active: #7c9cff;
+    --text-body: 14px;
+  }
+  .light {
+    --bg: #ffffff;
+    --bg-panel: #f6f7f9;
+    --fg: #1f2330;
+    --fg-muted: #5d6470;
+    --accent: #2f5fd0;
+    --accent-soft: rgba(47, 95, 208, 0.12);
+    --border: #d8dde4;
+    --outline-active: #2f5fd0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px;
+    background: #0e0f13; color: #e6e6ea;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif;
+  }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  h2 { font-size: 13px; font-weight: 600; margin: 40px 0 10px; color: #b9bcc7;
+       text-transform: uppercase; letter-spacing: .07em; }
+  p.note { margin: 0 0 8px; max-width: 900px; color: #9799a4; font-size: 13px; }
+  code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+         background: #22232a; border: 1px solid #383a45; border-radius: 4px;
+         padding: 1px 4px; }
+  .row { display: flex; gap: 32px; flex-wrap: wrap; align-items: flex-start; }
+  .frame { border: 1px solid #2b2d36; border-radius: 10px; padding: 14px;
+           background: #14151a; }
+  .caption { margin: 8px 0 0; font-size: 12px; color: #8d909b; max-width: 240px; }
+  .tag { display: inline-block; font: 10px ui-monospace, monospace; letter-spacing: .08em;
+         text-transform: uppercase; color: #8d909b; border: 1px dashed #454854;
+         border-radius: 3px; padding: 1px 5px; margin-bottom: 8px; }
+
+  /* ---- the panel, exactly as the shell draws it ---------------------- */
+  .panel {
+    width: 240px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    color: var(--fg);
+  }
+  .panel.narrow { width: 140px; }
+  .ph {
+    display: flex; align-items: center; justify-content: space-between;
+    min-height: 34px; padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+    color: var(--fg-muted);
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+  }
+  .ph svg { color: var(--fg-muted); }
+  .outline { margin-left: 8px; padding: 8px 6px 8px 2px; }
+  .outline ul { list-style: none; margin: 0; padding: 0; }
+
+  .outline-item { display: flex; align-items: stretch; }
+  .outline-item > a {
+    flex: 1 1 auto; min-width: 0;
+    display: block; padding: 3px 6px;
+    color: var(--fg-muted);
+    text-decoration: none;
+    border-left: 2px solid transparent;
+    border-radius: 0 4px 4px 0;
+    font-size: var(--text-body);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .outline-item > a:hover { color: var(--fg); background: var(--accent-soft); }
+  .outline-item.active > a {
+    color: var(--outline-active);
+    border-left-color: var(--outline-active);
+    background: var(--accent-soft);
+  }
+  /* Illustrative only: the VIM cursor is a separate highlight (outline.js). */
+  .outline-item.vim > a { outline: 1px dashed var(--outline-active); outline-offset: -1px; }
+
+  /* ---- the file tree's guide cells, copied from style.css ------------- */
+  .tree-guide { display: inline-flex; align-self: stretch; flex-shrink: 0; }
+  .tree-guide .tcell { position: relative; width: var(--outline-indent); height: 100%; }
+  .tree-guide .tcell.vert::after,
+  .tree-guide .tcell.cnr::after,
+  .tree-guide .tcell.cnr-last::after {
+    content: "";
+    position: absolute;
+    top: -3px; bottom: -3px;
+    left: calc((var(--outline-indent) - 2px) / 2); width: 1px;
+    background: var(--border);
+  }
+  .tree-guide .tcell.cnr::before,
+  .tree-guide .tcell.cnr-last::before {
+    content: "";
+    position: absolute;
+    top: 50%; left: calc((var(--outline-indent) - 2px) / 2); right: 0;
+    height: 1px;
+    background: var(--border);
+  }
+  .tree-guide .tcell.cnr-last::after { bottom: 50%; }
+
+  /* ---- anatomy board -------------------------------------------------- */
+  .anatomy .tree-guide .tcell { background: rgba(124, 156, 255, .07); }
+  .anatomy .tree-guide .tcell + .tcell { border-left: 1px dashed rgba(124, 156, 255, .35); }
+  .legend { margin: 10px 0 0; padding: 0; list-style: none;
+            font-size: 12px; color: #b9bcc7; }
+  .legend li { margin: 3px 0; }
+  .legend b { color: #e6e6ea; font-weight: 600; }
+  .legend .swatch { display: inline-block; width: 12px; height: 12px;
+                    vertical-align: -2px; margin-right: 6px;
+                    background: rgba(124, 156, 255, .07);
+                    border: 1px dashed rgba(124, 156, 255, .35); }
+  pre.tree { margin: 10px 0 0; font: 11px/1.45 ui-monospace, monospace;
+             color: #b9bcc7; background: #14151a; border: 1px solid #2b2d36;
+             border-radius: 6px; padding: 10px 12px; }
+  .before .outline-item { padding-left: 0; }
+  .before .outline-item > a { border-left-color: transparent; }
+  .before li[data-pad="12"] { padding-left: 12px; }
+  .before li[data-pad="24"] { padding-left: 24px; }
+</style>
+</head>
+<body>
+
+<h1>Outline — tree-style guide lines</h1>
+<p class="note">
+  The outline's sub-headings get the file tree's guide cells: each level below an H1 costs one
+  12&nbsp;px column, ending in the row's own <code>├──</code> / <code>└──</code> corner. An H2 starts
+  at column 0, so the indent is one step per level and nothing more. An H1 is a flat section
+  title and spends no column. The cells and their 1&nbsp;px <code>--border</code> strokes are the
+  tree's own <code>.tree-guide</code> markup. Spec: <code>docs/ui/shell-frame.md</code> §5.3.
+</p>
+
+<h2>A. The outline view, dark and light</h2>
+<div class="row">
+  <div class="frame">
+    <div class="panel dark">
+      <div class="ph"><span>Outline</span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <nav class="outline" aria-label="Outline">
+        <ul>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#b">Bench notes</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#s14">Session 14 — UART framing</a></li>
+          <li class="outline-item vim"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr"></span></span><a href="#scope">Scope capture</a></li>
+          <li class="outline-item active"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr-last"></span></span><a href="#root" aria-current="location">Root cause</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr-last"></span></span><a href="#s15">Session 15 — power rail</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell"></span><span class="tcell cnr-last"></span></span><a href="#brown">Brown-out at 3.1 V</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#app">Appendix — pin map and revisions</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#pins">Pin map</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr-last"></span></span><a href="#rev">Revision history</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="caption">A. Dark. Each H1 is a flat section title; its H2s start at column 0. An H3
+      adds one pipe for its H2's branch, and <code>└</code> closes the branch. The active row keeps
+      its accent bar, after the guide. Dashed ring = VIM cursor, illustrative.</p>
+  </div>
+
+  <div class="frame">
+    <div class="panel light">
+      <div class="ph"><span>Outline</span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <nav class="outline" aria-label="Outline">
+        <ul>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#b">Bench notes</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#s14">Session 14 — UART framing</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr"></span></span><a href="#scope">Scope capture</a></li>
+          <li class="outline-item active"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr-last"></span></span><a href="#root" aria-current="location">Root cause</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr-last"></span></span><a href="#s15">Session 15 — power rail</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell"></span><span class="tcell cnr-last"></span></span><a href="#brown">Brown-out at 3.1 V</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#app">Appendix — pin map and revisions</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#pins">Pin map</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr-last"></span></span><a href="#rev">Revision history</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="caption">B. Light. Same geometry; the lines use the theme's <code>--border</code>
+      (1&nbsp;px), so they sit below the text in contrast and never read as content.</p>
+  </div>
+</div>
+
+<h2>C. Anatomy — one nested row</h2>
+<div class="row">
+  <div class="frame">
+    <div class="panel dark anatomy">
+      <div class="ph"><span>Outline</span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <nav class="outline" aria-label="Outline">
+        <ul>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#a">Session 14 — UART framing</a></li>
+          <li class="outline-item active"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr-last"></span></span><a href="#b" aria-current="location">Root cause</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr-last"></span></span><a href="#c">Session 15 — power rail</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="caption">C. The tinted boxes are the 12&nbsp;px cells (mockup-only shading). The active
+      row's guide is two cells: its H2 parent's pipe and its own <code>└</code> corner.</p>
+  </div>
+  <div>
+    <ul class="legend">
+      <li><span class="swatch"></span><b>Cell</b> — 12&nbsp;×&nbsp;row height, one per level below an H1, <code>flex-shrink: 0</code>.</li>
+      <li><b>Pipe</b> — <code>left: 5px</code>, 1&nbsp;px, <code>--border</code>, drawn <code>top/bottom: -3px</code> so adjacent rows meet in one unbroken stroke.</li>
+      <li><b>Corner</b> — a 7&nbsp;px horizontal stub from the pipe to the label; <code>cnr-last</code> stops the stem at the junction (<code>└</code>), <code>cnr</code> continues it (<code>├</code>).</li>
+      <li><b>Empty cell</b> — a depth whose branch already ended; keeps the width, draws nothing.</li>
+      <li><b>Section title</b> — an H1: empty guide, no corner, flush left. Its children start at column 0, like the first level of <code>tree</code> output.</li>
+      <li><b>Anchor</b> — <code>flex: 1 1 auto; min-width: 0</code>, so long headings still ellipsize; its 2&nbsp;px accent bar starts after the guide.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>D. Before / after</h2>
+<div class="row">
+  <div class="frame">
+    <span class="tag">before — 12 px padding</span>
+    <div class="panel dark before">
+      <div class="ph"><span>Outline</span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <nav class="outline" aria-label="Outline">
+        <ul>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#b">Bench notes</a></li>
+          <li class="outline-item" data-pad="12"><span class="tree-guide" aria-hidden="true"></span><a href="#s14">Session 14 — UART framing</a></li>
+          <li class="outline-item" data-pad="24"><span class="tree-guide" aria-hidden="true"></span><a href="#scope">Scope capture</a></li>
+          <li class="outline-item" data-pad="24"><span class="tree-guide" aria-hidden="true"></span><a href="#root">Root cause</a></li>
+          <li class="outline-item" data-pad="12"><span class="tree-guide" aria-hidden="true"></span><a href="#s15">Session 15 — power rail</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="caption">Depth is visible, shape is not: a reader cannot tell where a branch ends
+      without counting indents.</p>
+  </div>
+  <div class="frame">
+    <span class="tag">after — tree guides</span>
+    <div class="panel dark">
+      <div class="ph"><span>Outline</span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <nav class="outline" aria-label="Outline">
+        <ul>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#b">Bench notes</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#s14">Session 14 — UART framing</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr"></span></span><a href="#scope">Scope capture</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr-last"></span></span><a href="#root">Root cause</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr-last"></span></span><a href="#s15">Session 15 — power rail</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="caption">The same content with the tree's cells: the corner says whether the branch
+      continues, and the pipe says which ancestor it belongs to.</p>
+  </div>
+</div>
+
+<h2>E. Narrow panel (140 px) and a level jump</h2>
+<div class="row">
+  <div class="frame">
+    <div class="panel dark narrow">
+      <div class="ph"><span>Outline</span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <nav class="outline" aria-label="Outline">
+        <ul>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#b">Bench notes</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#s14">Session 14 — UART framing</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr-last"></span></span><a href="#root">Root cause</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="caption">E. At the 140 px floor each guide cell costs 12 px; the anchor
+      ellipsizes as it does today, and the active bar stays within the row.</p>
+  </div>
+  <div class="frame">
+    <div class="panel dark">
+      <div class="ph"><span>Outline</span><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <nav class="outline" aria-label="Outline">
+        <ul>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"></span><a href="#a">H1 — Bench notes</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell cnr"></span></span><a href="#c">H3 — Scope capture</a></li>
+          <li class="outline-item"><span class="tree-guide" aria-hidden="true"><span class="tcell vert"></span><span class="tcell cnr-last"></span></span><a href="#d">H4 — Channel 2</a></li>
+        </ul>
+      </nav>
+    </div>
+    <p class="caption">F. Headings nest by document structure, so an H1 → H3 jump takes one depth:
+      the guide describes the shape, not the number in the tag.</p>
+  </div>
+</div>
+
+<h2>G. Markup of one nested row</h2>
+<pre class="tree">&lt;li class="outline-item active"&gt;
+  &lt;span class="tree-guide" aria-hidden="true"&gt;
+    &lt;span class="tcell vert"&gt;&lt;/span&gt;      &lt;!-- H2 keeps branching --&gt;
+    &lt;span class="tcell cnr-last"&gt;&lt;/span&gt;  &lt;!-- this row: └── --&gt;
+  &lt;/span&gt;
+  &lt;a href="#root" aria-current="location"&gt;Root cause&lt;/a&gt;
+&lt;/li&gt;
+</pre>
+<p class="note" style="margin-top:10px">
+  <code>outline.js</code> builds the tree by heading level and emits one guide per row; an H1's
+  children start at column 0, so depth costs one cell per level. <code>style.css</code> adds the
+  flex box, the anchor's <code>flex: 1 1 auto; min-width: 0</code>, and narrows the file tree's
+  cells to <code>--outline-indent</code> 12&nbsp;px.
+</p>
+
+</body>
+</html>

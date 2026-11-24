@@ -490,7 +490,8 @@ a `title` but no `aria-label` (`templates/index.html:592`).
 |---|---|---|
 | Landmark | `<nav id="outline" aria-label="Outline">` | a bare `<div>` (`index.html:594`) |
 | Structure | one flat `<ul>`; one `<li class="outline-item" data-level>` per heading | same (`outline.js:32-53`) |
-| Indent | `12 px` per level above 1 (`--space-3`), applied as `padding-left` on the `<a>` | inline `(level-1)*12` (`outline.js:41`) |
+| Indent | one **12 px** guide column per level **below an H1**: an H2 starts at column 0 with its `├──` / `└──` corner, each further level adds one pipe cell; the H1 row is flat and contributes no column | `--outline-indent` + overrides on `.outline .tree-guide .tcell` (`style.css:3600-3625`); the cells themselves are the tree's (`style.css:3287-3326`) |
+| Nesting | by heading level, so an H1 → H3 jump nests one depth (the guide describes the document's shape, not the number in the tag) | inline `(level-1)*12` padding today (`outline.js:39`) |
 | Row | `padding: 3px 6px`, `border-left: var(--stroke-2) solid transparent`, radius `0 var(--radius-xs) var(--radius-xs) 0` | `3px 8px`, 2 px, `0 4px 4px 0` (`:3107-3116`) |
 | Type | `--text-body` (the row role: the outline lists content headings, and it sits beside the side panel, so it takes the panel row size), `--text-muted`, one line, ellipsis | `.89rem` → `--text-body`, +1.54 px at M (`:3115`) |
 | Hover | `--text-primary` on `--accent-soft` | same |
@@ -500,6 +501,23 @@ a `title` but no `aria-label` (`templates/index.html:592`).
 
 The list is flat with per-level indent, not nested `<ul>`s. A screen reader gets a list of
 in-page links in document order, which is what the outline is.
+
+**The guides reuse the file tree's markup.** Each `<li>` leads with a
+`<span class="tree-guide" aria-hidden="true">`: one `.tcell` per ancestor that keeps branching
+(`.vert`) plus the row's own `.cnr` / `.cnr-last` corner. An H1 is a flat section title: its row
+carries an empty guide and it contributes **no** column to its children, so an H2's corner sits
+at column 0 and each further level adds one cell — depth costs one 12 px step, never two. The
+cells, their 1 px `--border` strokes and the ±3 px vertical overlap are the tree's rules
+(`style.css:3287-3326`). The outline narrows the cell to `--outline-indent` **12 px** (the tree's
+18 px is its icon column) and centres the stroke in it; it also adds
+`.outline-item { display: flex; align-items: stretch }` and `a { flex: 1 1 auto; min-width: 0 }`
+so the anchor still ellipsizes. The list's own left padding is 2 px, which with `#outline`'s 8 px
+handle inset lands the first cell at the same 10 px the tree uses. The active accent bar stays on
+the anchor, so it begins after the guide. The outline has no collapse; the corner is a marker of
+the branch, not a control.
+
+Mockup: [`outline-guides-mockup.html`](outline-guides-mockup.html) — dark and light, the anatomy
+of one nested row, before/after, the 140 px floor, and a level jump.
 
 ### 5.4 Active tracking
 
