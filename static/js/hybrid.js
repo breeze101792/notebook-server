@@ -291,6 +291,11 @@
   // The UI elements the viewer injects into content: the copy button in a
   // fence and the fence's language chip.
   const CHROME_NODE_SELECTOR = ".code-copy-btn, .hybrid-lang-pill";
+  // The heading that holds the hybrid caret, so style.css paints its level
+  // badge (docs/ui/heading-level-options.md §9.3). Chrome, not content: the
+  // data-hybrid- prefix makes isChromeAttr strip it from the change hash and
+  // from the serialized note, so it never needs an entry in CHROME_ATTRS.
+  const LEVEL_ATTR = "data-hybrid-level";
   // The two chrome-node outcomes (see chromeNodeKind): the whole node is
   // UI, or the element is paint around content that must be kept.
   const CHROME_REMOVE = "remove";
@@ -397,6 +402,9 @@
   // so the class is touched only when the selected set actually changes
   // (selectionchange fires many times during one drag).
   let selectedRuleSet = null;
+  // The heading carrying LEVEL_ATTR as of the last selectionchange, so the
+  // attribute is written only when the caret moves between headings.
+  let levelHead = null;
   // HTML comment nodes encountered while preparing the current clone,
   // indexed by the COMMENT_SENTINEL placeholder that stands in for each.
   // Reset at the start of every clone preparation; read back by
@@ -4669,6 +4677,46 @@
     sel.addRange(after);
   }
 
+  /* The nearest h1-h6 ancestor of a node inside the viewer, or null. */
+  function headingOf(node) {
+    if (!node) return null;
+    const el = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    if (!el || !viewerContentEl.contains(el)) return null;
+    return el.closest("h1,h2,h3,h4,h5,h6");
+  }
+
+  /* Drop LEVEL_ATTR from every heading. A sweep, not a levelHead write: a
+   * snapshot restore re-inserts the attribute on fresh nodes (pushSnapshot
+   * stores innerHTML), leaving levelHead pointing at detached ones. */
+  function clearLevelBadge() {
+    if (viewerContentEl) {
+      viewerContentEl.querySelectorAll("[" + LEVEL_ATTR + "]").forEach((el) => {
+        el.removeAttribute(LEVEL_ATTR);
+      });
+    }
+    levelHead = null;
+  }
+
+  /* Paint LEVEL_ATTR on the heading that holds the caret. style.css reveals
+   * that heading's level badge, so the writer can tell h2 from h3 without
+   * counting the # it typed. Hybrid only: in read mode the badge is
+   * pointer-revealed. The attribute is written only when the target heading
+   * changes, because selectionchange fires many times per drag. A selection
+   * spanning blocks is not a caret and clears the mark instead. */
+  function updateHeadingLevel() {
+    if (!active) return;
+    const sel = window.getSelection();
+    const head = headingOf(sel && sel.anchorNode);
+    const target = head && !sel.isCollapsed &&
+      headingOf(sel.focusNode) !== head ? null : head;
+    if (target === levelHead) return;
+    clearLevelBadge();
+    if (target) {
+      target.setAttribute(LEVEL_ATTR, "");
+      levelHead = target;
+    }
+  }
+
   /* Paint HR_SELECTED_CLASS on every top-level rule inside the current
    * non-collapsed selection. A rule is selected when the range intersects
    * it OR the selection contains it: intersectsNode alone misses a range
@@ -4685,6 +4733,8 @@
   function onSelectionChange() {
     // A collapsed hybrid caret must never sit before a task checkbox.
     normalizeTaskCaret();
+    // Keep the caret's heading level badge on the heading being written.
+    updateHeadingLevel();
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.toString().length === 0 ||
         !viewerContentEl.contains(sel.anchorNode) ||
@@ -8188,6 +8238,9 @@
     // preview DOM is left exactly as the renderers produced it.
     unwatchAtomicBlocks();
     unmarkAtomicBlocks();
+    // The preview DOM is reused, so a stale level badge would follow the
+    // note into read mode: drop the caret-derived heading marker.
+    clearLevelBadge();
     viewerContentEl.classList.remove("hybrid-editing");
     viewerEl.classList.remove("hybrid-active");
     topbar.classList.remove("editing");
@@ -10621,6 +10674,10 @@
     // makes a selected rule visible). Wired once at module load; the handler
     // is a no-op outside the editor.
     document.addEventListener("selectionchange", onSelectionChange);
+    // Focus leaving the editor leaves no caret, and no selectionchange
+    // follows a click on the outline or a side panel. Without this the
+    // level badge would stay painted with neither pointer nor caret on it.
+    viewerContentEl.addEventListener("focusout", clearLevelBadge);
   }
 
   /* --- top-bar button wiring ------------------------------------- */

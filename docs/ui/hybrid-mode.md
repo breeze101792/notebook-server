@@ -202,11 +202,13 @@ at the first character, and no chrome flashes.
 
 **There is no generic block chrome.** No block hover outline, no block-level drag handle,
 no per-block menu, no edit pencil, no gutter marker column. A block is edited by placing
-the caret in it. The shipped chrome is four controls, each on one block type:
+the caret in it. The shipped chrome is four controls, each on one block type, plus one
+label that is not a control:
 
 | Block | Hover | Focus / caret | Drag | Source |
 |---|---|---|---|---|
-| Paragraph, heading | none | none | none | — |
+| Paragraph | none | none | none | — |
+| Heading | one non-interactive `Hn` level label in the left gutter | the same label while the caret is inside the heading | none | `style.css:3682-3708`; `hybrid.js` `updateHeadingLevel` |
 | Quote | none | none | none | — |
 | List item | 24 px grip in the left gutter | grip follows the caret's item | grip, whole item subtree | `list-edit.js:261-293` |
 | Table | 24 px Edit table chip, left of the header row | chip follows a focused table | none (architecture rejects table grips) | `table-edit.js:68-95`; `hybrid-editing.md` G3 |
@@ -214,6 +216,14 @@ the caret in it. The shipped chrome is four controls, each on one block type:
 | Diagram / live HTML card | none in hybrid (copy buttons removed) | click opens the plugin source editor | none | `copy-image.js:34-37`; `hybrid-editing.md` G2 |
 | Image, figure | none | caret only | none | — |
 | Rule | none | selected-rule ring only | none | `style.css:3772-3775` |
+
+The `Hn` label is the one exception to "no gutter marker column", and it is not chrome in
+the sense that rule refuses: it is generated content, off-flow, `pointer-events: none`,
+`user-select: none`, so it takes no click, cannot be dragged, opens no menu and is in no tab
+order. It answers "h2 or h3" while writing. `hybrid.js` `updateHeadingLevel()` puts
+`data-hybrid-level` on the heading that holds the caret, a `focusout` on `#viewer-content`
+and `exit()` clear it, and the clear sweeps every marked heading rather than trusting one
+node, so a reused preview DOM never carries the badge into read mode.
 
 ### 3.1 List grip
 

@@ -3670,9 +3670,44 @@ body > #nb-menu .submenu.open {
  * stack into a large empty band above the title. Must come after the
  * generic h1-h6 rule above so it wins the cascade. */
 .markdown-body > :first-child { margin-top: 0; }
-.markdown-body h1 { font-size: 1.9em; border-bottom: 1px solid var(--border); padding-bottom: .2em; }
-.markdown-body h2 { font-size: 1.5em; }
+.markdown-body h1 { font-size: 1.9em; border-bottom: var(--stroke-1) solid var(--border); padding-bottom: .2em; }
+.markdown-body h2 { font-size: 1.5em; border-bottom: var(--stroke-1) solid var(--border); padding-bottom: .2em; }
 .markdown-body h3 { font-size: 1.25em; }
+/* h4-h6 step down and apart from prose (reader.md §2.2, docs/ui/heading-level-
+ * options.md §9). h5 and h6 are told apart by case and colour, not by size:
+ * h4/h5/h6 sit only .10em and .05em apart. */
+.markdown-body h4 { font-size: 1.05em; }
+.markdown-body h5 { font-size: .95em; text-transform: uppercase; letter-spacing: var(--tracking-label); }
+.markdown-body h6 { font-size: .9em; color: var(--text-muted); }
+/* The heading level badge: H1-H6 in the left gutter, off-flow and outside
+ * the text box so it cannot be selected, deleted, saved or undone. Hybrid
+ * mode only: hybrid.js paints [data-hybrid-level] on the heading that holds
+ * the caret, and a pointer over a heading shows it while editing. Read mode
+ * shows no label. visibility, not opacity: reader.md §11 bans opacity as a
+ * state, and there is no transition. The "/" alternate text keeps the label
+ * out of the heading's accessible name. */
+.markdown-body :is(h1,h2,h3,h4,h5,h6) { position: relative; }
+.markdown-body :is(h1,h2,h3,h4,h5,h6)::before {
+  /* One hair step below the box top: the label is 9px on a 10.8px line, so
+   * its cap sits ~2px above the cap of the heading's first line at top:0
+   * (measured on h2). One --space-hair step aligns it. */
+  position: absolute; top: var(--space-hair); right: calc(100% + var(--space-2));
+  font-size: var(--text-2xs); font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight); letter-spacing: var(--tracking-label);
+  color: var(--text-muted); white-space: nowrap;
+  visibility: hidden; pointer-events: none; user-select: none;
+}
+.markdown-body h1::before { content: "H1" / ""; }
+.markdown-body h2::before { content: "H2" / ""; }
+.markdown-body h3::before { content: "H3" / ""; }
+.markdown-body h4::before { content: "H4" / ""; }
+.markdown-body h5::before { content: "H5" / ""; }
+.markdown-body h6::before { content: "H6" / ""; }
+.markdown-body.hybrid-editing :is(h1,h2,h3,h4,h5,h6):hover::before,
+.markdown-body :is(h1,h2,h3,h4,h5,h6)[data-hybrid-level]::before { visibility: visible; }
+/* A list grip or a table Edit chip owns this gutter; a heading inside one of
+ * those blocks must not add a second label to it. */
+.markdown-body :is(li, blockquote, table) :is(h1,h2,h3,h4,h5,h6)::before { display: none; }
 .markdown-body p { margin: .7em 0; }
 .markdown-body a { color: var(--accent); }
 /* Wikilinks ([[Target]]) are internal note links. Give them a subtle
@@ -4177,6 +4212,9 @@ body > #nb-menu .submenu.open {
 @media print {
   .code-copy-btn,
   .nb-copy-img-btn { display: none !important; }
+  /* The heading level badge adds nothing a printed sheet needs
+   * (docs/ui/heading-level-options.md §9.1, "Print: absent"). */
+  .markdown-body :is(h1,h2,h3,h4,h5,h6)::before { display: none; }
 }
 /* Live HTML previews. A ```html-live fenced block is replaced with a
  * .htmlpreview-card holding just a sandboxed iframe (allow-scripts, no
@@ -8893,6 +8931,8 @@ body[data-theme="light"] #dw-designer-overlay {
   .markdown-body h2 { font-size: 1.4em; line-height: 1.25; }
   .markdown-body h3 { font-size: 1.2em; line-height: 1.3; }
   .markdown-body h4 { font-size: 1.05em; }
+  /* No gutter badge on the phone: 20 px gutter and no hover (reader.md §7.2). */
+  .markdown-body :is(h1,h2,h3,h4,h5,h6)::before { display: none; }
   .markdown-body p { margin: .85em 0; }
   .markdown-body a { text-underline-offset: 2px; }
   .markdown-body pre {

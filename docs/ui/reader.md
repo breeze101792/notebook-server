@@ -123,9 +123,11 @@ inherited prose size for width and indent. Line is unitless and inherits.
 |---|---|---|---|---|---|---|
 | `body` prose | `1rem` | 14 | 18.2 | 1.5 | 400 | 0 |
 | `h1` | `1.9em` | 26.6 | 34.58 | 1.25 | 650 | `1.4em 0 .5em` = 37.24 / 13.3 → 48.41 / 17.29 |
-| `h2` | `1.5em` | 21 | 27.3 | 1.25 | 650 | 29.4 / 10.5 → 38.22 / 13.65 |
+| `h2` | `1.5em` + 1 px rule | 21 | 27.3 | 1.25 | 650 | 29.4 / 10.5 → 38.22 / 13.65 |
 | `h3` | `1.25em` | 17.5 | 22.75 | 1.25 | 650 | 24.5 / 8.75 → 31.85 / 11.38 |
-| `h4`–`h6` | `1em` (no rule) | 14 | 18.2 | 1.25 | 650 | 19.6 / 7 → 25.48 / 9.1 |
+| `h4` | `1.05em` | 14.7 | 19.11 | 1.25 | 650 | 20.58 / 7.35 → 26.75 / 9.56 |
+| `h5` | `.95em`, uppercase, tracked | 13.3 | 17.29 | 1.25 | 650 | 18.62 / 6.65 → 24.21 / 8.65 |
+| `h6` | `.9em`, muted | 12.6 | 16.38 | 1.25 | 650 | 17.64 / 6.3 → 22.93 / 8.19 |
 | `p` | `1em` | 14 | 18.2 | 1.5 | 400 | `.7em 0` = 9.8 → 12.74 |
 | `ul`, `ol` | `1em` | 14 | 18.2 | 1.5 | 400 | `.7em 0`; `padding-left: 1.6em` = 22.4 → 29.12 |
 | `li` | `1em` | 14 | 18.2 | 1.5 | 400 | 0 (none) |
@@ -135,14 +137,16 @@ inherited prose size for width and indent. Line is unitless and inherits.
 | `code` (inline) | `.9em` | 12.6 | 16.38 | 1.5 | 400 | `padding: .12em .4em` = 1.51 / 5.04 → 1.97 / 6.55 |
 | Task checkbox | `1em` box | 13.33 | 13.33 | — | — | UA input type, so it does not scale: `0 .53em 0 -1.53em` = 7.07 / −20.4 at every font scale |
 
-Sources: `h1`–`h6` `style.css:3142-3148`, `h1` `:3154`, `h2` `:3155`, `h3` `:3156`,
-`p` `:3157`, lists `:3162`, nested `:3186`, quote `:3240-3250`, `hr` `:3764`, inline code
-`:3257-3263`, task box `:3201-3221`.
+Sources: `h1`–`h6` `style.css:3661-3667`, `h1` `:3673`, `h2` `:3674`, `h3` `:3675`,
+`h4`–`h6` `:3679-3681`, `p` `:3710`, lists `:3733`, nested `:3757`, task box `:3770-3800`,
+quote `:3811`, inline code `:3828`, `hr` `:4362`.
 
 `h1` adds `padding-bottom: .2em` (5.32 → 6.92) and a 1 px `--border` bottom rule
-(`:3154`). `h4`–`h6` have no desktop size rule, so they render at prose size and differ
-from `p` only in weight, line and margin. Margins are top / bottom; the arrow separates
-1.0 from 1.3.
+(`:3673`); `h2` gains the same treatment at `:3674` — 4.2 → 5.46 px of padding, a 31.45 px
+block at 1.0 and 40.59 px at 1.3. `h4`–`h6` step below prose — 1.05 em, .95 em uppercase
+and tracked, .9 em muted (`:3679-3681`) — so h5 and h6 are told apart by case and colour
+rather than size. Margins are top / bottom; the arrow separates 1.0 from 1.3. The level
+badge that names a heading under the pointer or the caret is §2.5.
 
 ### 2.3 Rhythm
 
@@ -196,9 +200,14 @@ variable, so the indent always matches the guides (`:76-80`).
 ### 2.5 Headings
 
 - All six levels: weight 650, line 1.25, `scroll-margin-top: calc(var(--topbar-h) + 8px)`
-  (`:3144-3147`).
-- `h1` is the only level with a rule under it (`:3154`). There is no numbering, no
-  anchor-link glyph and no heading hover state.
+  (`:3661-3667`).
+- `h1` and `h2` carry a `--border` rule under them (`:3673-3674`). There is no numbering and
+  no anchor-link glyph. Read mode has no heading chrome at all. In hybrid mode only, one
+  9 px `Hn` level label appears in the left gutter on the heading that holds the caret, or
+  under the pointer while editing (`style.css:3682-3708`; `hybrid.js`
+  `updateHeadingLevel`). It is generated content, so it cannot be selected, saved or undone,
+  it takes no click and no tab stop, and it is absent on the phone, in print, and inside a
+  list item, quote or table.
 - Heading ids are assigned after render for the outline and deep links; they are not
   visible (`viewer.js:201-215`, `docs/architecture/markdown.md:21-24`).
 - Headings inside a blockquote or list item inherit the same rules; only their margins
@@ -389,7 +398,8 @@ At `--font-scale: 1.3` the measure does not change (692 px desktop, 350 px phone
 line count per paragraph grows and nothing clips: headings, quote, list indent and inline
 code are all em. At 200 % browser zoom the phone shell takes over below 860 px and the
 page keeps its gutter (`foundations.md` §10.6). No reader type or spacing value is a fixed
-px except the page padding, the 1 px heading rule and the 2 px wikilink offset.
+px except the page padding, the two 1 px heading rules and the 2 px wikilink offset; the level
+badge is `--text-2xs` 9 px fixed (§2.5).
 
 ---
 
@@ -399,14 +409,14 @@ px except the page padding, the 1 px heading rule and the 2 px wikilink offset.
 
 | Width | Shell | Page | Prose | Heading block |
 |---|---|---|---|---|
-| 1280, 1.0 | four columns, editor 772 | 772 / measure 692 | 14 / 21 | 26.6 / 21 / 17.5 / 14 |
-| 1280, 1.3 | same | same | 18.2 / 27.3 | 34.58 / 27.3 / 22.75 / 18.2 |
+| 1280, 1.0 | four columns, editor 772 | 772 / measure 692 | 14 / 21 | 26.6 / 21 / 17.5 / 14.7 |
+| 1280, 1.3 | same | same | 18.2 / 27.3 | 34.58 / 27.3 / 22.75 / 19.11 |
 | 861, 1.0 | desktop at the last pixel, editor 353 | 353 / measure 273 | 14 / 21 | same as 1280 |
 | 861, 1.3 | same | same | 18.2 / 27.3 | same |
 
-The heading block is `h1 / h2 / h3 / h4` size. Nothing about the reading surface responds
-between 1280 and 861 except its width: same padding, same type, same margins. The 40 px
-gutter is 5 % of the column at 1280 and 11 % at 861.
+The heading block is `h1 / h2 / h3 / h4` size; h5 and h6 step below h4 (§2.2). Nothing about
+the reading surface responds between 1280 and 861 except its width: same padding, same type,
+same margins. The 40 px gutter is 5 % of the column at 1280 and 11 % at 861.
 
 ### 7.2 Phone
 
@@ -419,10 +429,12 @@ coarse) and (max-width: 1023px))` (`style.css:6975`). The reader part is `:7422-
 | Padding | `16px 40px 48px` | `16px 20px calc(56px + inset + 24px)`, with the safe-area inset added per side |
 | Prose | `1rem` / 1.5 | `calc(16px × scale)` / **1.65** (16 / 26.4 at 1.0; 20.8 / 34.32 at 1.3) |
 | `h1` | `1.9em`, lh 1.25, `1.4em 0 .5em` | `1.7em`, lh **1.2**, `0 0 .45em`, same 1 px rule |
-| `h2` | `1.5em`, lh 1.25 | `1.4em`, lh 1.25 |
+| `h2` | `1.5em`, lh 1.25, 1 px rule | `1.4em`, lh 1.25, same rule |
 | `h3` | `1.25em`, lh 1.25 | `1.2em`, lh **1.3** |
-| `h4` | `1em` | `1.05em` |
-| `h5`, `h6` | `1em` | unchanged |
+| `h4` | `1.05em` | `1.05em` (16.8) |
+| `h5` | `.95em`, uppercase, tracked | unchanged |
+| `h6` | `.9em`, muted | unchanged |
+| Level badge | hybrid mode only, on the caret's heading | absent (`style.css:8934`) |
 | `p` | `.7em` | **`.85em`** |
 | List, quote, `hr`, inline code | as desktop | unchanged, at the 16 px base |
 | Tail | 48 | rail 56 + inset + 24 = 80 |
@@ -445,14 +457,14 @@ Consequences of the phone block that are easy to get wrong:
 
 ### 8.1 What the app prints today
 
-The only print rule in `style.css` hides the two copy affordances
-(`style.css:3620-3623`). Everything else prints as it looks on screen: the topbar, rail,
+The print rules in `style.css` hide the two copy affordances and the heading level badge
+(`style.css:4211-4216`). Everything else prints as it looks on screen: the topbar, rail,
 side panel, tab strip and outline included. Because `#viewer-scroll` is a fixed-height
 scroller, a direct browser print of a long note captures one viewport and clips the rest.
 
 | Prints | Hidden | Breaks |
 |---|---|---|
-| The whole shell and the note as displayed in the current viewport | `.code-copy-btn`, `.nb-copy-img-btn` | None specified; the UA decides |
+| The whole shell and the note as displayed in the current viewport | `.code-copy-btn`, `.nb-copy-img-btn`, the heading level badge | None specified; the UA decides |
 
 Direct print of the app is **not a supported reading surface**. Do not build one here.
 
@@ -513,7 +525,7 @@ Each is observable in the app or in the mockup and names its file.
 | **AC1** | `#viewer-scroll` is the only scroller and `#viewer-content` is its only child | `templates/index.html` | Scrolling a long note changes `#viewer-scroll.scrollTop`; `getComputedStyle(#viewer-content).overflowY` is `visible`. |
 | **AC2** | The page keeps `16px 40px 48px` and no reading max-width at 1280 | `static/css/style.css` | A full-width paragraph's client rect is 692 px wide in a 772 px editor column; no rule constrains its measure. |
 | **AC3** | Prose is `1rem/1.5` and follows `--font-scale` | `static/css/style.css` | At S/M/L/XL the computed prose size is 12.6 / 14 / 16.1 / 18.2 px and the line is 1.5×. |
-| **AC4** | Headings are 1.9 / 1.5 / 1.25 / 1 em at weight 650, line 1.25, `1.4em 0 .5em`; the first block has no top margin | `static/css/style.css` | A note opening with `h1` starts 16 px below the scroller top; every other heading has 1.4em above it. |
+| **AC4** | Headings are 1.9 / 1.5 / 1.25 / 1.05 / .95 / .9 em at weight 650, line 1.25, `1.4em 0 .5em`; h1 and h2 carry a 1 px rule; the first block has no top margin | `static/css/style.css` | A note opening with `h1` starts 16 px below the scroller top; every other heading has 1.4em above it; an h4 computes 14.7 px, h5 is uppercase at 13.3 px, h6 is muted at 12.6 px. |
 | **AC5** | Every block construct carries `.7em` margins; only `hr` and headings differ | `static/css/style.css` | Toggling a paragraph to a list, quote or fence leaves the neighbours still; the collapsed paragraph gap measures 9.8 px at 1.0. |
 | **AC6** | List indent is `--list-indent` and nested lists add `.15em` on top | `static/css/style.css` | A level-2 list starts 44.8 px in at 1.0; the list-drag rail sits on the same x. |
 | **AC7** | A task box is 1em, hangs 1em left, and carries no bullet | `static/css/style.css` | The first character of the task text aligns with a plain item's text; the box is at the marker column. |
@@ -524,6 +536,7 @@ Each is observable in the app or in the mockup and names its file.
 | **AC12** | `.search-highlight` text clears 4.5:1 in both themes | `static/css/style.css` | Dark text is `--text-on-accent` (6.99:1); light is unchanged at 5.72:1. |
 | **AC13** | Content links show a 2 px accent ring on `:focus-visible` | `static/css/style.css` | Tabbing from the tab strip into a note lands on a link with a visible ring at offset 2. |
 | **AC14** | The mockup is self-contained and renders the note at 1280, 861 and 390 | `docs/ui/reader-mockup.html` | Opening the file offline shows all boards with zero network requests. |
+| **AC15** | The heading level badge exists in hybrid mode only, hidden at rest and shown on the caret's heading | `static/css/style.css`, `static/js/hybrid.js` | In read mode no heading ever shows a label, hovered or not; in hybrid the label moves from an h2 to an h4 with the caret and clears when the caret leaves the headings, and hovering a heading shows it before the click; none at 390 px, in print, or on a heading inside a list item, quote or table. |
 
 AC11–AC13 are the applied exceptions; every other criterion describes shipped behaviour.
 
@@ -541,10 +554,13 @@ AC11–AC13 are the applied exceptions; every other criterion describes shipped 
   body text.
 - **No animation.** No fade on tab switch, no reveal on render, no smooth scroll without
   a reduced-motion guard, no transition on selection or highlight.
-- **No chrome in the page.** No sticky heading bar, no progress indicator, no breadcrumb,
-  no floating "back to top" button, no reading-time label, no per-heading anchor glyph.
+- **No chrome in the page at rest.** No sticky heading bar, no progress indicator, no
+  breadcrumb, no floating "back to top" button, no reading-time label, no per-heading anchor
+  glyph. Read mode shows no heading chrome at all; the 9 px `Hn` level label belongs to
+  hybrid mode alone (§2.5).
 - **No card.** No border, radius, shadow or background on `.markdown-body`, a paragraph,
-  a list, a quote or a heading. The page is paper.
+  a list, a quote or a heading. The h1 and h2 hairline is a rule under the heading's text,
+  not a box around it. The page is paper.
 - **No editing affordances in read mode.** Hybrid mode owns click-to-edit; the reader
   must not grow hover outlines, pencils or block handles.
 - **No restyle of code, tables, images, math or the six special blocks.** Their internals

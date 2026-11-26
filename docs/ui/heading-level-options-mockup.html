@@ -1,0 +1,668 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heading level legibility — options mockup</title>
+<style>
+/* ==================================================================
+   1. TOKENS — foundations.md Appendix A, the same values as
+      reader-mockup.html. Nothing here is a new colour.
+   ================================================================== */
+.theme-dark {
+  --bg: #1a1b1f;
+  --bg-panel: #22232a;
+  --bg-elev: #2a2b34;
+  --code-bg: #14151a;
+  --fg: #e6e6ea;
+  --fg-muted: #9799a4;
+  --accent: #7c9cff;
+  --accent-soft: rgba(124, 156, 255, .18);
+  --accent-fg: #14151a;
+  --border: #383a45;
+  --border-strong: #7b8194;
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring: 2px solid var(--accent);
+  --selection-bg: rgba(124, 156, 255, .28);
+}
+
+.theme-light {
+  --bg: #ffffff;
+  --bg-panel: #f6f7f9;
+  --bg-elev: #eceef2;
+  --code-bg: #f0f2f5;
+  --fg: #1f2330;
+  --fg-muted: #5d6470;
+  --accent: #2f5fd0;
+  --accent-soft: rgba(47, 95, 208, .12);
+  --accent-fg: #ffffff;
+  --border: #d8dde4;
+  --border-strong: #78828f;
+
+  --surface-page: var(--bg);
+  --surface-panel: var(--bg-panel);
+  --surface-raised: var(--bg-elev);
+  --surface-well: var(--code-bg);
+  --text-primary: var(--fg);
+  --text-muted: var(--fg-muted);
+  --text-on-accent: var(--accent-fg);
+  --focus-ring: 2px solid var(--accent);
+  --selection-bg: rgba(47, 95, 208, .16);
+}
+
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --text-2xs: 9px;
+  --text-xs: .72rem;
+  --text-sm: .8rem;
+  --text-ui: .86rem;
+  --text-ui-lg: .93rem;
+  --text-body: 1rem;
+  --text-lg: 1.15rem;
+
+  --fw-regular: 400;
+  --fw-semibold: 600;
+  --fw-heading: 650;
+
+  --lh-tight: 1.2;
+  --lh-snug: 1.35;
+  --lh-normal: 1.5;
+
+  --tracking-label: .08em;
+
+  --space-hair: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 48px;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-pill: 999px;
+
+  --stroke-1: 1px;
+  --control-h-md: 30px;
+}
+
+html { font-size: 14px; }
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-body);
+  line-height: var(--lh-normal);
+  background: var(--surface-page);
+  color: var(--text-primary);
+}
+::selection { background: var(--selection-bg); color: var(--text-primary); }
+
+.page {
+  max-width: 1420px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5) var(--space-8);
+}
+
+/* ------------------------------------------------------------------
+   2. Page header — mockup chrome, not part of any option.
+   ------------------------------------------------------------------ */
+header { display: flex; gap: var(--space-6); align-items: flex-start; margin-bottom: var(--space-5); }
+header .copy { flex: 1 1 auto; min-width: 0; }
+header h1 {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-lg);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+}
+header p {
+  margin: 0 0 var(--space-2);
+  max-width: 96ch;
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-muted);
+}
+header p b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+header code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+#theme {
+  flex: 0 0 auto;
+  height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: var(--stroke-1) solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--text-ui);
+  cursor: pointer;
+}
+#theme:hover { background: var(--accent-soft); border-color: var(--accent); }
+#theme:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+@media (max-width: 660px) {
+  header { flex-direction: column-reverse; gap: var(--space-3); }
+}
+
+.key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+  line-height: var(--lh-snug);
+  color: var(--text-muted);
+}
+.key b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+
+/* ------------------------------------------------------------------
+   3. The board — five equal columns, scrolled inside its own box so
+      the page never scrolls sideways.
+   ------------------------------------------------------------------ */
+.board {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: var(--space-2);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(240px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.col {
+  border: var(--stroke-1) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+  overflow: hidden;
+}
+.col.is-rec { border-color: var(--accent); }
+
+.col-head {
+  padding: var(--space-3);
+  border-bottom: var(--stroke-1) solid var(--border);
+}
+.col-head h2 {
+  margin: 0;
+  font-size: var(--text-ui);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+}
+.col-head p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-muted);
+}
+.col-head p code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+}
+.chip {
+  display: inline-block;
+  margin-bottom: var(--space-1);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.chip.quiet { background: transparent; color: var(--text-muted); }
+
+/* The reader page. Padding is style.css:2396-2398; the boards are
+   narrower than the real 772 px column, so the measure here is
+   smaller — only the type ramp is at shipped size. V2 widens its own
+   left gutter to 48 px: see the caption under its board. */
+.sheet {
+  padding: 16px 40px var(--space-6);
+  background: var(--surface-page);
+}
+.v2 .sheet { padding-left: var(--space-8); }
+
+/* ------------------------------------------------------------------
+   4. The shipped reader ramp (style.css:3142-3156)
+   ------------------------------------------------------------------ */
+.note { color: var(--text-primary); overflow-wrap: break-word; }
+.note h1, .note h2, .note h3, .note h4, .note h5, .note h6 {
+  margin: 1.4em 0 .5em;
+  font-weight: var(--fw-heading);
+  line-height: 1.25;
+}
+.note > :first-child { margin-top: 0; }
+.note h1 {
+  font-size: 1.9em;
+  border-bottom: var(--stroke-1) solid var(--border);
+  padding-bottom: .2em;
+}
+.note h2 { font-size: 1.5em; }
+.note h3 { font-size: 1.25em; }
+.note p { margin: .7em 0; }
+
+/* ------------------------------------------------------------------
+   5. V1 — gutter hover badge
+   ------------------------------------------------------------------ */
+.v1 .note :is(h1,h2,h3,h4,h5,h6) { position: relative; }
+.v1 .note :is(h1,h2,h3,h4,h5,h6)::before {
+  content: "";
+  position: absolute;
+  right: calc(100% + var(--space-2));
+  top: 0;
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-label);
+  color: var(--text-muted);
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.v1 .note h1::before { content: "H1"; }
+.v1 .note h2::before { content: "H2"; }
+.v1 .note h3::before { content: "H3"; }
+.v1 .note h4::before { content: "H4"; }
+.v1 .note h5::before { content: "H5"; }
+.v1 .note h6::before { content: "H6"; }
+.v1 .note :is(h1,h2,h3,h4,h5,h6):hover::before,
+.v1 .note :is(h1,h2,h3,h4,h5,h6).is-hover::before { visibility: visible; }
+
+/* ------------------------------------------------------------------
+   6. V2 — gutter hover hashes
+   ------------------------------------------------------------------ */
+.v2 .note :is(h1,h2,h3,h4,h5,h6) { position: relative; }
+.v2 .note :is(h1,h2,h3,h4,h5,h6)::before {
+  content: "";
+  position: absolute;
+  right: calc(100% + var(--space-hair));
+  top: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: var(--lh-tight);
+  letter-spacing: normal;
+  color: var(--text-muted);
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.v2 .note h1::before { content: "#"; }
+.v2 .note h2::before { content: "##"; }
+.v2 .note h3::before { content: "###"; }
+.v2 .note h4::before { content: "####"; }
+.v2 .note h5::before { content: "#####"; }
+.v2 .note h6::before { content: "######"; }
+.v2 .note :is(h1,h2,h3,h4,h5,h6):hover::before,
+.v2 .note :is(h1,h2,h3,h4,h5,h6).is-hover::before { visibility: visible; }
+
+/* ------------------------------------------------------------------
+   7. V3 — always-on level rail
+   ------------------------------------------------------------------ */
+.v3 .note :is(h1,h2,h3,h4,h5,h6) { position: relative; }
+.v3 .note :is(h1,h2,h3,h4,h5,h6)::before {          /* tick */
+  content: "";
+  position: absolute;
+  top: 0;
+  right: calc(100% + var(--space-1));
+  width: var(--space-hair);
+  background: var(--text-muted);
+  pointer-events: none;
+}
+.v3 .note h1::before { height: var(--space-4); }    /* 16 */
+.v3 .note h2::before { height: var(--space-3); }    /* 12 */
+.v3 .note h3::before { height: var(--space-2); }    /*  8 */
+.v3 .note :is(h4,h5,h6)::before { height: var(--space-1); }  /* 4 */
+
+.v3 .note :is(h1,h2,h3,h4,h5,h6)::after {            /* label */
+  content: "";
+  position: absolute;
+  top: 0;
+  right: calc(100% + var(--space-3));
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-label);
+  color: var(--text-muted);
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+}
+.v3 .note h1::after { content: "H1"; }
+.v3 .note h2::after { content: "H2"; }
+.v3 .note h3::after { content: "H3"; }
+.v3 .note h4::after { content: "H4"; }
+.v3 .note h5::after { content: "H5"; }
+.v3 .note h6::after { content: "H6"; }
+
+/* ------------------------------------------------------------------
+   8. V4 — typography ladder only (h2 hairline is the optional part)
+   ------------------------------------------------------------------ */
+.v4 .note h2 {
+  border-bottom: var(--stroke-1) solid var(--border);
+  padding-bottom: .2em;
+}
+.v4 .note h4 { font-size: 1.05em; }
+.v4 .note h5 {
+  font-size: .95em;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+}
+.v4 .note h6 { font-size: .9em; color: var(--text-muted); }
+
+/* ------------------------------------------------------------------
+   9. V6 — chosen: V4's ramp plus V1's gutter label, revealed in hybrid
+      mode only, by the caret inside the heading or the pointer over it.
+      CSS is options doc §9.2.
+   ------------------------------------------------------------------ */
+.v6 .note h2 {
+  border-bottom: var(--stroke-1) solid var(--border);
+  padding-bottom: .2em;
+}
+.v6 .note h4 { font-size: 1.05em; }
+.v6 .note h5 {
+  font-size: .95em;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+}
+.v6 .note h6 { font-size: .9em; color: var(--text-muted); }
+
+.v6 .note :is(h1,h2,h3,h4,h5,h6) { position: relative; }
+.v6 .note :is(h1,h2,h3,h4,h5,h6)::before {
+  content: "" / "";
+  position: absolute;
+  top: 0;
+  right: calc(100% + var(--space-2));
+  font-size: var(--text-2xs);
+  font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-label);
+  color: var(--text-muted);
+  white-space: nowrap;
+  visibility: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+.v6 .note h1::before { content: "H1" / ""; }
+.v6 .note h2::before { content: "H2" / ""; }
+.v6 .note h3::before { content: "H3" / ""; }
+.v6 .note h4::before { content: "H4" / ""; }
+.v6 .note h5::before { content: "H5" / ""; }
+.v6 .note h6::before { content: "H6" / ""; }
+.v6 .note :is(h1,h2,h3,h4,h5,h6):hover::before,
+.v6 .note :is(h1,h2,h3,h4,h5,h6)[data-level-live]::before { visibility: visible; }
+.v6 .note :is(li,blockquote,table) :is(h1,h2,h3,h4,h5,h6)::before { display: none; }
+
+/* Board stand-ins for a live page: h3 = caret inside (hybrid),
+   second h4 = pointer over (hybrid, before the click). */
+.v6 .note h3.is-hover::before,
+.v6 .note h4:nth-of-type(2)::before { visibility: visible; }
+
+/* ------------------------------------------------------------------
+   10. Caption under each board
+   ------------------------------------------------------------------ */
+.cap {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: var(--stroke-1) solid var(--border);
+  font-size: var(--text-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-muted);
+}
+.cap b { color: var(--text-primary); font-weight: var(--fw-semibold); }
+.cap code {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+}
+.cap.hov { color: var(--text-primary); }
+.cap p { margin: 0 0 var(--space-1); }
+.cap p:last-child { margin-bottom: 0; }
+.cap p.fine {
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: var(--stroke-1) solid var(--border);
+  color: var(--text-muted);
+}
+</style>
+</head>
+<body class="theme-dark">
+<div class="page">
+
+<header>
+  <div class="copy">
+    <h1>Heading level legibility — options board</h1>
+    <p>Five columns over one identical sample note: h1, h2, h3, two h4s, h5, h6 and
+       paragraphs. V1–V4 are the options as first written; <b>V6 is the chosen design</b> —
+       V4's ramp plus V1's gutter label. The ramp is the shipped one —
+       <code>1.9 / 1.5 / 1.25 em</code> at weight 650, line 1.25, h4–h6 at
+       <code>1em</code> — except in V4 and V6, which carry the ramp change. The boards are
+       narrower than the real 772&nbsp;px column, so lines run short; the type is at shipped
+       size. Scroll the board sideways to reach every column.</p>
+    <p><b>A static page cannot hover and has no caret.</b> Each label column draws its h3
+       with the label visible, standing in for a live reveal. In V6 the h3 stands for the
+       caret inside the heading and the second h4 for pointer-over; its caption says which.
+       Hovering any other heading in a browser shows the live state.</p>
+    <div class="key">
+      <span><b>V6 is the choice.</b></span>
+      <span>V6 = V4's ramp + V1's label, hybrid only, by caret or pointer.</span>
+      <span>V4 alone is superseded: its ramp is half of V6.</span>
+      <span>V1–V3 are not chosen.</span>
+    </div>
+  </div>
+  <button id="theme" type="button">Light theme</button>
+</header>
+
+<div class="board">
+<div class="grid">
+
+  <!-- ============ V1 ============ -->
+  <section class="col v1">
+    <div class="col-head">
+      <span class="chip quiet">Not chosen</span>
+      <h2>V1 — gutter hover badge</h2>
+      <p>An <code>H2</code> label in the left gutter, visible only under the pointer.
+         Nothing at rest.</p>
+    </div>
+    <div class="sheet">
+      <article class="note">
+        <h1>Sensor node bring-up</h1>
+        <p>The node wakes on a 10&nbsp;s timer, samples the shunt and writes one record to
+           flash. Sleep current is 12&nbsp;µA.</p>
+        <h2>Power path</h2>
+        <p>The LDO holds 3.3&nbsp;V while the cell stays above 2.9&nbsp;V. Below that the
+           boost converter takes over.</p>
+        <h3 class="is-hover">Brown-out reset</h3>
+        <p>BOR is set to 2.7&nbsp;V. One reading below it latches the reset flag until the
+           counter clears.</p>
+        <h4>Threshold trim</h4>
+        <p>Trim is written at test and must not be rewritten in the field.</p>
+        <h4>Recovery</h4>
+        <p>After a reset the node reports the cause in the first packet.</p>
+        <h5>Log format</h5>
+        <p>Sixteen bytes per sample, little endian.</p>
+        <h6>Revision note</h6>
+        <p>Rev C moves the shunt to the low side.</p>
+      </article>
+    </div>
+    <p class="cap hov"><b>The h3 is drawn with its label visible</b> — the hover state. Every
+       other heading shows the rest state: nothing. Hybrid mode hides the label, so it does
+       not help while writing.</p>
+  </section>
+
+  <!-- ============ V2 ============ -->
+  <section class="col v2">
+    <div class="col-head">
+      <span class="chip quiet">Not chosen</span>
+      <h2>V2 — gutter hover hashes</h2>
+      <p>The same reveal, showing the markdown the writer typed: <code>##</code>, monospace,
+         muted.</p>
+    </div>
+    <div class="sheet">
+      <article class="note">
+        <h1>Sensor node bring-up</h1>
+        <p>The node wakes on a 10&nbsp;s timer, samples the shunt and writes one record to
+           flash. Sleep current is 12&nbsp;µA.</p>
+        <h2>Power path</h2>
+        <p>The LDO holds 3.3&nbsp;V while the cell stays above 2.9&nbsp;V. Below that the
+           boost converter takes over.</p>
+        <h3 class="is-hover">Brown-out reset</h3>
+        <p>BOR is set to 2.7&nbsp;V. One reading below it latches the reset flag until the
+           counter clears.</p>
+        <h4>Threshold trim</h4>
+        <p>Trim is written at test and must not be rewritten in the field.</p>
+        <h4>Recovery</h4>
+        <p>After a reset the node reports the cause in the first packet.</p>
+        <h5>Log format</h5>
+        <p>Sixteen bytes per sample, little endian.</p>
+        <h6>Revision note</h6>
+        <p>Rev C moves the shunt to the low side.</p>
+      </article>
+    </div>
+    <p class="cap hov"><b>The h3 is drawn with its label visible</b> — <code>###</code>. This
+       board widens the page gutter to 48&nbsp;px: <code>######</code> is 32–45&nbsp;px wide
+       depending on the monospace fallback, so it does not fit the shipped 40&nbsp;px.</p>
+  </section>
+
+  <!-- ============ V3 ============ -->
+  <section class="col v3">
+    <div class="col-head">
+      <span class="chip quiet">Not chosen</span>
+      <h2>V3 — always-on level rail</h2>
+      <p>A 2&nbsp;px tick at the measure edge, length encoding the level, and the label
+         outside it. Always visible.</p>
+    </div>
+    <div class="sheet">
+      <article class="note">
+        <h1>Sensor node bring-up</h1>
+        <p>The node wakes on a 10&nbsp;s timer, samples the shunt and writes one record to
+           flash. Sleep current is 12&nbsp;µA.</p>
+        <h2>Power path</h2>
+        <p>The LDO holds 3.3&nbsp;V while the cell stays above 2.9&nbsp;V. Below that the
+           boost converter takes over.</p>
+        <h3 class="is-hover">Brown-out reset</h3>
+        <p>BOR is set to 2.7&nbsp;V. One reading below it latches the reset flag until the
+           counter clears.</p>
+        <h4>Threshold trim</h4>
+        <p>Trim is written at test and must not be rewritten in the field.</p>
+        <h4>Recovery</h4>
+        <p>After a reset the node reports the cause in the first packet.</p>
+        <h5>Log format</h5>
+        <p>Sixteen bytes per sample, little endian.</p>
+        <h6>Revision note</h6>
+        <p>Rev C moves the shunt to the low side.</p>
+      </article>
+    </div>
+    <p class="cap"><b>No hover state exists.</b> The <code>is-hover</code> class on the h3 has
+       no effect here: the rail and label are on for all six levels. h4–h6 share the 4&nbsp;px
+       tick; the label separates them.</p>
+  </section>
+
+  <!-- ============ V4 ============ -->
+  <section class="col v4">
+    <div class="col-head">
+      <span class="chip quiet">Superseded by V6</span>
+      <h2>V4 — typography ladder only</h2>
+      <p>No labels and no gutter. h4 grows, h5 goes uppercase and tracked, h6 shrinks and
+         mutes, h2 gains the hairline.</p>
+    </div>
+    <div class="sheet">
+      <article class="note">
+        <h1>Sensor node bring-up</h1>
+        <p>The node wakes on a 10&nbsp;s timer, samples the shunt and writes one record to
+           flash. Sleep current is 12&nbsp;µA.</p>
+        <h2>Power path</h2>
+        <p>The LDO holds 3.3&nbsp;V while the cell stays above 2.9&nbsp;V. Below that the
+           boost converter takes over.</p>
+        <h3 class="is-hover">Brown-out reset</h3>
+        <p>BOR is set to 2.7&nbsp;V. One reading below it latches the reset flag until the
+           counter clears.</p>
+        <h4>Threshold trim</h4>
+        <p>Trim is written at test and must not be rewritten in the field.</p>
+        <h4>Recovery</h4>
+        <p>After a reset the node reports the cause in the first packet.</p>
+        <h5>Log format</h5>
+        <p>Sixteen bytes per sample, little endian.</p>
+        <h6>Revision note</h6>
+        <p>Rev C moves the shunt to the low side.</p>
+      </article>
+    </div>
+    <p class="cap"><b>No hover state by design.</b> The h2 rule and the h4–h6 steps carry the
+       level in both read and hybrid mode. h4 at 1.05 em still sits close to a bold
+       paragraph — that is the known limit, and the reason V6 adds the label.</p>
+  </section>
+
+  <!-- ============ V6 ============ -->
+  <section class="col v6 is-rec">
+    <div class="col-head">
+      <span class="chip">Chosen</span>
+      <h2>V6 — chosen (ramp + level badge, hybrid only)</h2>
+      <p>V4's ramp, plus the <code>Hn</code> label in the left gutter while editing: on the
+         heading that holds the caret, or under the pointer. Read mode shows no label.</p>
+    </div>
+    <div class="sheet">
+      <article class="note">
+        <h1>Sensor node bring-up</h1>
+        <p>The node wakes on a 10&nbsp;s timer, samples the shunt and writes one record to
+           flash. Sleep current is 12&nbsp;µA.</p>
+        <h2>Power path</h2>
+        <p>The LDO holds 3.3&nbsp;V while the cell stays above 2.9&nbsp;V. Below that the
+           boost converter takes over.</p>
+        <h3 class="is-hover">Brown-out reset</h3>
+        <p>BOR is set to 2.7&nbsp;V. One reading below it latches the reset flag until the
+           counter clears.</p>
+        <h4>Threshold trim</h4>
+        <p>Trim is written at test and must not be rewritten in the field.</p>
+        <h4>Recovery</h4>
+        <p>After a reset the node reports the cause in the first packet.</p>
+        <h5>Log format</h5>
+        <p>Sixteen bytes per sample, little endian.</p>
+        <h6>Revision note</h6>
+        <p>Rev C moves the shunt to the low side.</p>
+      </article>
+    </div>
+    <div class="cap">
+      <p><b>H3 — caret inside (hybrid).</b> Always shown while you type in it.</p>
+      <p><b>H4 “Recovery” — pointer over (hybrid).</b> Same label before the click, so the level
+         is readable on the way in.</p>
+      <p><b>At rest on every other heading.</b> The ramp alone carries the level.</p>
+      <p class="fine">The label is 9&nbsp;px <code>--text-2xs</code>, muted, never part of the
+         text — a pseudo-element, so it cannot be selected, deleted, saved or undone — and
+         absent on phone, in print, and inside lists, quotes and tables.</p>
+    </div>
+  </section>
+
+</div>
+</div>
+</div>
+
+<script>
+  (function () {
+    var btn = document.getElementById('theme');
+    btn.addEventListener('click', function () {
+      var light = document.body.classList.toggle('theme-light');
+      document.body.classList.toggle('theme-dark', !light);
+      btn.textContent = light ? 'Dark theme' : 'Light theme';
+    });
+  })();
+</script>
+</body>
+</html>
