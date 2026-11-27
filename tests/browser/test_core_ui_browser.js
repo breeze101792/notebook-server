@@ -2445,6 +2445,133 @@ async function main() {
       await resetShell();
       await sleep200();
 
+      // The Explorer splitter: auto until the first drag, then a saved
+      // height. Persistence is checked against the server blob, not a
+      // reload, so the rest of this block keeps its state.
+      await page.evaluate(() => {
+        const paths = [];
+        (function walk(nodes) {
+          for (const n of nodes || []) {
+            if (n.type === "file") paths.push(n.path);
+            else walk(n.children);
+          }
+        })(NB.sidebar.getTree());
+        window.__nbSplitPaths = paths;
+        NB.bookmarks.set(paths.length ? [paths[0]] : []);
+        NB.app.setExplorerTop("bookmarks");
+        NB.activity.activate("explorer", false);
+      });
+      await sleep(300);
+      const splitBefore = await page.evaluate(() => ({
+        visible: !document.getElementById("explorer-bookmarks").hidden,
+        strip: document.getElementById("explorer-top-resize")
+          .getBoundingClientRect().height,
+        h: document.getElementById("explorer-bookmarks").getBoundingClientRect().height,
+        tree: document.getElementById("file-tree").getBoundingClientRect().height,
+      }));
+      check("explorer splitter: the strip appears with a non-empty top section",
+        splitBefore.visible && splitBefore.strip >= 7, JSON.stringify(splitBefore));
+      const stripBox = await page.locator("#explorer-top-resize").boundingBox();
+      await page.mouse.move(stripBox.x + stripBox.width / 2,
+        stripBox.y + stripBox.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(stripBox.x + stripBox.width / 2,
+        stripBox.y + stripBox.height / 2 + 40, { steps: 8 });
+      await page.mouse.up();
+      await sleep(450);
+      const splitAfter = await page.evaluate(() => ({
+        h: document.getElementById("explorer-bookmarks").getBoundingClientRect().height,
+        tree: document.getElementById("file-tree").getBoundingClientRect().height,
+        saved: NB.app.getCfg().explorerTopHeight,
+      }));
+      check("explorer splitter: a 40 px drag resizes both areas",
+        Math.abs(splitAfter.h - (splitBefore.h + 40)) <= 2 &&
+        (splitBefore.tree - splitAfter.tree) >= 30, JSON.stringify([splitBefore, splitAfter]));
+      const splitSaved = await page.evaluate(() =>
+        fetch("/api/config").then((r) => r.json()).then((c) => c.explorerTopHeight));
+      check("explorer splitter: the height reaches config.json",
+        Math.abs(splitSaved - splitAfter.saved) <= 1, String(splitSaved));
+      await page.locator("#explorer-top-resize").focus();
+      await page.keyboard.press("Enter");
+      await sleep(450);
+      const splitReset = await page.evaluate(() => ({
+        varPx: document.documentElement.style.getPropertyValue("--explorer-top-height"),
+        saved: NB.app.getCfg().explorerTopHeight,
+        fit: document.getElementById("sidebar").dataset.explorerTopFit === "1",
+        h: document.getElementById("explorer-bookmarks").getBoundingClientRect().height,
+      }));
+      check("explorer splitter: Enter fits the section and drops the key",
+        splitReset.varPx === "" && splitReset.saved === undefined && splitReset.fit,
+        JSON.stringify(splitReset));
+
+      // Fit follows the list and lifts the 30 vh cap: a full list is taller
+      // than the cap.
+      await page.evaluate(() => {
+        NB.bookmarks.set(window.__nbSplitPaths.slice(0, 12));
+      });
+      await sleep(350);
+      const splitGrow = await page.evaluate(() => ({
+        h: document.getElementById("explorer-bookmarks").getBoundingClientRect().height,
+        rows: document.querySelectorAll("#explorer-bookmarks .bookmark-row").length,
+        cap: innerHeight * 0.3,
+        fit: document.getElementById("sidebar").dataset.explorerTopFit === "1",
+      }));
+      check("explorer splitter: fit tracks the list and drops the 30 vh cap",
+        splitGrow.rows >= 9 && splitGrow.fit && splitGrow.h > splitGrow.cap,
+        JSON.stringify([splitReset.h, splitGrow]));
+
+      await page.locator("#explorer-top-resize").focus();
+      await page.keyboard.press("Enter");
+      await sleep(300);
+      const splitUnfit = await page.evaluate(() => ({
+        fit: document.getElementById("sidebar").dataset.explorerTopFit,
+        varPx: document.documentElement.style.getPropertyValue("--explorer-top-height"),
+      }));
+      check("explorer splitter: a second Enter returns to the capped auto",
+        splitUnfit.fit === undefined && splitUnfit.varPx === "",
+        JSON.stringify(splitUnfit));
+
+      const splitCleared = await page.evaluate(() =>
+        fetch("/api/config").then((r) => r.json())
+          .then((c) => Object.prototype.hasOwnProperty.call(c, "explorerTopHeight")));
+      check("explorer splitter: the reset also clears the stored key",
+        splitCleared === false, String(splitCleared));
+      await page.evaluate(() => {
+        NB.bookmarks.set([]);
+        NB.app.setExplorerTop("pinned");
+      });
+      await sleep(300);
+      const splitAbsent = await page.evaluate(() => {
+        const strip = document.getElementById("explorer-top-resize");
+        return { display: getComputedStyle(strip).display, tab: strip.offsetParent };
+      });
+      check("explorer splitter: an empty top section leaves no strip and no tab stop",
+        splitAbsent.display === "none" && splitAbsent.tab === null,
+        JSON.stringify(splitAbsent));
+      await page.evaluate(() => {
+        NB.bookmarks.set(window.__nbSplitPaths.length
+          ? [window.__nbSplitPaths[0]] : []);
+        NB.app.setExplorerTop("none");
+      });
+      await sleep(300);
+      const splitNone = await page.evaluate(() => {
+        const host = document.getElementById("explorer-bookmarks");
+        const strip = document.getElementById("explorer-top-resize");
+        return {
+          hostHidden: host.hidden,
+          display: getComputedStyle(strip).display,
+          tab: strip.offsetParent,
+        };
+      });
+      check("explorer splitter: mode None hides the strip even with bookmarks",
+        splitNone.hostHidden && splitNone.display === "none" && splitNone.tab === null,
+        JSON.stringify(splitNone));
+      await page.evaluate(() => {
+        NB.bookmarks.set([]);
+        NB.app.setExplorerTop("pinned");
+      });
+      await sleep(300);
+
       // AC5: a right-rail icon activates its view in #aux-panel and leaves the
       // left panel's active view and width unchanged.
       await page.evaluate(() => NB.app.setSidebarSide("recent", "right"));

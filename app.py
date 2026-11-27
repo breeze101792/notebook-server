@@ -1400,6 +1400,11 @@ _DEFAULT_SIDEBAR_WIDTH = 240
 _DEFAULT_AUX_WIDTH = 240
 _MIN_PANE_WIDTH = 140
 _MAX_PANE_WIDTH = 2000
+# Explorer's inline top section, after its splitter has been dragged. The
+# floor is one header, one row and padding; the ceiling matches the pane
+# clamp so a hand-edited blob cannot paint an absurd split.
+_MIN_EXPLORER_TOP_HEIGHT = 56
+_MAX_EXPLORER_TOP_HEIGHT = 2000
 _WALLPAPERS = ("none", "lines", "grid")
 _WALLPAPER_COLORS = ("neutral", "blue", "green", "purple", "amber")
 _WALLPAPER_INTENSITIES = ("subtle", "medium", "bold")
@@ -1573,6 +1578,25 @@ def boot_state(cfg=None):
             return _pane_width(primary, default)
         return _pane_width(legacy, default)
 
+    def _explorer_top_height():
+        """The saved Explorer split, or None while it is still auto.
+
+        None is meaningful: it withholds the CSS var, so the section keeps
+        its content height under the 30 vh cap. A numeric value is clamped;
+        anything else reads as auto rather than as a broken first paint.
+        """
+        raw = cfg.get("explorerTopHeight")
+        if raw is None:
+            return None
+        try:
+            h = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if h != h or h in (float("inf"), float("-inf")):   # NaN / inf
+            return None
+        return int(max(_MIN_EXPLORER_TOP_HEIGHT,
+                       min(_MAX_EXPLORER_TOP_HEIGHT, h)))
+
     def _choice(key, allowed, default):
         val = cfg.get(key, default)
         return val if val in allowed else default
@@ -1680,6 +1704,7 @@ def boot_state(cfg=None):
                                                   _DEFAULT_AUX_WIDTH),
         "sidebar_collapsed": sidebar_collapsed,
         "aux_panel_collapsed": aux_collapsed,
+        "explorer_top_height": _explorer_top_height(),
         "topbar_hidden": bool(cfg.get("hideTopbar")),
         "tabbar_hidden": bool(cfg.get("hideTabBar")),
         "wallpaper_classes": " ".join(wallpaper_classes),

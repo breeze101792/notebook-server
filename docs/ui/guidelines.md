@@ -133,10 +133,10 @@ Rules:
 3. A component token never aliases itself, and never aliases back into a base token.
 4. A token that is an exact duplicate of a foundation token is deleted, and its consumers
    read the foundation token.
-5. Runtime-set names (`--nb-w`, `--m-kb`, `--settings-modal-*`) are allowlisted in the
-   foundations check; they are not declared in the stylesheet. A component-local name may
-   carry a documented fallback (`var(--stg-nav-w, 180px)`); a fallback is not a substitution
-   for declaring a value the component owns.
+5. Runtime-set names (`--nb-w`, `--m-kb`, `--settings-modal-*`, `--explorer-top-height`)
+   are allowlisted in the foundations check; they are not declared in the stylesheet. A
+   component-local name may carry a documented fallback (`var(--stg-nav-w, 180px)`); a
+   fallback is not a substitution for declaring a value the component owns.
 
 ---
 

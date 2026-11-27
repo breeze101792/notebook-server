@@ -3,9 +3,10 @@
 Status: Current spec — pre-implementation.
 
 Reference mockup: [`side-panel-views-mockup.html`](side-panel-views-mockup.html) — dark and light boards: Explorer with
-pinned folders and the tree, Explorer in Bookmarks mode, the three top-section modes, Pinned,
-Bookmarks, Recent (filtered and focused), the four empty states plus the error block, the 140 px
-floor, the phone drawer, the row-state strip, the row menus, and the row-anatomy diagram.
+pinned folders and the tree, Explorer in Bookmarks mode, the three top-section modes, the
+top-section splitter (auto and dragged), Pinned, Bookmarks, Recent (filtered and focused), the four
+empty states plus the error block, the 140 px floor, the phone drawer, the row-state strip, the row
+menus, and the row-anatomy diagram.
 
 **Normative source.** This document owns the inside of four side-panel views: Explorer, Pinned,
 Bookmarks and Recent. It reads [`foundations.md`](foundations.md) for every token,
@@ -71,8 +72,8 @@ scroller, and Explorer owns a second, bounded one for its top section.
 | Region | Scroller | Cap | Source |
 |---|---|---|---|
 | `#file-tree` | yes | none | `style.css:386-391` |
-| `#pinned-folders` (inline) | yes | 30 vh | `style.css:2850-2857` |
-| `#explorer-bookmarks` (inline) | yes | 30 vh | `style.css:2896-2903` |
+| `#pinned-folders` (inline) | yes | auto, then the saved split (§2.13) | `style.css:3396-3412` |
+| `#explorer-bookmarks` (inline) | yes | auto, then the saved split (§2.13) | `style.css:3396-3412` |
 | `.pinned-view-list` | yes | none | `style.css:2917-2924` |
 | `.bookmarks-list` | yes | none | `style.css:2952-2959` |
 | `.recent-list` | yes | none | `style.css:3824-3830` |
@@ -89,6 +90,8 @@ Rules:
    visible, so the view has at most two scrollers.
 4. The filter strip in Recent is `flex: 0 0 auto` and does not scroll; the list below it does
    (`style.css:3813-3830`).
+5. The strip between the top section and the tree resizes the section (§2.13). Until the first
+   gesture the cap above holds; afterwards the saved height does. The tree floor bounds both.
 
 ### 1.4 Content geometry
 
@@ -98,6 +101,7 @@ Rules:
 | Row inset | `padding: var(--space-1) var(--space-2)` | 8 px each side, so text starts at 12 px |
 | Tree indent | `--tree-indent` 18 px per level, with the continuous guide strokes | controls §2.16; shipped `style.css:2806-2837` |
 | List gap | Tree and Pinned: 0 (the guide strokes must join). Bookmarks and Recent: `--space-hair` | `style.css:2801` |
+| Row name type | `.tree-name`, `.bookmark-name` and `.recent-name` share one size and one weight: 14 px (the inherited body size) and 400 in the app. The mockup draws all three at `--text-sm` to keep its sample rows at 22 px | `style.css:3281`, `:3481`; §4.2, §5.2 |
 | Scrollbar | `scrollbar-gutter: stable` | new |
 
 At the 140 px floor the row's inner width is 107 px (140 − 1 border − 8 handle − 8 list inset
@@ -170,13 +174,14 @@ Focus entry:
 │       ├── #explorer-top-toggle   24
 │       ├── #sidebar-refresh       24
 │       └── #sidebar-collapse      24
-├── #pinned-folders.pinned-folders      hidden unless mode=pinned and non-empty; cap 30vh
-├── #explorer-bookmarks.explorer-bookmarks  hidden unless mode=bookmarks and non-empty; cap 30vh
+├── #pinned-folders.pinned-folders      hidden unless mode=pinned and non-empty
+├── #explorer-bookmarks.explorer-bookmarks  hidden unless mode=bookmarks and non-empty
+├── #explorer-top-resize                8 px splitter; hidden with both hosts (§2.13)
 └── #file-tree.tree                     flex 1; the scroller
 ```
 
-The two inline hosts are siblings of the tree, not children of it
-(`templates/index.html:235-237`). `#sidebar-expand` at `:238` is retired by shell-frame §4.5 and
+The two inline hosts and the splitter are siblings of the tree, not children of it
+(`templates/_side_panels.html:27-30`). `#sidebar-expand` at `:30` is retired by shell-frame §4.5 and
 is not part of this design.
 
 ### 2.2 Header actions
@@ -226,7 +231,8 @@ Rules:
   (`:645-649`), and the unpin control.
 - Children are `.pin-child` rows drawn with the tree's guide cells (`:691-731`). Files open; a
   folder expands.
-- Cap 30 vh; scrolls internally (§1.3).
+- Cap 30 vh until the splitter is dragged; from then on the saved height; scrolls internally
+  (§1.3, §2.13).
 - The pin row's right-hand control is the same hover action as the Pinned view's: `Unpin folder`, not a pressed toggle. The row exists because the folder is pinned, so a lit pin would decorate every row; the state is the row itself.
 - Nothing here is a drop target for tree drags. Pins reorder only within the pin list (§2.10).
 
@@ -237,6 +243,7 @@ Rules:
 - Rows are the Bookmarks view's rows, same renderer and same order (`bookmarks.js:14-15`,
   `:165-167`). Row height is therefore the list-row 30 px, not the tree's 24.
 - The host is `[hidden]` while the list is empty (`:138-141`).
+- Shares the splitter and the split height with the pinned block (§2.13): one slot, one height.
 - Drag-reorder inside the inline list mutates the one shared order (`:269-336`).
 
 ### 2.6 Tree geometry — as shipped today
@@ -402,7 +409,8 @@ list would leave the note open in a tab that no later boot could restore.
 
 | Where | Key | Action |
 |---|---|---|
-| Header | `Tab` | toggle → refresh → collapse, then into the view |
+| Header | `Tab` | toggle → refresh → collapse, then the splitter (when visible) |
+| Separator | `Tab` | the splitter between the header actions and the tree's single stop |
 | Tree row | `Tab` | one stop for the whole tree (roving `tabindex`) |
 | Tree row | `ArrowDown` / `ArrowUp` | next / previous visible row (vimnav stays the owner, controls §2.16) |
 | Tree row | `ArrowRight` / `ArrowLeft` | expand / collapse; `ArrowLeft` on a file goes to its parent |
@@ -411,6 +419,236 @@ list would leave the note open in a tab that no later boot could restore.
 | Tree row | `Shift+F10` / Menu | open the row menu |
 | Row menu | `Esc` | close and return focus to the row |
 | Tree | `Esc` | clear the multi-selection (`sidebar.js:438-448`) |
+
+### 2.13 Top-section splitter
+
+The strip between the inline top section and the tree. It is the only control that changes how the
+Explorer divides its height, and it sizes the slot, not one list.
+
+```
+#sidebar
+├── #pinned-folders | #explorer-bookmarks   the section being sized
+├── #explorer-top-resize                    8 px strip, row axis
+└── #file-tree                              takes the rest
+```
+
+#### 2.13.1 Markup and visibility
+
+```html
+<div id="explorer-top-resize" class="explorer-top-resize"
+     role="separator" aria-orientation="horizontal" aria-label="Resize top section"
+     tabindex="0"><div class="explorer-top-resize-bar" aria-hidden="true"></div></div>
+```
+
+- A sibling between the two hosts and `#file-tree` (`templates/_side_panels.html:27-29`).
+- It does **not** reuse `.resize-handle`. `setupResize()` treats any `.resize-handle` inside a
+  panel as that panel's own edge handle (`app.js:1391`), so a nested element with that class
+  would silently suppress the side panel's width handle. The strip owns its box, its 2 px bar and
+  its three paint states (§2.13.4).
+- `app.js` writes `aria-valuemin`, `aria-valuenow`, `aria-valuemax` and `aria-valuetext` when it
+  wires the strip; the shipped markup carries the label and the orientation only. The mockup
+  shows the wired state, values included.
+- Visible only while one host is visible. That is derived in CSS, with no listener in either
+  JavaScript module:
+  `#sidebar:has(#pinned-folders[hidden]):has(#explorer-bookmarks[hidden]) .explorer-top-resize { display: none }`.
+  A `display:none` strip is out of the tab order, so an empty mode and the phone drawer are
+  complete absences, not disabled controls.
+- The strip is inside the view, so it moves with Explorer when the view is homed right.
+
+#### 2.13.2 Sizing model — auto until the first gesture
+
+| State | `--explorer-top-height` | Section height | Tree |
+|---|---|---|---|
+| Untouched (default) | unset | content height, capped at 30 vh | takes the rest |
+| Fit (double-click or `Enter`) | unset, `data-explorer-top-fit` on `#sidebar` | content height, **no 30 vh cap**; follows the list as it changes | takes the rest, never under its floor |
+| Dragged or keyed once | set, px | the saved height; content scrolls inside | takes the rest, never under its floor |
+
+Rules:
+
+1. The var is set on `<html>`, beside `--side-panel-width`: one slot, one height, both hosts read
+   it. `[hidden]` keeps the other host out of the calculation.
+2. Unset renders the shipped section — content height, capped at 30 vh — except that the slot
+   never renders below `--explorer-top-min`. The strip below it adds 8 px to the view, so the tree
+   starts 8 px lower than today and a one-pin section is at most a few pixels taller than its
+   content.
+3. The first pointer move takes the section's **rendered** height as its start and writes an
+   explicit pixel height from that instant, so the strip follows the cursor from the first pixel
+   in both directions. A short list stops shrinking the strip back after that: the pane is fixed
+   and the list scrolls.
+4. Limits: 56 px minimum (the header, one 24 px pin row or one 30 px bookmark row, and 12 px of
+   padding) and the panel height minus `--explorer-split-reserve` — the strip, the panel header's
+   scaled height, and a 120 px tree floor. `max()` inside the CSS cap keeps the 56 px minimum when
+   the panel itself is shorter than the reserve, so the section can never collapse to nothing.
+5. Fit (`Enter` or double-click) toggles: it removes the var, deletes
+   `cfg.explorerTopHeight`, and sets `data-explorer-top-fit` on `#sidebar` so the 30 vh cap no
+   longer applies. The slot is then its content height and tracks the list as rows come and go; a
+   second toggle returns to the capped auto. Fit is session state, not stored, so a reload lands
+   on the capped auto; a drag clears it and pins the height. Nothing else resets the state, and
+   switching mode does not: the slot owns it.
+6. The saved value is the gesture's value. A window too short for it paints less (the CSS cap
+   binds) and keeps the saved value, so enlarging the window restores the split.
+
+#### 2.13.3 Pointer, keyboard and ARIA
+
+The strip takes the separator contract of [`shell-frame.md`](shell-frame.md) §4.4 with the axis
+turned:
+
+| Trigger | Behaviour |
+|---|---|
+| Pointer | Drag the 8 px strip. Live height follows `clientY`; `row-resize` on the strip and on `body.resizing-v` for the whole drag. |
+| Double-click | Toggle fit (§2.13.2 rule 5). |
+| Keyboard | `ArrowUp` shrinks 8 px (`--space-2`), `ArrowDown` grows 8 px; `Shift` moves 32 px (`--space-7`); `Home` goes to 56; `End` goes to the live max; `Enter` toggles fit. |
+| Persist | On pointer up, on every keyboard step and on a fit toggle, debounced 250 ms (`persistConfig`, `app.js:760-765`). |
+| Values | `aria-valuemin="56"`, `aria-valuemax` = panel height − `--explorer-split-reserve` (read as rendered heights: header + strip + 120), `aria-valuenow` = the rendered height, `aria-valuetext` = `"142 px"`. Refreshed on every gesture, on focus and on window resize. The CSS floor keeps `valuenow` inside the range even for a one-row section. |
+| Focus | The ring is inset by `--focus-offset-inset` (shell-frame §7.3): an outset ring would draw over the panel edge. |
+| Drag end | `mouseup`, window `blur`, a hidden tab, or the disappearance of both hosts mid-drag. |
+
+With vim editing on, `vimnav.js` runs a document capture-phase `keydown` and gives the key to the
+active window (`static/js/vimnav.js:145`, `:311`): `Enter` opens the focused tree file, and the
+strip's own bubble-phase handler cannot win that race. `dispatchSidebar()` must return when the
+event target is inside `[role="separator"]`; otherwise `Enter` resets the split and changes the
+open document in one keystroke.
+
+The bar: 2 px centred, transparent at rest, `--border-strong` on hover — 4.03:1 dark and 3.64:1 light
+on `--surface-panel`, over the 3:1 graphics floor, where `--border` measures 1.39 / 1.27
+(foundations §3.5) — `--accent` while dragging, with `background` transitioning at
+`var(--dur-1) var(--ease-out)` and no transition while `.dragging` or under reduced motion. The
+strip's own box is invisible; the hover bar is the whole affordance.
+
+Edge cases, all of which keep the saved value unless they say otherwise:
+
+| Case | Behaviour |
+|---|---|
+| Both hosts hidden (mode `none`, or the active list is empty) | no strip and no tab stop; the saved height is kept |
+| Mode switched pinned ↔ bookmarks | the newly visible host takes the saved height |
+| Explorer homed right | the strip and the scrollers inset the panel handle's edge, so the two drag zones never overlap |
+| Panel collapsed | the whole view is `display:none` (`#side-panel.collapsed .side-panel-view`), so the strip goes with it and is not focusable |
+| Saved value below 56, or not a number | normalized to 56 or dropped on config load; written back on the next gesture |
+| Both hosts emptied mid-drag | the drag ends and the last height is persisted |
+| Fit enabled | no 30 vh cap; the section tracks its content, a drag clears the state, and a reload is back to the capped auto |
+| Phone | no strip; auto height and the 30 vh cap (§7) |
+
+#### 2.13.4 Tokens and rules
+
+```css
+#sidebar {
+  --explorer-top-min: 56px;
+  --explorer-top-max: 30vh;
+  --explorer-tree-min: 120px;
+  /* what must stay below the section: its strip, the header, the tree floor */
+  --explorer-split-reserve: calc(var(--explorer-tree-min)
+                                 + 34px * var(--font-scale)
+                                 + var(--space-2));
+}
+.pinned-folders, .explorer-bookmarks {
+  flex: 0 0 auto;
+  min-height: var(--explorer-top-min);
+  height: var(--explorer-top-height, auto);
+  max-height: min(var(--explorer-top-height, var(--explorer-top-max)),
+                  max(var(--explorer-top-min),
+                      calc(100% - var(--explorer-split-reserve))));
+}
+/* Fit: no 30 vh cap; the section follows its content, bounded by the tree
+ * floor. A drag clears the attribute. */
+#sidebar[data-explorer-top-fit] .pinned-folders,
+#sidebar[data-explorer-top-fit] .explorer-bookmarks {
+  max-height: max(var(--explorer-top-min),
+                  calc(100% - var(--explorer-split-reserve)));
+}
+.explorer-top-resize {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: auto;
+  height: var(--space-2);
+  margin-right: var(--space-2); /* stops at the panel's own strip */
+  cursor: row-resize;
+}
+.explorer-top-resize-bar {
+  width: 100%;
+  height: var(--stroke-2);
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.explorer-top-resize:hover .explorer-top-resize-bar { background: var(--border-strong); }
+.explorer-top-resize.dragging .explorer-top-resize-bar {
+  background: var(--accent);
+  transition: none;
+}
+.explorer-top-resize:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+/* Explorer homed right: the panel's width handle is on its left edge, so the
+ * strip and the two scrollers inset that edge instead. */
+#aux-panel #sidebar .explorer-top-resize {
+  margin-right: 0;
+  margin-left: var(--space-2);
+}
+#aux-panel #sidebar #pinned-folders,
+#aux-panel #sidebar .explorer-bookmarks,
+#aux-panel #sidebar #file-tree {
+  margin-right: 0;
+  margin-left: var(--space-2);
+}
+body.resizing-v { cursor: row-resize; user-select: none; }
+@media (prefers-reduced-motion: reduce) {
+  .explorer-top-resize-bar { transition: none; }
+}
+#sidebar:has(#pinned-folders[hidden]):has(#explorer-bookmarks[hidden]) .explorer-top-resize {
+  display: none;
+}
+```
+
+Phone, inside the mode query:
+
+```css
+.explorer-top-resize { display: none; }
+.pinned-folders, .explorer-bookmarks { height: auto; max-height: var(--explorer-top-max); }
+#sidebar[data-explorer-top-fit] .pinned-folders,
+#sidebar[data-explorer-top-fit] .explorer-bookmarks { max-height: var(--explorer-top-max); }
+```
+
+#### 2.13.5 JS and persistence
+
+| Change | File |
+|---|---|
+| Ship the strip between the hosts and the tree | `templates/_side_panels.html` |
+| Embed `--explorer-top-height` on `<html>` when the saved value is present | `templates/index.html`, `app.py` (`boot_state`) |
+| `setupExplorerTopResize()`: pointer, keyboard, fit toggle, clamp, ARIA values | `app.js`, beside `setupResize` (`:1381-1444`) |
+| `applyExplorerTopHeight()`: normalize on config load — a finite value inside the bounds becomes a px var, anything else removes the var and drops the key | `app.js`, `applyConfig` |
+| `dispatchSidebar()` ignores a key whose target is inside `[role="separator"]` | `static/js/vimnav.js:145`, `:311` |
+| `explorerTopHeight` joins the client-owned layout keys | `app.js` (`DEFAULTS` comment), `docs/contracts/configuration.md` |
+| Cache bump: `style.css`, `app.js`, the template and `app.py` change together | `static/sw.js` |
+
+`POST /api/config` already round-trips unknown keys, so the server only needs the first-paint
+clamp. The server bound is 56–2000, the same style as the pane widths (`app.py:1561-1574`), and the
+client must apply the same upper bound: a hand-edited 5000 would otherwise paint at 2000 from the
+shell and be re-saved as 5000 forever. For the live clamp the client reads `--explorer-top-min` and
+`--explorer-tree-min` back from `#sidebar` (both plain px) and takes the header and strip heights
+from the rendered elements, so `panel − header − strip − tree floor` is computed the same way as
+`--explorer-split-reserve`, and the only copies of 56 and 120 are the named fallbacks used when a
+token is missing. `--explorer-top-max` is a CSS-only cap; the keyboard `End` stops at the reserve,
+not at 30 vh.
+
+A restart with no network keeps the shell's paint: the boot path snapshots the painted panels in
+`shellPanelState()` before the config fetch, and the failed-fetch branch restores the split
+height, like the pane widths, instead of dropping to auto.
+
+Deleting the key is the one write the workspace merge cannot infer. A reset must call
+`persistConfig(["explorerTopHeight"])`, and the workspace branch of `flushConfig()` must union the
+pending keys with `Object.keys(cfg)` before merging: `mergeGlobalKeys` drops a key only when the
+caller names it and `cfg` no longer has it. A keyless save would leave the old height on disk, and
+the next reload would paint it again.
+
+#### 2.13.6 Tests
+
+| Level | Test | Covers |
+|---|---|---|
+| Backend | `tests/test_app.py` — `boot_state` | a saved height embeds clamped (220 stays 220, 999999 → 2000); junk and absent keys omit the var; the login screen omits it |
+| DOM | `tests/dom/test_dom.js` | the fixture ships `#explorer-top-resize`; a drag writes `--explorer-top-height` and posts `explorerTopHeight`; the clamp stops at 56 and at panel − reserve; `Enter` and double-click toggle `data-explorer-top-fit` and post a blob with no key; a second toggle and a drag clear it; `ArrowDown`/`Shift+ArrowDown`/`Home`/`End` step and clamp; `shellPanelState()` reads the painted height for the failed-fetch restore. jsdom has no layout: stub the visible host's `getBoundingClientRect`, the header and strip `offsetHeight`, and `#sidebar.clientHeight` (the suite already stubs rects, `:4091-4093`) |
+| Browser | `tests/browser/test_core_ui_browser.js` | a real drag on the strip grows the section and shrinks the tree by the same pixels; the height reaches `config.json`; `Enter` toggles fit and clears the stored key, and adding a row in fit grows the section; a second `Enter` returns to the capped auto; an empty list and mode `none` leave no strip and no tab stop |
 
 ---
 
@@ -528,7 +766,7 @@ activity view and the inline Explorer section share one renderer and one order (
 |---|---|---|
 | Row | list row: 30 px, `--radius-sm`, `padding: var(--space-1) var(--space-2)`, gap `--space-2` | div, ≈21 px, radius 4 (`style.css:2971-2980`) |
 | Marker | `--icon-md` 16 column, `--icon-sm` 14 glyph, `--warn`, `★`, `aria-hidden="true"` | 14 px, 11 px text, `--warn` (`:2992`) |
-| Name | `--text-body`, one line, ellipsis, `title` = full path | `.bookmark-name` (`:2993`; `bookmarks.js:183-184`) |
+| Name | `--text-body`, 400, one line, ellipsis, `title` = full path | `.bookmark-name` (`:2993`; `bookmarks.js:183-184`) |
 | List | `padding: 0 var(--space-1) var(--space-1)`, gap `--space-hair`, `margin-right: var(--space-2)` | `0 4px 6px` (`:2957`) |
 | Empty | §1.5 block, `.bookmarks-empty` | `:2960-2965` |
 
@@ -700,7 +938,7 @@ a failed filter.
 
 | View | Empty | Loading | Error | No workspace | One row | Long list | Narrow panel (140) | Phone |
 |---|---|---|---|---|---|---|---|---|
-| **Explorer** | §1.5 block; top section hidden | `Loading files…` + `aria-busy` on first fetch | error block + `Retry`; previous tree kept | same error block (`Couldn’t load files.`) | normal | tree scrolls; gutter stable | title ellipsizes; 3 actions still fit; name truncates | drawer; 44 px rows; `…` menu; star/pin removed |
+| **Explorer** | §1.5 block; top section hidden | `Loading files…` + `aria-busy` on first fetch | error block + `Retry`; previous tree kept | same error block (`Couldn’t load files.`) | normal | top section scrolls at its split height; tree scrolls; gutter stable | title ellipsizes; 3 actions still fit; name truncates | drawer; 44 px rows; `…` menu; star/pin removed |
 | **Pinned** | `.pinned-view-empty` block | — | — | empty block (list is per workspace) | one pin row; count `1` | list scrolls | title ellipsizes; count kept | drawer; 44 px; read-only |
 | **Bookmarks** | `.bookmarks-empty` block | — | — | empty block | one row; add hidden if it is the active file | list scrolls | title ellipsizes; count + add + collapse fit | drawer; 44 px; read-only; add hidden |
 | **Recent** | two copies, §5.5 | — | — | empty block (`No recent notes yet.`) | one row, cursor on it | max 20 rows; list scrolls | name truncates, meta hides first | drawer; 44 px rows; 44 px / 16 px field |
@@ -718,24 +956,24 @@ only what the four views do inside the drawer.
 
 | Item | Phone behaviour | Source |
 |---|---|---|
-| Host | `#side-panel` becomes a fixed drawer, `min(86vw, 340px)`, z 410, scrim z 400 | `style.css:7207-7249` |
-| Header | 52 px, `padding: 0 4px 0 16px`; collapse control becomes `×`, `aria-label="Close panel"` | `style.css:7251-7263`; `mobile.js:851-865` |
-| Touch sizes | Every row, header action, field 44 px minimum | `style.css:7300-7347`; controls §5 |
-| Rows | 44 px, `--radius-md` 8, gap `--space-1`, name `15px` fixed | `style.css:7301-7310` |
-| Tree | star and pin removed (`display: none`); `…` 44 × 44, always visible | `style.css:7317-7337` |
+| Host | `#side-panel` becomes a fixed drawer, `min(86vw, 340px)`, z 410, scrim z 400 | `style.css:8696-8726` |
+| Header | 52 px, `padding: 0 4px 0 16px`; collapse control becomes `×`, `aria-label="Close panel"` | `style.css:8732-8736`; `mobile.js:851-865` |
+| Touch sizes | Every row, header action, field 44 px minimum | `style.css:8791-8828`; controls §5 |
+| Rows | 44 px, `--radius-md` 8, gap `--space-1`, name `15px` fixed | `style.css:8791-8800` |
+| Tree | star and pin removed (`display: none`); `…` 44 × 44, always visible | `style.css:8807-8827` |
 | Explorer empty | `No notes yet.` plus a Capture action when the role can write | `mobile-shell.md` §4.4 |
-| Inline top section | still available via the header toggle; same 30 vh cap | measured |
+| Inline top section | still available via the header toggle; no splitter, auto height with the 30 vh cap | measured; §2.13.4 |
 | Pinned view | rail slot 3 in the default bar order; if the user pushes it past slot 6 it moves to the More sheet, and Explorer's inline block stays the one-tap path | `mobile-more-sheet.md` §1.1 |
-| Bookmarks add | hidden | `style.css:7338` |
+| Bookmarks add | hidden | `style.css:8828` |
 | Bookmarks / Pinned | read-only: no add, remove, reorder, or context menu | `bookmarks.js:190`, `:212`; `style.css:7317-7320` |
 | Recent field | 44 px high, 16 px fixed type — below 16 px iOS zooms the viewport on focus | foundations §4.4; the shipped phone rule sets a 44 px min-height but leaves the 14 px type (§11 C5) |
-| Resize | no handle; scroll edges inset 0 | `style.css:7236`, `:7298` |
+| Resize | no handle, including the top-section splitter; scroll edges inset 0 | `style.css:8725`, `:8788`, §2.13.4 |
 | Drawer focus | lands on the view's close button after 220 ms; Recent must land on its field instead | `mobile.js:332-342`, `:353`; `activity.js:432` |
 | Close | scrim, `×`, `Esc`, back; focus returns to the opener (`#mobile-title`, or `#mobile-more` from Home) | `shell-frame.md` §6.2; `mobile.js:242-248` |
 
-What is removed on the phone, in one list: the resize handle, drag and drop, multi-selection,
-every context menu, the tree star and pin, the bookmarks add button, and all editing of pins and
-bookmarks. The phone shows and navigates; it does not curate.
+What is removed on the phone, in one list: the resize handle, the top-section splitter, drag and
+drop, multi-selection, every context menu, the tree star and pin, the bookmarks add button, and all
+editing of pins and bookmarks. The phone shows and navigates; it does not curate.
 
 Phone copy deltas:
 
@@ -833,11 +1071,20 @@ does not declare it again.
 Shell-local, declared on `#sidebar`, in the `--te-*` model:
 
 ```
+--explorer-top-min: 56px
 --explorer-top-max: 30vh
+--explorer-tree-min: 120px
+--explorer-split-reserve: calc(var(--explorer-tree-min) + 34px * var(--font-scale) + var(--space-2))
 ```
 
-It is a ratio of the viewport, used by exactly two rules (`style.css:2854`, `:2900`), and it is
-not a spacing step. No global token.
+`--explorer-top-max` is a ratio of the viewport and `--explorer-tree-min` is the floor the tree
+keeps; neither is a spacing step. `--explorer-top-min` is the section's floor, one header plus one
+row. `--explorer-split-reserve` is derived, not a new number: it names what must stay below the
+section. `34px * var(--font-scale)` is the panel header (shell-frame §4.2), not a new literal. No
+global token. The user value `--explorer-top-height` is not a token: it is state, set on `<html>`
+by `app.js` and embedded by the shell, and it is unset until the first gesture (§2.13). Because
+`style.css` never declares it, it joins the runtime-token allowlist of the foundations check
+(`foundations.md` §11.3), as guidelines §3 rule 5 requires.
 
 No colour token is added. Every colour below is `--surface-raised`, `--accent-soft`, `--accent`,
 `--text-primary`, `--text-muted`, `--border`, `--border-strong`, `--danger`, `--surface-well`.
@@ -846,7 +1093,7 @@ No colour token is added. Every colour below is `--surface-raised`, `--accent-so
 
 Each step is one commit and shippable alone.
 
-**Edit in place, never append.** The row and header rules replace the existing declarations at the cited lines. The phone block at `style.css:6975-7400` comes after every desktop rule in the file; a rule appended at the end would override the phone overrides. The new phone deltas go inside that block, after the rules they refine.
+**Edit in place, never append.** The row and header rules replace the existing declarations at the cited lines. The phone mode query opens at `style.css:8449` and comes after every desktop rule in the file; a rule appended at the end would override the phone overrides. The new phone deltas go inside that block, after the rules they refine.
 
 | # | Rule / change | Where | Effect |
 |---|---|---|---|
@@ -858,8 +1105,9 @@ Each step is one commit and shippable alone.
 | 6 | Bookmarks: wrapper + button row, count, `☆` add, `Move up`/`Move down`, neutral hover | `bookmarks.js:53-88`, `:170-194`, `:364-391`; `style.css:2941-2991` | native activation, drag intact |
 | 7 | Recent: field, strip, clear, combobox/listbox, mono meta, split empty copy | `activity.js:320-433`; `style.css:3813-3858` | one field idiom, one keyboard model |
 | 8 | Shared empty/error block rule and `scrollbar-gutter: stable` | `style.css` (grouped `:where()` rule) | one geometry; no row shift |
-| 9 | Phone: 44 px targets, 16 px Recent field, 0 edge inset, no hover-gated action | `style.css:7288-7347` | meets controls §5 |
+| 9 | Phone: 44 px targets, 16 px Recent field, 0 edge inset, no hover-gated action | `style.css:8778-8830` | meets controls §5 |
 | 10 | Reduced motion: the refresh rotation and its colour transition | `style.css` | foundations §7.3 |
+| 11 | Top-section splitter: strip markup, the `height`/`max-height` pair, pointer + keyboard + reset, `explorerTopHeight`, the first-paint embed | `templates/_side_panels.html`; `style.css` (rule 6); `app.js`, `app.py`, `templates/index.html`; §2.13.4–§2.13.5 | the Explorer's two areas resize by cursor and by key, and the split survives a reload |
 
 Exact additions. `.is-bookmarked` and `.is-pinned` are kept as paint aliases beside
 `aria-pressed`; the CSS below keys off `aria-pressed`, and the JS sets both from one flag.
@@ -982,9 +1230,19 @@ Exact additions. `.is-bookmarked` and `.is-pinned` are kept as paint aliases bes
 }
 .view-error { color: var(--danger); }
 
-/* 6 — top section cap */
-#sidebar { --explorer-top-max: 30vh; }
-.pinned-folders, .explorer-bookmarks { max-height: var(--explorer-top-max); }
+/* 6 — top section: auto until dragged, then the saved split (§2.13.4) */
+#sidebar {
+  --explorer-top-min: 56px; --explorer-top-max: 30vh; --explorer-tree-min: 120px;
+  --explorer-split-reserve: calc(var(--explorer-tree-min) + 34px * var(--font-scale) + var(--space-2));
+}
+.pinned-folders, .explorer-bookmarks {
+  flex: 0 0 auto;
+  min-height: var(--explorer-top-min);
+  height: var(--explorer-top-height, auto);
+  max-height: min(var(--explorer-top-height, var(--explorer-top-max)),
+                  max(var(--explorer-top-min), calc(100% - var(--explorer-split-reserve))));
+}
+/* The strip, its states, the fit rule, and the phone override: §2.13.4. */
 
 /* 7 — Recent */
 .recent-strip { position: relative; flex: 0 0 auto; padding: var(--space-2) var(--space-3); }
@@ -1056,6 +1314,8 @@ replacement (controls §2.4, foundations §10.2 rule 2).
 | Bookmarks: layout wrapper + button row (`draggable`, `data-path` and `contextmenu` stay on the button), count, `☆` add | `bookmarks.js:53-88`, `:170-194`, `:272-308` | §4.2 |
 | Recent: strip, clear, combobox/listbox ids, two empty copies, cursor clamp | `activity.js:320-433` | §5 |
 | Phone: `focusDrawer()` treats Recent like Search | `mobile.js:332-342` | §7 |
+| Splitter: `setupExplorerTopResize()` and `applyExplorerTopHeight()`, the `explorerTopHeight` key, the reset | `app.js` (beside `setupResize`, `applyConfig`) | §2.13 |
+| First-paint split height and its clamp | `app.py` (`boot_state`); `templates/index.html` | §2.13.5 |
 
 Tests that change with the same commit:
 
@@ -1087,11 +1347,12 @@ No framework, no build step, no new dependency.
 | **AC11** | Recent names both empty cases | `activity.js` | Empty history reads `No recent notes yet.`; a filter with no match reads `No recent files match.`; both keep the query |
 | **AC12** | Recent shows path metadata only, and the order is the recency | `activity.js` | Each row shows the base name and, where there is one, the mono directory; rows are most-recent-first; no time is rendered |
 | **AC13** | One empty/error block geometry | `style.css` | `.tree-empty`, `.pinned-view-empty`, `.bookmarks-empty`, `.recent-empty` and `.view-state` share padding, measure, size and colour; no italics |
-| **AC14** | No new colour, one global token, one shell-local | `style.css` | The diff adds no hex outside the token blocks; `--tree-indent` is declared once in the foundations primitives block and used by the guide and both trees; `--explorer-top-max` stays inside `#sidebar` |
+| **AC14** | No new colour, one global token, four shell-local | `style.css` | The diff adds no hex outside the token blocks; `--tree-indent` is declared once in the foundations primitives block and used by the guide and both trees; `--explorer-top-min`, `--explorer-top-max`, `--explorer-tree-min` and the derived `--explorer-split-reserve` stay inside `#sidebar` |
 | **AC15** | The phone drawer is 44 px and read-only | `style.css`, `bookmarks.js`, `sidebar.js` | At 390 every row, header action and the Recent field measure ≥44; `.recent-filter` computes to `16px`; the star/pin and the bookmarks add button are not rendered; `…` is visible on every tree row |
 | **AC16** | Opening Recent on a phone lands focus in the filter | `mobile.js` | After the drawer opens on Recent, `document.activeElement` is `.recent-filter`, not the close button |
 | **AC17** | Reduced motion stops the refresh rotation and its colour transition | `style.css` | With reduce emulated, `#sidebar-refresh.spinning .refresh-glyph` has `animation: none` and the button has `transition: none` |
 | **AC18** | The mockup is self-contained | `side-panel-views-mockup.html` | Opening it offline shows every board with zero network requests |
+| **AC19** | The Explorer's top section resizes by pointer and by key, fits its content on request, and remembers a drag | `templates/_side_panels.html`, `style.css`, `app.js`, `app.py` | With a pin list visible, an 8 px strip sits between it and the tree with `role="separator" aria-orientation="horizontal"`; dragging changes the section height live and persists `explorerTopHeight`; `ArrowDown` adds 8 px, `Shift+ArrowDown` 32; `Home`/`End` hit the limits; `Enter` and double-click toggle fit (all rows, no 30 vh cap, tracking the list) and delete the key; a drag clears fit; the first frame in which the section is visible already has the saved height; an empty list or mode `none` leaves no strip and no tab stop; the phone shows no strip |
 
 ---
 
@@ -1152,5 +1413,7 @@ No framework, no build step, no new dependency.
    on a device.
 4. **The star's future.** It stays a character (§2.8) to match the tests and because foundations
    §9.3 does not list it. A later icon pass may move it to the sprite and delete the text.
-5. **The exact `--explorer-top-max` value.** 30 vh is shipped. It is one number on one device
-   question: whether the tree still shows three rows when the top section is full.
+5. **The default cap and the tree floor.** 30 vh and 120 px are one number on one device question:
+   whether the tree still proves it is a tree while the top section is full. After the first
+   gesture the saved height governs and the floor is the only limit (§2.13), which makes these
+   two numbers matter less than they did.

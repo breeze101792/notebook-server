@@ -189,6 +189,7 @@ into the page shell for first paint.
 | `outlineCollapsed` | — | **Legacy.** Read once as the `auxPanelCollapsed` fallback |
 | `sidebarOrder` | `[]` | Activity-bar icon order across **both** rails: array of view ids; unknown ids are dropped and unnamed views keep registration order. Each rail renders the subsequence it owns. Embedded in the shell for first paint (`app.js`, `app.py`) |
 | `sidebarHidden` | `[]` | Activity-bar views whose icons are hidden: array of view ids; unknown ids are dropped. Settings lists every view so a hidden one can be unhidden. A hidden view keeps its side. Embedded in the shell for first paint (`app.js`, `app.py`) |
+| `explorerTopHeight` | — (auto) | Height in pixels of the Explorer's inline top section (Pinned or Bookmarks), written when the user drags its splitter. Absent means content height capped at 30 vh. `Enter` or double-click deletes it and fits the section to all its rows for the session. Global; embedded in the shell for first paint when present (`app.js`, `app.py`) |
 
 The migration is one release long: `activeView`, `outlineWidth` and `outlineCollapsed` are read only
 when their replacements are absent, and the client deletes them from the blob after a successful
@@ -244,7 +245,8 @@ for the default it is the unresolved `DATA_DIR` string.
 HTML shell so the first frame already matches the saved settings. The
 subset is: theme, site title, font scale, pane widths, pane collapse state,
 topbar hidden, the active side-panel view, the activity-bar icon order, the
-hidden activity-bar views, and the assembled wallpaper classes (`app.py`).
+hidden activity-bar views, the Explorer top-section split height, and the
+assembled wallpaper classes (`app.py`).
 
 The active view is embedded as `hidden` on every `.side-panel-view` host
 except the active one (`_ACTIVE_VIEWS`, `app.py`), so the panel's first
@@ -256,8 +258,8 @@ on `#activity-bar`, filtered against the same view-id allowlist.
 The page is served before auth. Content-bearing keys (`recentFiles`,
 `openFiles`, `bookmarks`) are deliberately excluded, because an
 unauthenticated client must not receive them (`app.py`). Pane
-widths are clamped to 140-2000 (`app.py`) and every choice field is
-checked against an allowlist so a hand-edited file cannot inject markup.
+widths are clamped to 140-2000 and the Explorer split height to 56-2000 (`app.py`) and every choice
+field is checked against an allowlist so a hand-edited file cannot inject markup.
 
 The login screen gets only the theme (`app.py`). If auth is off, or a
 session role is present, the shell gets the full first-paint subset

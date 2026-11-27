@@ -273,6 +273,7 @@ schema is `DEFAULTS` in `app.js`:
 | `hideTopbar` | `false` | |
 | `siteTitle` | `"Notebook"` | |
 | `explorerTop` | `"pinned"` | Which section fills the Explorer view's top slot: `pinned` / `bookmarks` / `none` |
+| `explorerTopHeight` | *unset* | Pixels of the Explorer's top section after the splitter is dragged; unset means content height capped at 30 vh. Validated into the shell for first paint when present. |
 | `vimrc` | `""` | VIM initial script, plain string |
 | `settingsModalWidth` | `"medium"` | compact / medium / wide |
 | `settingsModalHeight` | `"medium"` | compact / medium / wide |
@@ -280,6 +281,12 @@ schema is `DEFAULTS` in `app.js`:
 | `autosave` | `true` | Hybrid mode only. When on, a tab switch saves silently; when off, a dirty switch stashes a recoverable draft. |
 | `autosaveDelay` | `5` | Seconds of idle before an autosave (1–300, clamped by `clampAutosaveDelay`). |
 | `shortcuts` | `{}` | Per-action chord overrides; missing keys fall back to `shortcuts.js` defaults |
+
+`persistConfig(keys)` is debounced 250 ms. On a workspace page it read-merge-writes: the named
+keys are merged over a fresh `GET /api/config` so one device cannot drop another's change, and a
+key that is named but absent from `cfg` is deleted. That is how a reset (the Explorer splitter's
+`Enter`, a retired legacy key) removes a stored preference; a keyless save merges every key `cfg`
+currently holds and cannot delete.
 
 The workspace-scoped keys (declared in `WORKSPACE_STATE_KEYS`,
 `app.js`) live in `config/state.json` under `states.<workspace id>` on a

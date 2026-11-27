@@ -269,6 +269,29 @@ class TestIndexAndSeed(BaseTest):
         self.assertEqual(
             nb.boot_state({"auxPanelWidth": 300, "auxPanelCollapsed": True})["aux_panel_width"], 0)
 
+    def test_boot_state_clamps_explorer_top_height(self):
+        # Absent means auto: the var is withheld so the section keeps its
+        # content height under the 30 vh cap.
+        self.assertIsNone(nb.boot_state({})["explorer_top_height"])
+        self.assertEqual(nb.boot_state({"explorerTopHeight": 220})["explorer_top_height"], 220)
+        self.assertEqual(nb.boot_state({"explorerTopHeight": 1})["explorer_top_height"], 56)
+        self.assertEqual(nb.boot_state({"explorerTopHeight": 999999})["explorer_top_height"], 2000)
+        self.assertIsNone(nb.boot_state({"explorerTopHeight": "junk"})["explorer_top_height"])
+        self.assertIsNone(nb.boot_state({"explorerTopHeight": None})["explorer_top_height"])
+        # NaN, overflow-to-inf, a bool, and a negative all stay inside the
+        # allowlist: no inf/nan reaches int(), and nothing paints outside 56.
+        self.assertEqual(nb.boot_state({"explorerTopHeight": -5})["explorer_top_height"], 56)
+        self.assertEqual(nb.boot_state({"explorerTopHeight": True})["explorer_top_height"], 56)
+        self.assertIsNone(
+            nb.boot_state({"explorerTopHeight": float("nan")})["explorer_top_height"])
+        self.assertIsNone(
+            nb.boot_state({"explorerTopHeight": "1e400"})["explorer_top_height"])
+        # The saved split reaches the shell, so a reload does not snap.
+        self.assertNotIn("--explorer-top-height", self.client.get("/").get_data(as_text=True))
+        self.post("/api/config", {"explorerTopHeight": 220})
+        html = self.client.get("/").get_data(as_text=True)
+        self.assertIn("--explorer-top-height: 220px", html)
+
     def test_boot_state_sidebar_order(self):
         # Only known view ids survive, duplicates collapse, and a value that
         # is not a list falls back to registration order.

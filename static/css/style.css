@@ -567,6 +567,15 @@ body.topbar-hidden { --topbar-h: 0px; }
   overflow: hidden;
   min-width: 0;
   position: relative;
+  /* Explorer's top-section split (docs/ui/side-panel-views.md §2.13). The
+   * reserve is what must stay below the section: its 8 px strip, the scaled
+   * panel header, and the tree's 120 px floor. */
+  --explorer-top-min: 56px;
+  --explorer-top-max: 30vh;
+  --explorer-tree-min: 120px;
+  --explorer-split-reserve: calc(var(--explorer-tree-min)
+                                 + 34px * var(--font-scale)
+                                 + var(--space-2));
 }
 .panel-header {
   display: flex;
@@ -671,6 +680,58 @@ body.topbar-hidden { --topbar-h: 0px; }
  * selection so a fast drag that leaves the handle stays smooth. */
 body.resizing { cursor: col-resize; user-select: none; }
 body.resizing .resize-handle .resize-handle-bar { background: var(--accent); }
+/* The same, on the row axis, for the Explorer's top-section splitter. */
+body.resizing-v { cursor: row-resize; user-select: none; }
+
+/* The Explorer's top-section splitter: the same 8 px strip turned on its
+ * side. It owns its box and its bar, because .resize-handle is what
+ * setupResize() probes for on a panel (app.js): a nested copy would hide the
+ * panel's own width handle. */
+.explorer-top-resize {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: auto;
+  height: var(--space-2);
+  margin-right: var(--space-2);     /* stops at the panel's own strip */
+  cursor: row-resize;
+}
+.explorer-top-resize-bar {
+  width: 100%;
+  height: var(--stroke-2);
+  background: transparent;
+  transition: background var(--dur-1) var(--ease-out);
+}
+.explorer-top-resize:hover .explorer-top-resize-bar { background: var(--border-strong); }
+.explorer-top-resize.dragging .explorer-top-resize-bar {
+  background: var(--accent);
+  transition: none;
+}
+.explorer-top-resize:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset-inset);
+}
+/* Explorer homed right: the panel's width handle is on its left edge, so the
+ * strip and the two scrollers inset that edge instead of the right one. */
+#aux-panel #sidebar .explorer-top-resize {
+  margin-right: 0;
+  margin-left: var(--space-2);
+}
+#aux-panel #sidebar #pinned-folders,
+#aux-panel #sidebar .explorer-bookmarks,
+#aux-panel #sidebar #file-tree {
+  margin-right: 0;
+  margin-left: var(--space-2);
+}
+/* Both hosts hidden (mode None, or the active list is empty): no strip and
+ * no tab stop. Derived in CSS so neither view module needs a listener. */
+#sidebar:has(#pinned-folders[hidden]):has(#explorer-bookmarks[hidden]) .explorer-top-resize {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .explorer-top-resize-bar { transition: none; }
+}
 
 /* --- collapse / expand buttons (sidebar minimize) ------------------ */
 .collapse-btn {
@@ -3332,19 +3393,33 @@ body[data-theme="light"] :is(#viewer-content, #viewer-scroll) {
 /* ------------------------------------------------------------------ */
 /* Pinned folders                                                      */
 /* ------------------------------------------------------------------ */
-/* The Pinned section sits above the file tree inside the Explorer view.
- * renderPins() rebuilds it; with no pins it carries [hidden]. Its rows use
- * the tree's own markup (.tree-guide cells, .tree-icon, .tree-name) so a
- * pinned folder and its subtree read identically to the file browser. */
-.pinned-folders {
+/* The Pinned and inline-Bookmarks hosts share one slot above the tree: one
+ * split height, one cap, one scroller. Untouched, the host is content height
+ * capped at 30 vh; once the user drags the splitter, --explorer-top-height
+ * (set on <html>) pins the height and the list scrolls inside it (§2.13). */
+.pinned-folders,
+.explorer-bookmarks {
+  flex: 0 0 auto;
+  min-height: var(--explorer-top-min);
+  height: var(--explorer-top-height, auto);
+  max-height: min(var(--explorer-top-height, var(--explorer-top-max)),
+                  max(var(--explorer-top-min),
+                      calc(100% - var(--explorer-split-reserve))));
   border-bottom: 1px solid var(--border);
   padding: 6px 4px;
   margin-right: 8px;     /* match #file-tree: the resize handle lives on the right */
-  max-height: 30vh;
   overflow-y: auto;
   overflow-x: hidden;
 }
 .pinned-folders[hidden] { display: none; }
+/* Fit: double-click or Enter lifts the 30 vh cap for the rest of the session.
+ * The section is content height and follows the list as rows come and go;
+ * only the tree floor bounds it (§2.13.2). A drag clears the class. */
+#sidebar[data-explorer-top-fit] .pinned-folders,
+#sidebar[data-explorer-top-fit] .explorer-bookmarks {
+  max-height: max(var(--explorer-top-min),
+                  calc(100% - var(--explorer-split-reserve)));
+}
 .pinned-header {
   display: flex;
   align-items: center;
@@ -3379,17 +3454,8 @@ body[data-theme="light"] :is(#viewer-content, #viewer-scroll) {
 .pin-row.drop-after  { box-shadow:  2px 0 0 0 var(--accent); }
 .pinned-folders.drop-empty,
 .pinned-view-list.drop-empty { outline: 1px dashed var(--accent); outline-offset: -3px; }
-/* The inline Bookmark section mirrors the Pinned section's box: same
- * border/padding/max-height/scroll behaviour, so the tri-state header
- * swaps one for the other without shifting the tree. */
-.explorer-bookmarks {
-  border-bottom: 1px solid var(--border);
-  padding: 6px 4px;
-  margin-right: 8px;     /* match #file-tree: the resize handle lives on the right */
-  max-height: 30vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-}
+/* The inline Bookmark section shares the Pinned block's box above; only its
+ * own [hidden] rule and the inner list's scroll ownership are local. */
 .explorer-bookmarks[hidden] { display: none; }
 /* The host is already the scroll container, so the inner list must not
  * create a second scroll region. */
@@ -8723,6 +8789,14 @@ body[data-theme="light"] #dw-designer-overlay {
   #side-panel.collapsed .panel-header { display: flex; }
   #side-panel.collapsed .expand-btn { display: none; }
   #side-panel .resize-handle { display: none; }
+  /* No splitter on a phone: the drawer's top section keeps the auto height
+   * and the 30 vh cap (side-panel-views.md §7), even if a fit was toggled
+   * before the viewport shrank. */
+  .explorer-top-resize { display: none; }
+  .pinned-folders,
+  .explorer-bookmarks { height: auto; max-height: var(--explorer-top-max); }
+  #sidebar[data-explorer-top-fit] .pinned-folders,
+  #sidebar[data-explorer-top-fit] .explorer-bookmarks { max-height: var(--explorer-top-max); }
 
   #mobile-scrim {
     position: fixed;

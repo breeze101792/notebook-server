@@ -783,7 +783,7 @@ Static checks:
 comm -23 \
   <(grep -o 'var(--[a-z0-9-]*' static/css/style.css | sed 's/var(//' | sort -u) \
   <(grep -oE -- '--[a-z0-9-]+:' static/css/style.css | tr -d ' :' | sort -u) \
-  | grep -vE '^--(m-kb|nb-w|nb-tab-from|nb-tab-to|nb-tab-ghost-from|settings-modal-width|settings-modal-height|dw-slice-cell-w)$'
+  | grep -vE '^--(m-kb|nb-w|nb-tab-from|nb-tab-to|nb-tab-ghost-from|settings-modal-width|settings-modal-height|dw-slice-cell-w|explorer-top-height)$'
 # The filter is the runtime-token allowlist. Do not widen it casually: every name on it
 # is set from JS, and an empty result still proves only declaration, not per-theme
 # resolution. Add --bg-hover to the stylesheet or delete its use: :7829 uses it and

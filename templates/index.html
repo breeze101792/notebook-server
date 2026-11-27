@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en"{% if boot.workspace_id %} data-workspace="{{ boot.workspace_id }}"{% endif %}{% if boot.role is defined %} data-role="{{ boot.role or '' }}"{% endif %} style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --aux-panel-width: {{ boot.aux_panel_width }}px;">
+<html lang="en"{% if boot.workspace_id %} data-workspace="{{ boot.workspace_id }}"{% endif %}{% if boot.role is defined %} data-role="{{ boot.role or '' }}"{% endif %} style="--font-scale: {{ boot.font_scale }}; --side-panel-width: {{ boot.side_panel_width }}px; --aux-panel-width: {{ boot.aux_panel_width }}px;{% if boot.explorer_top_height %} --explorer-top-height: {{ boot.explorer_top_height }}px;{% endif %}">
 {% from "_edit_window.html" import edit_header, edit_bar, edit_footer %}
 <head>
   <meta charset="utf-8">

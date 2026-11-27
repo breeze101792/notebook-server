@@ -335,6 +335,9 @@ const html = `<!DOCTYPE html><html><head>
             </div></div>
           <div id="pinned-folders" class="pinned-folders" hidden></div>
           <div id="explorer-bookmarks" class="explorer-bookmarks" hidden></div>
+          <div id="explorer-top-resize" class="explorer-top-resize" role="separator"
+               aria-orientation="horizontal" aria-label="Resize top section"
+               tabindex="0"><div class="explorer-top-resize-bar" aria-hidden="true"></div></div>
           <div id="file-tree" class="tree"></div>
         </div>
         <div id="sessions-view" class="side-panel-view" data-view="sessions" hidden></div>
@@ -25136,6 +25139,143 @@ function check(label, cond, extra) {
       check("explorer top: invalid mode falls back to pinned",
         (window.NB.app.setExplorerTop("bogus"), window.NB.app.getExplorerTop() === "pinned"),
         window.NB.app.getExplorerTop());
+
+      // --- Explorer top-section splitter -----------------------------
+      // The strip sizes the slot above the tree: auto until the first
+      // gesture, then a fixed height persisted as cfg.explorerTopHeight.
+      window.NB.bookmarks.set(["notes/a.md"]);
+      window.NB.app.setExplorerTop("bookmarks");
+      await tick(20);
+      const topStrip = $("explorer-top-resize");
+      check("explorer splitter: shell ships the separator between the hosts and the tree",
+        !!topStrip && topStrip.getAttribute("role") === "separator" &&
+        topStrip.getAttribute("aria-orientation") === "horizontal" &&
+        topStrip.nextElementSibling === $("file-tree"),
+        topStrip ? topStrip.getAttribute("role") : "missing");
+
+      const topHost = $("explorer-bookmarks");
+      const realHostRect = topHost.getBoundingClientRect;
+      const topSidebar = $("sidebar");
+      const topHeader = topSidebar.querySelector(".panel-header");
+      Object.defineProperty(topSidebar, "clientHeight", { value: 600, configurable: true });
+      // jsdom reports 0 for every box: give the reserve its real parts.
+      Object.defineProperty(topHeader, "offsetHeight", { value: 34, configurable: true });
+      Object.defineProperty(topStrip, "offsetHeight", { value: 8, configurable: true });
+      // jsdom has no layout: the host reports the height the var asks for,
+      // or its auto height, so a key step starts where the drag ended.
+      topHost.getBoundingClientRect = () => {
+        const px = parseInt(cssVar("--explorer-top-height"), 10);
+        const h = Number.isFinite(px) ? px : 80;
+        return { top: 0, bottom: h, height: h, left: 0, right: 200, width: 200,
+          x: 0, y: 0, toJSON() {} };
+      };
+      try {
+        window.dispatchEvent(new window.Event("resize"));
+        const splitDrag = (fromY, toY) => {
+          topStrip.dispatchEvent(new window.MouseEvent("mousedown",
+            { bubbles: true, cancelable: true, button: 0, clientY: fromY }));
+          // The app listens on document (the move must survive leaving the
+          // 8 px strip), so dispatch there, not on window.
+          window.document.dispatchEvent(new window.MouseEvent("mousemove",
+            { bubbles: true, clientY: toY }));
+          window.document.dispatchEvent(new window.MouseEvent("mouseup",
+            { bubbles: true }));
+        };
+        check("explorer splitter: aria range follows the rendered bounds",
+          topStrip.getAttribute("aria-valuemin") === "56" &&
+          topStrip.getAttribute("aria-valuemax") === "438" &&
+          topStrip.getAttribute("aria-valuenow") === "80",
+          topStrip.getAttribute("aria-valuemin") + ".." +
+          topStrip.getAttribute("aria-valuemax") + " now " +
+          topStrip.getAttribute("aria-valuenow"));
+
+        // A click without movement is not a resize.
+        splitDrag(100, 100);
+        await tick(350);
+        check("explorer splitter: a click without a drag keeps auto",
+          cssVar("--explorer-top-height") === "", cssVar("--explorer-top-height"));
+
+        splitDrag(100, 140);
+        await tick(350);
+        check("explorer splitter: drag writes the height var",
+          cssVar("--explorer-top-height") === "120px", cssVar("--explorer-top-height"));
+        const splitCfg1 = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+        check("explorer splitter: drag persists explorerTopHeight",
+          /"explorerTopHeight":120/.test(splitCfg1), splitCfg1);
+
+        splitDrag(100, -400);
+        await tick(350);
+        check("explorer splitter: drag stops at the 56 px floor",
+          cssVar("--explorer-top-height") === "56px", cssVar("--explorer-top-height"));
+
+        topStrip.focus();
+        topStrip.dispatchEvent(new window.KeyboardEvent("keydown",
+          { bubbles: true, cancelable: true, key: "ArrowDown", shiftKey: true }));
+        await tick(350);
+        check("explorer splitter: Shift+ArrowDown steps 32 px",
+          cssVar("--explorer-top-height") === "88px", cssVar("--explorer-top-height"));
+
+        topStrip.dispatchEvent(new window.KeyboardEvent("keydown",
+          { bubbles: true, cancelable: true, key: "End" }));
+        await tick(20);
+        check("explorer splitter: End goes to the tree floor",
+          cssVar("--explorer-top-height") === "438px", cssVar("--explorer-top-height"));
+
+        topStrip.dispatchEvent(new window.KeyboardEvent("keydown",
+          { bubbles: true, cancelable: true, key: "Enter" }));
+        await tick(350);
+        check("explorer splitter: Enter fits the section to its content",
+          cssVar("--explorer-top-height") === "" &&
+          $("sidebar").dataset.explorerTopFit === "1",
+          "var=" + cssVar("--explorer-top-height") + " fit=" +
+          $("sidebar").dataset.explorerTopFit);
+        const splitCfg2 = fetchLog.filter(x => x.startsWith("POST /api/config")).pop() || "";
+        check("explorer splitter: fit deletes the persisted key",
+          splitCfg2.indexOf("explorerTopHeight") === -1, splitCfg2);
+
+        topStrip.dispatchEvent(new window.KeyboardEvent("keydown",
+          { bubbles: true, cancelable: true, key: "Enter" }));
+        await tick(20);
+        check("explorer splitter: a second Enter returns to the capped auto",
+          $("sidebar").dataset.explorerTopFit === undefined &&
+          cssVar("--explorer-top-height") === "",
+          "fit=" + $("sidebar").dataset.explorerTopFit);
+
+        // A real drag takes over from fit and pins the height.
+        topStrip.dispatchEvent(new window.KeyboardEvent("keydown",
+          { bubbles: true, cancelable: true, key: "Enter" }));
+        await tick(20);
+        splitDrag(100, 160);
+        await tick(350);
+        check("explorer splitter: a drag clears fit and pins the height",
+          $("sidebar").dataset.explorerTopFit === undefined &&
+          cssVar("--explorer-top-height") === "140px",
+          "fit=" + $("sidebar").dataset.explorerTopFit + " var=" +
+          cssVar("--explorer-top-height"));
+
+        topStrip.dispatchEvent(new window.MouseEvent("dblclick",
+          { bubbles: true, cancelable: true, button: 0 }));
+        await tick(350);
+        check("explorer splitter: double-click fits and clears the height",
+          cssVar("--explorer-top-height") === "" &&
+          $("sidebar").dataset.explorerTopFit === "1",
+          "var=" + cssVar("--explorer-top-height"));
+        topStrip.dispatchEvent(new window.MouseEvent("dblclick",
+          { bubbles: true, cancelable: true, button: 0 }));
+        await tick(20);
+        check("explorer splitter: double-click toggles fit off",
+          $("sidebar").dataset.explorerTopFit === undefined &&
+          cssVar("--explorer-top-height") === "",
+          "fit=" + $("sidebar").dataset.explorerTopFit);
+      } finally {
+        topHost.getBoundingClientRect = realHostRect;
+        delete topSidebar.clientHeight;
+        delete topHeader.offsetHeight;
+        delete topStrip.offsetHeight;
+        window.dispatchEvent(new window.Event("resize"));
+      }
+      window.NB.app.setExplorerTop("pinned");
+      await tick(20);
       window.NB.bookmarks.set([]);
       await tick(10);
       check("explorer top: inline host hides when the bookmark list is empty",
@@ -40807,6 +40947,20 @@ function check(label, cond, extra) {
     check("shell state: reads the right collapsed class and width",
       window.NB.app.shellPanelState().right.collapsed === true);
     $("aux-panel").classList.remove("collapsed");
+
+    // The Explorer split height joins the failed-fetch restore source: the
+    // shell paints it, boot snapshots it, and an offline reload keeps it.
+    const splitPainted = window.document.documentElement.style
+      .getPropertyValue("--explorer-top-height");
+    window.document.documentElement.style.setProperty("--explorer-top-height", "212px");
+    check("shell state: reads the painted Explorer split height",
+      window.NB.app.shellPanelState().explorerTopHeight === 212,
+      String(window.NB.app.shellPanelState().explorerTopHeight));
+    if (splitPainted) {
+      window.document.documentElement.style.setProperty("--explorer-top-height", splitPainted);
+    } else {
+      window.document.documentElement.style.removeProperty("--explorer-top-height");
+    }
 
     // Restore the fixture's hidden state before the collapse check.
     hosts.forEach((h, i) => { h.hidden = savedHidden[i]; });

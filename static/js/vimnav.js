@@ -301,6 +301,11 @@
   }
 
   function dispatchSidebar(k, e) {
+    // A separator inside the panel owns its own keys (the Explorer's
+    // top-section splitter, docs/ui/side-panel-views.md §2.13). Otherwise
+    // Enter would reset the split and open the focused file in one stroke.
+    if (e && e.target && e.target.closest &&
+        e.target.closest('[role="separator"]')) return;
     // The window is the left panel; its keys are the tree's only while the
     // Explorer is the view it shows.
     if (!viewVisible("explorer")) return;

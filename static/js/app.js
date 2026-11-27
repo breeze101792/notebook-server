@@ -157,6 +157,10 @@
     // pinned-folder list, "bookmarks" for an inline copy of the bookmark
     // list, or "none". The header toggle cycles all three.
     explorerTop: "pinned",
+    // explorerTopHeight is deliberately absent: no value means the section
+    // keeps its content height under the 30 vh cap, exactly as before the
+    // splitter existed. The splitter writes it once the user drags or keys
+    // one, and its reset deletes it (docs/ui/side-panel-views.md §2.13).
     // User-supplied vimrc: lines of VIM initial script applied to the
     // editor's vim plugin (cm-bridge.compileVimrc). Empty by default;
     // populated via the Settings modal's VIM script pane. Stored as
@@ -284,6 +288,16 @@
   const SHELL_PANE_MAX = 480;
   const SHELL_PANE_MIN = 140;
   const SHELL_PANE_SHARE = 0.45;
+
+  // Explorer's top-section splitter (docs/ui/side-panel-views.md §2.13).
+  // Fallbacks only: the live bounds are read from the tokens on #sidebar, so
+  // the CSS and the JS clamp cannot drift. The ceiling mirrors the server's.
+  const EXPLORER_TOP_MIN_H = 56;
+  const EXPLORER_TREE_MIN_H = 120;
+  const EXPLORER_TOP_MAX_H = 2000;
+  // Arrow-key steps on the splitter: one space step, one large step.
+  const EXPLORER_TOP_STEP = 8;
+  const EXPLORER_TOP_STEP_LARGE = 32;
 
   function paneMax() {
     const budget = window.innerWidth - 2 * SHELL_RAIL_W - SHELL_READER_MIN;
@@ -705,6 +719,10 @@
     } else {
       cfg.explorerTop = DEFAULTS.explorerTop;
     }
+    // The saved split height, if the splitter has ever been dragged. Runs
+    // before config:changed so the section is painted at its saved height
+    // when the first list arrives.
+    applyExplorerTopHeight();
     // A view can mount before the async config fetch resolves (Search can
     // be the saved view). Mark this as the load-time signal so the panel can
     // sync its controls without undoing a change the user made meanwhile.
@@ -742,7 +760,182 @@
     }
   }
 
+  /* Explorer's top-section split. Absent or invalid means auto: the section
+   * keeps its content height under the 30 vh cap, exactly as before the
+   * splitter existed. A saved value becomes the fixed height. */
+  function applyExplorerTopHeight() {
+    const raw = cfg.explorerTopHeight;
+    const n = Number(raw);
+    // Unset means auto. A numeric value is clamped the way the server clamps
+    // it, so the shell paint and this function cannot disagree: a
+    // hand-edited 1 or -5 pins the floor instead of snapping back to auto.
+    if (raw === null || raw === undefined || raw === "" || !Number.isFinite(n)) {
+      delete cfg.explorerTopHeight;
+      document.documentElement.style.removeProperty("--explorer-top-height");
+    } else {
+      const h = Math.min(EXPLORER_TOP_MAX_H,
+        Math.max(EXPLORER_TOP_MIN_H, Math.round(n)));
+      cfg.explorerTopHeight = h;
+      document.documentElement.style.setProperty("--explorer-top-height", h + "px");
+    }
+    updateExplorerTopAria();
+  }
+
+  /* The inline host that is currently visible, or null when the mode is
+   * None or its list is empty. */
+  function explorerTopHost() {
+    const pins = document.getElementById("pinned-folders");
+    if (pins && !pins.hidden) return pins;
+    const marks = document.getElementById("explorer-bookmarks");
+    if (marks && !marks.hidden) return marks;
+    return null;
+  }
+
+  function explorerTopToken(pane, name, fallback) {
+    const raw = getComputedStyle(pane).getPropertyValue(name);
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  function explorerTopMin(pane) {
+    return explorerTopToken(pane, "--explorer-top-min", EXPLORER_TOP_MIN_H);
+  }
+
+  /* The largest section height that still leaves the tree its floor. Read
+   * from the rendered header and strip, so it matches the CSS reserve. */
+  function explorerTopMax(pane) {
+    const header = pane.querySelector(".panel-header");
+    const strip = document.getElementById("explorer-top-resize");
+    const treeMin = explorerTopToken(pane, "--explorer-tree-min", EXPLORER_TREE_MIN_H);
+    const reserve = (header ? header.offsetHeight : 0)
+      + (strip ? strip.offsetHeight : 0) + treeMin;
+    return Math.min(EXPLORER_TOP_MAX_H,
+      Math.max(explorerTopMin(pane), pane.clientHeight - reserve));
+  }
+
+  function updateExplorerTopAria() {
+    const handle = document.getElementById("explorer-top-resize");
+    const pane = document.getElementById("sidebar");
+    if (!handle || !pane) return;
+    const min = explorerTopMin(pane);
+    const max = explorerTopMax(pane);
+    const host = explorerTopHost();
+    // The host reads 0 while its view is hidden or the panel is collapsed;
+    // keep the announced value inside the separator's own range.
+    const now = Math.min(max, Math.max(min,
+      host ? host.getBoundingClientRect().height : min));
+    handle.setAttribute("aria-valuemin", String(Math.round(min)));
+    handle.setAttribute("aria-valuemax", String(Math.round(max)));
+    handle.setAttribute("aria-valuenow", String(Math.round(now)));
+    handle.setAttribute("aria-valuetext", Math.round(now) + " px");
+  }
+
+  /* Pointer, keyboard and reset for the Explorer splitter. It never resizes
+   * the panel itself: only the inline top slot above the tree. */
+  function setupExplorerTopResize() {
+    const handle = document.getElementById("explorer-top-resize");
+    const pane = document.getElementById("sidebar");
+    if (!handle || !pane || handle.dataset.wired === "1") return;
+    handle.dataset.wired = "1";
+    let dragging = false, startY = 0, startH = 0, height = 0, moved = false;
+
+    const clamp = (h) => Math.max(explorerTopMin(pane),
+      Math.min(explorerTopMax(pane), h));
+
+    function setHeight(h) {
+      height = Math.round(clamp(h));
+      document.documentElement.style.setProperty("--explorer-top-height", height + "px");
+      updateExplorerTopAria();
+    }
+
+    function visibleHeight() {
+      const host = explorerTopHost();
+      return host ? host.getBoundingClientRect().height : explorerTopMin(pane);
+    }
+
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false;
+      handle.classList.remove("dragging");
+      document.body.classList.remove("resizing", "resizing-v");
+      // A plain click on the strip is not a resize: keep the auto height.
+      if (!moved) return;
+      cfg.explorerTopHeight = height;
+      persistConfig(["explorerTopHeight"]);
+    }
+
+    /* Fit and auto are session states, not widths: the saved height is
+     * cleared, and a second toggle returns to the capped auto. The key must
+     * be named because the workspace merge only deletes keys the caller
+     * lists; a keyless save would keep the old height on disk. */
+    function toggleFit() {
+      delete cfg.explorerTopHeight;
+      document.documentElement.style.removeProperty("--explorer-top-height");
+      const on = !pane.dataset.explorerTopFit;
+      if (on) pane.dataset.explorerTopFit = "1";
+      else delete pane.dataset.explorerTopFit;
+      persistConfig(["explorerTopHeight"]);
+      updateExplorerTopAria();
+    }
+
+    handle.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      const host = explorerTopHost();
+      if (!host) return;
+      dragging = true;
+      startY = e.clientY;
+      startH = host.getBoundingClientRect().height;
+      height = Math.round(clamp(startH));
+      moved = false;
+      handle.classList.add("dragging");
+      document.body.classList.add("resizing", "resizing-v");
+      e.preventDefault();
+    });
+    document.addEventListener("mousemove", (e) => {
+      if (!dragging) return;
+      // The section sits above the tree, so a downward drag grows it.
+      // A press with no movement is a click, not a resize: it must not
+      // convert the auto height into a fixed one.
+      if (e.clientY === startY) return;
+      // If the active list emptied mid-drag the strip is display:none; the
+      // gesture is over, and the last height still lands in the config.
+      if (!explorerTopHost()) { endDrag(); return; }
+      moved = true;
+      // A real drag takes over from a fit: the section becomes a fixed height.
+      delete pane.dataset.explorerTopFit;
+      setHeight(startH + (e.clientY - startY));
+    });
+    document.addEventListener("mouseup", endDrag);
+    // Recover from a drag abandoned off-window or in a hidden tab.
+    window.addEventListener("blur", endDrag);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) endDrag(); });
+
+    handle.addEventListener("dblclick", (e) => { e.preventDefault(); toggleFit(); });
+    handle.addEventListener("keydown", (e) => {
+      // Chrome shortcuts and window chords keep their own meaning.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const step = e.shiftKey ? EXPLORER_TOP_STEP_LARGE : EXPLORER_TOP_STEP;
+      if (e.key === "ArrowDown") setHeight(visibleHeight() + step);
+      else if (e.key === "ArrowUp") setHeight(visibleHeight() - step);
+      else if (e.key === "Home") setHeight(explorerTopMin(pane));
+      else if (e.key === "End") setHeight(explorerTopMax(pane));
+      else if (e.key === "Enter") { e.preventDefault(); toggleFit(); return; }
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+      cfg.explorerTopHeight = height;
+      persistConfig(["explorerTopHeight"]);
+    });
+    handle.addEventListener("focus", updateExplorerTopAria);
+    window.addEventListener("resize", updateExplorerTopAria);
+    updateExplorerTopAria();
+  }
+
   /* Persist config. `keys` names the only keys a caller may change.
+   *
+   * A named key that `cfg` no longer carries is deleted from the stored blob
+   * (the workspace merge drops only named keys). A keyless call merges every
+   * key `cfg` currently holds and therefore cannot delete one.
    *
    * Desktop posts the whole blob; a workspace page reads the current blob
    * first and merges, so the per-workspace state map survives. On a phone a
@@ -1164,9 +1357,14 @@
       }
       // Workspace page: read-merge-write, so a global key changes without
       // dropping one another client edited in between. The per-workspace
-      // state is not this route's to write.
+      // state is not this route's to write. The named keys are merged even
+      // when cfg no longer carries them: a delete (the Explorer splitter's
+      // reset, a retired legacy key) is expressed by naming the key.
       return NB.api.getConfig().then((fresh) => {
-        return NB.api.saveConfig(mergeGlobalKeys(fresh, Object.keys(cfg)));
+        const keys = keyList.length
+          ? Array.from(new Set([...Object.keys(cfg), ...keyList]))
+          : Object.keys(cfg);
+        return NB.api.saveConfig(mergeGlobalKeys(fresh, keys));
       }).catch(e => console.warn("config save failed", e));
     };
     configFlushQueue = configFlushQueue.then(run, run).then(() => {
@@ -1380,6 +1578,9 @@
 
   function ensureResizeHandles() {
     if (isPhoneMode()) return;
+    // The Explorer's in-view splitter is desktop-only too: a drawer has no
+    // room for a second resize target.
+    setupExplorerTopResize();
     // Both panels stop where their CSS track clamps: the reader keeps its
     // floor and each panel takes at most 45 % of the shared budget.
     setupResize("side-panel", "--side-panel-width", "right", { max: paneMax });
@@ -1569,6 +1770,8 @@
         collapsed: !!(auxPanelEl && auxPanelEl.classList.contains("collapsed")),
         width: px("--aux-panel-width"),
       },
+      // NaN when the shell painted no split height (still auto).
+      explorerTopHeight: px("--explorer-top-height"),
       sidebarOrder: rawOrder ? rawOrder.split(",").filter(Boolean) : [],
       sidebarHidden: rawHidden ? rawHidden.split(",").filter(Boolean) : [],
       sidebarSide,
@@ -1627,6 +1830,12 @@
       cfg.sidebarSide = shellPanel.sidebarSide;
       if (shellPanel.left.width > 0) cfg.sidebarWidth = shellPanel.left.width;
       if (shellPanel.right.width > 0) cfg.auxPanelWidth = shellPanel.right.width;
+      // The shell painted the saved split height; applyConfig() just removed
+      // it because the failed fetch had no config to read. Restore it, so an
+      // offline reload keeps the split instead of dropping back to auto.
+      if (Number.isFinite(shellPanel.explorerTopHeight)) {
+        cfg.explorerTopHeight = shellPanel.explorerTopHeight;
+      }
       if (NB.activity && NB.activity.setBarOrder) {
         NB.activity.setBarOrder(cfg.sidebarOrder);
       }
@@ -1635,6 +1844,7 @@
       }
       applySidebarState();
       applyAuxState();
+      applyExplorerTopHeight();
       if (!isPhoneMode() && NB.activity && NB.activity.adoptShellView) {
         // Adopting emits activity:changed; suppress the listener so a failed
         // fetch never turns the shell paint into a config write (§7.8 step 5).

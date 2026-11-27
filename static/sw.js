@@ -75,7 +75,9 @@
 /* Bumped v36 -> v37: hybrid.js changed the saved-render key so a block
  * ending in a space no longer rebuilds the view on autosave, so installed
  * workers must refresh hybrid.js. */
-const CACHE = "notebook-v37";
+/* Bumped v37 -> v38: the Explorer's top section gained a splitter, so the
+ * shell, style.css, app.js and vimnav.js must refresh together. */
+const CACHE = "notebook-v38";
 // Only the assets needed to boot are precached. The heavy on-demand
 // renderer bundles (mermaid, graphviz, CodeMirror, KaTeX, WaveDrom) are
 // deliberately NOT listed: precaching 6.8MB at install would make the

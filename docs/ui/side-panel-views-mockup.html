@@ -335,6 +335,21 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
   color: var(--text-muted);
 }
 
+/* ---- top-section splitter (§2.13) ---- */
+.splitter {
+  flex: 0 0 auto;
+  height: var(--space-2);
+  margin-right: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+}
+.splitter .bar { width: 100%; height: var(--stroke-2); background: transparent; }
+.splitter.is-hover .bar { background: var(--border-strong); }
+.splitter.is-drag .bar { background: var(--accent); }
+.splitter.is-focus { outline: var(--focus-ring); outline-offset: var(--focus-offset-inset); }
+
 /* ---- rows (§2.6, §2.7, controls §2.16) ---- */
 .prow {
   display: flex;
@@ -473,8 +488,10 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: var(--text-body);
-  font-weight: var(--fw-medium);
+  /* The tree's name type, not a list-only size: a bookmarked file reads
+   * exactly like a tree row (side-panel-views.md §1.4). */
+  font-size: var(--text-sm);
+  font-weight: var(--fw-regular);
   color: inherit;
 }
 .recent-row { justify-content: space-between; }
@@ -637,7 +654,7 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
 .drawer .tree-name { font-size: 15px; }
 .drawer .tree-icon { width: var(--icon-md); height: var(--icon-md); flex-basis: var(--icon-md); }
 .drawer .more-btn { display: inline-flex; width: var(--control-h-touch); height: var(--control-h-touch); flex: 0 0 var(--control-h-touch); font-size: var(--text-lg); }
-.drawer .topsec { max-height: 176px; margin-right: 0; }
+.drawer .topsec { max-height: 30vh; margin-right: 0; }
 .drawer .scroller { margin-right: 0; }
 .drawer .recent-strip { padding: var(--space-2) var(--space-3); }
 .drawer .field { height: var(--control-h-touch); font-size: 16px; }
@@ -772,7 +789,8 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
       <span><b>22 px</b> tree row</span>
       <span><b>30 px</b> list row</span>
       <span><b>18 px</b> indent</span>
-      <span>top section drawn at 140 px for the board; the app caps it at 30 vh</span>
+      <span>top section drawn at 140 px for the board; untouched it caps at 30 vh, and the
+          splitter below it sets a saved height</span>
     </div>
   </header>
 
@@ -831,6 +849,9 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
               <button class="action" aria-label="Unpin folder scratch" title="Unpin folder"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
             </div>
           </div>
+
+          <div class="splitter" role="separator" aria-orientation="horizontal" tabindex="0"
+               aria-label="Resize top section"><div class="bar" aria-hidden="true"></div></div>
 
           <div class="scroller" role="tree" aria-label="Files" aria-multiselectable="true">
             <div class="prow is-hover" role="treeitem" aria-level="1" tabindex="-1">
@@ -923,6 +944,9 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
             </div>
           </div>
 
+          <div class="splitter" role="separator" aria-orientation="horizontal" tabindex="0"
+               aria-label="Resize top section"><div class="bar" aria-hidden="true"></div></div>
+
           <div class="scroller" role="tree" aria-label="Files" aria-multiselectable="true">
             <div class="prow" role="treeitem" aria-level="1" tabindex="-1">
               <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg>
@@ -958,6 +982,106 @@ code { font-family: var(--font-mono); font-size: var(--text-xs); }
       <figcaption><strong>Explorer, bookmarks mode <span class="tpill">Light</span></strong>
         The inline list uses the 30 px list row; the tree below keeps 24 px. The toggle glyph is
         the current mode; the label names the current mode and the next.</figcaption>
+    </figure>
+  </div>
+
+  <!-- ============ 2b. TOP-SECTION SPLITTER ============ -->
+  <div class="board-row">
+    <figure class="board theme-dark">
+      <div class="strip">
+        <div class="mini" style="width:240px">
+          <div class="cap">untouched — auto</div>
+          <div class="panel" style="height:360px;width:240px;flex-basis:240px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm)">
+            <div class="phead">
+              <h2 class="ptitle">Files</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+                <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="topsec" style="max-height:none">
+              <div class="sectitle">Pinned</div>
+              <div class="prow">
+                <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg>
+                <span class="tree-name">projects</span>
+                <button class="action" aria-label="Unpin folder projects"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              </div>
+              <div class="prow">
+                <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tree-name">archive</span>
+                <button class="action" aria-label="Unpin folder archive"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              </div>
+              <div class="prow">
+                <svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg>
+                <span class="tree-name">scratch</span>
+                <button class="action" aria-label="Unpin folder scratch"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+              </div>
+            </div>
+            <div class="splitter" role="separator" aria-orientation="horizontal" tabindex="0"
+                 aria-label="Resize top section" aria-valuemin="56" aria-valuenow="112" aria-valuemax="198"><div class="bar" aria-hidden="true"></div></div>
+            <div class="scroller" role="tree" aria-label="Files">
+              <div class="prow" role="treeitem" aria-level="1" tabindex="-1"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name" title="Welcome.md">Welcome.md</span></div>
+              <div class="prow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg><span class="tree-name" title="projects">projects</span></div>
+              <div class="prow" role="treeitem" aria-level="2" tabindex="-1"><span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name" title="projects/notes.md">notes.md</span></div>
+              <div class="prow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name" title="archive">archive</span></div>
+              <div class="prow" role="treeitem" aria-level="1" aria-expanded="false" tabindex="-1"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name" title="scratch">scratch</span></div>
+            </div>
+          </div>
+          <div class="dim" style="margin-top:var(--space-2)">height: auto<br>max: min(30 vh, panel − header − strip − 120)</div>
+        </div>
+
+        <div class="mini" style="width:240px">
+          <div class="cap">dragged — saved height</div>
+          <div class="panel" style="height:360px;width:240px;flex-basis:240px;border:var(--stroke-1) solid var(--border);border-radius:var(--radius-sm)">
+            <div class="phead">
+              <h2 class="ptitle">Files</h2>
+              <div class="pactions">
+                <button class="icon-btn" aria-label="Top section: Pinned folders. Click to show Bookmarks."><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button>
+                <button class="icon-btn" aria-label="Reload file tree from disk"><svg class="icon" aria-hidden="true"><use href="#nb-icon-refresh"/></svg></button>
+                <button class="icon-btn" aria-label="Collapse panel"><svg class="icon" aria-hidden="true"><use href="#nb-icon-chevron-left"/></svg></button>
+              </div>
+            </div>
+            <div class="topsec" style="height:176px;max-height:none">
+              <div class="sectitle">Pinned</div>
+              <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg><span class="tree-name">projects</span><button class="action" aria-label="Unpin folder projects"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+              <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name">archive</span><button class="action" aria-label="Unpin folder archive"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+              <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name">scratch</span><button class="action" aria-label="Unpin folder scratch"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+              <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name">clients</span><button class="action" aria-label="Unpin folder clients"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+              <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name">reading</span><button class="action" aria-label="Unpin folder reading"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+              <div class="prow"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder"/></svg><span class="tree-name">journal</span><button class="action" aria-label="Unpin folder journal"><svg class="icon" aria-hidden="true"><use href="#nb-icon-pin"/></svg></button></div>
+            </div>
+            <div class="splitter is-hover" role="separator" aria-orientation="horizontal" tabindex="0"
+                 aria-label="Resize top section" aria-valuemin="56" aria-valuenow="176" aria-valuemax="198"><div class="bar" aria-hidden="true"></div></div>
+            <div class="scroller" role="tree" aria-label="Files">
+              <div class="prow" role="treeitem" aria-level="1" tabindex="-1"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name" title="Welcome.md">Welcome.md</span></div>
+              <div class="prow" role="treeitem" aria-level="1" aria-expanded="true" tabindex="-1"><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-folder-open"/></svg><span class="tree-name" title="projects">projects</span></div>
+              <div class="prow" role="treeitem" aria-level="2" tabindex="-1"><span class="guide" aria-hidden="true"><span class="cell vert"></span><span class="cell cnr-last"></span></span><svg class="tree-icon" aria-hidden="true"><use href="#nb-icon-file"/></svg><span class="tree-name" title="projects/notes.md">notes.md</span></div>
+            </div>
+          </div>
+          <div class="dim" style="margin-top:var(--space-2)">height: 176 px (dragged)<br>content scrolls; tree keeps 120</div>
+        </div>
+
+        <div class="mini" style="width:200px">
+          <div class="cap">bar states</div>
+          <div class="state" style="padding:0;max-width:none">
+            <div class="splitter" style="margin:0 0 var(--space-2)"><div class="bar" aria-hidden="true"></div></div>
+            <div class="dim" style="margin:0 0 var(--space-3)">rest — transparent</div>
+            <div class="splitter is-hover" style="margin:0 0 var(--space-2)"><div class="bar" aria-hidden="true"></div></div>
+            <div class="dim" style="margin:0 0 var(--space-3)">hover — <code>--border-strong</code></div>
+            <div class="splitter is-drag" style="margin:0 0 var(--space-2)"><div class="bar" aria-hidden="true"></div></div>
+            <div class="dim" style="margin:0 0 var(--space-3)">drag — <code>--accent</code></div>
+            <div class="splitter is-focus" style="margin:0 0 var(--space-2)"><div class="bar" aria-hidden="true"></div></div>
+            <div class="dim" style="margin:0 0 var(--space-3)">focus — inset ring</div>
+            <div class="dim" style="margin:0">8 px strip · <code>row-resize</code> · stops at the panel strip</div>
+          </div>
+        </div>
+      </div>
+      <figcaption><strong>Top-section splitter <span class="tpill">Dark</span></strong>
+        Untouched, the section is its content height, capped at 30 vh. The first drag writes a
+        fixed height and persists it; the list scrolls, the tree keeps its floor. Double-click or
+        Enter fits every row with no cap and the section follows the list until the next drag.
+        Modes with an empty list, mode <i>None</i> and the phone leave no strip at all.</figcaption>
     </figure>
   </div>
 
